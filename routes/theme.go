@@ -65,4 +65,3 @@ func registerTheme(r *gin.Engine) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "theme": config.DefaultTheme()})
 	})
 }
-

@@ -21,6 +21,7 @@ import { createUndo } from './undo.js';
 import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.js';
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
+import { initModerate, refresh as moderateRefresh } from './moderate.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -833,6 +834,10 @@ function initMesh(showId, role, page) {
           }
           break;
         }
+        case 'polls':
+        case 'poll':
+          moderateRefresh();
+          break;
         case 'screens':
           screensCache.screens = m.screens || [];
           renderScreens();
@@ -2268,188 +2273,6 @@ function initDayStart() {
 }
 
 
-/* ------------------------------------------------------- audience panel -- */
-
-// initAudiencePanel — the operator's interaction surface (PLAN §11.3
-// phase 5): create items, per-item Show / Results / Hide transport wired to
-// the hidden→open→results state machine, and the moderation queue for
-// audience submissions (approve = open, hide = silent again, delete).
-// Client-rendered like the gallery (operator-only page, 3 s poll); every
-// mutation fans out via /api BroadcastPoll so boards + phones stay live.
-const aud = { items: [] };
-
-function audEl(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = String(text);
-  return e;
-}
-
-function initAudiencePanel() {
-  const host = document.getElementById('tp-aud-items');
-  if (!host) return;
-  const code = document.body.dataset.show || '';
-
-  aud.pull = async () => {
-    try {
-      const j = await (await fetch(`/api/shows/${code}/polls`)).json();
-      if (j && j.ok) { aud.items = j.polls || []; renderAudiencePanel(); }
-    } catch { /* offline — the next poll retries */ }
-  };
-
-  const kindSel = document.getElementById('tp-aud-kind');
-  const optsRow = document.getElementById('tp-aud-opts-row');
-  kindSel?.addEventListener('change', () => {
-    optsRow.hidden = !(kindSel.value === 'poll' || kindSel.value === 'quiz');
-  });
-  document.getElementById('tp-aud-create')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const kind = kindSel.value;
-    const question = document.getElementById('tp-aud-question').value.trim();
-    const optsRaw = document.getElementById('tp-aud-opts').value.trim();
-    const options = optsRaw ? optsRaw.split(',').map((x) => x.trim()).filter(Boolean) : [];
-    const r = await fetch(`/api/shows/${code}/polls`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind, question, options }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok && j.ok) {
-      document.getElementById('tp-aud-question').value = '';
-      document.getElementById('tp-aud-opts').value = '';
-      toast('Created (hidden — Show when ready)', 'success');
-      aud.pull();
-    } else {
-      toast(j.error || 'create failed', 'danger');
-    }
-  });
-
-  host.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-aud]');
-    if (!btn) return;
-    const id = Number(btn.dataset.audid);
-    const act = btn.dataset.aud;
-    if (act === 'del') {
-      if (!(await tpConfirm('The item and its votes are removed for everyone.', { title: 'Delete this item?', ok: 'Delete', danger: true }))) return;
-      await fetch(`/api/shows/${code}/polls/${id}`, { method: 'DELETE' });
-    } else if (act === 'state') {
-      await fetch(`/api/shows/${code}/polls/${id}/state`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: btn.dataset.val }),
-      });
-    }
-    aud.pull();
-  });
-
-  aud.pull();
-  setInterval(aud.pull, 3000);
-}
-
-function renderAudiencePanel() {
-  const host = document.getElementById('tp-aud-items');
-  if (!host) return;
-  host.textContent = '';
-  const count = document.getElementById('tp-aud-count');
-  if (count) count.textContent = String(aud.items.length);
-
-  const top = aud.items.filter((p) => !p.parent);
-  const children = aud.items.filter((p) => p.parent);
-
-  if (!top.length) {
-    host.appendChild(audEl('p', 'text-muted', 'No items yet — create a poll, Q&A or word cloud above.'));
-  }
-  for (const p of top) {
-    host.appendChild(audItemCard(p));
-    // Moderation queue: submitted words/ideas still hidden under this item
-    // (moderation by silence — they surface only when approved).
-    const subs = children.filter((c) => c.parent === p.id && c.state === 'hidden');
-    if (subs.length) {
-      const mod = audEl('div', 'tp-aud-mod stack is-gap-2xs');
-      mod.appendChild(audEl('div', 'text-muted', `${subs.length} waiting for approval:`));
-      for (const c of subs) mod.appendChild(audSubRow(c));
-      host.appendChild(mod);
-    }
-  }
-  // Orphan submissions (a question asked while nothing was open).
-  for (const c of children) {
-    if (c.state === 'hidden' && !top.some((p) => p.id === c.parent)) {
-      host.appendChild(audSubRow(c));
-    }
-  }
-}
-
-function audItemCard(p) {
-  const card = audEl('div', 'tp-aud-item');
-  const head = audEl('div');
-  head.style.display = 'flex';
-  head.style.alignItems = 'baseline';
-  head.style.gap = '.5rem';
-  head.appendChild(audEl('strong', null, p.question || `(${p.kind})`));
-  head.appendChild(audEl('span', 'badge', p.kind));
-  head.appendChild(audEl('span', 'badge' + (p.state === 'open' ? ' badge-accent' : ''), p.state));
-  card.appendChild(head);
-  if (p.state !== 'hidden') {
-    if ((p.kind === 'poll' || p.kind === 'quiz') && p.options?.length) {
-      const total = Math.max(1, p.total || 0);
-      p.options.forEach((label, i) => {
-        const n = (p.counts || [])[i] || 0;
-        card.appendChild(audEl('div', 'text-muted', `${label} — ${n} · ${Math.round((n / total) * 100)}%`));
-      });
-      card.appendChild(audEl('div', 'text-muted', `${p.total || 0} votes`));
-    }
-    if ((p.kind === 'qa' || p.kind === 'ideas') && p.upvotes) {
-      card.appendChild(audEl('div', 'text-muted', `${p.upvotes} likes`));
-    }
-    if (p.kind === 'wordcloud') {
-      const n = aud.items.filter((c) => c.parent === p.id && c.state === 'open').length;
-      card.appendChild(audEl('div', 'text-muted', `${n} words on the wall`));
-    }
-  }
-  const verbs = audEl('div', 'tp-aud-verbs');
-  const mk = (label, val, primary) => {
-    const b = audEl('button', 'btn btn-sm' + (primary ? ' btn-primary' : ''), label);
-    b.type = 'button';
-    b.dataset.aud = 'state';
-    b.dataset.audid = String(p.id);
-    b.dataset.val = val;
-    if (p.state === val) b.disabled = true;
-    return b;
-  };
-  verbs.append(mk('Show', 'open', true), mk('Results', 'results', false), mk('Hide', 'hidden', false));
-  const del = audEl('button', 'btn btn-sm btn-ghost', 'Delete');
-  del.type = 'button';
-  del.dataset.aud = 'del';
-  del.dataset.audid = String(p.id);
-  verbs.appendChild(del);
-  card.appendChild(verbs);
-  return card;
-}
-
-// audSubRow — one moderated submission with Approve / Hide / Delete.
-function audSubRow(c) {
-  const row = audEl('div', 'tp-aud-sub');
-  row.appendChild(audEl('span', null, c.question));
-  const verbs = audEl('span', 'tp-aud-verbs');
-  const approve = audEl('button', 'btn btn-sm btn-primary', 'Approve');
-  approve.type = 'button';
-  approve.dataset.aud = 'state';
-  approve.dataset.audid = String(c.id);
-  approve.dataset.val = 'open';
-  const hide = audEl('button', 'btn btn-sm', 'Hide');
-  hide.type = 'button';
-  hide.dataset.aud = 'state';
-  hide.dataset.audid = String(c.id);
-  hide.dataset.val = 'hidden';
-  const del = audEl('button', 'btn btn-sm btn-ghost', 'Delete');
-  del.type = 'button';
-  del.dataset.aud = 'del';
-  del.dataset.audid = String(c.id);
-  verbs.append(approve, hide, del);
-  row.appendChild(verbs);
-  return row;
-}
-
 /* ------------------------------------------------------------ day memo -- */
 
 function initDayNotes() {
@@ -2879,7 +2702,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initAudiencePanel(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initModerate(showId); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
   if (page === 'display') initFullscreenHint();
 

@@ -1,6 +1,6 @@
-// audience tests (phase 0 stitch): /a/:code page renders, the audience
-// REST lane honors moderation-by-silence, votes replace per peer, and the
-// show-passphrase gate applies to the REST lane as the page does
+// audience tests: /a/:code renders; phones see only what is shown to the
+// audience; votes dedupe per device; questions are moderated; a room
+// password never gates phones.
 
 package routes_test
 
@@ -80,13 +80,22 @@ func TestAudienceGateAndFlow(t *testing.T) {
 		t.Fatalf("total: %s", d)
 	}
 
-	// Questions are moderated by silence: submitted → invisible until open.
+	// Questions: a Q&A must be shown to the audience first; submissions
+	// land pending (moderated) and stay invisible until approved.
+	if code, _ := ts.call("POST", "/api/audience/"+ts.showCode+"/ask",
+		[]byte(`{"text":"Too early","peer":"ph3"}`), ""); code != 400 {
+		t.Fatalf("ask with no Q&A on air: %d, want 400", code)
+	}
+	qa := mustPollCreate(t, ts, `{"kind":"qa","question":"Ask the panel"}`)
+	if code, b := ts.call("POST", fmt.Sprintf("%s/%d/show", codeBase, qa), []byte(`{"target":"audience","on":true}`), ""); code != 200 {
+		t.Fatalf("show qa: %d %s", code, b)
+	}
 	if code, b := ts.call("POST", "/api/audience/"+ts.showCode+"/ask",
-		[]byte(`{"kind":"qa","text":"Louder please","peer":"ph3"}`), ""); code != 200 {
+		[]byte(`{"text":"Louder please","peer":"ph3"}`), ""); code != 200 {
 		t.Fatalf("ask: %d %s", code, b)
 	}
 	if body := audienceRead(t, ts); strings.Contains(body, "Louder please") {
-		t.Fatalf("concealed question leaked to audience: %s", body)
+		t.Fatalf("pending question leaked to audience: %s", body)
 	}
 
 	// A room's moderator password never gates the audience: phones read,
@@ -95,7 +104,7 @@ func TestAudienceGateAndFlow(t *testing.T) {
 		t.Fatalf("set room password: %v", err)
 	}
 	if code, body := ts.anon("GET", "/api/audience/"+ts.showCode, nil, ""); code != 200 ||
-		!strings.Contains(string(body), "Lunch?") || !strings.Contains(string(body), "counts") {
+		!strings.Contains(string(body), "Ask the panel") {
 		t.Fatalf("anonymous audience read: %d %.200s", code, body)
 	}
 	if code, _ := ts.anon("GET", "/a/"+ts.showCode, nil, ""); code != 200 {

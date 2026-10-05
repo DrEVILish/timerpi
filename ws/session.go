@@ -194,11 +194,11 @@ func (h *Hub) register(s *session) bool {
 		}
 		sh.aud[s] = struct{}{}
 		h.mu.Unlock()
-		var pv *timerpi.PollView
+		var on timerpi.OnAir
 		if pollsFn != nil {
-			pv, _ = pollsFn(s.showID)
+			on, _ = pollsFn(s.showID)
 		}
-		s.sendFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+		s.offer(pollFrame(on, false, h.nowFn()))
 		h.logf("ws: audience joined show %d (%d on the lane)", s.showID, h.AudSessions())
 		return true
 	}
@@ -250,9 +250,9 @@ func (h *Hub) register(s *session) bool {
 	// a results board reloading mid-vote must show the bars without waiting
 	// for the next vote (results polls block NEW votes, so the delta would
 	// never fire; owner-visible bug: reload ≠ bars).
-	if h.pollsFnFor() != nil {
-		if pv, perr := h.pollsFnFor()(s.showID); perr == nil {
-			s.sendFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+	if fn := h.pollsFnFor(); fn != nil {
+		if on, perr := fn(s.showID); perr == nil {
+			s.offer(pollFrame(on, true, h.nowFn()))
 		}
 	}
 	h.logf("ws: %s joined show %d as %s (%d connected)", s.id, s.showID, s.role, everyone.len())

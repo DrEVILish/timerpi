@@ -79,9 +79,9 @@ var WidgetTypes = []WidgetDef{
 	{Type: "schedule", Title: "Schedule", Desc: "Mini running-order list", DefaultW: 4, DefaultH: 4},
 	{Type: "notice", Title: "Notice", Desc: "Static free text (welcome, sponsors, Wi-Fi…)", DefaultW: 6, DefaultH: 2},
 	// PLAN §11.2 (Rooms v2, phase 2): the audience/venue slots.
-	{Type: "poll", Title: "Poll", Desc: "On-air poll: question, live counts, results bars", DefaultW: 6, DefaultH: 4},
-	{Type: "qa", Title: "Q&A", Desc: "Open audience question + likes", DefaultW: 6, DefaultH: 2},
-	{Type: "wordcloud", Title: "Word cloud", Desc: "Approved audience words as tiles", DefaultW: 6, DefaultH: 4},
+	{Type: "poll", Title: "Audience item", Desc: "Whatever is shown to its target: poll/quiz results bars, Q&A wall + spotlight, word cloud, ideas", DefaultW: 6, DefaultH: 4},
+	{Type: "qa", Title: "Q&A wall", Desc: "Approved questions by upvotes, plus the spotlight (Q&A and ideas only)", DefaultW: 6, DefaultH: 4},
+	{Type: "wordcloud", Title: "Word cloud", Desc: "Approved words sized by how many people sent them", DefaultW: 6, DefaultH: 4},
 	{Type: "map", Title: "Map", Desc: "Venue map image (upload under /api/assets)", DefaultW: 6, DefaultH: 4},
 	{Type: "joinqr", Title: "Join QR", Desc: "Audience join QR for this room", DefaultW: 3, DefaultH: 4},
 }
@@ -137,16 +137,14 @@ func TemplateLayouts() map[string]Layout {
 		// 5. ROOM MAIN — the audience interaction surface (#4/#5).
 		"main": {V: 1, Widgets: []Widget{
 			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
-			w("poll", "poll", 0, 1, 7, 5, nil),
-			w("qa", "qa", 7, 1, 5, 2, nil),
-			w("wordcloud", "wordcloud", 7, 3, 5, 3, nil),
-			w("joinqr", "joinqr", 0, 6, 3, 3, nil),
-			w("notice", "notice", 3, 6, 9, 2, map[string]string{"text": "Scan to take part"}),
+			w("poll", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
+			w("joinqr", "joinqr", 9, 1, 3, 4, nil),
+			w("notice", "notice", 9, 5, 3, 3, map[string]string{"text": "Scan to take part"}),
 		}},
 		// 6. DSM — the room's progress timer + its poll wedge (#6/#7).
 		"dsm": {V: 1, Widgets: []Widget{
 			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
-			w("poll", "poll", 8, 0, 4, 3, nil),
+			w("poll", "poll", 8, 0, 4, 3, map[string]string{"target": "presenter"}),
 			w("progress", "progress", 0, 3, 8, 1, nil),
 			w("cuelabel", "cuelabel", 0, 4, 8, 1, map[string]string{"source": "label"}),
 			w("speaker", "speaker", 0, 5, 8, 1, nil),

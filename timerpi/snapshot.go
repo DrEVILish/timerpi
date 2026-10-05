@@ -13,9 +13,10 @@ type Snapshot struct {
 	ServerTime int64       `json:"serverTime"` // clients re-anchor their clock offset on receipt
 	Show       Show        `json:"show"`
 	Runtime    RuntimeView `json:"runtime"`
-	Cues       []Cue       `json:"cues"`           // ordered by Pos
-	Messages   []Message   `json:"messages"`       // shown only (ShownAt > 0)
-	Poll       *PollView   `json:"poll,omitempty"` // audience interaction on air (audience layer)
+	Cues       []Cue       `json:"cues"`                // ordered by Pos
+	Messages   []Message   `json:"messages"`            // shown only (ShownAt > 0)
+	Poll       *PollView   `json:"poll,omitempty"`      // interaction on the audience target
+	Presenter  *PollView   `json:"presenter,omitempty"` // interaction on the presenter target
 }
 
 // RuntimeView is the runtime as seen by clients: the stored Runtime fields

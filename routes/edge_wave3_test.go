@@ -196,7 +196,6 @@ func TestImportAppendSalvage(t *testing.T) {
 
 // --- setup wizard + show-file guards (no setup_test.go exists) ---------------
 
-
 // A show-file bundle with a future manifestVersion is refused before any
 // show is created (importShowFile has no route-level test at all).
 func TestShowFileVersionMismatch(t *testing.T) {

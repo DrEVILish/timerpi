@@ -35,11 +35,11 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 |---|---|---|---|
 | 1 | Event walk-in | ⚠️ | `/zone/<name>` page reloads every 30 s with a frozen clock. "Now" comes from the plan, not the live timer. Not a layout, no rotation → **N7**, **N4** |
 | 2/3 | Room walk-in | 🟡 | `room` template works. Needs portrait form and rotation → **N4** |
-| 4/5 | Room audience display | 🟡 | `main` template, Show/Results end to end. Needs the audience target (**N5**), Q&A wall/spotlight (**N6**), quiz fix (**B2**) |
-| 6/7 | Room presenter display | 🟡 | `dsm` template is solid. Needs the presenter target (**N5**) |
+| 4/5 | Room audience display | ✅ | `main` template: one large Audience-item tile (poll/quiz bars, Q&A wall + spotlight, word cloud, ideas) + join QR. Text scaling for big screens comes in the UI pass |
+| 6/7 | Room presenter display | ✅ | `dsm` template; its Audience-item tile follows the Presenter target. Display types (N4) still to do |
 | 8/9 | Room moderator | 🟡 | ✅ Event code → pick room → optional room password. Room-isolated (tested). Dashboard is complete for timing/audience. Tablet pass still to do (**N11**) |
 | 10 | SuperOperator | 🟡 | ✅ `/e/<code>/admin`: live room cards (state, now/next, time left, screens) with GO/Pause/Blackout, blackout all, rooms admin (add, inline rename, reorder, delete, passwords), event settings (name, theme, map, password, delete). Moderates every room. Still to do: event-wide screens view (**N3**) |
-| 11 | Audience devices | ⚠️ | Open by design: no password ever gates phones (B1 fixed). Ideas and survey are half-wired (**B3, B4**) |
+| 11 | Audience devices | ✅ | Rebuilt phone page: vote/change vote, results with your answer and the quiz verdict, ask/ideas with "waiting for review", upvotes, spotlight, word cloud. WS lane with REST fallback |
 
 ## 3. Requirements matrix
 
@@ -59,14 +59,14 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | S7 rotation | ❌ | N4 |
 | S8 live event walk-in | ❌ | N7 |
 | S9 per-screen theme + layout, inline rename | 🟡 | Theme + layout per screen ✅. Rename is a button/prompt, not inline double-click (N4) |
-| A1 kinds | ⚠️ | Poll ✅ · Word cloud ✅ · Quiz ⚠️ B2 · Q&A ⚠️ N6 · Ideas ⚠️ B4 |
+| A1 kinds | ✅ | Poll, quiz, Q&A, word cloud, ideas (survey removed) |
 | A2 room-scoped | ✅ | |
 | A3 hidden until pushed | ✅ | Absent from the payload |
-| A4 two push targets | ❌ | N5 |
+| A4 two push targets | ✅ | Show to Audience / Show to Presenter (`ShowTo`) |
 | A5 results bars, voting closes | ✅ | |
 | A6 hide with animation | ✅ | |
-| A7 Q&A wall / spotlight / dismiss / answered | ❌ | N6 |
-| A8 per-item moderation | 🟡 | Works for words. Ideas broken (B4) |
+| A7 Q&A wall / spotlight / dismiss / answered | ✅ | Plus auto-approve per item |
+| A8 per-item moderation | ✅ | Approve / dismiss per entry; word approval covers identical words |
 | A9 QR join, one vote per device | ✅ | |
 | A10 1,000 per room / 200 on a Pi | 🟡 | 1,000 passes in the dev container (p95 24 ms). Not on a Pi or real Wi-Fi (H5) |
 | L1 ftl-themes, default `blue-future` | ✅ | Default already `blue-future`. ftl-themes fetch not reproducible (C2) |
@@ -87,10 +87,10 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | ID | Bug | Where |
 |---|---|---|
 | **B1** | ✅ Fixed 2026-10-05: there is no appliance password any more; audience and walk-in pages are open by design. | `routes/access.go` |
-| **B2** | The quiz correct answer never shows. The dashboard never sends `correct`, and `PollView.Correct` is `omitempty`, so index 0 is dropped. | `templates/dashboard.html`, `timerpi/polls.go:80` |
-| **B3** | Survey members drop on WS updates, and there is no survey UI or tile. *Proposal: remove `survey` (not in PRODUCT A1).* | `templates/audience.html`, `timerpi/polls.go` |
-| **B4** | Ideas are posted with `parent:0` and become top-level rows. There is no ideas tile. "Add mine" upvotes the whole item. | `templates/audience.html`, `public/src/board.js` |
-| **B5** | Audience tiles render edit chrome without the `Editable` guard. | `templates/fragments/b-audience.html` |
+| **B2** | ✅ Fixed: quiz requires its answer; it is revealed (index 0 included) only with results. | |
+| **B3** | ✅ Fixed: survey removed (not a product kind); leftover rows deleted at startup. | |
+| **B4** | ✅ Fixed: ideas are entries of their item, shown as a wall with upvotes. | |
+| **B5** | ✅ Fixed: audience tiles render edit chrome only in the editor. | |
 | **B6** | ✅ Fixed 2026-10-05: unknown roles are refused at join, and only `controls` may send commands. | `ws/session.go`, `ws/commands.go` |
 | **B7** | Zone page: an unanchored day computes from epoch, so every row shows as done. The configured theme is ignored. (Superseded by N7, but cheap to fix meanwhile.) | `routes/zone.go` |
 
@@ -102,8 +102,8 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N2** | ✅ Done 2026-10-05: new home page (join by code / create event / open a screen / recent), event lobby with room sign-in and SuperOperator sign-in. The old setup wizard and connect sheet are retired | E1, E2 | |
 | **N3** | 🟡 SuperOperator dashboard done (see surface 10). The appliance password is removed; box settings need any protected event's supervisor session. Left: an event-wide screens view | E3, S4, T7 | |
 | **N4** | **Display types + rotation.** Screens registry gets `type` (audience/walkin/presenter) and `rotation` (0/90/180/270). Capture modal sets both. Rotation is a CSS transform of the whole layout. Templates are grouped by type, with portrait walk-in variants. The editor previews rotation. Screen names rename inline by double-click/double-tap (S9) | S1–S3, S7, §3.2 | |
-| **N5** | **Two push targets.** Interaction gains `toAudience` and `toPresenter` flags. `results` applies to wherever it is shown. The audience read and phone frames carry audience-targeted items only. Boards render by screen type (audience displays ← audience target; presenter displays ← presenter target). The dashboard gets **Show to Audience**, **Show to Presenter**, **Results** and **Hide** | A4, A5 | Replaces single-focus `open`. Keep "one on-air item per target per room" |
-| **N6** | **Q&A wall + spotlight.** Submitted questions become children of the open Q&A item (like words), with status `pending → approved → answered` or `dismissed`, plus upvotes per question. New tiles: `qa-wall` (approved, by upvotes) and `spotlight`. Moderator: approve / spotlight / mark answered / dismiss | A7 | Fixes today's "each question replaces the on-air item" |
+| **N5** | ✅ Done 2026-10-05: `to_audience` / `to_presenter`, results follow the targets, phones receive the audience target only, tiles follow `opts.target` | A4, A5 | |
+| **N6** | ✅ Done 2026-10-05: entries with pending/approved/answered/dismissed, upvotes, spotlight, auto-approve; moderator panel rebuilt (`moderate.js`) | A7 | |
 | **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8 | |
 | **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
 | **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |

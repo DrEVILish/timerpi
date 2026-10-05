@@ -42,15 +42,9 @@ func RegisterSetup(r gin.IRouter, d *Deps) {
 	r.GET("/api/shows/:ident/file", d.apiShowFile)
 }
 
-
-
 // ------------------------------------------------------------------- types --
 
-
-
 // -------------------------------------------------------- wizard page root --
-
-
 
 // --------------------------------------------------------------------------
 // Step a — identity: device name + hostname note.
@@ -64,17 +58,9 @@ type identityBody struct {
 	Name string `json:"name"`
 }
 
-
-
 // --------------------------------------------------------------------------
 // Step b — content: create a new show by title, create-by-import (one
 // multipart POST does show + cue application server-side), or start empty.
-
-
-
-
-
-
 
 // warmShow builds the engine (ticker seeder picks it up) and re-broadcasts.
 func (d *Deps) warmShow(id int64) {
@@ -91,15 +77,12 @@ func (d *Deps) warmShow(id int64) {
 	}
 }
 
-
 // ---------------------------------------------------------------- fragments --
-
 
 // setupDBOk guards mutation endpoints on missing wiring.
 func (d *Deps) setupDBOk() bool { return d.Store != nil && d.Engines != nil }
 
 // ------------------------------------------------------ printable sheet --
-
 
 // ------------------------------------------------------ LAN address probe --
 
@@ -235,6 +218,11 @@ type showFilePoll struct {
 	Parent   int64  `json:"parent"` // export-local
 	Author   string `json:"author,omitempty"`
 	Ts       int64  `json:"ts,omitempty"`
+	// Push targets, Q&A spotlight (export-local child id) and auto-approve.
+	ToAudience  bool  `json:"toAudience,omitempty"`
+	ToPresenter bool  `json:"toPresenter,omitempty"`
+	Spot        int64 `json:"spot,omitempty"`
+	AutoApprove bool  `json:"autoApprove,omitempty"`
 }
 
 // showFileVote — one vote row keyed by poll export id (§11.9).
@@ -355,7 +343,6 @@ func showFileFilename(id int64, title string) string {
 	return base + ".timerpi.json"
 }
 
-
 // bundleBody reads the bundle bytes (multipart "file" preferred, JSON body
 // fallback for scripts).
 func bundleBody(c *gin.Context) ([]byte, string) {
@@ -377,7 +364,6 @@ func bundleBody(c *gin.Context) ([]byte, string) {
 	}
 	return raw, ""
 }
-
 
 // importShowFile parses a bundle and creates the show (shared by
 // /api/shows/import-file and the wizard's file drop). Exported store funcs
@@ -476,9 +462,15 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 				ShowID: show.ID, Kind: p.Kind, Question: p.Question,
 				Options: p.Options, Correct: p.Correct, State: p.State,
 				Parent: parent, Author: p.Author, Ts: p.Ts,
+				ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove,
 			})
 			if cerr == nil {
 				pollX[int64(slot+1)] = np.ID
+			}
+		}
+		for slot, p := range sf.Polls {
+			if p.Spot > 0 && pollX[p.Spot] > 0 {
+				_ = d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot])
 			}
 		}
 		if d.Hub != nil {

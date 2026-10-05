@@ -136,16 +136,18 @@ replaces it.
 
 ## 7. Audience interactions
 
-`timerpi/polls.go`:
+`timerpi/polls.go`, one table for every kind:
 
-- **Kinds:** `poll`, `quiz`, `qa`, `wordcloud`, `ideas`, `survey`. (`survey` exists in the data layer only.)
-- **States:** `hidden → open → results`, plus back to `hidden`. New items are always created `hidden`.
-- **Single focus:** opening a top-level item hides every other top-level item in that show. Child rows (submitted questions/words) are approved independently and accumulate.
-- **Visibility contract:** `AudienceRead` returns only what is on air. Hidden items are **absent** from the payload, not hidden client-side.
+- **Kinds:** `poll`, `quiz` (with a correct answer), `qa`, `wordcloud`, `ideas`.
+- **Items** (`parent = 0`) are created off air. Two independent push targets, `to_audience` (phones + audience screens) and `to_presenter` (presenter/DSM screens). Pushing an item to a target takes every other item of the room off that target.
+- **Phase** (`state`): `hidden` (on no target) → `open` (voting/asking) → `results` (voting closed; results wherever it is shown).
+- **Entries** (`parent = item`) are audience submissions with a moderation status: `hidden` (pending) → `open` (approved) → `answered`, or `dismissed`. `auto_approve` skips review. Q&A items have one `spot` (spotlight). Word-cloud approval applies to every identical word, and the view aggregates them (weight = senders).
+- **Votes** are one row per (item or entry, device): poll choices, or upvotes on entries.
+- **Visibility contract:** `OnAirNow` gives `{audience, presenter}`. Phones only ever receive the audience item, so hidden items are absent from their payload. A quiz's answer is withheld until results. Screens get both and each tile follows one target (`opts.target`).
 - **Surfaces:**
-  - Phones: `/a/<code>`. WS first, with REST fallback.
-  - Boards: poll, qa and wordcloud tiles, which render bars with counts and %, the question wall, and word tiles.
-  - Operator: the dashboard Audience panel (create, Show/Results/Hide/Delete, moderation queue).
+  - Phones: `/a/<code>` (`public/src/audience.js`; WS lane, REST fallback).
+  - Screens: the `poll` tile ("Audience item", any kind), `qa` (wall + spotlight) and `wordcloud` tiles in `public/src/board.js`. Running tallies stay hidden on screens until results.
+  - Moderator: the Audience panel on `/c/` (`public/src/moderate.js`), refreshed by `{t:"polls"}` hints.
 
 ## 8. Access control
 

@@ -25,10 +25,10 @@ func readState(t *testing.T, c *wsClient) map[string]any {
 
 func TestBroadcastCarriesPoll(t *testing.T) {
 	ts := newTestServer(t, false)
-	ts.hub.SetPollsFunc(func(showID int64) (*timerpi.PollView, error) {
-		return &timerpi.PollView{ID: 9, Kind: timerpi.KindPoll,
+	ts.hub.SetPollsFunc(func(showID int64) (timerpi.OnAir, error) {
+		return timerpi.OnAir{Audience: &timerpi.PollView{ID: 9, Kind: timerpi.KindPoll,
 			Question: "Lunch?", State: timerpi.StateOpen,
-			Options: []string{"Pizza", "Skyr"}, Counts: []int64{1, 2}, Total: 3}, nil
+			Options: []string{"Pizza", "Skyr"}, Counts: []int64{1, 2}, Total: 3}}, nil
 	})
 	c := ts.joinClient(t, "screen", "peer-poll")
 	defer c.close()
@@ -56,7 +56,7 @@ func TestBroadcastCarriesPoll(t *testing.T) {
 	// nil pollsFn (or a read error) must leave the frame clean, not break
 	// it — asserted on a FRESH client + fresh snapshot so no stale queue
 	// frames from the first broadcast leak into the read.
-	ts.hub.SetPollsFunc(func(int64) (*timerpi.PollView, error) { return nil, nil })
+	ts.hub.SetPollsFunc(func(int64) (timerpi.OnAir, error) { return timerpi.OnAir{}, nil })
 	c2 := ts.joinClient(t, "screen", "peer-poll-2")
 	defer c2.close()
 	c2.read(t) // joined frame

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
 )
 
 // A7 notes cap: 4001 characters is one past the sanity ceiling → 400 with a
@@ -112,4 +111,3 @@ func TestOriginNullAndRefererFallback(t *testing.T) {
 		t.Errorf("evil Referer POST: %d, want 403", got)
 	}
 }
-

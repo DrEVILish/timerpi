@@ -139,6 +139,10 @@ func TestOscInboundDrivesEngine(t *testing.T) {
 
 func TestAudienceAskGuard(t *testing.T) {
 	ts := newAPITest(t)
+	qa := mustPollCreate(t, ts, `{"kind":"qa","question":"Ask"}`)
+	if code, _ := ts.call("POST", fmt.Sprintf("/api/shows/%s/polls/%d/show", ts.showCode, qa), []byte(`{"target":"audience"}`), ""); code != 200 {
+		t.Fatalf("show qa: %d", code)
+	}
 	ask := func() int {
 		code, _ := ts.call("POST", "/api/audience/"+ts.showCode+"/ask",
 			[]byte(`{"kind":"qa","text":"hello?","peer":"burst-1"}`), "")

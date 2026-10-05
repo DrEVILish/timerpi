@@ -56,7 +56,7 @@ type Hub struct {
 	msgsFn func(showID int64) ([]timerpi.Message, error)
 	// pollsFn reads the show's on-air audience interaction (active poll
 	// with counts); injected like msgsFn. nil → snapshot carries none.
-	pollsFn func(showID int64) (*timerpi.PollView, error)
+	pollsFn func(showID int64) (timerpi.OnAir, error)
 	// seeder returns all show ids, so the ticker drives engines no one has
 	// joined this process lifetime (created over REST).
 	seeder func() []int64
@@ -126,14 +126,14 @@ func (h *Hub) SetMessagesFunc(fn func(int64) ([]timerpi.Message, error)) { h.msg
 // SetPollsFunc wires the on-air audience-interaction reader. Synchronized:
 // audience sessions read it from freshly spawned server goroutines (the
 // race detector rightly flags the bare field).
-func (h *Hub) SetPollsFunc(fn func(int64) (*timerpi.PollView, error)) {
+func (h *Hub) SetPollsFunc(fn func(int64) (timerpi.OnAir, error)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pollsFn = fn
 }
 
 // pollsFnFor snapshots the reader under the hub lock.
-func (h *Hub) pollsFnFor() func(int64) (*timerpi.PollView, error) {
+func (h *Hub) pollsFnFor() func(int64) (timerpi.OnAir, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.pollsFn
@@ -385,9 +385,9 @@ func (h *Hub) getShowHub(showID int64) *showHub {
 func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 	// Audience-layer merge: the poll carried into EVERY frame (schedule
 	// lead, oobs and state) below — one reader, none stale.
-	if h.pollsFn != nil {
-		if v, err := h.pollsFn(showID); err == nil {
-			snap.Poll = v
+	if fn := h.pollsFnFor(); fn != nil {
+		if on, err := fn(showID); err == nil {
+			snap.Poll, snap.Presenter = on.Audience, on.Presenter
 		}
 	}
 	h.mu.Lock()
@@ -718,30 +718,46 @@ func (h *Hub) AudSessions() int {
 // must never trigger a full-snapshot fanout). A nil poll ships as null —
 // the section disappears by absence (§11.4).
 func (h *Hub) BroadcastPoll(showID int64) {
-	var pv *timerpi.PollView
+	var on timerpi.OnAir
 	if fn := h.pollsFnFor(); fn != nil {
 		if v, err := fn(showID); err == nil {
-			pv = v
+			on = v
 		}
 	}
-	frame := marshalFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+	// Phones get the audience target only (hidden by absence); screens and
+	// operators get both targets.
+	audFrame := pollFrame(on, false, h.nowFn())
+	fullFrame := pollFrame(on, true, h.nowFn())
 	h.mu.Lock()
 	sh, ok := h.byShow[showID]
 	if !ok {
 		h.mu.Unlock()
 		return
 	}
-	targets := make([]*session, 0, len(sh.sessions)+len(sh.aud))
+	full := make([]*session, 0, len(sh.sessions))
 	for s2 := range sh.sessions {
-		targets = append(targets, s2)
+		full = append(full, s2)
 	}
+	aud := make([]*session, 0, len(sh.aud))
 	for s2 := range sh.aud {
-		targets = append(targets, s2)
+		aud = append(aud, s2)
 	}
 	h.mu.Unlock()
-	for _, s2 := range targets {
-		s2.offer(frame)
+	for _, s2 := range full {
+		s2.offer(fullFrame)
 	}
+	for _, s2 := range aud {
+		s2.offer(audFrame)
+	}
+}
+
+// pollFrame builds the {t:"poll"} frame: "poll" is the audience-target item,
+// "presenter" (screens/operators only) the presenter-target item.
+func pollFrame(on timerpi.OnAir, withPresenter bool, ts int64) []byte {
+	if withPresenter {
+		return marshalFrame("v", 1, "t", "poll", "poll", on.Audience, "presenter", on.Presenter, "ts", ts)
+	}
+	return marshalFrame("v", 1, "t", "poll", "poll", on.Audience, "ts", ts)
 }
 
 // SessionsByRole counts live connections per role (health detail).

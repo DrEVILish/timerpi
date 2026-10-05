@@ -1,7 +1,5 @@
-// Phase 5 tests (PLAN §11.3): the operator polls-list view (counts +
-// moderation children), the full moderation flow (submit → approve → on
-// air → hide), item create/state/delete over the API, and the BroadcastPoll
-// seam the panel rides.
+// Moderator API tests: create, push to targets, moderate submissions,
+// spotlight, results, and the views phones and screens get.
 package routes_test
 
 import (
@@ -11,121 +9,134 @@ import (
 	"testing"
 )
 
-func TestModerationFlow(t *testing.T) {
-	ts := newAPITest(t)
+type modItem struct {
+	ID          int64  `json:"id"`
+	Kind        string `json:"kind"`
+	State       string `json:"state"`
+	Question    string `json:"question"`
+	ToAudience  bool   `json:"toAudience"`
+	ToPresenter bool   `json:"toPresenter"`
+	Pending     int    `json:"pending"`
+	Correct     int64  `json:"correct"`
+	Children    []struct {
+		ID       int64  `json:"id"`
+		Question string `json:"question"`
+		State    string `json:"state"`
+		Upvotes  int64  `json:"upvotes"`
+	} `json:"children"`
+}
 
-	// Operator opens a word cloud.
-	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/polls",
-		[]byte(`{"kind":"wordcloud","question":"One word for the venue"}`), ""); code != 200 {
-		t.Fatalf("create cloud: %d %s", code, b)
-	}
-	// Find its id via the operator list.
+func modList(t *testing.T, ts *apiTest) []modItem {
+	t.Helper()
 	code, b := ts.call("GET", "/api/shows/"+ts.showCode+"/polls", nil, "")
 	if code != 200 {
-		t.Fatalf("polls list: %d %s", code, b)
+		t.Fatalf("moderator list: %d %s", code, b)
 	}
-	var list struct {
-		Polls []struct {
-			ID       int64  `json:"id"`
-			Kind     string `json:"kind"`
-			State    string `json:"state"`
-			Parent   int64  `json:"parent"`
-			Question string `json:"question"`
-		} `json:"polls"`
+	var out struct {
+		Items []modItem `json:"items"`
 	}
-	if err := json.Unmarshal(b, &list); err != nil {
+	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatalf("list body: %s", b)
 	}
-	if len(list.Polls) != 1 || list.Polls[0].State != "hidden" {
-		t.Fatalf("operator list: %s", b)
-	}
-	cloudID := list.Polls[0].ID
+	return out.Items
+}
 
-	// Two different audience members submit words (hidden children) — the
-	// per-peer ask throttle means distinct peers for a fast pair.
-	peers := []string{"mod-1", "mod-2"}
-	for i, w := range []string{"electric", "cozy"} {
-		if code, b := ts.call("POST", "/api/audience/"+ts.showCode+"/ask",
-			[]byte(fmt.Sprintf(`{"kind":"wordcloud","text":%q,"peer":%q,"parent":%d}`, w, peers[i], cloudID)), ""); code != 200 {
-			t.Fatalf("submit %q: %d %s", w, code, b)
+func modPost(t *testing.T, ts *apiTest, path, body string) {
+	t.Helper()
+	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/polls"+path, []byte(body), "application/json"); code != 200 {
+		t.Fatalf("POST %s: %d %s", path, code, b)
+	}
+}
+
+func TestModerationFlow(t *testing.T) {
+	ts := newAPITest(t)
+	qa := mustPollCreate(t, ts, `{"kind":"qa","question":"Ask the panel"}`)
+	if it := modList(t, ts); len(it) != 1 || it[0].State != "hidden" || it[0].ToAudience || it[0].ToPresenter {
+		t.Fatalf("new item must be off air: %+v", it)
+	}
+	// Show to Audience AND to Presenter.
+	modPost(t, ts, fmt.Sprintf("/%d/show", qa), `{"target":"audience","on":true}`)
+	modPost(t, ts, fmt.Sprintf("/%d/show", qa), `{"target":"presenter","on":true}`)
+
+	for i, q := range []string{"When is lunch?", "Slides online?"} {
+		if code, b := ts.anon("POST", "/api/audience/"+ts.showCode+"/ask",
+			[]byte(fmt.Sprintf(`{"item":%d,"text":%q,"peer":"mod-%d"}`, qa, q, i)), "application/json"); code != 200 {
+			t.Fatalf("ask %q: %d %s", q, code, b)
 		}
 	}
-	// The operator list shows them as hidden children (the moderation queue).
-	code, b = ts.call("GET", "/api/shows/"+ts.showCode+"/polls", nil, "")
-	if code != 200 || !strings.Contains(string(b), "electric") || !strings.Contains(string(b), "cozy") {
-		t.Fatalf("submissions not in the operator list: %d %s", code, b)
+	items := modList(t, ts)
+	if items[0].Pending != 2 || len(items[0].Children) != 2 {
+		t.Fatalf("moderation queue: %+v", items[0])
 	}
+	byQ := map[string]int64{}
+	for _, c := range items[0].Children {
+		byQ[c.Question] = c.ID
+	}
+	modPost(t, ts, fmt.Sprintf("/%d/moderate", byQ["When is lunch?"]), `{"status":"approved"}`)
+	modPost(t, ts, fmt.Sprintf("/%d/moderate", byQ["Slides online?"]), `{"status":"dismissed"}`)
+	modPost(t, ts, fmt.Sprintf("/%d/spotlight", qa), fmt.Sprintf(`{"entry":%d}`, byQ["When is lunch?"]))
 
-	// Operator flow: SHOW the cloud, then approve words into it (child
-	// approval accumulates without closing the parent — the phase-4 fix).
-	if code, bb := ts.call("POST", fmt.Sprintf("/api/shows/%s/polls/%d/state", ts.showCode, cloudID),
-		[]byte(`{"state":"open"}`), ""); code != 200 {
-		t.Fatalf("open cloud: %d %s", code, bb)
+	_, b := ts.anon("GET", "/api/audience/"+ts.showCode, nil, "")
+	if !strings.Contains(string(b), "When is lunch?") || strings.Contains(string(b), "Slides online?") || !strings.Contains(string(b), `"spotlight"`) {
+		t.Fatalf("phone view: %s", b)
 	}
-	byWord := map[string]int64{}
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("list2: %s", b)
+	modPost(t, ts, fmt.Sprintf("/%d/moderate", byQ["When is lunch?"]), `{"status":"answered"}`)
+	_, b = ts.anon("GET", "/api/audience/"+ts.showCode, nil, "")
+	if strings.Contains(string(b), `"spotlight"`) || !strings.Contains(string(b), `"answered"`) {
+		t.Fatalf("answered question should leave the spotlight but stay listed: %s", b)
 	}
-	for _, p := range list.Polls {
-		if p.Parent == cloudID {
-			byWord[p.Question] = p.ID
-		}
+	// Hide takes it off both targets; phones see nothing.
+	modPost(t, ts, fmt.Sprintf("/%d/hide", qa), `{}`)
+	_, b = ts.anon("GET", "/api/audience/"+ts.showCode, nil, "")
+	if strings.Contains(string(b), "Ask the panel") {
+		t.Fatalf("hidden item still on air: %s", b)
 	}
-	if len(byWord) != 2 {
-		t.Fatalf("want 2 submissions, got %d: %s", len(byWord), b)
+	// Delete the item with its entries.
+	if code, _ := ts.call("DELETE", fmt.Sprintf("/api/shows/%s/polls/%d", ts.showCode, qa), nil, ""); code != 200 {
+		t.Fatalf("delete: %d", code)
 	}
-	// Approve both; upvote "cozy" so it leads the wall (loudest first).
-	for _, w := range []string{"electric", "cozy"} {
-		if code, bb := ts.call("POST", fmt.Sprintf("/api/shows/%s/polls/%d/state", ts.showCode, byWord[w]),
-			[]byte(`{"state":"open"}`), ""); code != 200 {
-			t.Fatalf("approve %q: %d %s", w, code, bb)
-		}
+	if it := modList(t, ts); len(it) != 0 {
+		t.Fatalf("deleted item still listed: %+v", it)
 	}
-	if code, bb := ts.call("POST", "/api/audience/"+ts.showCode+"/vote",
-		[]byte(fmt.Sprintf(`{"pollId":%d,"choice":"1","peer":"voter"}`, byWord["cozy"])), ""); code != 200 {
-		t.Fatalf("upvote cozy: %d %s", code, bb)
+	// Strangers cannot moderate.
+	if code, _ := ts.anon("GET", "/api/shows/"+ts.showCode+"/polls", nil, ""); code != 401 {
+		t.Errorf("anonymous moderator list: %d, want 401", code)
 	}
+}
 
-	// On air: the cloud's children carry the approved words with upvotes.
-	code, b = ts.call("GET", "/api/audience/"+ts.showCode, nil, "")
-	if code != 200 || !strings.Contains(string(b), "cozy") || !strings.Contains(string(b), `"upvotes":1`) {
-		t.Fatalf("audience read after approval: %d %s", code, b)
+func TestPresenterTargetNeverReachesPhones(t *testing.T) {
+	ts := newAPITest(t)
+	p := mustPollCreate(t, ts, `{"kind":"poll","question":"Speaker only?","options":["A","B"]}`)
+	modPost(t, ts, fmt.Sprintf("/%d/show", p), `{"target":"presenter"}`)
+	_, b := ts.anon("GET", "/api/audience/"+ts.showCode, nil, "")
+	if strings.Contains(string(b), "Speaker only?") {
+		t.Fatalf("presenter-only item reached phones: %s", b)
 	}
-
-	// Hide "electric" again → it leaves the audience surface.
-	if code, _ := ts.call("POST", fmt.Sprintf("/api/shows/%s/polls/%d/state", ts.showCode, byWord["electric"]),
-		[]byte(`{"state":"hidden"}`), ""); code != 200 {
-		t.Fatalf("hide: %d", code)
+	if code, _ := ts.call("POST", "/api/audience/"+ts.showCode+"/vote", []byte(fmt.Sprintf(`{"pollId":%d,"choice":"0","peer":"x"}`, p)), ""); code != 400 {
+		t.Errorf("vote on a presenter-only item: %d, want 400", code)
 	}
-	code, b = ts.call("GET", "/api/audience/"+ts.showCode, nil, "")
-	if strings.Contains(string(b), "electric") {
-		t.Fatalf("hidden word still on air: %s", b)
-	}
-
-	// Delete the cloud; the whole item set goes with it (FK cascade).
-	if code, _ := ts.call("DELETE", fmt.Sprintf("/api/shows/%s/polls/%d", ts.showCode, cloudID), nil, ""); code != 200 {
-		t.Fatalf("delete cloud: %d", code)
-	}
-	code, b = ts.call("GET", "/api/shows/"+ts.showCode+"/polls", nil, "")
-	if strings.Contains(string(b), `"question":"One word for the venue"`) {
-		t.Fatalf("deleted cloud still listed: %s", b)
+	// Results before showing to anyone are refused; after, they follow.
+	q := mustPollCreate(t, ts, `{"kind":"poll","question":"Hidden","options":["A","B"]}`)
+	if code, _ := ts.call("POST", fmt.Sprintf("/api/shows/%s/polls/%d/results", ts.showCode, q), []byte(`{}`), ""); code != 400 {
+		t.Errorf("results on a hidden item: %d, want 400", code)
 	}
 }
 
 func TestPollCreateValidation(t *testing.T) {
 	ts := newAPITest(t)
-	// Poll without options refused; quiz with options + correct accepted.
 	if code, _ := ts.call("POST", "/api/shows/"+ts.showCode+"/polls",
 		[]byte(`{"kind":"poll","question":"No options"}`), ""); code != 400 {
 		t.Errorf("optionless poll accepted: %d", code)
 	}
+	if code, _ := ts.call("POST", "/api/shows/"+ts.showCode+"/polls",
+		[]byte(`{"kind":"quiz","question":"2+2?","options":["3","4"]}`), ""); code != 400 {
+		t.Errorf("quiz without an answer accepted: %d", code)
+	}
 	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/polls",
-		[]byte(`{"kind":"quiz","question":"2+2?","options":["3","4"],"correct":1}`), ""); code != 200 {
+		[]byte(`{"kind":"quiz","question":"2+2?","options":["4","3"],"correct":0}`), ""); code != 200 {
 		t.Fatalf("quiz create: %d %s", code, b)
 	}
-	code, b := ts.call("GET", "/api/shows/"+ts.showCode+"/polls", nil, "")
-	if !strings.Contains(string(b), `"correct":1`) {
-		t.Errorf("correct index not returned to the operator: %s", b)
+	if it := modList(t, ts); len(it) != 1 || it[0].Correct != 0 {
+		t.Errorf("correct index 0 not returned to the moderator: %+v", it)
 	}
-	_ = code
 }

@@ -84,7 +84,7 @@ func main() {
 	hub.SetStore(db)
 	hub.SetMessagesFunc(db.ListMessages)
 	// PLAN §11 audience layer: the on-air interaction rides every frame.
-	hub.SetPollsFunc(db.ActivePoll)
+	hub.SetPollsFunc(db.OnAirNow)
 	hub.SetSeeder(func() []int64 {
 		shows, err := db.ListShows()
 		if err != nil {

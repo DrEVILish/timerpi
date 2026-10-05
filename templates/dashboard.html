@@ -80,30 +80,14 @@
 
       {{template "frag-share" .}}
 
-      <!-- PLAN §11.3 phase 5: the audience interaction surface — create
-           polls / Q&A / word clouds, per-item Show / Results / Hide, and
-           the moderation queue for audience submissions. -->
+      <!-- Audience interaction (PRODUCT §4.4): items are created hidden,
+           then shown to the Audience (phones + audience screens) and/or
+           the Presenter (DSM). Rendered by /src/moderate.js. -->
       <section class="panel" id="tp-aud-panel">
-        <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span></div>
-        <form id="tp-aud-create" class="stack is-gap-2xs" style="padding:.5rem .75rem">
-          <div class="cluster">
-            <select class="select input-sm" id="tp-aud-kind" aria-label="Item kind">
-              <option value="poll">Poll</option>
-              <option value="qa">Q&amp;A</option>
-              <option value="wordcloud">Word cloud</option>
-              <option value="ideas">Ideas</option>
-              <option value="quiz">Quiz</option>
-            </select>
-          </div>
-          <input class="input input-sm" id="tp-aud-question" maxlength="200"
-                 placeholder="Question or prompt…" aria-label="Question">
-          <div id="tp-aud-opts-row" hidden>
-            <input class="input input-sm" id="tp-aud-opts" maxlength="400"
-                   placeholder="Options, comma separated" aria-label="Options">
-          </div>
-          <button class="btn btn-sm btn-primary" type="submit">Create (hidden)</button>
-        </form>
-        <div id="tp-aud-items" class="stack is-gap-2xs" style="padding:.25rem .75rem .75rem"></div>
+        <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span>
+          <button class="btn btn-sm btn-primary push" type="button" id="tp-aud-new">+ New item</button></div>
+        <div class="tp-onair" id="tp-aud-onair"></div>
+        <div id="tp-aud-items" class="stack is-gap-s"></div>
       </section>
 
       <!-- F1/F2: the screens system — every connected display tab self-registers
@@ -173,6 +157,39 @@
 {{- /* B1: the cue INSPECTOR — one <dialog>, per-show modal over the grid.
    timerpi.js initInspector() fills it from the snapshot and commits ONE
    cueEdit with the full field set (server accepts every field). */ -}}
+<dialog id="tp-aud-editor" class="tp-inspector tp-aud-editor" aria-labelledby="tp-aud-editor-title">
+  <h2 id="tp-aud-editor-title" class="panel-header">New audience item</h2>
+  <form class="stack is-gap-s" method="dialog">
+    <div class="segmented" role="group" aria-label="Kind">
+      <button type="button" class="segmented-item" data-kind="poll">Poll</button>
+      <button type="button" class="segmented-item" data-kind="quiz">Quiz</button>
+      <button type="button" class="segmented-item" data-kind="qa">Q&amp;A</button>
+      <button type="button" class="segmented-item" data-kind="wordcloud">Word cloud</button>
+      <button type="button" class="segmented-item" data-kind="ideas">Ideas</button>
+    </div>
+    <div class="field">
+      <label class="label" for="tp-aud-question">Question or prompt</label>
+      <input class="input" id="tp-aud-question" maxlength="200" required autocomplete="off">
+    </div>
+    <div class="field" id="tp-aud-opts-field">
+      <span class="label">Options</span>
+      <span class="field-hint" id="tp-aud-quiz-hint" hidden>Tick the correct answer — it is revealed with the results.</span>
+      <div id="tp-aud-opt-list" class="stack is-gap-2xs"></div>
+      <button type="button" class="btn btn-sm btn-ghost" id="tp-aud-add-opt">+ Add option</button>
+    </div>
+    <label class="field-row" id="tp-aud-auto-field">
+      <span class="label">Approve submissions automatically</span>
+      <span class="field-hint">Off = you review each one first</span>
+      <input type="checkbox" class="checkbox" id="tp-aud-auto">
+    </label>
+    <p class="field-error" role="alert" hidden></p>
+    <div class="cluster is-gap-s">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn" data-cancel>Cancel</button>
+      <span class="text-muted">Items stay hidden until you show them.</span>
+    </div>
+  </form>
+</dialog>
 <dialog id="tp-inspector" class="tp-inspector" aria-labelledby="tp-inspector-title">
   <h2 id="tp-inspector-title" class="panel-header">Cue <span id="tp-insp-pos" class="mono"></span></h2>
   <form id="tp-insp-form" class="stack is-gap-s">

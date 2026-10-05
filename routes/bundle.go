@@ -45,6 +45,7 @@ func (d *Deps) fillBundleExtras(id int64, sf *showFile) {
 				ID: pollX[p.ID], Kind: p.Kind, Question: p.Question,
 				Options: p.Options, Correct: p.Correct, State: p.State,
 				Parent: pollX[p.Parent], Author: p.Author, Ts: p.Ts,
+				ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, Spot: pollX[p.Spot], AutoApprove: p.AutoApprove,
 			})
 			if vs, verr := d.Store.ListVotes(p.ID); verr == nil {
 				for _, v := range vs {
@@ -60,6 +61,7 @@ func (d *Deps) fillBundleExtras(id int64, sf *showFile) {
 				ID: pollX[p.ID], Kind: p.Kind, Question: p.Question,
 				Options: p.Options, Correct: p.Correct, State: p.State,
 				Parent: pollX[p.Parent], Author: p.Author, Ts: p.Ts,
+				ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, Spot: pollX[p.Spot], AutoApprove: p.AutoApprove,
 			})
 			if vs, verr := d.Store.ListVotes(p.ID); verr == nil {
 				for _, v := range vs {

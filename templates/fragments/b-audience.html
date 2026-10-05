@@ -1,58 +1,58 @@
 {{- /*
-  frag-b-poll / qa / wordcloud / map / joinqr — PLAN §11.2 phase 2 widget
-  tiles. Initial DOM is empty shells; board.js's renderStatic paints them
-  from the WS snapshot (snap.poll — the on-air item rides every frame).
-  All styling via ftl tokens in timerpi.css.
+  frag-b-poll / qa / wordcloud / map / joinqr — audience-layer tiles.
+  Initial DOM is empty shells; board.js paints them from the on-air items
+  (snap.poll = audience target, snap.presenter = presenter target). Edit
+  chrome renders only in the operator's editor (P.Editable).
 */ -}}
 
 {{define "frag-b-poll"}}
 <section class="b-widget b-w-poll" id="b-w-{{.W.ID}}" data-widget="poll" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Poll</span><button class="b-w-gear" type="button" data-gear aria-label="Poll settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove poll">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Audience item</span><button class="b-w-gear" type="button" data-gear aria-label="Audience item settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove audience item">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-poll" aria-live="polite"></div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-qa"}}
 <section class="b-widget b-w-qa" id="b-w-{{.W.ID}}" data-widget="qa" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Q&amp;A</span><button class="b-w-gear" type="button" data-gear aria-label="Q&A settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove Q&A">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Q&amp;A wall</span><button class="b-w-gear" type="button" data-gear aria-label="Q&A settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove Q&A">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-qa" aria-live="polite"></div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-wordcloud"}}
 <section class="b-widget b-w-wordcloud" id="b-w-{{.W.ID}}" data-widget="wordcloud" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Word cloud</span><button class="b-w-gear" type="button" data-gear aria-label="Word cloud settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove word cloud">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Word cloud</span><button class="b-w-gear" type="button" data-gear aria-label="Word cloud settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove word cloud">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-cloud" aria-live="polite"></div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-map"}}
 <section class="b-widget b-w-map" id="b-w-{{.W.ID}}" data-widget="map" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Map</span><button class="b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove map">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Map</span><button class="b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove map">×</button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-map" alt="Venue map" hidden>
-    <div class="b-map-empty text-muted">No map — upload one under /api/assets, then set this tile's assetId.</div>
+    <div class="b-map-empty text-muted">No map yet — the SuperOperator uploads one in Event settings.</div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-joinqr"}}
 <section class="b-widget b-w-joinqr" id="b-w-{{.W.ID}}" data-widget="joinqr" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Join QR</span><button class="b-w-gear" type="button" data-gear aria-label="Join QR settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove join QR">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Join QR</span><button class="b-w-gear" type="button" data-gear aria-label="Join QR settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove join QR">×</button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-joinqr" alt="Scan to join this room" src="/api/audience/{{.P.Show.Code}}/qr">
     <div class="b-js-joinlabel b-join-label">{{if .W.Opts.label}}{{.W.Opts.label}}{{else}}Scan to take part{{end}}</div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}

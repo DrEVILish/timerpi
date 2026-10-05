@@ -185,6 +185,7 @@ function initMesh() {
           // on votes without a full snapshot fanout.
           if (mesh.snap) {
             mesh.snap.poll = m.poll || null;
+            if ('presenter' in m) mesh.snap.presenter = m.presenter || null;
             if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
           }
           break;
@@ -278,103 +279,129 @@ function planStart(row) {
   return (snap.runtime.dayStartTS || serverNow()) + row.startMS;
 }
 
-// PLAN §11.2 phase 2: the audience interaction tiles. One renderer for
-// poll/qa/wordcloud — all three read snap.poll (the on-air item rides
-// every WS frame). Content appears/disappears with the tile's `anim`
-// option (none|fade|slide|pop + animMS): displays always animate — the
-// owner explicitly scoped prefers-reduced-motion to AUDIENCE devices only.
+// Audience interaction tiles (PRODUCT §4.4). Each tile follows ONE push
+// target (opts.target: audience | presenter — the DSM template's tile is
+// "presenter") and shows whatever item is on it:
+//   poll      → any kind (the "Audience item" tile)
+//   qa        → Q&A / ideas only (wall + spotlight)
+//   wordcloud → word clouds only
+// Content appears/disappears with the tile's animation (opts.anim +
+// animMS). Screens always animate; only phones honour reduced motion.
 function renderAudience(tile, type, w) {
   const box = $('.b-js-poll', tile) || $('.b-js-qa', tile) || $('.b-js-cloud', tile);
   if (!box) return;
-  const p = snap.poll;
+  const target = w?.opts?.target === 'presenter' ? 'presenter' : 'audience';
+  const p = target === 'presenter' ? snap.presenter : snap.poll;
   const vis = audienceVisible(type, p);
   const was = tile.dataset.bVis === '1';
+  const sig = vis ? `${p.id}:${p.state}` : '';
+  const changed = tile.dataset.bItem !== sig;
   const mode = w?.opts?.anim || 'fade';
   const ms = Number(w?.opts?.animMS) || 400;
   tile.dataset.bVis = vis ? '1' : '0';
+  tile.dataset.bItem = sig;
   if (vis) {
-    paintAudience(box, type, p);
-    if (!was && mode !== 'none') playAnim(box, mode, ms, 'in');
+    paintAudience(box, p, w);
+    if ((!was || changed) && mode !== 'none') playAnim(box, mode, ms, 'in');
     return;
   }
   if (was && mode !== 'none' && box.childElementCount) {
-    // Exit: fade/slide the painted content out, THEN clear it.
-    playAnim(box, mode, ms, 'out', () => { box.textContent = ''; });
+    playAnim(box, mode, ms, 'out', () => { if (tile.dataset.bVis !== '1') box.textContent = ''; });
     return;
   }
   box.textContent = '';
 }
 
 function audienceVisible(type, p) {
-  if (!p) return false;
-  if (type === 'poll') return (p.kind === 'poll' || p.kind === 'quiz') && (p.state === 'open' || p.state === 'results');
-  if (type === 'qa') return p.kind === 'qa' && p.state === 'open';
-  if (type === 'wordcloud') return p.kind === 'wordcloud' && (p.children?.length || 0) > 0;
-  return false;
+  if (!p || (p.state !== 'open' && p.state !== 'results')) return false;
+  if (type === 'qa') return p.kind === 'qa' || p.kind === 'ideas';
+  if (type === 'wordcloud') return p.kind === 'wordcloud';
+  return true; // 'poll' = the Audience item tile: any kind
 }
 
-function paintAudience(box, type, p) {
+function mk(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function paintAudience(box, p, w) {
   box.textContent = '';
-  if (type === 'qa') {
-    const q = document.createElement('div');
-    q.className = 'b-poll-q';
-    q.textContent = p.question;
-    const likes = document.createElement('div');
-    likes.className = 'b-poll-meta';
-    likes.textContent = `${p.upvotes || 0} likes`;
-    box.append(q, likes);
-    return;
-  }
-  if (type === 'wordcloud') {
-    const cloud = document.createElement('div');
-    cloud.className = 'b-cloud';
-    const max = Math.max(1, ...(p.children || []).map((c) => c.upvotes || 0));
-    for (const c of p.children || []) {
-      const tile = document.createElement('span');
-      tile.className = 'b-cloud-tile';
-      tile.textContent = c.question;
-      const rel = (c.upvotes || 0) / max; // 0..1 — size by loudness
-      tile.style.fontSize = `${(0.9 + rel * 1.4).toFixed(2)}rem`;
-      if (rel >= 0.999) tile.classList.add('is-top');
-      cloud.appendChild(tile);
-    }
-    box.appendChild(cloud);
-    return;
-  }
-  // poll / quiz
-  const q = document.createElement('div');
-  q.className = 'b-poll-q';
-  q.textContent = p.question;
-  box.appendChild(q);
+  box.appendChild(mk('div', 'b-poll-q', p.question));
+  if (p.kind === 'qa' || p.kind === 'ideas') return paintWall(box, p, w);
+  if (p.kind === 'wordcloud') return paintCloud(box, p);
+  paintBars(box, p);
+}
+
+function paintBars(box, p) {
   const opts = p.options || [];
   const counts = p.counts || [];
   const total = Math.max(1, p.total || 0);
   const results = p.state === 'results';
-  if (results) {
-    const meta = document.createElement('div');
-    meta.className = 'b-poll-meta';
-    meta.textContent = `${p.total || 0} vote${(p.total || 0) === 1 ? '' : 's'}`;
-    box.appendChild(meta);
-  }
+  box.appendChild(mk('div', 'b-poll-meta', results
+    ? `${p.total || 0} vote${(p.total || 0) === 1 ? '' : 's'}`
+    : `${p.total || 0} voted so far`));
   opts.forEach((label, i) => {
-    const row = document.createElement('div');
-    row.className = 'b-poll-opt' + (results && p.kind === 'quiz' && i === p.correct ? ' is-correct' : '');
-    const head = document.createElement('div');
-    head.className = 'b-poll-opt-head';
-    const lbl = document.createElement('span');
-    lbl.textContent = label;
-    const num = document.createElement('span');
-    num.className = 'mono';
-    num.textContent = results ? `${counts[i] || 0} · ${Math.round(((counts[i] || 0) / total) * 100)}%` : String(counts[i] || 0);
-    head.append(lbl, num);
-    const bar = document.createElement('div');
-    bar.className = 'b-poll-bar';
-    const fill = document.createElement('i');
-    fill.style.width = `${Math.round(((counts[i] || 0) / total) * 100)}%`;
-    bar.appendChild(fill);
-    row.append(head, bar);
+    const correct = results && p.kind === 'quiz' && i === p.correct;
+    const row = mk('div', 'b-poll-opt' + (correct ? ' is-correct' : '') + (results ? ' is-results' : ''));
+    const head = mk('div', 'b-poll-opt-head');
+    head.append(mk('span', '', (correct ? '✔ ' : '') + label));
+    const pct = Math.round(((counts[i] || 0) / total) * 100);
+    // Before results the room sees the question and options only — no
+    // running tallies that would sway the vote.
+    if (results) head.append(mk('span', 'mono', `${counts[i] || 0} · ${pct}%`));
+    row.append(head);
+    if (results) {
+      const bar = mk('div', 'b-poll-bar');
+      const fill = mk('i');
+      fill.style.width = `${pct}%`;
+      bar.appendChild(fill);
+      row.append(bar);
+    }
     box.appendChild(row);
   });
+}
+
+function paintWall(box, p, w) {
+  const kids = p.children || [];
+  if (p.spotlight) {
+    const spot = mk('div', 'b-qa-spot');
+    spot.append(mk('div', 'b-qa-spot-text', p.spotlight.question));
+    if (p.spotlight.upvotes) spot.append(mk('div', 'b-poll-meta', `▲ ${p.spotlight.upvotes}`));
+    box.appendChild(spot);
+  }
+  const rest = kids.filter((c) => !p.spotlight || c.id !== p.spotlight.id);
+  if (!rest.length && !p.spotlight) {
+    box.appendChild(mk('div', 'b-poll-meta', p.kind === 'qa' ? 'Scan the code to ask a question' : 'Scan the code to share an idea'));
+    return;
+  }
+  const limit = Number(w?.opts?.count) || (p.spotlight ? 4 : 8);
+  const list = mk('ol', 'b-qa-wall');
+  for (const c of rest.slice(0, limit)) {
+    const li = mk('li', 'b-qa-item' + (c.state === 'answered' ? ' is-answered' : ''));
+    li.append(mk('span', 'b-qa-votes mono', `▲ ${c.upvotes || 0}`), mk('span', 'b-qa-text', c.question));
+    list.appendChild(li);
+  }
+  box.appendChild(list);
+}
+
+function paintCloud(box, p) {
+  const words = p.children || [];
+  if (!words.length) {
+    box.appendChild(mk('div', 'b-poll-meta', 'Scan the code and send a word'));
+    return;
+  }
+  const cloud = mk('div', 'b-cloud');
+  const max = Math.max(1, ...words.map((c) => c.upvotes || 0));
+  for (const c of words) {
+    const t = mk('span', 'b-cloud-tile', c.question);
+    const rel = (c.upvotes || 0) / max; // 0..1 — size by how many sent it
+    t.style.fontSize = `${(0.9 + rel * 1.6).toFixed(2)}em`;
+    if (rel >= 0.999) t.classList.add('is-top');
+    cloud.appendChild(t);
+  }
+  box.appendChild(cloud);
 }
 
 function playAnim(box, mode, ms, dir, done) {
@@ -921,7 +948,22 @@ function openSettings(wid) {  const w = widgetOf(wid);
     mk('Rows', sel);
   }
   if (w.type === 'poll' || w.type === 'qa' || w.type === 'wordcloud') {
-    // PLAN §11.2: operator-customizable appear/disappear animation.
+    const tsel = document.createElement('select');
+    tsel.className = 'input input-sm';
+    for (const [v, label] of [['audience', 'Shown to Audience'], ['presenter', 'Shown to Presenter']]) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      tsel.appendChild(o);
+    }
+    tsel.value = w.opts?.target === 'presenter' ? 'presenter' : 'audience';
+    tsel.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), target: tsel.value };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Follows', tsel);
+    // Operator-customisable appear/disappear animation.
     const sel = document.createElement('select');
     sel.className = 'input input-sm';
     for (const m of ['fade', 'slide', 'pop', 'none']) {

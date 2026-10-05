@@ -1,243 +1,29 @@
 {{- /*
-  audience.html — GET /a/:code, the audience phone page (PLAN §11.4).
+  audience.html — GET /a/:code, the phone page (PRODUCT §4.4, A3/A8).
 
-  Standalone document like display.html (no app chrome). Zero login: the QR
-  leads straight in; locked shows gate through showGateByShowID (same as
-  the page and the REST lane). The room's operator pushes items; this page
-  renders ONLY what AudienceRead makes visible — moderation by silence.
-
-  Phase 5 land the full push/animation UX; this is the working REST-lane
-  stub (2.5 s poll, vote/upvote/submit live). All styling via ftl tokens.
-  Data: .Show {Code,Title}, .DefaultTheme.
+  No login: the room QR leads straight here. The page shows ONLY what the
+  room's moderator has shown to the audience; with nothing on air it waits.
+  Rendering and the live connection live in /src/audience.js.
+  Data: .Show {Code, Title}, .DefaultTheme.
 */ -}}
 {{define "audience"}}
 <!DOCTYPE html>
 <html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <head>
 {{template "head" .}}
-<style>
-  body.tp-aud { margin:0; min-height:100dvh; display:flex; align-items:center; justify-content:center;
-    background:var(--bg, #0b0b10); color:var(--text, #eee); padding:1rem; box-sizing:border-box; }
-  .tp-aud-card { width:100%; max-width:34rem; display:flex; flex-direction:column; gap:1rem;
-    background:var(--surface, #15151d); border:1px solid var(--border, #333);
-    border-radius:12px; padding:1.25rem 1.1rem; box-sizing:border-box; }
-  .tp-aud-head { display:flex; align-items:center; gap:.6rem; }
-  .tp-aud-head img { height:2.2rem; width:auto; opacity:.85; }
-  .tp-aud-head h1 { font-size:1.05rem; margin:0; font-weight:600; min-width:0; overflow-wrap:anywhere; }
-  .tp-aud-q { font-size:1.2rem; font-weight:600; margin:.2rem 0 .8rem; overflow-wrap:anywhere; }
-  .tp-aud-opt { display:block; width:100%; text-align:left; padding:.7rem .8rem; margin-bottom:.5rem;
-    border:1px solid var(--border, #444); border-radius:8px; background:var(--surface-2, #1d1d27);
-    color:inherit; font:inherit; cursor:pointer; }
-  .tp-aud-opt[aria-pressed="true"] { border-color:var(--accent, #7C3AED); color:var(--accent, #7C3AED); }
-  .tp-aud-bar { height:.65rem; border-radius:4px; background:var(--surface-2, #26262f); overflow:hidden; margin-top:.3rem; }
-  .tp-aud-bar i { display:block; height:100%; background:var(--accent, #7C3AED); }
-  .tp-aud-res { margin-bottom:.8rem; }
-  .tp-aud-res .lbl { display:flex; justify-content:space-between; font-size:.9rem; }
-  .tp-aud-ask { display:flex; gap:.5rem; }
-  .tp-aud-ask input { flex:1; min-width:0; }
-  .tp-aud-note { font-size:.85rem; color:var(--text-muted, #999); min-height:1.2em; }
-  footer { text-align:center; font-size:.8rem; color:var(--text-muted, #888); }
-  .tp-aud-splash { text-align:center; padding:2rem 0; }
-  .tp-aud-splash img { height:6rem; opacity:.5; }
-  .aud-in { animation: audIn .35s ease-out; }
-  @keyframes audIn { from { opacity: 0; transform: translateY(.6rem); } to { opacity: 1; transform: none; } }
-  .aud-out { opacity: 0; transition: opacity .2s ease-in; }
-  /* prefers-reduced-motion is honored HERE ONLY (owner scoping): audience
-     phones may drop motion; display pages never do. */
-  @media (prefers-reduced-motion: reduce) {
-    .aud-in { animation: none; }
-    .aud-out { opacity: 0; transition: none; }
-  }
-</style>
 </head>
 <body class="tp-aud" data-page="audience" data-show-code="{{.Show.Code}}">
-<main class="tp-aud-card">
-  <div class="tp-aud-head"><img src="/img/timerpi.svg" alt=""><h1>{{.Show.Title}}</h1></div>
-  <section id="tp-aud-main" aria-live="polite"></section>
-  <footer id="tp-aud-note" class="tp-aud-note"></footer>
+<main class="tp-aud-card" id="tp-aud-card">
+  <header class="tp-aud-head"><img src="/img/timerpi.svg" alt=""><h1>{{.Show.Title}}</h1></header>
+  <section id="tp-aud-main" aria-live="polite">
+    <div class="tp-aud-wait">
+      <p class="tp-aud-wait-title">WAITING FOR THE ROOM</p>
+      <p class="text-muted">Keep this page open — questions and polls appear here when the presenter starts them.</p>
+    </div>
+  </section>
+  <footer class="tp-aud-foot"><span class="lamp" id="tp-aud-lamp"></span> <span id="tp-aud-note" class="text-muted">connecting…</span></footer>
 </main>
-<script>
-(function () { "use strict";
-  var code = document.body.dataset.showCode;
-  var main = document.getElementById("tp-aud-main");
-  var note = document.getElementById("tp-aud-note");
-  var peer = localStorage.getItem("tp.aud.peer");
-  if (!peer) { peer = Math.random().toString(36).slice(2, 14); localStorage.setItem("tp.aud.peer", peer); }
-  var myChoice = {};
-
-  function el(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
-  }
-  function elP(n, tag, cls, text) { var c = el(tag, cls, text); n.appendChild(c); return c; }
-
-  function barRow(p, label, count, total, mine) {
-    var pct = total > 0 ? Math.round((count / total) * 100) : 0;
-    var row = elP(p, "div", "tp-aud-res");
-    var lbl = elP(row, "div", "lbl");
-    elP(lbl, "span", "", label);
-    elP(lbl, "span", "", mine ? "you · " + pct + "%" : pct + "%");
-    var bar = elP(row, "div", "tp-aud-bar");
-    var fill = elP(bar, "i");
-    fill.style.width = pct + "%";
-    return row;
-  }
-
-  var lastSig = null;
-  function render(d) {
-    var sig = JSON.stringify(d);
-    if (sig === lastSig) return;
-    lastSig = sig;
-    var swap = function () {
-      main.innerHTML = "";
-      note.textContent = "";
-      renderItem(d.poll, d);
-      main.classList.remove("aud-in");
-      void main.offsetWidth; // restart the entrance animation
-      main.classList.add("aud-in");
-    };
-    if (main.childElementCount) {
-      main.classList.add("aud-out");
-      setTimeout(function () {
-        main.classList.remove("aud-out");
-        swap();
-      }, 220);
-    } else {
-      swap();
-    }
-  }
-
-  function renderItem(p, d) {
-    if (p && p.state === "open" && (p.kind === "poll" || p.kind === "quiz")) {
-      main.appendChild(el("p", "tp-aud-q", p.question));
-      (p.options || []).forEach(function (opt, i) {
-        var b = el("button", "tp-aud-opt", opt);
-        b.setAttribute("aria-pressed", String(myChoice[p.id] === String(i)));
-        b.onclick = function () { vote(p.id, String(i)); };
-        main.appendChild(b);
-      });
-      note.textContent = "Tap to answer — you can change it until results show.";
-      return;
-    }
-    if (p && p.state === "results" && (p.kind === "poll" || p.kind === "quiz")) {
-      main.appendChild(el("p", "tp-aud-q", p.question));
-      var total = p.total || 0;
-      (p.options || []).forEach(function (opt, i) {
-        var c = (p.counts || [])[i] || 0;
-        var row = barRow(main, opt, c, total, myChoice[p.id] === String(i));
-        if (p.kind === "quiz" && i === p.correct) {
-          row.firstChild.firstChild.textContent = "\u2714 " + opt;
-          row.firstChild.firstChild.style.color = "var(--success, #22C55E)";
-        }
-      });
-      note.textContent = total + " vote" + (total === 1 ? "" : "s") + " counted";
-      return;
-    }
-    if (p && p.state === "open" && (p.kind === "qa" || p.kind === "ideas")) {
-      main.appendChild(el("p", "tp-aud-q", p.question));
-      var msg = elP(main, "div", "", (p.upvotes || 0) + " "
-        + (p.kind === "qa" ? "likes" : "votes"));
-      msg.style.marginBottom = ".6rem";
-      var b = el("button", "tp-aud-opt", "Add mine");
-      b.onclick = function () { vote(p.id, "1"); };
-      main.appendChild(b);
-      askBox(p.id, p.kind);
-      return;
-    }
-    if (p && p.state === "open" && p.kind === "wordcloud") {
-      main.appendChild(el("p", "tp-aud-q", p.question));
-      askBox(p.id, p.kind);
-      return;
-    }
-    if (p && p.kind === "survey" && (d.survey || []).length) {
-      (d.survey || []).forEach(function (m) { renderItem(m, d); });
-      return;
-    }
-    var sp = document.createElement("div"); sp.className = "tp-aud-splash";
-    var img = el("img", ""); img.src = "/img/timerpi.svg"; img.alt = "";
-    sp.appendChild(img);
-    elP(sp, "h2", "", "WAITING FOR THE ROOM…");
-    elP(sp, "p", "", "The presenter opens the next item on screen.");
-    main.appendChild(sp);
-  }
-
-  function askBox(pollID, kind) {
-    var holder = elP(main, "div", "tp-aud-ask");
-    var input = el("input", ""); input.placeholder = kind === "wordcloud"
-      ? "one word" : "your question…"; input.maxLength = 280;
-    if (!("ontouchstart" in window) || true) { input.autocomplete = "off"; }
-    holder.appendChild(input);
-    var send = el("button", "tp-aud-opt", "Send");
-    send.style.width = "auto";
-    send.onclick = function () {
-      var text = input.value.trim();
-      if (!text) return;
-      send.disabled = true;
-      fetch("/api/audience/" + code + "/ask", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        // Cloud/idea words join the open item (parent) so they surface on
-        // its wall when approved; questions stand alone.
-        body: JSON.stringify({ kind: kind, text: text, peer: peer, parent: kind === "wordcloud" ? pollID : 0 })
-      }).then(function () {
-          note.textContent = "Sent — it shows once the room operator lets it through.";
-          input.value = "";
-          tick();
-        })
-        .catch(function () { note.textContent = "Could not send — try again."; send.disabled = false; });
-    };
-    holder.appendChild(send);
-    input.onkeydown = function (e) { if (e.key === "Enter") send.onclick(); };
-  }
-
-  function vote(pid, choice) {
-    myChoice[pid] = choice;
-    fetch("/api/audience/" + code + "/vote", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pollId: pid, choice: choice, peer: peer })
-    }).then(tick).catch(function () {
-      note.textContent = "Vote did not land — check the room Wi-Fi.";
-    });
-  }
-
-  var inFlight = false;
-  function tick() {
-    if (inFlight || document.hidden) return;
-    inFlight = true;
-    fetch("/api/audience/" + code)
-      .then(function (r) { return r.json(); })
-      .then(function (j) { inFlight = false; if (j && j.ok) render(j.data); })
-      .catch(function () { inFlight = false; note.textContent = "Reconnecting…"; });
-  }
-
-  // PLAN §11.5: the audience WS lane is the primary feed (poll-only
-  // frames, never cue state); REST polling remains the fallback while
-  // the socket is down — a phone on flaky venue Wi-Fi still works.
-  var ws = null, wsUp = false, wsDelay = 1000;
-  function connect() {
-    try {
-      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    } catch (e) { return; }
-    ws.onopen = function () {
-      wsUp = true; wsDelay = 1000;
-      ws.send(JSON.stringify({ v: 1, t: "join", role: "audience", show: code, peerId: peer, joinedAt: Date.now() }));
-    };
-    ws.onmessage = function (e) {
-      try {
-        var f = JSON.parse(e.data);
-        if (f.t === "poll") { render({ poll: f.poll || null }); }
-      } catch (o) { /* malformed frame — ignore */ }
-    };
-    ws.onclose = function () { wsUp = false; setTimeout(connect, wsDelay); wsDelay = Math.min(wsDelay * 2, 10000); };
-    ws.onerror = function () { try { ws.close(); } catch (o) { /* */ } };
-  }
-  connect();
-  setInterval(function () { if (!wsUp) tick(); }, 2500);
-  document.addEventListener("visibilitychange", tick);
-  tick();
-})();
-</script>
+<script type="module" src="{{asset "/src/audience.js"}}"></script>
 </body>
 </html>
 {{end}}

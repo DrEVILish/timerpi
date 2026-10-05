@@ -98,8 +98,6 @@ func (d *Deps) engineFor(showID int64) (*timerpi.Engine, error) {
 
 // ------------------------------------------------------------------ shows --
 
-
-
 // POST /api/shows/:ident/notes {text} — the DAY-MEMO autosave endpoint (A7).
 // Show-gated like content; stores verbatim (operator voice), no length cap
 // beyond sanity (4000 chars: a day note, not a novel).

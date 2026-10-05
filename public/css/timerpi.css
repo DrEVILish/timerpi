@@ -1218,6 +1218,17 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
   text-align: center; overflow-wrap: anywhere; }
 
 /* Tile entrance/exit — the operator picks the mode per tile (anim/animMS). */
+/* Q&A / ideas wall + spotlight (PRODUCT A7). */
+.b-qa-spot { margin: .4rem 0 .8rem; padding: .8rem 1rem; border-left: 4px solid var(--accent, #7C3AED);
+  background: var(--surface-2, rgba(255,255,255,.04)); border-radius: var(--radius, 4px); }
+.b-qa-spot-text { font-size: clamp(1.2rem, 3vw, 2.4rem); font-weight: 600; overflow-wrap: anywhere; }
+.b-qa-wall { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.b-qa-item { display: flex; gap: .8rem; align-items: baseline; font-size: clamp(.95rem, 1.8vw, 1.4rem); }
+.b-qa-item.is-answered { opacity: .55; }
+.b-qa-item.is-answered .b-qa-text { text-decoration: line-through; text-decoration-thickness: 1px; }
+.b-qa-votes { min-width: 3.2em; color: var(--muted, #9a9aa8); font-size: .85em; }
+.b-qa-text { overflow-wrap: anywhere; }
+.b-poll-bar i { transition: width .6s ease-out; }
 .b-js-poll, .b-js-qa, .b-js-cloud { --b-anim-ms: 400ms; }
 .b-anim-in-fade { animation: b-anim-fade var(--b-anim-ms) ease-out; }
 .b-anim-out-fade { animation: b-anim-fade var(--b-anim-ms) ease-in reverse forwards; }

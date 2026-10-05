@@ -24,13 +24,13 @@ import (
 
 // apiTest boots the full wired stack (no ws clients attached).
 type apiTest struct {
-	t        *testing.T
-	srv      *httptest.Server
-	db       *timerpi.DB
-	engines  *timerpi.Engines // the registry routes.Deps carries (CuTePi hook tests wire OnStart on it)
-	showID   int64            // internal; JSON bookkeeping only (Agent L contract)
-	showCode string           // share code: the ONLY public address
-	eventCode string          // parent event (the client is its SuperOperator)
+	t         *testing.T
+	srv       *httptest.Server
+	db        *timerpi.DB
+	engines   *timerpi.Engines // the registry routes.Deps carries (CuTePi hook tests wire OnStart on it)
+	showID    int64            // internal; JSON bookkeeping only (Agent L contract)
+	showCode  string           // share code: the ONLY public address
+	eventCode string           // parent event (the client is its SuperOperator)
 }
 
 func newAPITest(t *testing.T) *apiTest {

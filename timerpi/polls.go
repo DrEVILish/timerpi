@@ -1,20 +1,36 @@
 package timerpi
 
-// polls.go — the audience interaction layer (Slido-style, per-show):
-// one table carries all six kinds — Live Poll, Live Q&A, Word Cloud,
-// Ideas, Quiz, Survey. Free-text contributions (questions/ideas/cloud
-// words/ideas) are rows themselves (moderated: state hidden until the
-// operator shows them); votes are one row per (poll, device), replaced on
-// change, so counts always read true.
+// polls.go — the audience interaction layer (PRODUCT §4.4), one table for
+// every kind: poll, quiz, Q&A, word cloud, ideas.
 //
-// State machine per poll row: hidden → open (audience sees it / can vote)
-// → results (board graphs). One open/results row per show: opening one
-// closes the others of that show (the message show-now pattern).
+// Top-level items (parent = 0) are what the moderator creates. Two push
+// targets decide WHERE an item is on air:
+//
+//	to_audience   phones + the room's audience displays ("Show to Audience")
+//	to_presenter  the room's presenter displays / DSM ("Show to Presenter")
+//
+// state is the phase: hidden (on no target) → open (voting / asking) →
+// results (voting closed, results revealed wherever it is shown). At most
+// one item per target per room is on air: pushing an item to a target
+// takes it off that target for every other item.
+//
+// Audience contributions (Q&A questions, cloud words, ideas) are CHILD rows
+// (parent = the item) with a moderation status in state:
+//
+//	hidden    pending moderation
+//	open      approved (on the wall / in the cloud)
+//	answered  approved and answered (Q&A; stays visible, greyed)
+//	dismissed removed from the wall (kept for the record)
+//
+// A Q&A item can spotlight one approved question (spot = child id).
+// Votes are one row per (item, device); upvotes on a question are votes on
+// the child row with choice "1".
 
 import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -26,22 +42,57 @@ const (
 	KindWordCloud = "wordcloud"
 	KindIdeas     = "ideas"
 	KindQuiz      = "quiz"
-	KindSurvey    = "survey"
 )
 
-// Poll states.
+// Item phases and child moderation states.
 const (
-	StateHidden  = "hidden"
-	StateOpen    = "open"    // visible + votable + board shows it live
-	StateResults = "results" // board shows the result graph
+	StateHidden    = "hidden"
+	StateOpen      = "open"
+	StateResults   = "results"
+	StateAnswered  = "answered"
+	StateDismissed = "dismissed"
+)
+
+// Push targets.
+const (
+	TargetAudience  = "audience"
+	TargetPresenter = "presenter"
 )
 
 var pollKinds = map[string]bool{
-	KindPoll: true, KindQA: true, KindWordCloud: true,
-	KindIdeas: true, KindQuiz: true, KindSurvey: true,
+	KindPoll: true, KindQA: true, KindWordCloud: true, KindIdeas: true, KindQuiz: true,
 }
 
-// Vote is one device's recorded choice (bundle round-trip §11.9).
+// takesSubmissions: kinds whose audience sends free text (children).
+func takesSubmissions(kind string) bool {
+	return kind == KindQA || kind == KindWordCloud || kind == KindIdeas
+}
+
+func (d *DB) migratePolls() error {
+	cols := []struct{ name, ddl string }{
+		{"to_audience", "INTEGER NOT NULL DEFAULT 0"},
+		{"to_presenter", "INTEGER NOT NULL DEFAULT 0"},
+		{"spot", "INTEGER NOT NULL DEFAULT 0"},
+		{"auto_approve", "INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, nc := range cols {
+		_, err := d.Exec(fmt.Sprintf(`ALTER TABLE polls ADD COLUMN %s %s;`, nc.name, nc.ddl))
+		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("timerpi: adding polls.%s: %w", nc.name, err)
+		}
+	}
+	// Legacy rows: an item that was on air (open/results) under the old
+	// single-target model was on the audience target.
+	_, err := d.Exec(`UPDATE polls SET to_audience = 1 WHERE parent = 0 AND state IN ('open','results') AND to_audience = 0 AND to_presenter = 0`)
+	if err != nil {
+		return err
+	}
+	// Survey was never usable and is not a product kind: drop leftovers.
+	_, err = d.Exec(`DELETE FROM polls WHERE kind = 'survey'`)
+	return err
+}
+
+// Vote is one device's recorded choice (bundle round-trip).
 type Vote struct {
 	PollID int64  `db:"poll_id" json:"-"`
 	Peer   string `db:"peer"    json:"peer"`
@@ -49,85 +100,112 @@ type Vote struct {
 	Ts     int64  `db:"ts"      json:"ts"`
 }
 
-// Poll is one interaction item.
+// Poll is one interaction row (item or child).
 type Poll struct {
-	ID       int64  `db:"id"       json:"id"`
-	ShowID   int64  `db:"show_id"  json:"-"`
-	Kind     string `db:"kind"     json:"kind"`
-	Question string `db:"question" json:"question"`
-	Options  string `db:"options"  json:"-"` // JSON array (poll/quiz); [] = free-form
-	Correct  int64  `db:"correct"  json:"-"` // quiz: index of the correct option; -1 none
-	State    string `db:"state"    json:"state"`
-	Parent   int64  `db:"parent"   json:"-"` // survey grouping: >0 = member of that survey row
-	Author   string `db:"author"   json:"-"` // submitting device peer (moderation only)
-	Ts       int64  `db:"ts"       json:"ts"`
-	Updated  int64  `db:"updated"  json:"-"`
+	ID          int64  `db:"id"           json:"id"`
+	ShowID      int64  `db:"show_id"      json:"-"`
+	Kind        string `db:"kind"         json:"kind"`
+	Question    string `db:"question"     json:"question"`
+	Options     string `db:"options"      json:"-"` // JSON array (poll/quiz)
+	Correct     int64  `db:"correct"      json:"-"` // quiz: correct option index; -1 none
+	State       string `db:"state"        json:"state"`
+	Parent      int64  `db:"parent"       json:"-"` // >0 = child row of that item
+	Author      string `db:"author"       json:"-"` // submitting device (moderation only)
+	Ts          int64  `db:"ts"           json:"ts"`
+	Updated     int64  `db:"updated"      json:"-"`
+	ToAudience  bool   `db:"to_audience"  json:"toAudience"`
+	ToPresenter bool   `db:"to_presenter" json:"toPresenter"`
+	Spot        int64  `db:"spot"         json:"-"`
+	AutoApprove bool   `db:"auto_approve" json:"autoApprove"`
 }
+
+const pollCols = `id, show_id, kind, question, options, correct, state, parent, author, ts, updated,
+	to_audience, to_presenter, spot, auto_approve`
 
 // PollOptions decodes the options array (never nil).
 func (p Poll) PollOptions() []string {
 	var out []string
 	_ = json.Unmarshal([]byte(p.Options), &out)
+	if out == nil {
+		out = []string{}
+	}
 	return out
 }
 
-// PollView is the audience/board wire shape (counts included when visible).
+// PollView is the wire shape for phones, screens and the moderator panel.
 type PollView struct {
-	ID       int64      `json:"id"`
-	Kind     string     `json:"kind"`
-	Question string     `json:"question"`
-	Options  []string   `json:"options"`
-	Correct  int64      `json:"correct,omitempty"`
-	State    string     `json:"state"`
-	Counts   []int64    `json:"counts,omitempty"` // per option (poll/quiz)
-	Total    int64      `json:"total,omitempty"`  // distinct voters
-	Upvotes  int64      `json:"upvotes,omitempty"`
-	Parent   int64      `json:"parent,omitempty"`
-	Children []PollView `json:"children,omitempty"` // wordcloud/ideas: approved words (PLAN §11.2)
+	ID          int64      `json:"id"`
+	Kind        string     `json:"kind"`
+	Question    string     `json:"question"`
+	Options     []string   `json:"options"`
+	Correct     int64      `json:"correct"` // quiz: revealed only in results (-1 otherwise)
+	State       string     `json:"state"`
+	ToAudience  bool       `json:"toAudience,omitempty"`
+	ToPresenter bool       `json:"toPresenter,omitempty"`
+	AutoApprove bool       `json:"autoApprove,omitempty"`
+	Counts      []int64    `json:"counts,omitempty"` // per option (poll/quiz)
+	Total       int64      `json:"total"`            // distinct voters / submissions
+	Upvotes     int64      `json:"upvotes,omitempty"`
+	Parent      int64      `json:"parent,omitempty"`
+	Children    []PollView `json:"children,omitempty"`  // wall / cloud entries
+	Spotlight   *PollView  `json:"spotlight,omitempty"` // Q&A: the question in focus
+	Pending     int        `json:"pending,omitempty"`   // moderator view: submissions waiting
+}
+
+// OnAir is what is showing in one room right now, per target.
+type OnAir struct {
+	Audience  *PollView `json:"audience"`
+	Presenter *PollView `json:"presenter"`
 }
 
 func (d *DB) normalizePoll(p *Poll) error {
 	p.Kind = strings.ToLower(strings.TrimSpace(p.Kind))
-	if !pollKinds[p.Kind] {
-		return fmt.Errorf("timerpi: poll kind %q invalid", p.Kind)
+	if !pollKinds[p.Kind] && !(p.Parent > 0 && p.Kind == "submission") {
+		return fmt.Errorf("timerpi: interaction kind %q invalid", p.Kind)
 	}
 	p.Question = strings.TrimSpace(p.Question)
-	if p.Kind == KindPoll || p.Kind == KindQuiz {
-		if p.Question == "" {
-			return fmt.Errorf("timerpi: poll question required")
-		}
-	}
-	if p.Correct < -1 {
-		p.Correct = -1
-	}
-	switch p.Kind {
-	case KindPoll, KindQuiz:
-		if p.Options == "" || p.Options == "[]" || p.Options == "null" {
-			return fmt.Errorf("timerpi: poll options required")
-		}
-	case KindQA, KindWordCloud, KindIdeas:
-		if p.Question == "" {
+	if p.Question == "" {
+		if p.Parent > 0 {
 			return fmt.Errorf("timerpi: submission text required")
 		}
+		return fmt.Errorf("timerpi: question or prompt required")
 	}
-	switch p.State {
-	case StateHidden, StateOpen, StateResults:
-	default:
-		p.State = StateHidden
+	if p.Options == "" || p.Options == "null" {
+		p.Options = "[]"
+	}
+	if p.Parent == 0 && (p.Kind == KindPoll || p.Kind == KindQuiz) {
+		if len(p.PollOptions()) < 2 {
+			return fmt.Errorf("timerpi: a poll needs at least two options")
+		}
+	}
+	if p.Kind == KindQuiz && p.Parent == 0 {
+		if p.Correct < 0 || p.Correct >= int64(len(p.PollOptions())) {
+			return fmt.Errorf("timerpi: pick the correct answer for the quiz")
+		}
+	} else if p.Parent == 0 {
+		p.Correct = -1
 	}
 	return nil
 }
 
-// CreatePoll inserts one interaction item (operator or audience-submit).
+// CreatePoll inserts a top-level item (always created hidden, off air).
 func (d *DB) CreatePoll(p Poll) (Poll, error) {
+	p.Parent = 0
 	if err := d.normalizePoll(&p); err != nil {
 		return Poll{}, err
 	}
 	now := nowMS()
 	p.Ts, p.Updated, p.State = now, now, StateHidden
-	res, err := d.Exec(`INSERT INTO polls (show_id, kind, question, options, correct, state, parent, author, ts, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ShowID, p.Kind, p.Question, p.Options, p.Correct, p.State, p.Parent, p.Author, p.Ts, p.Updated)
+	p.ToAudience, p.ToPresenter, p.Spot = false, false, 0
+	return d.insertPoll(p)
+}
+
+func (d *DB) insertPoll(p Poll) (Poll, error) {
+	res, err := d.Exec(`INSERT INTO polls (show_id, kind, question, options, correct, state, parent, author, ts, updated,
+		to_audience, to_presenter, spot, auto_approve)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ShowID, p.Kind, p.Question, p.Options, p.Correct, p.State, p.Parent, p.Author, p.Ts, p.Updated,
+		b2i(p.ToAudience), b2i(p.ToPresenter), p.Spot, b2i(p.AutoApprove))
 	if err != nil {
 		return Poll{}, fmt.Errorf("timerpi: create poll: %w", err)
 	}
@@ -135,22 +213,46 @@ func (d *DB) CreatePoll(p Poll) (Poll, error) {
 	return p, nil
 }
 
-// GetPoll fetches one row.
+// UpdatePoll edits an item's text/options/correct/auto-approve (not its
+// air state). Editing an item that has votes keeps the votes.
+func (d *DB) UpdatePoll(showID, id int64, question string, options []string, correct int64, autoApprove bool) error {
+	p, err := d.GetPoll(showID, id)
+	if err != nil {
+		return err
+	}
+	if p.Parent != 0 {
+		return fmt.Errorf("timerpi: submissions are moderated, not edited")
+	}
+	p.Question = question
+	if options != nil {
+		b, _ := json.Marshal(options)
+		p.Options = string(b)
+	}
+	p.Correct = correct
+	p.AutoApprove = autoApprove
+	if err := d.normalizePoll(&p); err != nil {
+		return err
+	}
+	_, err = d.Exec(`UPDATE polls SET question = ?, options = ?, correct = ?, auto_approve = ?, updated = ? WHERE id = ?`,
+		p.Question, p.Options, p.Correct, b2i(p.AutoApprove), nowMS(), id)
+	return err
+}
+
+// GetPoll fetches one row of the show.
 func (d *DB) GetPoll(showID, id int64) (Poll, error) {
 	var p Poll
-	err := d.Get(&p, `SELECT id, show_id, kind, question, options, correct, state, parent, author, ts, updated
-		FROM polls WHERE show_id = ? AND id = ?`, showID, id)
+	err := d.Get(&p, `SELECT `+pollCols+` FROM polls WHERE show_id = ? AND id = ?`, showID, id)
 	if err != nil {
 		return Poll{}, fmt.Errorf("timerpi: get poll: %w", err)
 	}
 	return p, nil
 }
 
-// ListPolls returns the show's items, newest first (operator panel).
+// ListPolls returns every row of the show (items and children), newest
+// first.
 func (d *DB) ListPolls(showID int64) ([]Poll, error) {
 	var out []Poll
-	err := d.Select(&out, `SELECT id, show_id, kind, question, options, correct, state, parent, author, ts, updated
-		FROM polls WHERE show_id = ? ORDER BY updated DESC, id DESC`, showID)
+	err := d.Select(&out, `SELECT `+pollCols+` FROM polls WHERE show_id = ? ORDER BY updated DESC, id DESC`, showID)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list polls: %w", err)
 	}
@@ -160,35 +262,193 @@ func (d *DB) ListPolls(showID int64) ([]Poll, error) {
 	return out, nil
 }
 
-// SetPollState moves one row, fanning state. Single-focus applies to
-// TOP-LEVEL items only (one open/results per show — board + audience keep
-// one focus). Child rows (wordcloud/ideas submissions) accumulate: the
-// operator approves words one by one while their cloud stays on air
-// (PLAN §11.2 — found by the children test, the flat rule made clouds
-// impossible).
-func (d *DB) SetPollState(showID, id int64, state string) error {
-	switch state {
-	case StateHidden, StateOpen, StateResults:
-	default:
-		return fmt.Errorf("timerpi: poll state %q invalid", state)
+// ListItems returns the show's top-level items in creation order.
+func (d *DB) ListItems(showID int64) ([]Poll, error) {
+	var out []Poll
+	err := d.Select(&out, `SELECT `+pollCols+` FROM polls WHERE show_id = ? AND parent = 0 ORDER BY id`, showID)
+	if out == nil {
+		out = []Poll{}
+	}
+	return out, err
+}
+
+func targetCol(target string) (string, error) {
+	switch target {
+	case TargetAudience:
+		return "to_audience", nil
+	case TargetPresenter:
+		return "to_presenter", nil
+	}
+	return "", fmt.Errorf("timerpi: unknown target %q", target)
+}
+
+// ShowTo puts an item on (on=true) or takes it off one target. Putting it
+// on takes every other item of the room off that target. An item on no
+// target is hidden; an item coming on air from hidden opens for voting.
+func (d *DB) ShowTo(showID, id int64, target string, on bool) error {
+	col, err := targetCol(target)
+	if err != nil {
+		return err
 	}
 	p, err := d.GetPoll(showID, id)
 	if err != nil {
 		return err
 	}
-	if state != StateHidden && p.Parent == 0 {
-		if _, err := d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE show_id = ? AND state IN (?, ?) AND parent = 0`,
-			StateHidden, nowMS(), showID, StateOpen, StateResults); err != nil {
-			return fmt.Errorf("timerpi: close polls: %w", err)
+	if p.Parent != 0 {
+		return fmt.Errorf("timerpi: only items go on air (submissions are moderated)")
+	}
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := nowMS()
+	if on {
+		if _, err := tx.Exec(`UPDATE polls SET `+col+` = 0, updated = ? WHERE show_id = ? AND parent = 0 AND id != ? AND `+col+` = 1`, now, showID, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE polls SET `+col+` = 1, state = CASE WHEN state = ? THEN ? ELSE state END, updated = ? WHERE id = ?`,
+			StateHidden, StateOpen, now, id); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(`UPDATE polls SET `+col+` = 0, updated = ? WHERE id = ?`, now, id); err != nil {
+			return err
 		}
 	}
-	if _, err := d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, state, nowMS(), id); err != nil {
-		return fmt.Errorf("timerpi: set poll state: %w", err)
+	// Anything now on no target is hidden.
+	if _, err := tx.Exec(`UPDATE polls SET state = ?, spot = 0 WHERE show_id = ? AND parent = 0 AND to_audience = 0 AND to_presenter = 0 AND state != ?`,
+		StateHidden, showID, StateHidden); err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
-// DeletePoll removes one row (votes cascade).
+// SetResults reveals (on) or re-closes (off) an item's results wherever it
+// is shown. Results close voting.
+func (d *DB) SetResults(showID, id int64, on bool) error {
+	p, err := d.GetPoll(showID, id)
+	if err != nil {
+		return err
+	}
+	if p.Parent != 0 {
+		return fmt.Errorf("timerpi: submissions have no results")
+	}
+	if !p.ToAudience && !p.ToPresenter {
+		return fmt.Errorf("timerpi: show the item first, then its results")
+	}
+	state := StateOpen
+	if on {
+		state = StateResults
+	}
+	_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, state, nowMS(), id)
+	return err
+}
+
+// HidePoll takes an item off every target.
+func (d *DB) HidePoll(showID, id int64) error {
+	p, err := d.GetPoll(showID, id)
+	if err != nil {
+		return err
+	}
+	if p.Parent != 0 {
+		return fmt.Errorf("timerpi: use moderation for submissions")
+	}
+	_, err = d.Exec(`UPDATE polls SET to_audience = 0, to_presenter = 0, state = ?, spot = 0, updated = ? WHERE id = ?`,
+		StateHidden, nowMS(), id)
+	return err
+}
+
+// SetPollState is the legacy single-verb transport kept for automation
+// (and the old REST shape): hidden → off every target; open/results → on
+// the audience target (plus results).
+func (d *DB) SetPollState(showID, id int64, state string) error {
+	switch state {
+	case StateHidden:
+		return d.HidePoll(showID, id)
+	case StateOpen, StateResults:
+		p, err := d.GetPoll(showID, id)
+		if err != nil {
+			return err
+		}
+		if p.Parent != 0 {
+			return d.Moderate(showID, id, StateOpen)
+		}
+		if !p.ToAudience && !p.ToPresenter {
+			if err := d.ShowTo(showID, id, TargetAudience, true); err != nil {
+				return err
+			}
+		}
+		return d.SetResults(showID, id, state == StateResults)
+	}
+	return fmt.Errorf("timerpi: poll state %q invalid", state)
+}
+
+// Moderate sets a submission's status: hidden (pending), open (approved),
+// answered, dismissed. Approving a cloud word approves every identical
+// word under the same item (one decision per word, not per submitter).
+func (d *DB) Moderate(showID, childID int64, status string) error {
+	switch status {
+	case StateHidden, StateOpen, StateAnswered, StateDismissed:
+	default:
+		return fmt.Errorf("timerpi: moderation status %q invalid", status)
+	}
+	c, err := d.GetPoll(showID, childID)
+	if err != nil {
+		return err
+	}
+	if c.Parent == 0 {
+		return fmt.Errorf("timerpi: not a submission")
+	}
+	parent, err := d.GetPoll(showID, c.Parent)
+	if err != nil {
+		return err
+	}
+	now := nowMS()
+	if parent.Kind == KindWordCloud {
+		_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE show_id = ? AND parent = ? AND lower(question) = lower(?)`,
+			status, now, showID, c.Parent, c.Question)
+	} else {
+		_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, status, now, childID)
+	}
+	if err != nil {
+		return err
+	}
+	// A spotlighted question that leaves the wall leaves the spotlight.
+	if status != StateOpen {
+		_, err = d.Exec(`UPDATE polls SET spot = 0 WHERE id = ? AND spot = ?`, c.Parent, childID)
+	}
+	return err
+}
+
+// Spotlight puts one approved question of a Q&A item in focus (0 clears).
+func (d *DB) Spotlight(showID, itemID, childID int64) error {
+	item, err := d.GetPoll(showID, itemID)
+	if err != nil {
+		return err
+	}
+	if item.Parent != 0 || item.Kind != KindQA {
+		return fmt.Errorf("timerpi: only a Q&A item has a spotlight")
+	}
+	if childID > 0 {
+		c, err := d.GetPoll(showID, childID)
+		if err != nil {
+			return err
+		}
+		if c.Parent != itemID {
+			return fmt.Errorf("timerpi: that question belongs to another item")
+		}
+		if c.State == StateHidden || c.State == StateDismissed {
+			if err := d.Moderate(showID, childID, StateOpen); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = d.Exec(`UPDATE polls SET spot = ?, updated = ? WHERE id = ?`, childID, nowMS(), itemID)
+	return err
+}
+
+// DeletePoll removes one row (votes and children cascade).
 func (d *DB) DeletePoll(showID, id int64) error {
 	res, err := d.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id)
 	if err != nil {
@@ -197,13 +457,13 @@ func (d *DB) DeletePoll(showID, id int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return sql.ErrNoRows
 	}
+	_, _ = d.Exec(`DELETE FROM polls WHERE show_id = ? AND parent = ?`, showID, id)
 	return nil
 }
 
-// Vote records one device's choice on a poll/quiz item (replaces its old
-// vote — audience may change their mind until results are shown). choice
-// is the option INDEX ("2"). Question upvotes ride the same table with
-// choice "1" on the qa row.
+// Vote records one device's choice on an open poll/quiz (replacing its old
+// vote — devices may change their mind until results), or an upvote
+// (choice "1") on an approved Q&A question / idea.
 func (d *DB) Vote(showID, pollID int64, peer, choice string) error {
 	if strings.TrimSpace(peer) == "" {
 		return fmt.Errorf("timerpi: vote needs a device id")
@@ -212,176 +472,237 @@ func (d *DB) Vote(showID, pollID int64, peer, choice string) error {
 	if err != nil {
 		return err
 	}
-	if p.State != StateOpen {
-		return fmt.Errorf("timerpi: voting is not open")
-	}
-	if p.Kind == KindPoll || p.Kind == KindQuiz {
-		opts := p.PollOptions()
-		n := int64(len(opts))
+	if p.Parent > 0 {
+		parent, err := d.GetPoll(showID, p.Parent)
+		if err != nil {
+			return err
+		}
+		if !parent.ToAudience || parent.State != StateOpen {
+			return fmt.Errorf("timerpi: voting is not open")
+		}
+		if p.State != StateOpen {
+			return fmt.Errorf("timerpi: only approved entries can be upvoted")
+		}
+		choice = "1"
+	} else {
+		if !p.ToAudience || p.State != StateOpen {
+			return fmt.Errorf("timerpi: voting is not open")
+		}
+		if p.Kind != KindPoll && p.Kind != KindQuiz {
+			return fmt.Errorf("timerpi: this item takes submissions, not votes")
+		}
 		idx, perr := atoi64(choice)
-		if perr != nil || idx < 0 || idx >= n {
+		if perr != nil || idx < 0 || idx >= int64(len(p.PollOptions())) {
 			return fmt.Errorf("timerpi: choice out of range")
 		}
 	}
 	if _, err := d.Exec(`INSERT INTO votes (poll_id, peer, choice, ts) VALUES (?, ?, ?, ?)
-		ON CONFLICT (poll_id, peer) DO UPDATE SET choice = ?, ts = ?`,
-		pollID, peer, choice, nowMS(), choice, nowMS()); err != nil {
+		ON CONFLICT (poll_id, peer) DO UPDATE SET choice = excluded.choice, ts = excluded.ts`,
+		pollID, peer, choice, nowMS()); err != nil {
 		return fmt.Errorf("timerpi: vote: %w", err)
 	}
 	return nil
 }
 
-// Submit records an audience free-text contribution (qa question / idea /
-// wordcloud word): a new moderated poll row authored by the device.
-func (d *DB) Submit(showID int64, kind string, text, peer string, parent int64) (Poll, error) {
+// Submit records an audience contribution to an item that is open on the
+// audience target and takes submissions. It lands pending unless the item
+// auto-approves.
+func (d *DB) Submit(showID, itemID int64, text, peer string) (Poll, error) {
 	if peer == "" {
 		return Poll{}, fmt.Errorf("timerpi: submit needs a device id")
 	}
-	if len(text) > 280 { // a question, not an essay
-		text = text[:280]
+	item, err := d.GetPoll(showID, itemID)
+	if err != nil {
+		return Poll{}, err
 	}
-	return d.CreatePoll(Poll{ShowID: showID, Kind: kind, Question: text, Parent: parent, Author: peer})
+	if item.Parent != 0 || !takesSubmissions(item.Kind) || !item.ToAudience || item.State != StateOpen {
+		return Poll{}, fmt.Errorf("timerpi: this item is not taking submissions")
+	}
+	limit := 280
+	if item.Kind == KindWordCloud {
+		limit = 32
+		text = strings.Join(strings.Fields(text), " ")
+	}
+	text = ClipUTF8(strings.TrimSpace(text), limit)
+	if text == "" {
+		return Poll{}, fmt.Errorf("timerpi: submission text required")
+	}
+	state := StateHidden
+	if item.AutoApprove {
+		state = StateOpen
+	}
+	now := nowMS()
+	return d.insertPoll(Poll{ShowID: showID, Kind: "submission", Question: text, Options: "[]", Correct: -1,
+		State: state, Parent: itemID, Author: peer, Ts: now, Updated: now})
 }
 
-// PollCounts computes the per-option tallies + distinct voters for a
-// visible item (open or results). qa rows count upvotes instead.
-func (d *DB) PollCounts(p Poll) PollView {
-	v := PollView{ID: p.ID, Kind: p.Kind, Question: p.Question,
-		Options: p.PollOptions(), State: p.State, Correct: p.Correct, Parent: p.Parent}
-	var rows []struct {
-		Choice string `db:"choice"`
-		N      int64  `db:"n"`
+// ---------------------------------------------------------------------------
+// Views
+
+// itemView builds the view of one top-level item. moderator=true adds
+// pending entries and keeps the quiz answer visible.
+func (d *DB) itemView(p Poll, moderator bool) PollView {
+	v := PollView{ID: p.ID, Kind: p.Kind, Question: p.Question, Options: p.PollOptions(),
+		State: p.State, ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove, Correct: -1}
+	if p.Kind == KindQuiz && (moderator || p.State == StateResults) {
+		v.Correct = p.Correct
 	}
-	_ = d.Select(&rows, `SELECT choice, COUNT(*) n FROM votes WHERE poll_id = ? GROUP BY choice`, p.ID)
-	if p.Kind == KindQA || p.Kind == KindIdeas {
+	switch p.Kind {
+	case KindPoll, KindQuiz:
+		var rows []struct {
+			Choice string `db:"choice"`
+			N      int64  `db:"n"`
+		}
+		_ = d.Select(&rows, `SELECT choice, COUNT(*) n FROM votes WHERE poll_id = ? GROUP BY choice`, p.ID)
+		v.Counts = make([]int64, len(v.Options))
 		for _, r := range rows {
-			v.Upvotes += r.N
-		}
-		return v
-	}
-	var counts []int64
-	var have map[int64]int64
-	var total int64
-	for _, r := range rows {
-		total += r.N
-		if idx, err := atoi64(r.Choice); err == nil {
-			if have == nil {
-				have = map[int64]int64{}
+			v.Total += r.N
+			if idx, err := atoi64(r.Choice); err == nil && idx >= 0 && idx < int64(len(v.Counts)) {
+				v.Counts[idx] += r.N
 			}
-			have[idx] += r.N
 		}
+	default:
+		v.Children = d.childViews(p, moderator)
+		for _, c := range v.Children {
+			if c.State == StateHidden {
+				v.Pending++
+			}
+			if p.Spot > 0 && c.ID == p.Spot {
+				cc := c
+				v.Spotlight = &cc
+			}
+		}
+		var total int64
+		_ = d.Get(&total, `SELECT COUNT(*) FROM polls WHERE parent = ?`, p.ID)
+		v.Total = total
 	}
-	counts = make([]int64, len(v.Options))
-	for i := range counts {
-		counts[i] = have[int64(i)]
-	}
-	v.Counts, v.Total = counts, total
 	return v
 }
 
-// ActivePoll returns the show's on-air item (state open/results) with
-// counts — the board/Audience reads this out of the snapshot.
-func (d *DB) ActivePoll(showID int64) (*PollView, error) {
-	var p Poll
-	// Top-level items only: a just-approved word must not steal the on-air
-	// focus from its cloud (children surface through the parent's payload).
-	err := d.Get(&p, `SELECT id, show_id, kind, question, options, correct, state, parent, author, ts, updated
-		FROM polls WHERE show_id = ? AND state IN (?, ?) AND parent = 0 ORDER BY updated DESC LIMIT 1`,
-		showID, StateOpen, StateResults)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	v := d.PollCounts(p)
-	// Word clouds / idea walls carry their approved words as children
-	// (PLAN §11.2): rows parented to this item that the operator opened.
-	if p.Kind == KindWordCloud || p.Kind == KindIdeas {
-		v.Children, _ = d.visibleChildren(showID, p.ID)
-	}
-	return &v, nil
-}
-
-// visibleChildren returns the open child rows of one item with their
-// upvote counts, loudest first (word tiles / idea cards).
-func (d *DB) visibleChildren(showID, parent int64) ([]PollView, error) {
+// childViews lists an item's entries. Public views carry approved and
+// answered entries only; word clouds aggregate identical words.
+func (d *DB) childViews(p Poll, moderator bool) []PollView {
 	var rows []struct {
 		ID       int64  `db:"id"`
 		Question string `db:"question"`
+		State    string `db:"state"`
+		Ts       int64  `db:"ts"`
 		Upvotes  int64  `db:"n"`
 	}
-	err := d.Select(&rows, `SELECT p.id, p.question, COUNT(v.id) n
-		FROM polls p LEFT JOIN votes v ON v.poll_id = p.id AND v.choice = '1'
-		WHERE p.show_id = ? AND p.parent = ? AND p.state = ?
-		GROUP BY p.id, p.question ORDER BY n DESC, p.id`, showID, parent, StateOpen)
-	if err != nil {
-		return nil, err
+	_ = d.Select(&rows, `SELECT p.id, p.question, p.state, p.ts, COUNT(v.id) n
+		FROM polls p LEFT JOIN votes v ON v.poll_id = p.id
+		WHERE p.parent = ? GROUP BY p.id ORDER BY p.id`, p.ID)
+	out := []PollView{}
+	if p.Kind == KindWordCloud {
+		type agg struct {
+			view PollView
+			n    int64
+		}
+		words := map[string]*agg{}
+		var order []string
+		for _, r := range rows {
+			if !moderator && r.State != StateOpen {
+				continue
+			}
+			key := strings.ToLower(r.Question) + "|" + r.State
+			if a, ok := words[key]; ok {
+				a.n++
+				continue
+			}
+			words[key] = &agg{view: PollView{ID: r.ID, Kind: "word", Question: r.Question, State: r.State}, n: 1}
+			order = append(order, key)
+		}
+		for _, k := range order {
+			a := words[k]
+			a.view.Upvotes = a.n // a word's weight = how many people sent it
+			out = append(out, a.view)
+		}
+	} else {
+		for _, r := range rows {
+			if !moderator && r.State != StateOpen && r.State != StateAnswered {
+				continue
+			}
+			if r.State == StateDismissed && !moderator {
+				continue
+			}
+			out = append(out, PollView{ID: r.ID, Kind: "entry", Question: r.Question, State: r.State, Upvotes: r.Upvotes})
+		}
 	}
-	out := make([]PollView, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, PollView{ID: r.ID, Kind: "word", Question: r.Question, Upvotes: r.Upvotes})
-	}
-	return out, nil
+	// Loudest first; answered questions sink below open ones.
+	sort.SliceStable(out, func(i, j int) bool {
+		ai, aj := out[i].State == StateAnswered, out[j].State == StateAnswered
+		if ai != aj {
+			return !ai
+		}
+		return out[i].Upvotes > out[j].Upvotes
+	})
+	return out
 }
 
-// ListOpenSurvey returns the survey members in author order when their
-// survey header row is open (audience walks them as one flow).
-func (d *DB) ListOpenSurvey(showID, surveyID int64) ([]PollView, error) {
-	var rows []Poll
-	err := d.Select(&rows, `SELECT id, show_id, kind, question, options, correct, state, parent, author, ts, updated
-		FROM polls WHERE parent = ? ORDER BY id`, surveyID)
+// OnAirNow returns what is showing on each target in the room.
+func (d *DB) OnAirNow(showID int64) (OnAir, error) {
+	var out OnAir
+	var items []Poll
+	err := d.Select(&items, `SELECT `+pollCols+` FROM polls WHERE show_id = ? AND parent = 0 AND (to_audience = 1 OR to_presenter = 1)`, showID)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	out := make([]PollView, 0, len(rows))
-	for _, p := range rows {
-		if p.State != StateHidden {
-			out = append(out, d.PollCounts(p))
+	for _, p := range items {
+		v := d.itemView(p, false)
+		if p.ToAudience {
+			vv := v
+			out.Audience = &vv
+		}
+		if p.ToPresenter {
+			vv := v
+			out.Presenter = &vv
 		}
 	}
 	return out, nil
 }
 
-// AudienceVisible is what an audience device sees on GET: the active item
-// (votable) plus — when a survey flow is on — its member list.
-type AudienceVisible struct {
-	Poll   *PollView  `json:"poll,omitempty"`
-	Survey []PollView `json:"survey,omitempty"`
-	Asking bool       `json:"asking,omitempty"` // qa/ideas/cloud intake open?
+// ActivePoll is the audience-target item (phones, audience displays).
+func (d *DB) ActivePoll(showID int64) (*PollView, error) {
+	on, err := d.OnAirNow(showID)
+	return on.Audience, err
 }
 
-// AudienceRead assembles the audience wire view for one show.
+// ModeratorItems is the moderator panel's list: every item with counts,
+// all entries (pending included) and air state.
+func (d *DB) ModeratorItems(showID int64) ([]PollView, error) {
+	items, err := d.ListItems(showID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PollView, 0, len(items))
+	for _, p := range items {
+		out = append(out, d.itemView(p, true))
+	}
+	return out, nil
+}
+
+// PollCounts is the moderator-grade view of one row (kept for callers that
+// want counts for a single item).
+func (d *DB) PollCounts(p Poll) PollView {
+	if p.Parent != 0 {
+		return PollView{ID: p.ID, Kind: p.Kind, Question: p.Question, State: p.State, Parent: p.Parent, Correct: -1}
+	}
+	return d.itemView(p, true)
+}
+
+// AudienceVisible is what an audience device sees: only the item on the
+// audience target (hidden items are absent, not concealed).
+type AudienceVisible struct {
+	Poll *PollView `json:"poll,omitempty"`
+}
+
+// AudienceRead assembles the audience wire view for one room.
 func (d *DB) AudienceRead(showID int64) (*AudienceVisible, error) {
 	active, err := d.ActivePoll(showID)
 	if err != nil {
 		return nil, err
 	}
-	out := AudienceVisible{Poll: active}
-	if active != nil && active.Kind == KindSurvey {
-		sv, err := d.ListOpenSurvey(showID, active.ID)
-		if err == nil {
-			out.Survey = sv
-		}
-	} else if active == nil {
-		// No focus item: is there a survey any member still open? (results
-		// walk-off) — cheap: any rows with parent>0 visible.
-		var survey Poll
-		serr := d.Get(&survey, `SELECT id FROM polls WHERE show_id = ? AND state = ? AND kind = ? LIMIT 1`,
-			showID, StateOpen, KindSurvey)
-		if serr == nil {
-			sv, e2 := d.ListOpenSurvey(showID, survey.ID)
-			if e2 == nil && len(sv) > 0 {
-				sv0 := d.PollCounts(survey)
-				sv0.State = survey.State
-				out.Poll = &sv0
-				out.Survey = sv
-			}
-		}
-	}
-	// Intake surfaces stay live whenever nothing else dominates.
-	out.Asking = true
-	return &out, nil
+	return &AudienceVisible{Poll: active}, nil
 }
 
 func atoi64(s string) (int64, error) {

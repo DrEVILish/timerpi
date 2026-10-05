@@ -183,7 +183,7 @@ func (d *DB) migrate() error {
 		bytes BLOB NOT NULL,
 		ts    INTEGER NOT NULL DEFAULT 0
 	);`,
-	`CREATE TABLE IF NOT EXISTS display_presets (
+		`CREATE TABLE IF NOT EXISTS display_presets (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			show_id    INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
 			name       TEXT NOT NULL,
@@ -245,6 +245,9 @@ func (d *DB) migrate() error {
 		}
 	}
 	if err := d.createEventsSchema(); err != nil {
+		return err
+	}
+	if err := d.migratePolls(); err != nil {
 		return err
 	}
 	if err := d.migrateShowCodes(); err != nil {
@@ -1528,7 +1531,6 @@ func b2i(b bool) int64 {
 	return 0
 }
 
-
 // ---------------------------------------------------------------------------
 // §11.9 full-fidelity show bundle: raw restore primitives carrying state
 // the create-path discards (moderation state, authorship, vote dedupe key,
@@ -1537,27 +1539,34 @@ func b2i(b bool) int64 {
 // CreatePollRaw inserts a poll row verbatim (state/ts/author honored) —
 // the export/import path only.
 func (d *DB) CreatePollRaw(p Poll) (Poll, error) {
-	if !pollKinds[p.Kind] {
-		return Poll{}, fmt.Errorf("timerpi: poll kind %q invalid", p.Kind)
+	if !pollKinds[p.Kind] && !(p.Parent > 0 && p.Kind == "submission") {
+		// Older bundles stored children with their parent's kind.
+		if p.Parent > 0 && pollKinds[p.Kind] {
+			p.Kind = "submission"
+		} else {
+			return Poll{}, fmt.Errorf("timerpi: poll kind %q invalid", p.Kind)
+		}
 	}
 	switch p.State {
-	case StateHidden, StateOpen, StateResults:
+	case StateHidden, StateOpen, StateResults, StateAnswered, StateDismissed:
 	default:
 		p.State = StateHidden
+	}
+	if p.Options == "" {
+		p.Options = "[]"
 	}
 	ts := p.Ts
 	if ts <= 0 {
 		ts = nowMS()
 	}
-	res, err := d.Exec(`INSERT INTO polls (show_id, kind, question, options, correct, state, parent, author, ts, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ShowID, p.Kind, p.Question, p.Options, p.Correct, p.State, p.Parent, p.Author, ts, ts)
-	if err != nil {
-		return Poll{}, fmt.Errorf("timerpi: create poll raw: %w", err)
-	}
-	p.ID, _ = res.LastInsertId()
 	p.Ts, p.Updated = ts, ts
-	return p, nil
+	return d.insertPoll(p)
+}
+
+// SetPollSpotRaw restores a Q&A spotlight pointer (import path only).
+func (d *DB) SetPollSpotRaw(itemID, childID int64) error {
+	_, err := d.Exec(`UPDATE polls SET spot = ? WHERE id = ?`, childID, itemID)
+	return err
 }
 
 // VoteRaw restores one vote row verbatim (dedupe by (poll_id,peer) — the

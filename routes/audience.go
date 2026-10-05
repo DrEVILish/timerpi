@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,11 +38,55 @@ func registerAudienceRoutes(r gin.IRouter, d *Deps) {
 	g.GET("/qr", d.apiAudienceQR)
 	r.GET("/a/:code", d.audiencePage)
 
+	// Moderator surface (PRODUCT §4.4).
 	ig := r.Group("/api/shows/:ident/polls")
 	ig.GET("", d.apiPollList)
 	ig.POST("", d.apiPollCreate)
-	ig.POST("/:pid/state", d.apiPollSetState)
+	ig.PATCH("/:pid", d.apiPollEdit)
+	ig.POST("/:pid/show", d.apiPollShow)
+	ig.POST("/:pid/results", d.apiPollResults)
+	ig.POST("/:pid/hide", d.apiPollHide)
+	ig.POST("/:pid/spotlight", d.apiPollSpotlight)
+	ig.POST("/:pid/moderate", d.apiPollModerate)
+	ig.POST("/:pid/state", d.apiPollSetState) // legacy single-verb transport
 	ig.DELETE("/:pid", d.apiPollDelete)
+}
+
+// pollsChanged fans the change out: the on-air delta to phones + screens,
+// and a refresh hint to the room's moderator panels.
+func (d *Deps) pollsChanged(showID int64) {
+	if d.Hub == nil {
+		return
+	}
+	d.Hub.BroadcastPoll(showID)
+	if b, err := json.Marshal(map[string]any{"t": "polls"}); err == nil {
+		d.Hub.SendToRole(showID, "controls", b)
+	}
+}
+
+// pollParam parses :pid.
+func pollParam(c *gin.Context) (int64, bool) {
+	pid, err := strconv.ParseInt(c.Param("pid"), 10, 64)
+	if err != nil || pid <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad item id"})
+		return 0, false
+	}
+	return pid, true
+}
+
+// pollResult answers a moderator mutation uniformly.
+func (d *Deps) pollResult(c *gin.Context, showID int64, action string, err error) {
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
+		return
+	}
+	d.logAction(showID, "poll", action)
+	d.pollsChanged(showID)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // askGuard: a peer may submit one contribution every 3 s (double-tap /
@@ -107,20 +152,21 @@ func soakAllowed(showID int64, now int64) bool {
 	return soak.cur[showID] <= audSoakPerSec
 }
 
-func askAllowed(peer string, now int64) bool {
+// askRecent / askMark split the submission throttle so a refused
+// submission (nothing on air, empty text) never burns the device's window.
+func askRecent(peer string, now int64) bool {
 	askGuard.Lock()
 	defer askGuard.Unlock()
-	if askGuard.last == nil {
+	return askGuard.last != nil && now-askGuard.last[peer] < 3000
+}
+
+func askMark(peer string, now int64) {
+	askGuard.Lock()
+	defer askGuard.Unlock()
+	if askGuard.last == nil || len(askGuard.last) > 5000 { // bounded
 		askGuard.last = map[string]int64{}
-	}
-	if t := askGuard.last[peer]; now-t < 3000 {
-		return false
 	}
 	askGuard.last[peer] = now
-	if len(askGuard.last) > 5000 { // bounded
-		askGuard.last = map[string]int64{}
-	}
-	return true
 }
 
 func (d *Deps) resolveAudienceCode(c *gin.Context) (int64, bool) {
@@ -150,40 +196,45 @@ func (d *Deps) apiAudienceRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "data": out})
 }
 
-// POST /api/audience/:code/ask {kind, text, parent?} — submit a question /
-// idea / cloud word (lands hidden: moderation by silence).
+// POST /api/audience/:code/ask {item, text, peer} — a question / idea /
+// cloud word for the item on the audience target. Lands pending unless the
+// item auto-approves.
 func (d *Deps) apiAudienceAsk(c *gin.Context) {
 	id, ok := d.resolveAudienceCode(c)
 	if !ok {
 		return
 	}
 	var body struct {
-		Kind   string `json:"kind"`
+		Item   int64  `json:"item"`
+		Parent int64  `json:"parent"` // older clients
 		Text   string `json:"text"`
-		Parent int64  `json:"parent"`
 		Peer   string `json:"peer"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil || body.Text == "" {
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Text) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "text required"})
 		return
 	}
-	if body.Kind == "" {
-		body.Kind = timerpi.KindQA // plain questions is the default verb
+	if body.Item == 0 {
+		body.Item = body.Parent
 	}
-	if body.Kind != timerpi.KindQA && body.Kind != timerpi.KindIdeas && body.Kind != timerpi.KindWordCloud {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unsupported submission kind"})
+	if body.Item == 0 {
+		if on, err := d.Store.ActivePoll(id); err == nil && on != nil {
+			body.Item = on.ID
+		}
+	}
+	now := time.Now().UnixMilli()
+	if askRecent(body.Peer, now) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Sending too fast — wait a moment"})
 		return
 	}
-	if !askAllowed(body.Peer, time.Now().UnixMilli()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "sending too fast"})
-		return
-	}
-	p, err := d.Store.Submit(id, body.Kind, body.Text, body.Peer, body.Parent)
+	p, err := d.Store.Submit(id, body.Item, body.Text, body.Peer)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "id": p.ID})
+	askMark(body.Peer, now)
+	d.pollsChanged(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "id": p.ID, "approved": p.State == timerpi.StateOpen})
 }
 
 // POST /api/audience/:code/vote {pollId, choice, peer} — vote / upvote.
@@ -216,7 +267,7 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 		return
 	}
 	if err := d.Store.Vote(id, body.PollID, body.Peer, body.Choice); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 		return
 	}
 	voteMark(body.Peer, now)
@@ -256,77 +307,190 @@ func (d *Deps) apiAudienceQR(c *gin.Context) {
 // ---------------------------------------------------------------------------
 // Operator endpoints
 
+// GET /api/shows/:ident/polls — the moderator list: every item with
+// counts, all entries (pending included), air state and pending count.
 func (d *Deps) apiPollList(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {
 		return
 	}
-	ps, err := d.Store.ListPolls(id)
+	items, err := d.Store.ModeratorItems(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	views := make([]gin.H, 0, len(ps))
-	for _, p := range ps {
-		v := d.Store.PollCounts(p)
-		views = append(views, gin.H{
-			"id": p.ID, "kind": p.Kind, "question": p.Question,
-			"options": v.Options, "state": p.State, "parent": p.Parent,
-			"counts": v.Counts, "total": v.Total, "upvotes": v.Upvotes,
-			"correct": p.Correct, "ts": p.Ts,
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "polls": views})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "items": items})
 }
 
+type pollBody struct {
+	Kind        string   `json:"kind"`
+	Question    string   `json:"question"`
+	Options     []string `json:"options"`
+	Correct     *int64   `json:"correct"`
+	AutoApprove bool     `json:"autoApprove"`
+}
+
+func (b pollBody) cleanOptions() []string {
+	out := []string{}
+	for _, o := range b.Options {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, timerpi.ClipUTF8(o, 120))
+		}
+	}
+	return out
+}
+
+// POST /api/shows/:ident/polls — create an item (always off air).
 func (d *Deps) apiPollCreate(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {
 		return
 	}
-	var body struct {
-		Kind     string   `json:"kind"`
-		Question string   `json:"question"`
-		Options  []string `json:"options"`
-		Correct  *int64   `json:"correct"`
-		Parent   int64    `json:"parent"`
-		State    string   `json:"state"`
-	}
+	var body pollBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
 		return
 	}
-	opts := "[]"
-	if len(body.Options) > 0 {
-		if b, err := jsonMarshal(body.Options); err == nil {
-			opts = string(b)
-		}
-	}
-	p := timerpi.Poll{ShowID: id, Kind: body.Kind, Question: body.Question,
-		Options: opts, State: body.State, Parent: body.Parent}
+	opts, _ := jsonMarshal(body.cleanOptions())
+	p := timerpi.Poll{ShowID: id, Kind: body.Kind, Question: timerpi.ClipUTF8(body.Question, 200),
+		Options: string(opts), Correct: -1, AutoApprove: body.AutoApprove}
 	if body.Correct != nil {
 		p.Correct = *body.Correct
 	}
 	created, err := d.Store.CreatePoll(p)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 		return
 	}
 	d.logAction(id, "pollCreate", fmt.Sprintf("%s %q", created.Kind, created.Question))
-	if d.Hub != nil {
-		d.Hub.BroadcastPoll(id)
-	}
+	d.pollsChanged(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "id": created.ID})
 }
 
+// PATCH /api/shows/:ident/polls/:pid — edit text/options/answer/auto-approve.
+func (d *Deps) apiPollEdit(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	var body pollBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
+		return
+	}
+	correct := int64(-1)
+	if body.Correct != nil {
+		correct = *body.Correct
+	}
+	var opts []string
+	if body.Options != nil {
+		opts = body.cleanOptions()
+	}
+	d.pollResult(c, id, fmt.Sprintf("edit %d", pid), d.Store.UpdatePoll(id, pid, timerpi.ClipUTF8(body.Question, 200), opts, correct, body.AutoApprove))
+}
+
+// POST /api/shows/:ident/polls/:pid/show {target: audience|presenter, on}
+func (d *Deps) apiPollShow(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Target string `json:"target"`
+		On     *bool  `json:"on"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	on := body.On == nil || *body.On
+	d.pollResult(c, id, fmt.Sprintf("show %d %s %v", pid, body.Target, on), d.Store.ShowTo(id, pid, body.Target, on))
+}
+
+// POST /api/shows/:ident/polls/:pid/results {on}
+func (d *Deps) apiPollResults(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		On *bool `json:"on"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	on := body.On == nil || *body.On
+	d.pollResult(c, id, fmt.Sprintf("results %d %v", pid, on), d.Store.SetResults(id, pid, on))
+}
+
+// POST /api/shows/:ident/polls/:pid/hide — off every target.
+func (d *Deps) apiPollHide(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	d.pollResult(c, id, fmt.Sprintf("hide %d", pid), d.Store.HidePoll(id, pid))
+}
+
+// POST /api/shows/:ident/polls/:pid/spotlight {entry} — 0 clears.
+func (d *Deps) apiPollSpotlight(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Entry int64 `json:"entry"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	d.pollResult(c, id, fmt.Sprintf("spotlight %d %d", pid, body.Entry), d.Store.Spotlight(id, pid, body.Entry))
+}
+
+// POST /api/shows/:ident/polls/:pid/moderate {status} — :pid is an entry:
+// pending (hidden) | approved (open) | answered | dismissed.
+func (d *Deps) apiPollModerate(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	status := map[string]string{"pending": timerpi.StateHidden, "approved": timerpi.StateOpen,
+		"answered": timerpi.StateAnswered, "dismissed": timerpi.StateDismissed}[body.Status]
+	if status == "" {
+		status = body.Status // raw states are accepted too
+	}
+	d.pollResult(c, id, fmt.Sprintf("moderate %d %s", pid, body.Status), d.Store.Moderate(id, pid, status))
+}
+
+// POST /api/shows/:ident/polls/:pid/state {state} — legacy single verb.
 func (d *Deps) apiPollSetState(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {
 		return
 	}
-	pid, perr := strconv.ParseInt(c.Param("pid"), 10, 64)
-	if perr != nil || pid <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad poll id"})
+	pid, ok := pollParam(c)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -337,40 +501,20 @@ func (d *Deps) apiPollSetState(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "state required"})
 		return
 	}
-	if err := d.Store.SetPollState(id, pid, body.State); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	d.logAction(id, "pollState", fmt.Sprintf("%d → %s", pid, body.State))
-	if d.Hub != nil {
-		d.Hub.BroadcastPoll(id)
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "state": body.State})
+	d.pollResult(c, id, fmt.Sprintf("state %d %s", pid, body.State), d.Store.SetPollState(id, pid, body.State))
 }
 
+// DELETE /api/shows/:ident/polls/:pid — an item (with its entries) or one entry.
 func (d *Deps) apiPollDelete(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {
 		return
 	}
-	pid, perr := strconv.ParseInt(c.Param("pid"), 10, 64)
-	if perr != nil || pid <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad poll id"})
+	pid, ok := pollParam(c)
+	if !ok {
 		return
 	}
-	if err := d.Store.DeletePoll(id, pid); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, sql.ErrNoRows) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	d.logAction(id, "pollDelete", fmt.Sprintf("%d", pid))
-	if d.Hub != nil {
-		d.Hub.BroadcastPoll(id)
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	d.pollResult(c, id, fmt.Sprintf("delete %d", pid), d.Store.DeletePoll(id, pid))
 }
 
 // audiencePage is GET /a/:code — the audience page (no login: the QR leads

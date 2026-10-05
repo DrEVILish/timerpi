@@ -196,7 +196,6 @@ func galleryPage(d *Deps) gin.HandlerFunc {
 	}
 }
 
-
 // now anchors IsDone flags; wall clock elsewhere.
 func (d *Deps) now() int64 { return time.Now().UnixMilli() }
 

@@ -78,16 +78,27 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST /api/waiting/register {name,host}` · `GET /api/waiting/mine?name&host` | Screen side (open) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session |
 
-### Audience interactions
+### Audience interactions (`routes/audience.go`, model in `timerpi/polls.go`)
+Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets: **audience** (phones + audience screens) and **presenter** (DSM). One item per target per room. Submissions (questions, words, ideas) are entries under their item.
+
 | Method & path | Notes |
 |---|---|
-| `GET/POST /api/shows/:ident/polls` | List · create `{kind, question, options[], correct?}`. Always created `hidden` |
-| `POST …/polls/:pid/state {state}` | `hidden` \| `open` \| `results` (opening one top-level item hides the others) |
-| `DELETE …/polls/:pid` | Delete (404 if unknown) |
-| `GET /api/audience/:code` | Audience read: only on-air items |
-| `POST /api/audience/:code/vote {pollId, choice, peer}` | 1 per 300 ms per peer; 600/s per room → 429 + Retry-After |
-| `POST /api/audience/:code/ask {kind, text, parent, peer}` | Question/word/idea submission (moderated, lands hidden); 1 per 3 s per peer |
-| `GET /api/audience/:code/qr` | Join QR for `/a/<code>` |
+| `GET /api/shows/:ident/polls` | mod. `{items:[PollView + pending + all entries]}` |
+| `POST /api/shows/:ident/polls {kind, question, options[], correct?, autoApprove?}` | mod. Quiz needs `correct`; poll/quiz need ≥2 options |
+| `PATCH …/polls/:pid {question, options?, correct?, autoApprove}` | mod. Edit text/options/answer |
+| `POST …/polls/:pid/show {target: audience\|presenter, on}` | mod. Show to / take off a target |
+| `POST …/polls/:pid/results {on}` | mod. Reveal results (closes voting) wherever it is shown |
+| `POST …/polls/:pid/hide` | mod. Off every target |
+| `POST …/polls/:pid/spotlight {entry}` | mod. Q&A spotlight (0 clears; spotlighting approves) |
+| `POST …/polls/:entry/moderate {status: pending\|approved\|answered\|dismissed}` | mod. Word-cloud approval covers every identical word |
+| `DELETE …/polls/:pid` | mod. Item (with entries) or one entry |
+| `POST …/polls/:pid/state {state}` | Legacy single verb (hidden / open / results on the audience target) |
+| `GET /api/audience/:code` | open. `{data:{poll}}` — the audience-target item only |
+| `POST /api/audience/:code/vote {pollId, choice, peer}` | open. Poll/quiz choice, or upvote (`pollId` = entry). 1 per 300 ms per peer; 600/s per room → 429 + Retry-After |
+| `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
+| `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
+
+**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending}`. Word-cloud children aggregate identical words; `upvotes` = senders.
 
 ### Box, assets, OSC
 | Method & path | Notes |
@@ -115,7 +126,8 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `state` | `snapshot` (full; newer `updatedAt` wins) | room bucket |
 | `schedule` | `rows[{pos,startMS,endMS,holdMS,isBreak}]`, `totalMS`, `dayStartTS` | room bucket |
 | `oob` | `html`, `target` (`#cuelist #tp-daybar #messages-panel #tp-now #d-stage #share-panel`) | room bucket |
-| `poll` | `{v:1, poll: PollView\|null, ts}`; PollView = `{id, kind, question, options, correct, state, counts, total, upvotes, children[]}` | audience + room buckets |
+| `poll` | `{v:1, poll: PollView\|null, presenter: PollView\|null, ts}`. Phones get `poll` (audience target) only | audience + room buckets |
+| `polls` | (refresh hint after any interaction change) | controls |
 | `peers` | `[{peerId, role, joinedAt, screen}]` | room bucket |
 | `display` | `{theme}` | targeted screen |
 | `screen-board` | `{boardId}` (0 = back to stage) | targeted screen |
@@ -160,7 +172,7 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
           "endAction":"HOLD","autoContinue":false,"startAt":"","notes":"","color":"",
           "updatedAt":0}],
  "messages":[{"id":1,"text":"WRAP UP","color":"","shownAt":1}],
- "poll":null}
+ "poll":null, "presenter":null}
 ```
 `timerpi/snapshot.go` is authoritative for the exact field set.
 

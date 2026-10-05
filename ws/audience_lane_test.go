@@ -13,10 +13,10 @@ import (
 
 func TestAudienceLaneJoinAndFeed(t *testing.T) {
 	ts := newTestServer(t, false)
-	ts.hub.SetPollsFunc(func(int64) (*timerpi.PollView, error) {
-		return &timerpi.PollView{ID: 7, Kind: timerpi.KindPoll, Question: "Lunch?",
+	ts.hub.SetPollsFunc(func(int64) (timerpi.OnAir, error) {
+		return timerpi.OnAir{Audience: &timerpi.PollView{ID: 7, Kind: timerpi.KindPoll, Question: "Lunch?",
 			Options: []string{"Pizza", "Skyr"}, State: timerpi.StateOpen,
-			Counts: []int64{1, 0}, Total: 1}, nil
+			Counts: []int64{1, 0}, Total: 1}}, nil
 	})
 
 	// An audience join answers with the poll frame — never a snapshot.
@@ -60,7 +60,7 @@ func TestAudienceLaneJoinAndFeed(t *testing.T) {
 
 func TestAudienceLaneCappedSeparately(t *testing.T) {
 	ts := newTestServer(t, false)
-	ts.hub.SetPollsFunc(func(int64) (*timerpi.PollView, error) { return nil, nil })
+	ts.hub.SetPollsFunc(func(int64) (timerpi.OnAir, error) { return timerpi.OnAir{}, nil })
 	// An audience-only show: the lane counts phones, the boards' 512
 	// budget stays untouched (a 4000-socket flood is the load harness's
 	// job — TestLoadSteadyAudience under TP_LOAD=1).
