@@ -199,7 +199,7 @@ func showLockHTML(sh timerpi.Show) string {
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>TimerPi — show password</title>` +
 		`<link rel="stylesheet" href="/ftl/dist/blue-future.css">` +
-		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v60.css"></head>` +
+		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v61.css"></head>` +
 		`<body class="app"><main class="main" style="max-width:26rem;margin:8vh auto;padding:0 4vw">` +
 		`<h1>SHOW PASSWORD</h1>` +
 		`<p class="text-muted">This show carries an extra password. Enter it once — this browser` +

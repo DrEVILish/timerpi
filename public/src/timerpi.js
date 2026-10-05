@@ -1324,7 +1324,10 @@ function initKioskLinks() {
     if (!a || !a.href) return;
     e.preventDefault();
     const m = a.href.match(/\/[cd]\/([A-Za-z0-9]+)/);
-    const name = 'timerpi-d-' + (m ? m[1].toUpperCase() : 'x');
+    // Per-click uniqueness: every "Open Display" press deploys ANOTHER
+    // ready screen — a shared window name would re-target (and wipe) the
+    // previous one (owner walkthrough: 1 DSM + 1 MAIN from one browser).
+    const name = 'timerpi-d-' + (m ? m[1].toUpperCase() : 'x') + '-' + Math.random().toString(36).slice(2, 7);
     window.open(
       a.href, name,
       `width=${screen.availWidth},height=${screen.availHeight},menubar=no,toolbar=no,location=no,status=no,scrollbars=no`

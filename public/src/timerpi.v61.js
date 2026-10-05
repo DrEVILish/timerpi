@@ -12,14 +12,14 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v58.js';
+import { Mesh, screenName } from './mesh.v61.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v58.js';
-import { createUndo } from './undo.v58.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v58.js';
-import { applyWaiting } from './waiting.v58.js';
+} from './engine.v61.js';
+import { createUndo } from './undo.v61.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v61.js';
+import { applyWaiting } from './waiting.v61.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 
 const THEME_KEY = 'timerpi.theme';
@@ -848,6 +848,23 @@ function initMesh(showId, role, page) {
             applyTheme(m.theme);
           }
           break;
+        case 'screen-board':
+          // F1: the operator re-assigned this screen's Layout. Display
+          // pages navigate: stage → the assigned board's view; board view
+          // → the new board; boardId 0 → back to the stage. (An open
+          // layout editor keeps its draft, per the board.js rule.)
+          if (document.body.dataset.role === 'display' && !/edit=1/.test(location.search)) {
+            const u = new URL(location.href);
+            if (m.boardId > 0) {
+              u.searchParams.set('view', 'board');
+              u.searchParams.set('board', String(m.boardId));
+            } else {
+              u.searchParams.delete('view');
+              u.searchParams.delete('board');
+            }
+            if (u.toString() !== location.href) location.replace(u.toString());
+          }
+          break;
         case 'timer':
         case 'cue':
           if (m.runtime && mesh.snap && (m.updatedAt ?? 0) >= mesh.snap.updatedAt) {
@@ -1307,7 +1324,10 @@ function initKioskLinks() {
     if (!a || !a.href) return;
     e.preventDefault();
     const m = a.href.match(/\/[cd]\/([A-Za-z0-9]+)/);
-    const name = 'timerpi-d-' + (m ? m[1].toUpperCase() : 'x');
+    // Per-click uniqueness: every "Open Display" press deploys ANOTHER
+    // ready screen — a shared window name would re-target (and wipe) the
+    // previous one (owner walkthrough: 1 DSM + 1 MAIN from one browser).
+    const name = 'timerpi-d-' + (m ? m[1].toUpperCase() : 'x') + '-' + Math.random().toString(36).slice(2, 7);
     window.open(
       a.href, name,
       `width=${screen.availWidth},height=${screen.availHeight},menubar=no,toolbar=no,location=no,status=no,scrollbars=no`
@@ -1786,7 +1806,7 @@ function initScreens() {
  * preview mode: it edits WITHOUT self-registering a phantom screen).
  * textContent-only everywhere (XSS rule); ftl-themes component classes.
  */
-const gal = { screens: [], waiting: [], boards: [], themes: [] };
+const gal = { screens: [], waiting: [], boards: [], themes: [], templates: [] };
 
 function galEl(tag, cls, text) {
   const e = document.createElement(tag);
@@ -2003,7 +2023,7 @@ function initGallery() {
     while (used.has(`Screen ${n}`)) n++;
     return `Screen ${n}`;
   };
-  const capFill = (w) => {
+  const capFill = async (w) => {
     document.getElementById('tp-capture-host').textContent = w ? w.host : '';
     document.getElementById('tp-capture-name').value = capNextName();
     const themeSel = document.getElementById('tp-capture-theme');
@@ -2016,22 +2036,43 @@ function initGallery() {
     themeSel.value = '';
     document.getElementById('tp-capture-room').value = '';
     const boardSel = document.getElementById('tp-capture-board');
+    // §Layout round: the modal picks a TEMPLATE (10 named layouts from
+    // /api/board-templates); the server builds/replaces that screen's own
+    // board from it. Blank = keep riding the show's default board.
     boardSel.textContent = '';
-    boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
-    for (const b of gal.boards) {
-      const o = boardSel.appendChild(galEl('option', null, b.name || `Board ${b.id}`));
-      o.value = String(b.id);
+    if (!(gal.templates || []).length) {
+      try {
+        const tj = await (await fetch('/api/board-templates')).json();
+        gal.templates = Object.keys(tj.templates || {}).map((k) => ({ name: k }));
+      } catch { /* falls back to the board picker */ }
     }
-    boardSel.value = '0';
+    if ((gal.templates || []).length) {
+      boardSel.appendChild(galEl('option', null, 'Template…')).value = '';
+      for (const t of gal.templates) {
+        const o = boardSel.appendChild(galEl('option', null, t.name))
+          ; o.value = 'tpl:' + t.name;
+      }
+      boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
+      boardSel.value = '';
+    } else {
+      boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
+      for (const b of gal.boards) {
+        const o = boardSel.appendChild(galEl('option', null, b.name || `Board ${b.id}`));
+        o.value = String(b.id);
+      }
+      boardSel.value = '0';
+    }
   };
   document.getElementById('tp-capture-cancel')?.addEventListener('click', () => capDlg?.close());
   document.getElementById('tp-capture-go')?.addEventListener('click', async () => {
+    const boardVal = document.getElementById('tp-capture-board').value || '';
     const body = JSON.stringify({
       code,
       name: document.getElementById('tp-capture-name').value,
       theme: document.getElementById('tp-capture-theme').value,
       room: document.getElementById('tp-capture-room').value,
-      boardId: Number(document.getElementById('tp-capture-board').value || 0),
+      boardId: boardVal.startsWith('tpl:') ? 0 : Number(boardVal || 0),
+      template: boardVal.startsWith('tpl:') ? boardVal.slice(4) : '',
     });
     const r = await galPost(`/api/waiting/${capWid}/capture`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body,
@@ -2051,7 +2092,7 @@ function initGallery() {
     if (!btn) return;
     if (btn.dataset.wact === 'capture') {
       capWid = Number(btn.dataset.wid);
-      capFill(gal.waiting.find((w) => w.id === capWid));
+      await capFill(gal.waiting.find((w) => w.id === capWid));
       if (typeof capDlg?.showModal === 'function') capDlg.showModal();
       else capDlg?.setAttribute('open', '');
       return; // the modal drives the rest

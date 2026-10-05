@@ -1265,3 +1265,11 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
   border: 1px solid var(--border, #333); border-radius: 10px; padding: 1rem 1.1rem; }
 .tp-dlg p { margin: 0; overflow-wrap: anywhere; }
 .tp-dlg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .3rem; }
+
+/* ---------------------------------------------------------------------------
+   Layout-editor feel round (owner): drag ghost + template row. */
+.b-ghost { position: absolute; z-index: 5; border: 2px dashed var(--accent, #7C3AED);
+  background: color-mix(in srgb, var(--accent, #7C3AED) 14%, transparent);
+  border-radius: 6px; pointer-events: none; }
+.b-palette-list { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 60rem; }
+.b-palette-list button { flex: 0 0 auto; }
