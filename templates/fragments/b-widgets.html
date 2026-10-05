@@ -13,82 +13,81 @@
 
 {{define "frag-b-countdown"}}
 <section class="b-widget b-w-countdown" id="b-w-{{.W.ID}}" data-widget="countdown" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Countdown</span><button class="b-w-gear" type="button" data-gear aria-label="Countdown settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove countdown">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Countdown</span><button class="b-w-gear" type="button" data-gear aria-label="Countdown settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove countdown">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-cd-label b-js-cdlabel">{{.P.Current.Label}}</div>
     <span class="readout b-clock b-js-clock" data-state="{{.P.CountdownState}}">{{.P.CountdownFmt}}</span>
-  </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  </div>{{if $.P.Editable}}{{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-cuelabel"}}
 <section class="b-widget b-w-cuelabel" id="b-w-{{.W.ID}}" data-widget="cuelabel" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Cue label</span><button class="b-w-gear" type="button" data-gear aria-label="Cue label settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove cue label">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Cue label</span><button class="b-w-gear" type="button" data-gear aria-label="Cue label settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove cue label">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-cue-label b-js-cuelabel">{{.P.Current.Label}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-speaker"}}
 <section class="b-widget b-w-speaker" id="b-w-{{.W.ID}}" data-widget="speaker" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Speaker</span><button class="b-w-del" type="button" data-del aria-label="Remove speaker">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Speaker</span><button class="b-w-del" type="button" data-del aria-label="Remove speaker">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-speaker b-js-speaker">{{if .P.Current.Speaker}}🎙 {{.P.Current.Speaker}}{{end}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-nextup"}}
 <section class="b-widget b-w-nextup" id="b-w-{{.W.ID}}" data-widget="nextup" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Next up</span><button class="b-w-del" type="button" data-del aria-label="Remove next up">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Next up</span><button class="b-w-del" type="button" data-del aria-label="Remove next up">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-eyebrow">NEXT</span>
     <span class="b-next-label b-js-nextlabel">{{.P.Next.Label}}</span>
     <span class="b-next-meta mono"><span class="b-js-nextdur">{{.P.Next.DurFmt}}</span> · <span class="b-js-nextstart">{{.P.Next.StartFmt}}</span> · <span class="b-js-nextin">--:--</span></span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-wallclock"}}
 <section class="b-widget b-w-wallclock" id="b-w-{{.W.ID}}" data-widget="wallclock" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Wall clock</span><button class="b-w-gear" type="button" data-gear aria-label="Wall clock settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove wall clock">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Wall clock</span><button class="b-w-gear" type="button" data-gear aria-label="Wall clock settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove wall clock">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="readout b-wall b-js-wall">{{.P.NowFmt}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-progress"}}
 <section class="b-widget b-w-progress" id="b-w-{{.W.ID}}" data-widget="progress" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Cue progress</span><button class="b-w-del" type="button" data-del aria-label="Remove cue progress">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Cue progress</span><button class="b-w-del" type="button" data-del aria-label="Remove cue progress">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-bar" role="progressbar" aria-label="Active cue progress"><div class="b-bar-fill b-js-progress" style="width: {{.P.ProgressPct}}"></div></div>
     <span class="b-bar-label b-js-progresslabel">{{.P.Current.Label}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-dayprogress"}}
 <section class="b-widget b-w-dayprogress" id="b-w-{{.W.ID}}" data-widget="dayprogress" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Day progress</span><button class="b-w-del" type="button" data-del aria-label="Remove day progress">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Day progress</span><button class="b-w-del" type="button" data-del aria-label="Remove day progress">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-bar b-bar-day" role="progressbar" aria-label="Day progress"><div class="b-bar-fill b-js-dayprogress" style="width: {{.P.DayPct}}"></div></div>
     <span class="b-bar-scale mono"><span>{{.P.Schedule.DayStartFmt}}</span><span>{{.P.Schedule.DayEndFmt}}</span></span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-messages"}}
 <section class="b-widget b-w-messages" id="b-w-{{.W.ID}}" data-widget="messages" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Messages</span><button class="b-w-del" type="button" data-del aria-label="Remove messages">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Messages</span><button class="b-w-del" type="button" data-del aria-label="Remove messages">×</button></div>{{end}}
   <div class="b-w-body">
     <div class="b-msgs b-js-msgs">
 {{- range .P.Messages}}
@@ -98,34 +97,34 @@
 {{- end}}
     </div>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-showtitle"}}
 <section class="b-widget b-w-showtitle" id="b-w-{{.W.ID}}" data-widget="showtitle" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Show title</span><button class="b-w-del" type="button" data-del aria-label="Remove show title">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Show title</span><button class="b-w-del" type="button" data-del aria-label="Remove show title">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-show-title b-js-showtitle">{{.P.Show.Title}}</span>
     <span class="mono b-share-code">{{.P.Share.CodeFmt}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-rate"}}
 <section class="b-widget b-w-rate" id="b-w-{{.W.ID}}" data-widget="rate" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Rate</span><button class="b-w-del" type="button" data-del aria-label="Remove rate chip">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Rate</span><button class="b-w-del" type="button" data-del aria-label="Remove rate chip">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-rate b-js-rate">{{.P.RateFmt}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-schedule"}}
 <section class="b-widget b-w-schedule" id="b-w-{{.W.ID}}" data-widget="schedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Schedule</span><button class="b-w-gear" type="button" data-gear aria-label="Schedule settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove schedule">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Schedule</span><button class="b-w-gear" type="button" data-gear aria-label="Schedule settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove schedule">×</button></div>{{end}}
   <div class="b-w-body">
     <ul class="b-sched b-js-sched">
 {{- range .P.Cues}}
@@ -135,15 +134,15 @@
 {{- end}}
     </ul>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 {{define "frag-b-notice"}}
 <section class="b-widget b-w-notice" id="b-w-{{.W.ID}}" data-widget="notice" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  <div class="b-w-chrome"><span class="b-w-title">Notice</span><button class="b-w-gear" type="button" data-gear aria-label="Notice settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove notice">×</button></div>
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Notice</span><button class="b-w-gear" type="button" data-gear aria-label="Notice settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove notice">×</button></div>{{end}}
   <div class="b-w-body">
     <span class="b-notice b-js-notice">{{.W.Opts.text}}</span>
   </div>
-  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}

@@ -18,20 +18,12 @@
 */ -}}
 
 {{define "frag-b-chrome"}}
-<div class="b-offline" id="b-offline">
-  <div>
-    <h2>LINK DOWN</h2>
-    <p>Server unreachable — working from the local copy.</p>
-    <p class="text-muted">Reconnects automatically when the link returns.</p>
-  </div>
-</div>
-
-<a class="b-join-card" href="{{.Join.Control}}" data-kiosk>
+{{if .Editable}}<a class="b-join-card" href="{{.Join.Control}}" data-kiosk>
   <img id="b-join-qr" src="{{.Join.QR}}" alt="Display QR code" width="132" height="132">
   {{if .Join.Host}}<span class="mono">{{.Join.Host}}.local</span>{{end}}
   <span class="mono text-truncate">{{.Join.Self}}</span>
   <span>Control room: {{.Join.Control}}</span>
-</a>
+</a>{{end}}
 {{end}}
 
 {{define "frag-b-toolbar"}}

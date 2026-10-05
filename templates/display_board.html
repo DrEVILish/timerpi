@@ -53,7 +53,17 @@
 {{- end}}
 </main>
 
-{{template "frag-b-chrome" .}}
+<!-- Owner round: display outputs carry NO buttons. The offline strip is a
+     status (not a control); the compose chrome (palette/toolbar/join card)
+     renders ONLY for the gallery editor iframe (?edit=1&preview=1). -->
+<div class="b-offline" id="b-offline">
+  <div>
+    <h2>LINK DOWN</h2>
+    <p>Server unreachable — working from the local copy.</p>
+    <p class="text-muted">Reconnects automatically when the link returns.</p>
+  </div>
+</div>
+{{if .Editable}}{{template "frag-b-chrome" .}}{{end}}
 
 <script type="application/json" id="b-layout">{{.LayoutJSON}}</script>
 <div class="toast-region" popover="manual" id="toast-region"></div>

@@ -33,7 +33,7 @@ func TestSharePanelAndCodeOnlyAddress(t *testing.T) {
 		`id="share-code"`, fmt4x4,
 		`/d/` + code,                 // display link + mirror
 		`/api/shows/` + code + `/qr`, // QR route by code
-		`data=/d/` + code,            // QR payload is the display link
+		`data=%2Fd%2F` + code,        // QR payload is the display link (edge-encoded)
 	} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("dashboard missing %q", want)

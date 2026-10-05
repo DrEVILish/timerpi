@@ -132,7 +132,7 @@ func TestBoardView(t *testing.T) {
 	}
 	s := string(body)
 	for _, sub := range []string{
-		`id="b-grid"`, `data-view="board"`, `id="b-offline"`, `id="b-join-qr"`,
+		`id="b-grid"`, `data-view="board"`, `id="b-offline"`,
 		`id="b-layout"`, `board.`, // rev'd asset name: board.vNN.js (any rev)
 		`id="b-w-countdown"`, `id="b-w-cuelabel"`, `id="b-w-speaker"`,
 		`id="b-w-nextup"`, `id="b-w-wallclock"`, `id="b-w-progress"`,
@@ -144,9 +144,13 @@ func TestBoardView(t *testing.T) {
 			t.Errorf("board view missing %q", sub)
 		}
 	}
-	// Locked by default: no compose chrome without ?edit=1.
-	if strings.Contains(s, `id="b-toolbar"`) {
-		t.Error("locked board must not render the toolbar")
+	// Owner rule (buttons round): a pure display carries ZERO buttons —
+	// no toolbar AND no per-tile chrome/resize handles.
+	if strings.Contains(s, `<button`) {
+		t.Error("display output renders a <button>")
+	}
+	if strings.Contains(s, `b-w-chrome`) || strings.Contains(s, `b-w-resize`) {
+		t.Error("display output renders compose chrome/resize handles")
 	}
 
 	// ?edit=1 renders the compose chrome (palette + toggle + reset).
