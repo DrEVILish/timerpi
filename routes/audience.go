@@ -11,7 +11,9 @@
 package routes
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -299,7 +301,11 @@ func (d *Deps) apiPollDelete(c *gin.Context) {
 		return
 	}
 	if err := d.Store.DeletePoll(id, pid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	d.logAction(id, "pollDelete", fmt.Sprintf("%d", pid))

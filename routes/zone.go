@@ -145,5 +145,5 @@ func (d *Deps) zonePage(c *gin.Context) {
 		vm.Rooms = append(vm.Rooms, room)
 	}
 	c.Header("Cache-Control", "no-cache")
-	d.render(c, "zone.html", gin.H{"Data": vm, "Page": "zone"})
+	d.render(c, "zone", gin.H{"Data": vm, "Page": "zone"})
 }

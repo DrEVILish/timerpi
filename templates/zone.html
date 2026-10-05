@@ -1,0 +1,79 @@
+{{- /*
+  zone.html — GET /zone/<name>: the walk-in event board (PLAN §11.1 item 1;
+  stitched phase 0, template authored in the test-gap round).
+
+  Server-rendered, no WS (it spans shows): soft refresh via meta reload.
+  The VM (routes.zoneVM) carries the wall clock, one card per room (current
+  session + next-up time) and each room's full day schedule — ftl tokens
+  only. Phase 2's slot system will consume this VM unchanged.
+  Data: .Data {Zone, NowHM, Rooms[], Updated}.
+*/ -}}
+{{define "zone"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<meta http-equiv="refresh" content="30">
+<style>
+  body.tp-zone { margin:0; min-height:100dvh; background:var(--bg,#0b0b10); color:var(--text,#eee);
+    padding:1.2rem clamp(1rem,4vw,3rem); box-sizing:border-box; }
+  .tp-zone-head { display:flex; align-items:baseline; gap:1rem; margin-bottom:1rem;
+    border-bottom:1px solid var(--border,#333); padding-bottom:.6rem; }
+  .tp-zone-head h1 { font-size:clamp(1.3rem,3.5vw,2.2rem); margin:0; letter-spacing:.12em; }
+  .tp-zone-clock { margin-left:auto; font-variant-numeric:tabular-nums; font-size:clamp(1.1rem,2.6vw,1.8rem); }
+  .tp-zone-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; }
+  .tp-room { background:var(--surface,#15151d); border:1px solid var(--border,#333);
+    border-radius:10px; padding:1rem; }
+  .tp-room h2 { margin:0 0 .6rem; font-size:1.15rem; overflow-wrap:anywhere; }
+  .tp-room .code { color:var(--muted,#8a8a99); font-size:.8rem; letter-spacing:.12em; }
+  .tp-now { font-size:1.05rem; margin-bottom:.5rem; }
+  .tp-now .when { color:var(--accent,#7C3AED); font-weight:600; }
+  .tp-next { color:var(--muted,#9a9aa8); margin-bottom:.8rem; }
+  table.tp-sched { width:100%; border-collapse:collapse; font-size:.92rem; }
+  table.tp-sched td { padding:.28rem .4rem; border-top:1px solid var(--border,#2a2a35); }
+  table.tp-sched td.t { font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--muted,#9a9aa8); }
+  table.tp-sched tr.now td { color:var(--accent,#7C3AED); font-weight:600; }
+  table.tp-sched tr.done td { opacity:.45; }
+  .tp-empty { color:var(--muted,#9a9aa8); padding:2rem 0; text-align:center; }
+</style>
+</head>
+<body class="tp-zone" data-page="zone">
+  <header class="tp-zone-head">
+    <h1>{{$z := .Data.Zone}}{{if $z}}{{$z}}{{else}}Event{{end}}</h1>
+    <span class="tp-zone-clock">{{.Data.NowHM}}</span>
+  </header>
+  {{if .Data.Rooms}}
+  <div class="tp-zone-grid">
+    {{range .Data.Rooms}}
+    <section class="tp-room">
+      <h2>{{.Title}} <span class="code">{{.Code}}</span></h2>
+      {{if .Now}}
+      <div class="tp-now"><span class="when">NOW</span> {{.Now.Label}}
+        {{if .Now.Speaker}} · {{.Now.Speaker}}{{end}}</div>
+      {{else if .Started}}
+      <div class="tp-now"><span class="when">ON BREAK</span></div>
+      {{end}}
+      {{if .Next}}
+      <div class="tp-next">Next: {{.Next.Label}} at {{.Next.StartHM}}</div>
+      {{end}}
+      {{if .Sched}}
+      <table class="tp-sched">
+        {{range .Sched}}
+        <tr{{if .Now}} class="now"{{else if .Done}} class="done"{{end}}>
+          <td class="t">{{.StartHM}}–{{.EndHM}}</td>
+          <td>{{.Label}}{{if .Speaker}} <span class="code">· {{.Speaker}}</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </table>
+      {{else}}
+      <p class="tp-empty">No schedule yet.</p>
+      {{end}}
+    </section>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="tp-empty">No rooms are assigned to this zone yet — set one on a show's dashboard.</p>
+  {{end}}
+</body>
+</html>
+{{end}}

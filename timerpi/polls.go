@@ -176,8 +176,12 @@ func (d *DB) SetPollState(showID, id int64, state string) error {
 
 // DeletePoll removes one row (votes cascade).
 func (d *DB) DeletePoll(showID, id int64) error {
-	if _, err := d.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id); err != nil {
+	res, err := d.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id)
+	if err != nil {
 		return fmt.Errorf("timerpi: delete poll: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }
