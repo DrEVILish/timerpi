@@ -342,15 +342,52 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 			return Show{}, err
 		}
 	}
+	if src.Zone != "" {
+		if err := d.SetShowZone(dst.ID, src.Zone); err != nil {
+			return Show{}, err
+		}
+	}
 	cues, err := d.ListCues(id)
 	if err != nil {
 		return Show{}, err
 	}
+	// One transaction: a mid-loop failure rolls the whole cue set back
+	// instead of leaving a half-cloned day.
+	tx, err := d.Beginx()
+	if err != nil {
+		return Show{}, err
+	}
+	defer tx.Rollback()
 	for _, c := range cues {
 		c.ID, c.ShowID, c.Pos = 0, 0, 0 // fresh rows, appended in listed order
-		if _, err := d.CreateCue(dst.ID, c); err != nil {
-			return Show{}, err
+		c.Normalize()
+		if err := c.Validate(); err != nil {
+			return Show{}, fmt.Errorf("timerpi: clone cue %q: %w", c.Label, err)
 		}
+		now := nowMS()
+		res, err := tx.Exec(`INSERT INTO cues
+			(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
+			 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
+			 end_action, autocontinue, notes, color, start_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			dst.ID, 0, c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
+			c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
+			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, now)
+		if err != nil {
+			return Show{}, fmt.Errorf("timerpi: clone cue: %w", err)
+		}
+		newID, _ := res.LastInsertId()
+		// Position = inner insert order (1..N) — the clone preserves the
+		// source's run order without the append dance CreateCue does.
+		if _, err := tx.Exec(`UPDATE cues SET pos = ? WHERE id = ?`, newID, newID); err != nil {
+			return Show{}, fmt.Errorf("timerpi: clone pos: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE cues SET pos = (SELECT COUNT(*) FROM cues sub WHERE sub.show_id = cues.show_id AND sub.id <= cues.id) WHERE show_id = ?`, dst.ID); err != nil {
+		return Show{}, fmt.Errorf("timerpi: clone order: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Show{}, fmt.Errorf("timerpi: clone commit: %w", err)
 	}
 	return d.GetShow(dst.ID)
 }
@@ -1097,6 +1134,16 @@ func (d *DB) UpsertScreen(showID int64, name string) error {
 	if name == "" {
 		return fmt.Errorf("timerpi: empty screen name")
 	}
+	// Hardening: every JOIN upserts a registry row, and joins are
+	// unauthenticated on screen/display roles — bound per show so a LAN
+	// flood cannot grow the table before the 512-session cap bites.
+	var n int64
+	if err := d.Get(&n, `SELECT COUNT(*) FROM screens WHERE show_id = ?`, showID); err == nil && n >= maxScreenRows {
+		var known int64
+		if err := d.Get(&known, `SELECT COUNT(*) FROM screens WHERE show_id = ? AND name = ?`, showID, name); err == nil && known == 0 {
+			return fmt.Errorf("timerpi: too many screens for show %d (cap %d)", showID, maxScreenRows)
+		}
+	}
 	now := nowMS()
 	if _, err := d.Exec(`INSERT INTO screens (show_id, name, last_seen) VALUES (?, ?, ?)
 		ON CONFLICT (show_id, name) DO UPDATE SET last_seen = ?`, showID, name, now, now); err != nil {
@@ -1104,6 +1151,8 @@ func (d *DB) UpsertScreen(showID int64, name string) error {
 	}
 	return nil
 }
+
+const maxScreenRows = 2000
 
 // SetScreenConfig writes the operator's per-screen overrides (empty theme
 // clears to the default; board 0 clears to the show board).
@@ -1263,6 +1312,16 @@ func (d *DB) ClaimWaiting(name, host string) (string, string, error) {
 	err := d.Get(&row, `SELECT assigned, screen FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
 	if err != nil || row.Assigned == "" {
 		return "", "", nil
+	}
+	// Atomic win: the conditional UPDATE claims the row or loses it to a
+	// racing claimant (hardening round — the read-then-delete window let
+	// two displays both hop to the same capture).
+	res, err := d.Exec(`UPDATE waiting_screens SET assigned = '' WHERE name = ? AND host = ? AND assigned = ?`, name, host, row.Assigned)
+	if err != nil {
+		return "", "", fmt.Errorf("timerpi: claim waiting: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", "", nil // lost the race — the other poller hops
 	}
 	if _, err := d.Exec(`DELETE FROM waiting_screens WHERE name = ? AND host = ?`, name, host); err != nil {
 		return "", "", fmt.Errorf("timerpi: claim waiting: %w", err)
@@ -1460,4 +1519,61 @@ func b2i(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+
+// ---------------------------------------------------------------------------
+// §11.9 full-fidelity show bundle: raw restore primitives carrying state
+// the create-path discards (moderation state, authorship, vote dedupe key,
+// screen registry rows) so an exported event round-trips completely.
+
+// CreatePollRaw inserts a poll row verbatim (state/ts/author honored) —
+// the export/import path only.
+func (d *DB) CreatePollRaw(p Poll) (Poll, error) {
+	if !pollKinds[p.Kind] {
+		return Poll{}, fmt.Errorf("timerpi: poll kind %q invalid", p.Kind)
+	}
+	switch p.State {
+	case StateHidden, StateOpen, StateResults:
+	default:
+		p.State = StateHidden
+	}
+	ts := p.Ts
+	if ts <= 0 {
+		ts = nowMS()
+	}
+	res, err := d.Exec(`INSERT INTO polls (show_id, kind, question, options, correct, state, parent, author, ts, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ShowID, p.Kind, p.Question, p.Options, p.Correct, p.State, p.Parent, p.Author, ts, ts)
+	if err != nil {
+		return Poll{}, fmt.Errorf("timerpi: create poll raw: %w", err)
+	}
+	p.ID, _ = res.LastInsertId()
+	p.Ts, p.Updated = ts, ts
+	return p, nil
+}
+
+// VoteRaw restores one vote row verbatim (dedupe by (poll_id,peer) — the
+// UNIQUE absorbs duplicates from a double import).
+func (d *DB) VoteRaw(pollID int64, peer, choice string, ts int64) error {
+	if peer == "" {
+		return fmt.Errorf("timerpi: vote needs a device id")
+	}
+	_, err := d.Exec(`INSERT INTO votes (poll_id, peer, choice, ts) VALUES (?, ?, ?, ?)
+		ON CONFLICT (poll_id, peer) DO UPDATE SET choice = ?, ts = ?`,
+		pollID, peer, choice, ts, choice, ts)
+	if err != nil {
+		return fmt.Errorf("timerpi: vote raw: %w", err)
+	}
+	return nil
+}
+
+// ListVotes exports a poll's vote rows (peer token hash + choice + ts).
+func (d *DB) ListVotes(pollID int64) ([]Vote, error) {
+	var out []Vote
+	err := d.Select(&out, `SELECT poll_id, peer, choice, ts FROM votes WHERE poll_id = ? ORDER BY id`, pollID)
+	if err != nil {
+		return nil, fmt.Errorf("timerpi: list votes: %w", err)
+	}
+	return out, nil
 }

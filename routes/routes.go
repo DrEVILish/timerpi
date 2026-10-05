@@ -188,6 +188,7 @@ func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"ok":     true,
+			"version": appVersion(),
 			"uptime": time.Since(startedAt).Truncate(time.Second).String(),
 			"device": config.DeviceName(),
 			"title":  config.Title(),

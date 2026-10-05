@@ -341,9 +341,24 @@ Animation enum per tile
    stay silent), routes e2e (GO/BLANK → wire) + test endpoint
    (unconfigured 400 + probe packet on the wire); rev stays v57 (page
    templates only).
-7. **Hardening + version const** — `appVersion = "2.0"` in Go (health +
-   footer), README/PROJECT bump, load-harness numbers recorded, review pass,
-   `-race` suite, deploy to the Pi.
+7. **Hardening + version const** — ✅ 2026-10-05. **Full-fidelity bundle
+   (§11.9)**: v2 export carries the whole event — cues/messages/schedule
+   (v1 shape) + zone, polls with moderation state (response shaped for the
+   bundle: `showFilePoll` — Poll's db tags hide Options/Parent from JSON on
+   purpose), votes keyed to export slots, screens registry (board ids
+   re-keyed), boards with layouts, presets, and the zone's map asset
+   inlined as a data URL (≤4 MiB per the upload cap). Import re-keys
+   parents/votes by position contract (parents before children), restores
+   moderation state verbatim, and re-points the zone map to the restored
+   asset. v1 imports one major lifetime; future versions refuse. Called
+   out: shows created in tests without boards export none (the production
+   seed makes one). **Version**: `/health` + bundle generator carry
+   2.0; README banner. **Hardening sweep**: ClaimWaiting atomic claim
+   (conditional UPDATE — no read-then-delete double-hop), offer()
+   non-blocking (full queues drop instead of stalling the show's
+   broadcast), showGate fail-CLOSED on DB I/O errors (only true-miss
+   opens), UpsertScreen bound per show (registry flood guard, cap 2000),
+   CloneShow transactional + zone carried.
 
 Build order is deliberate: 0/1 are small and ship value alone; 5 depends on
 4's lane; 6 is independent of 2–5 (reorder safe).

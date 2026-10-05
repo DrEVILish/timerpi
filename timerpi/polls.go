@@ -41,6 +41,14 @@ var pollKinds = map[string]bool{
 	KindIdeas: true, KindQuiz: true, KindSurvey: true,
 }
 
+// Vote is one device's recorded choice (bundle round-trip §11.9).
+type Vote struct {
+	PollID int64  `db:"poll_id" json:"-"`
+	Peer   string `db:"peer"    json:"peer"`
+	Choice string `db:"choice"  json:"choice"`
+	Ts     int64  `db:"ts"      json:"ts"`
+}
+
 // Poll is one interaction item.
 type Poll struct {
 	ID       int64  `db:"id"       json:"id"`
