@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"timerpi/config"
 	"timerpi/views"
 )
 
@@ -201,29 +200,19 @@ func TestBoardTemplatesParse(t *testing.T) {
 	}
 }
 
-// Edit auth (NOTES-board §5.4, closed 2026-10-04): ?edit=1 composes FREE
-// while no operator password exists, but once one is set the toolbar is
-// operator furniture — an unauthed /d/ page renders the read-only board
-// (no edit chrome), and a logged-in one keeps it.
+// Edit chrome is operator furniture: ?edit=1 composes only for a moderator
+// (or the event's SuperOperator); a stranger gets the read-only board.
 func TestBoardEditAuthGate(t *testing.T) {
 	ts := newAPITest(t)
 	path := "/d/" + ts.showCode + "?view=board&edit=1"
 
-	// Without a password: edit=1 ships the editor chrome (pre-A1 behavior).
 	_, body := ts.call("GET", path, nil, "")
 	if !bytes.Contains(body, []byte(`b-toolbar`)) || !bytes.Contains(body, []byte(`data-add`)) {
-		t.Errorf("password-free page: editor chrome missing (b-toolbar/data-add)")
+		t.Errorf("signed-in page: editor chrome missing (b-toolbar/data-add)")
 	}
-
-	// With a password set: same URL, no session → READ-ONLY board.
-	prev := config.AuthPassword() // may be empty
-	if err := config.SetAuthPassword("c2bench"); err != nil {
-		t.Fatalf("SetAuthPassword: %v", err)
-	}
-	t.Cleanup(func() { _ = config.SetAuthPassword(prev) })
-	_, body = ts.call("GET", path, nil, "")
+	_, body = ts.anon("GET", path, nil, "")
 	if bytes.Contains(body, []byte(`b-toolbar`)) || bytes.Contains(body, []byte(`data-add`)) {
-		t.Errorf("authed-password page still shipped editor chrome to a stranger")
+		t.Errorf("stranger got editor chrome")
 	}
 	if !bytes.Contains(body, []byte(`Main`)) || !bytes.Contains(body, []byte(`b-w-`)) {
 		t.Errorf("read-only render lost the board itself (tiles/title)")

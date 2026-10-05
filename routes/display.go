@@ -130,12 +130,6 @@ func (d *Deps) displayVariants(c *gin.Context) {
 		pageUnknownCode(c)
 		return
 	}
-	// Per-show passphrase gate (showauth note: TVs are NOT exempted — an
-	// "extra password" that display pages skipped would be no extra
-	// security; a TV enters it once and the 7-day cookie holds).
-	if d.Store != nil && !showGateByShowID(c, d, showID) {
-		return
-	}
 	snap, err := eng.Snapshot()
 	if err != nil {
 		pageUnknownCode(c)

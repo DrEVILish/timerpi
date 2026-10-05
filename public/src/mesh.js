@@ -214,14 +214,8 @@ export class Mesh {
         v: 1, t: 'join', role: this.role, show: this.showId,
         peerId: this.peerId, joinedAt: this.joinedAt ?? Date.now(),
         ...(this.screen ? { screen: this.screen } : {}),
-        // A1: controls joins present the auth token issued by /api/login
-        // (stored in localStorage). Display/mesh roles send none.
-        // Per-show passphrase: every role carries the show token if the
-        // browser unlocked this show (routes/showauth.go issues it).
-        ...(this.role === 'controls' && localStorage.getItem('tp.atoken')
-          ? { authToken: localStorage.getItem('tp.atoken') } : {}),
-        ...((localStorage.getItem('tp.show.' + this.showId) || '')
-          ? { showToken: localStorage.getItem('tp.show.' + this.showId) } : {}),
+        // Operator access rides the session cookies of the upgrade request
+        // (routes/access.go) — nothing to send here.
       }));
     };
     ws.onclose = fail;
@@ -302,12 +296,12 @@ export class Mesh {
             this._setStatus('badshow');
             try { this._ws.close(); } catch { /* */ }
           }
-          if (m.role === undefined && /operator password required/.test(m.message || '')
-              && this.role === 'controls' && !/\/login/.test(location.pathname)) {
-            // A1: our controls join was refused (password set elsewhere or
-            // token stale) — send the tab to the login page and come back.
+          if (m.role === undefined && /moderator access required/.test(m.message || '')
+              && this.role === 'controls') {
+            // Our session ended (password changed, signed out elsewhere):
+            // reload so the page's access gate explains what to do.
             try { this._ws.close(); } catch { /* */ }
-            location.href = '/login?next=' + encodeURIComponent(location.pathname);
+            location.reload();
           }
           break;
         default:

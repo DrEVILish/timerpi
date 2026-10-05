@@ -94,6 +94,13 @@ type Show struct {
 	// state, not a secret — rides snapshots like notes so all screens
 	// flip together.
 	Blanked bool `db:"blanked" json:"blanked"`
+	// EventID is the parent event: a show IS a room of that event
+	// (PRODUCT §2). RoomPos orders rooms inside the event.
+	EventID int64 `db:"event_id" json:"eventId"`
+	RoomPos int64 `db:"room_pos" json:"roomPos"`
+	// RoomPW is the optional moderator password hash (HashPassword); never
+	// serialized.
+	RoomPW string `db:"room_pw" json:"-"`
 }
 
 // Normalize canonicalizes show-typed data: the title is trimmed, the code
@@ -176,6 +183,10 @@ type Cue struct {
 	// (docs/OFFLINE-EDIT.md) so an offline mesh master can merge per cue on
 	// reconnect; snapshot readers that predate it simply ignore the field.
 	UpdatedAt int64 `db:"updated_at" json:"updatedAt,omitempty"`
+	// Day is the event day this session belongs to (1-based). v2 events
+	// are single-day, so it is always 1; the column keeps the model ready
+	// for multi-day events (PRODUCT §4.7).
+	Day int64 `db:"day" json:"day,omitempty"`
 }
 
 // Normalize applies defaults and clamps in place: empty kinds fall back to

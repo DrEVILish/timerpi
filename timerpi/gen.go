@@ -79,7 +79,9 @@ func NewCode(d *DB) (string, error) {
 // codeInUse reports whether a show already holds code (false = free).
 func codeInUse(d *DB, code string) (bool, error) {
 	var one int64
-	err := d.Get(&one, `SELECT 1 FROM shows WHERE code = ?`, code)
+	// Event and room codes share one namespace: a typed code must never
+	// be ambiguous between the two.
+	err := d.Get(&one, `SELECT 1 FROM shows WHERE code = ? UNION SELECT 1 FROM events WHERE code = ?`, code, code)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

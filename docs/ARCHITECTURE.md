@@ -50,8 +50,11 @@ docs/                product, architecture, runbooks; docs/archive/ = historical
 
 ## 3. Domain model
 
-**A room is a show.** Every show has a unique 8-character share code in a 4-4
-format (`K7QP-M3XB`). The alphabet is Crockford base32 without I, L, O or U,
+**An event owns rooms, and a room is a show** (`shows.event_id`). Events
+and rooms each have a unique 8-character code in a 4-4 format
+(`K7QP-M3XB`), drawn from one shared namespace. People type the event
+code; the room code is the short machine address used in screen and
+audience URLs. The alphabet is Crockford base32 without I, L, O or U,
 and input is typo-tolerant. Codes are the only public address; numeric IDs
 return 404 everywhere.
 
@@ -59,8 +62,9 @@ SQLite tables (in `timerpi/db.go` unless noted):
 
 | Table | Holds |
 |---|---|
-| `shows` | title, share code, `zone` label, notes, `day_start` (HH:MM), passphrase hash, `blanked` |
-| `cues` | sessions: pos, label, duration, kind/break, tags, speaker, hold, timer kind (COUNTDOWN/COUNTSTOP/CLOCK), alerts 1/2 + colours, end action (HOLD/OVERTIME/BLANK), autocontinue, `start_at`, notes, colour, `updated_at` |
+| `events` (`timerpi/events.go`) | code, name, supervisor password hash, default screen theme, map asset, day count |
+| `shows` (= rooms) | `event_id`, `room_pos`, title (room name), code, `room_pw` (moderator password hash), notes, `day_start` (HH:MM), `blanked`. Legacy: `zone`, `passphrase` (migrated, unused) |
+| `cues` | sessions: `day` (1 in v2), pos, label, duration, kind/break, tags, speaker, hold, timer kind (COUNTDOWN/COUNTSTOP/CLOCK), alerts 1/2 + colours, end action (HOLD/OVERTIME/BLANK), autocontinue, `start_at`, notes, colour, `updated_at` |
 | `messages` | stage messages per show (`shown_at` 0 = hidden) |
 | `runtime_state` | engine state per show: active/prev/next pos, anchor, rate, paused elapsed, day start |
 | `settings` | key/value appliance settings |
@@ -75,9 +79,12 @@ SQLite tables (in `timerpi/db.go` unless noted):
 | `client_errors` | browser error reports (200 per show) |
 | `mesh_state` (`mesh/`) | device mesh identity |
 
-**Zones.** `shows.zone` is a free-text label. All shows with the same zone
-appear on `/zone/<name>`. The zone's map is an `assets` row referenced from
-settings.
+**Migration.** On startup every show without an event is adopted: shows
+sharing a zone label become rooms of one event named after the zone; others
+become one-room events. Legacy show passphrases become room-password hashes,
+and zone maps become event maps. Adopted events have no supervisor password
+until one is set. The old `/zone/<name>` page still works until STATUS N7
+replaces it.
 
 ## 4. The cue engine
 
@@ -142,18 +149,19 @@ settings.
 
 ## 8. Access control
 
-Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) → **OriginGuard** → **AuthGate**.
+Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) → **OriginGuard** → **accessGate**. The rules live in one file, `routes/access.go`.
 
-| Layer | Mechanism |
-|---|---|
-| OriginGuard | Open by default (any Host). A non-empty `allowed_hosts` setting switches to strict mode (HTTP 421 for unknown public hosts). The WS upgrader calls `routes.SameOriginRequest` |
-| Device password (`config.AuthPassword`) | `AuthGate`: cookie `tp_auth` or Basic `operator:<pw>`. Exempt: `/health`, login, `/d/*`, `/ws`, static, `/assets/*`, the waiting-room register/mine calls, and the show QR and client-log calls. **Holding it = SuperOperator** |
-| Room password (show passphrase) | Optional per show. Cookie `tp_show_<CODE>`. Gates `/c/`, `/d/`, `/a/`, show-scoped REST and WS joins |
-| Audience | No login. A device token is minted client-side and only its hash is stored |
+| Who | Proof | May |
+|---|---|---|
+| SuperOperator | Cookie `tp_ev_<EVENT>`, issued by `POST /api/events/:code/login` (supervisor password) or on event creation | Everything in the event, including moderating every room |
+| Moderator | Cookie `tp_rm_<ROOM>`, issued by `POST /api/events/:code/rooms/:room/login` (room password, or none). Getting it needs the **event code** | One room: `/c/`, `/screens/`, show-scoped REST (`requireShowGated`), WS `controls` joins |
+| Screen / audience | Nothing | `/d/*`, `/a/*`, `/zone/*`, WS `display`/`screen`/`audience` joins (read-only), waiting-room register/mine, QR images, error reports |
+| Box admin | Any SuperOperator session of a protected event (open while none is protected) | `/settings`, `/api/network/*`, `/api/osc*`, `POST /api/theme` |
 
-**Known gaps** (tracked in STATUS): `/a/` and `/zone/` are not AuthGate-exempt
-(B1). With no device password set, everyone is effectively SuperOperator
-(documented LAN-trust model).
+- Session cookies are `HMAC(secret, scope | codes | stored password hash)`. The secret is random per box (settings `auth.secret`). Changing a password therefore signs every holder of the old one out.
+- Passwords are stored as PBKDF2-SHA256 hashes (`timerpi.HashPassword`).
+- A room code alone, for example from an audience QR, never grants operator access.
+- OriginGuard is open by default (any Host). A non-empty `allowed_hosts` setting switches to strict mode (HTTP 421 for unknown public hosts). The WS upgrader calls `routes.SameOriginRequest`.
 
 ## 9. Themes (ftl-themes)
 

@@ -92,11 +92,10 @@ func New(d *Deps) *gin.Engine {
 	// asset references forever. Static file mounts re-set the same header
 	// themselves (registerStatic/registerFTL).
 	r.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-cache"); c.Next() })
-	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), AuthGate())
+	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), d.accessGate())
 
 	registerFTL(r) // /ftl/ — vendored ftl-themes (theme picker fonts)
 	registerHealth(r, d, SessionsCount)
-	registerAuth(r)       // /login + /api/login + /api/auth/password (A1)
 	registerTheme(r)      // B7: appliance default theme (GET/POST /api/theme)
 	registerPages(r, d)   // GET /, /c/:ident, /screens/:ident (/d/ in display.go)
 	RegisterDisplay(r, d) // GET /d/:ident — stage passthrough + view dispatch
@@ -109,7 +108,7 @@ func New(d *Deps) *gin.Engine {
 	registerZoneRoutes(r, d)
 	registerOscRoutes(r, d)
 	registerAssetRoutes(r, d)
-	registerSuperRoutes(r, d)
+	registerEvents(r, d) // /e/:code lobby + admin, /api/events/*
 	if d.Store != nil {
 		if oserr := d.oscSync(); oserr != nil {
 			log.Printf("routes: osc listener boot: %v", oserr)

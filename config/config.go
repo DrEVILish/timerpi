@@ -8,9 +8,6 @@
 package config
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,10 +32,9 @@ type Config struct {
 	// operator's rename request (the hostname/mDNS work in the mesh agent
 	// applies it).
 	DeviceName string `json:"device_name,omitempty"`
-	// AuthPassword is the optional operator password. Empty = open access
-	// (the trusted-show-LAN default). Stored in PLAIN TEXT in config.json
-	// (file mode 0600): anyone who can read the data directory can read it.
-	// vanilla strings
+	// Deprecated: the old appliance operator password. Ignored since the
+	// event model (supervisor + room passwords); kept so older config
+	// files still load.
 	AuthPassword string `json:"auth_password,omitempty"`
 	// DefaultTheme is the appliance-wide ftl theme used by surfaces that
 	// have nothing stored in the browser (B7: server-side defaults).
@@ -279,17 +275,7 @@ func SetDeviceName(name string) error {
 	return SaveConfig()
 }
 
-// AuthPassword returns the operator password; empty means open access.
-func AuthPassword() string {
-	confMu.RLock()
-	defer confMu.RUnlock()
-	return conf.AuthPassword
-}
 
-// HasAuth reports whether the operator password is enabled.
-func HasAuth() bool {
-	return AuthPassword() != ""
-}
 
 // DefaultTheme returns the appliance default theme - what operator pages
 // fall back to when the browser has nothing stored.
@@ -330,14 +316,6 @@ func sanitizeTheme(name string) string {
 	return name
 }
 
-// SetAuthPassword sets (non-empty) or clears (empty) the operator password,
-// persisting it. Applies to new requests immediately.
-func SetAuthPassword(pw string) error {
-	confMu.Lock()
-	conf.AuthPassword = strings.TrimSpace(pw)
-	confMu.Unlock()
-	return SaveConfig()
-}
 
 // AllowedHosts returns the operator-configured extra Host names (copy).
 func AllowedHosts() []string {
@@ -353,28 +331,9 @@ func AllowedHosts() []string {
 // release) invalidates every issued session cookie at once.
 const authEntropy = "timerpi/auth/v1"
 
-// AuthToken derives the session token from the current password: a fixed
-// keyed digest, so tokens invalidate naturally when the password changes and
-// need no server-side session store (fit for a stateless appliance).
-func AuthToken() string {
-	return authHash(AuthPassword())
-}
 
-// CheckToken verifies a presented session token (constant-time).
-func CheckToken(tok string) bool {
-	return subtle.ConstantTimeCompare([]byte(tok), []byte(AuthToken())) == 1
-}
 
-// CheckPassword verifies a presented raw password (constant-time).
-func CheckPassword(pw string) bool {
-	return subtle.ConstantTimeCompare([]byte(pw), []byte(AuthPassword())) == 1
-}
 
-// authHash is the token derivation (hex sha256, never re-ordered).
-func authHash(pw string) string {
-	sum := sha256.Sum256([]byte(authEntropy + ":" + pw))
-	return hex.EncodeToString(sum[:])
-}
 
 // SetAllowedHosts validates and persists the Host allow-list
 // (whitespace/comma separated input, as from a settings form).

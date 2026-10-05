@@ -2,13 +2,11 @@ package routes_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"image/png"
 	"net/http"
 	"strings"
 	"testing"
 
-	"timerpi/routes"
 )
 
 // A7 notes cap: 4001 characters is one past the sanity ceiling → 400 with a
@@ -113,61 +111,5 @@ func TestOriginNullAndRefererFallback(t *testing.T) {
 	if got := do(map[string]string{"Referer": "https://evil.example.com/frame"}); got != http.StatusForbidden {
 		t.Errorf("evil Referer POST: %d, want 403", got)
 	}
-
-	pw := "pw"
-	token := routes.ShowPassToken(ts.showCode, pw)
-	if routes.ShowUnlockedJoin(map[string]string{"tp_show_" + ts.showCode: "bogus"}, ts.showCode, pw, "") {
-		t.Error("wrong cookie accepted")
-	}
-	if routes.ShowUnlockedJoin(nil, ts.showCode, pw, "bogus") {
-		t.Error("wrong join token accepted")
-	}
-	if !routes.ShowUnlockedJoin(nil, ts.showCode, pw, token) || !routes.ShowUnlockedJoin(map[string]string{"tp_show_" + ts.showCode: token}, ts.showCode, pw, "") {
-		t.Error("correct token/cookie refused")
-	}
 }
 
-// Show passphrase clear: once set, the passphrase API is self-gated —
-// clearing WITHOUT the unlock cookie is refused (otherwise a LAN passer-by
-// could silently remove the gate), while clearing WITH it re-opens the show
-// and issues NO new credentials (no token may survive for a dark relock).
-func TestShowPassphraseClearNoToken(t *testing.T) {
-	ts := newAPITest(t)
-	path := "/api/shows/" + ts.showCode + "/passphrase"
-
-	res, raw := postJSONWithCookies(t, ts, path, `{"pw":"open sesame"}`)
-	if res.StatusCode != 200 {
-		t.Fatalf("set passphrase: %d %s", res.StatusCode, raw)
-	}
-	var cook *http.Cookie
-	for _, ck := range res.Cookies() {
-		if strings.HasPrefix(ck.Name, "tp_show_") {
-			cook = ck
-		}
-	}
-	if cook == nil {
-		t.Fatal("no unlock cookie issued on set")
-	}
-
-	// Stranger's clear attempt: refused, gate still up.
-	res2, raw2 := postJSONWithCookies(t, ts, path, `{"pw":""}`)
-	if res2.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("cookie-less clear: %d %s, want 401 (self-gate)", res2.StatusCode, raw2)
-	}
-
-	// Owner's clear: re-opens the show, no credentials re-issued.
-	res3, raw3 := postJSONWithCookies(t, ts, path, `{"pw":""}`, cook)
-	if res3.StatusCode != 200 {
-		t.Fatalf("clear passphrase: %d %s", res3.StatusCode, raw3)
-	}
-	var out struct {
-		Enabled bool   `json:"enabled"`
-		Token   string `json:"token"`
-	}
-	if err := json.Unmarshal(raw3, &out); err != nil {
-		t.Fatalf("clear decode: %v (%s)", err, raw3)
-	}
-	if out.Enabled || out.Token != "" {
-		t.Errorf("clear re-issued credentials: enabled=%v token=%q", out.Enabled, out.Token)
-	}
-}

@@ -34,6 +34,7 @@ type testServer struct {
 	oobs     *oobRecorder
 	showID   int64
 	showCode string // share code (Agent L): joins address shows BY CODE
+	cookie   string // SuperOperator session (controls joins need it)
 }
 
 // oobRecorder captures rendered oob frames (fragment name → count).
@@ -69,10 +70,11 @@ func newTestServer(t *testing.T, withRender bool) *testServer {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	show, err := db.CreateShow("Hub Test Show")
+	ev, rooms, err := db.CreateEvent("Hub Test Event", "testpw", []string{"Hub Test Show"})
 	if err != nil {
-		t.Fatalf("create show: %v", err)
+		t.Fatalf("create event: %v", err)
 	}
+	show := rooms[0]
 	for _, cue := range []timerpi.Cue{
 		{Label: "Welcome", DurationMS: 300_000},
 		{Label: "Talk", DurationMS: 600_000, Speaker: "Leslie"},
@@ -101,14 +103,17 @@ func newTestServer(t *testing.T, withRender bool) *testServer {
 		srv.Close()
 		hub.Stop()
 	})
-	return &testServer{t: t, srv: srv, db: db, engines: engines, hub: hub, oobs: rec, showID: show.ID, showCode: show.Code}
+	return &testServer{t: t, srv: srv, db: db, engines: engines, hub: hub, oobs: rec, showID: show.ID, showCode: show.Code,
+		// The SuperOperator session cookie every test client presents (the
+		// hub admits "controls" joins only with moderator access).
+		cookie: "tp_ev_" + ev.Code + "=" + timerpi.SignSession(db.SessionSecret(), "ev", ev.Code, ev.SuperHash)}
 }
 
 // joinClient dials + joins as a fresh websocket client.
 func (ts *testServer) joinClient(t *testing.T, role, peerID string) *wsClient {
 	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(ts.srv.URL, "http") + "/ws"
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Cookie": []string{ts.cookie}})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

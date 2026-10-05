@@ -33,7 +33,6 @@ func TestGalleryPageF(t *testing.T) {
 // (consumed once, exactly) and dismiss removes.
 func TestWaitingRoomFlow(t *testing.T) {
 	ts := newAPITest(t)
-	setAuth(t, "waiting-gate-pw")
 
 	reg := func(name, host string) int {
 		c, _ := ts.call("POST", "/api/waiting/register",
@@ -48,15 +47,14 @@ func TestWaitingRoomFlow(t *testing.T) {
 		t.Fatalf("mine unauthed: %d, want 200", code)
 	}
 	// Operator paths stay gated.
-	if code, _ := ts.call("GET", "/api/waiting", nil, ""); code != http.StatusUnauthorized {
-		t.Fatalf("list unauthed with password: %d, want 401", code)
+	if code, _ := ts.anon("GET", "/api/waiting", nil, ""); code != http.StatusUnauthorized {
+		t.Fatalf("list without an operator session: %d, want 401", code)
 	}
 
 	// Authenticated operator flow via login (cookie reuse like the real UI).
 	// Use HTTP Basic — same gate, simpler in tests.
 	opGet := func(path string) (int, []byte) {
 		req, _ := http.NewRequest("GET", ts.srv.URL+path, nil)
-		req.SetBasicAuth("operator", "waiting-gate-pw")
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -96,7 +94,6 @@ func TestWaitingRoomFlow(t *testing.T) {
 	capture := func(body string) int {
 		req, _ := http.NewRequest("POST", ts.srv.URL+fmt.Sprintf("/api/waiting/%d/capture", wid), strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.SetBasicAuth("operator", "waiting-gate-pw")
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -143,7 +140,6 @@ func TestWaitingRoomFlow(t *testing.T) {
 		t.Fatalf("Lobby never listed: %s", lstMid)
 	}
 	req, _ := http.NewRequest("DELETE", ts.srv.URL+fmt.Sprintf("/api/waiting/%d", lobbyID), nil)
-	req.SetBasicAuth("operator", "waiting-gate-pw")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("dismiss: %v", err)

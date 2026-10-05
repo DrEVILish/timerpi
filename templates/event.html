@@ -1,0 +1,223 @@
+{{- /*
+  event.html — the event layer pages.
+
+  "event"        GET /e/:code        lobby: pick your room / SuperOperator sign-in
+  "event-admin"  GET /e/:code/admin  SuperOperator dashboard
+  "denied"       access-denied page (moderator/box-admin gates)
+
+  Dot: .Event (routes.eventVM), .Title, .DefaultTheme, .Themes (admin).
+  Live data on the admin page is client-rendered by /src/event.js from
+  /api/events/:code/live (2 s poll).
+*/ -}}
+
+{{define "event-bar"}}
+<header class="app-bar">
+  <a class="nav-brand tp-brand" href="/" title="Home"><img src="/img/timerpi.svg" alt="TimerPi"></a>
+  <nav class="nav">
+    <span class="nav-item tp-bar-title">{{.Event.Name}}</span>
+    <a class="nav-item{{if eq .Page "event"}} is-active{{end}}" href="/e/{{.Event.Code}}">Rooms</a>
+    {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
+  </nav>
+  <div class="cluster push">
+    <span class="badge mono" title="Event code — share it only with your moderators">{{.Event.CodeFmt}}</span>
+    <a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>
+  </div>
+</header>
+{{end}}
+
+{{define "event"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="app tp-shell" data-page="event" data-event="{{.Event.Code}}" data-event-name="{{.Event.Name}}">
+{{template "event-bar" .}}
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+  <div class="tp-page stack is-gap-l">
+    <section class="stack is-gap-2xs">
+      <h1 class="tp-hero-title">{{.Event.Name}}</h1>
+      <p class="text-muted">Pick the room you are moderating.</p>
+    </section>
+
+    <section class="tp-room-grid" id="room-grid">
+      {{range .Event.Rooms}}
+      <article class="panel tp-room-card" data-room="{{.Code}}">
+        <div class="panel-header">{{.Name}}{{if .HasPassword}} <span class="badge" title="This room has a moderator password">🔒</span>{{end}}</div>
+        {{if .CanModerate}}
+        <a class="btn btn-primary tp-btn-lg" href="/c/{{.Code}}">Open room</a>
+        {{else}}
+        <form class="stack is-gap-xs" data-room-login="{{.Code}}">
+          {{if .HasPassword}}
+          <input class="input" type="password" name="pw" placeholder="Room password" aria-label="Room password for {{.Name}}" autocomplete="current-password" required>
+          {{end}}
+          <button class="btn btn-primary tp-btn-lg" type="submit">Moderate this room</button>
+          <p class="field-error" role="alert" hidden></p>
+        </form>
+        {{end}}
+      </article>
+      {{else}}
+      <p class="text-muted">This event has no rooms yet. The SuperOperator adds them.</p>
+      {{end}}
+    </section>
+
+    <section class="panel tp-super-door" id="super-door">
+      <div class="panel-header">SuperOperator</div>
+      {{if .Event.IsSuper}}
+      <div class="row is-items-center is-gap-s">
+        <p class="text-muted">You are signed in as SuperOperator.</p>
+        <a class="btn btn-primary push" href="/e/{{.Event.Code}}/admin">Open SuperOperator dashboard</a>
+      </div>
+      {{else}}
+      <form class="row is-items-end is-gap-s is-wrap" id="super-login">
+        <div class="field">
+          <label class="label" for="super-pw">{{if .Event.HasSuperPW}}Supervisor password{{else}}No supervisor password yet{{end}}</label>
+          {{if .Event.HasSuperPW}}<input class="input" type="password" id="super-pw" autocomplete="current-password" required>{{end}}
+        </div>
+        <button class="btn" type="submit">Sign in as SuperOperator</button>
+        <p class="field-error" id="super-error" role="alert" hidden></p>
+      </form>
+      {{end}}
+    </section>
+  </div>
+</main>
+<footer class="app-status"><span class="text-muted">TimerPi · {{.Event.Name}}</span></footer>
+<script type="module" src="{{asset "/src/event.js"}}"></script>
+</body>
+</html>
+{{end}}
+
+{{define "event-admin"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="app tp-shell" data-page="event-admin" data-event="{{.Event.Code}}" data-event-name="{{.Event.Name}}">
+{{template "event-bar" .}}
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+  <div class="tp-page stack is-gap-l">
+    {{if not .Event.HasSuperPW}}
+    <div class="alert alert-warning" role="status">This event has no supervisor password yet — anyone with the event code can open this page. Set one under <a href="#settings">Event settings</a>.</div>
+    {{end}}
+
+    <section class="stack is-gap-s" aria-labelledby="live-h">
+      <div class="row is-items-center is-gap-s is-wrap">
+        <h2 id="live-h" class="tp-section-title">Live</h2>
+        <div class="cluster push">
+          <button class="btn btn-danger" data-verb-all="blank" title="Blank every screen in every room">Blackout all rooms</button>
+          <button class="btn" data-verb-all="unblank" title="Bring every room's screens back">Restore all</button>
+        </div>
+      </div>
+      <div class="tp-live-grid" id="live-grid" aria-live="polite">
+        <p class="text-muted">Loading rooms…</p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="rooms-h">
+      <div class="panel-header" id="rooms-h">Rooms</div>
+      <p class="text-muted">Double-click a room name to rename it. Each room has one moderator; a room password is optional.</p>
+      <table class="table tp-rooms-table">
+        <thead><tr><th>#</th><th>Room</th><th>Moderator password</th><th></th></tr></thead>
+        <tbody id="rooms-body">
+          {{range .Event.Rooms}}
+          <tr data-room="{{.Code}}">
+            <td class="mono">{{.Pos}}</td>
+            <td><span class="tp-inline-edit" data-rename tabindex="0" title="Double-click to rename">{{.Name}}</span></td>
+            <td>{{if .HasPassword}}<span class="badge">Set</span>{{else}}<span class="text-muted">None</span>{{end}}
+              <button class="btn btn-sm btn-ghost" data-room-pw>Set…</button>
+              {{if .HasPassword}}<button class="btn btn-sm btn-ghost" data-room-pw-clear>Clear</button>{{end}}</td>
+            <td class="cluster is-gap-2xs">
+              <button class="btn btn-sm btn-ghost" data-room-move="-1" title="Move up" aria-label="Move up">▲</button>
+              <button class="btn btn-sm btn-ghost" data-room-move="1" title="Move down" aria-label="Move down">▼</button>
+              <a class="btn btn-sm btn-ghost" href="/api/shows/{{.Code}}/file" title="Download this room as a file">Export</a>
+              <button class="btn btn-sm btn-ghost btn-danger" data-room-delete>Delete</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      <div class="row is-gap-s is-wrap mt-m">
+        <form id="room-add" class="row is-gap-xs">
+          <input class="input input-sm" name="name" placeholder="New room name" maxlength="60" required aria-label="New room name">
+          <button class="btn btn-sm btn-primary" type="submit">Add room</button>
+        </form>
+        <button class="btn btn-sm" id="room-pw-all">Same password for every room…</button>
+        <label class="btn btn-sm btn-ghost">Import a room file
+          <input type="file" id="room-import" accept="application/json,.json" hidden>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="settings" aria-labelledby="settings-h">
+      <div class="panel-header" id="settings-h">Event settings</div>
+      <div class="tp-settings-grid">
+        <form id="ev-rename" class="field">
+          <label class="label" for="ev-name-input">Event name</label>
+          <div class="row is-gap-xs"><input class="input" id="ev-name-input" value="{{.Event.Name}}" maxlength="80" required><button class="btn" type="submit">Save</button></div>
+        </form>
+        <form id="ev-theme" class="field">
+          <label class="label" for="ev-theme-select">Default screen theme</label>
+          <div class="row is-gap-xs">
+            <select class="select" id="ev-theme-select">
+              <option value="">Box default ({{.DefaultTheme}})</option>
+              {{range .Themes}}<option value="{{.}}"{{if eq . $.Event.Theme}} selected{{end}}>{{.}}</option>{{end}}
+            </select>
+            <button class="btn" type="submit">Save</button>
+          </div>
+          <span class="field-hint">Each screen can still pick its own theme.</span>
+        </form>
+        <div class="field">
+          <span class="label">Venue map</span>
+          <div class="row is-gap-xs is-items-center">
+            {{if .Event.MapAsset}}<img src="/assets/{{.Event.MapAsset}}" alt="Current venue map" class="tp-map-thumb">{{else}}<span class="text-muted">No map yet</span>{{end}}
+            <label class="btn btn-sm">Upload map…<input type="file" id="ev-map" accept="image/*" hidden></label>
+            {{if .Event.MapAsset}}<button class="btn btn-sm btn-ghost" id="ev-map-clear">Remove</button>{{end}}
+          </div>
+          <span class="field-hint">Shown on event walk-in screens.</span>
+        </div>
+        <form id="ev-pw" class="field">
+          <label class="label" for="ev-pw-new">{{if .Event.HasSuperPW}}Change supervisor password{{else}}Set supervisor password{{end}}</label>
+          <div class="row is-gap-xs"><input class="input" id="ev-pw-new" type="password" minlength="4" autocomplete="new-password" required><button class="btn" type="submit">Save</button></div>
+          <span class="field-hint">Signs every other SuperOperator session out.</span>
+        </form>
+      </div>
+      <div class="row mt-m">
+        <button class="btn btn-danger btn-sm push" id="ev-delete">Delete this event…</button>
+      </div>
+    </section>
+  </div>
+</main>
+<footer class="app-status">
+  <span class="lamp" id="live-lamp" title="Live data"></span>
+  <span class="text-muted" id="live-status">connecting…</span>
+</footer>
+<div class="toast-region" popover="manual" id="toast-region"></div>
+<script type="module" src="{{asset "/src/event.js"}}"></script>
+</body>
+</html>
+{{end}}
+
+{{define "denied"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="app tp-shell" data-page="denied">
+<header class="app-bar">
+  <a class="nav-brand tp-brand" href="/" title="Home"><img src="/img/timerpi.svg" alt="TimerPi"></a>
+</header>
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+  <div class="tp-page tp-narrow stack is-gap-m">
+    <h1 class="tp-hero-title">{{.Title}}</h1>
+    <p>{{.Message}}</p>
+    <a class="btn btn-primary tp-btn-lg" href="/">Go to the home page</a>
+  </div>
+</main>
+</body>
+</html>
+{{end}}

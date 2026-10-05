@@ -119,7 +119,7 @@ func TestBundleFullFidelity(t *testing.T) {
 	}
 
 	// Import into a NEW show.
-	iw, ib := ts.call("POST", "/api/shows/import-file", raw, "")
+	iw, ib := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", raw, "")
 	if iw != 201 {
 		t.Fatalf("import: %d %.200s", iw, ib)
 	}
@@ -184,13 +184,13 @@ func TestBundleV1StillImports(t *testing.T) {
 	v1 := `{"manifestVersion":1,"exportedAt":0,"show":{"title":"Old Day"},
 		"cues":[{"label":"Welcome","durationMS":120000,"pos":1}],
 		"schedule":{"dayStartTS":0}}`
-	code, b := ts.call("POST", "/api/shows/import-file", []byte(v1), "")
+	code, b := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", []byte(v1), "")
 	if code != 201 {
 		t.Fatalf("v1 import: %d %.200s", code, b)
 	}
 	// Future version refuses.
 	bad := `{"manifestVersion":99,"show":{"title":"Future"},"cues":[]}`
-	if code, _ = ts.call("POST", "/api/shows/import-file", []byte(bad), ""); code != 400 {
+	if code, _ = ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", []byte(bad), ""); code != 400 {
 		t.Errorf("future version accepted: %d", code)
 	}
 }

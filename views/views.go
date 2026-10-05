@@ -187,6 +187,16 @@ type PageData struct {
 
 	// Display page only:
 	Hostname string
+
+	// Event context for room pages (the room's parent event).
+	Event EventRef
+}
+
+// EventRef is the parent-event context on room pages (app bar, nav).
+type EventRef struct {
+	Code    string
+	Name    string
+	IsSuper bool // this browser is the event's SuperOperator
 }
 
 // ---------------------------------------------------------------------------

@@ -133,12 +133,6 @@ func (d *Deps) resolveAudienceCode(c *gin.Context) (int64, bool) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown session code"})
 		return 0, false
 	}
-	// Locked shows gate their audience surface too (the page already does
-	// via showGateByShowID); without this the REST lane would bypass the
-	// passphrase the page itself demands.
-	if !showGateByShowID(c, d, id) {
-		return 0, false
-	}
 	return id, true
 }
 
@@ -389,9 +383,6 @@ func (d *Deps) audiencePage(c *gin.Context) {
 	id, ok := timerpi.ResolveShowID(d.Store, c.Param("code"))
 	if !ok {
 		pageUnknownCode(c)
-		return
-	}
-	if !showGateByShowID(c, d, id) {
 		return
 	}
 	sh, err := d.Store.GetShow(id)

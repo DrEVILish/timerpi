@@ -23,16 +23,8 @@
 <link rel="icon" href="/img/timerpi.svg" type="image/svg+xml">
 <link rel="stylesheet" id="theme-css-default" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
 <link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
-<!-- ASSET REV policy — PATH revision, not a query string: /css and /src
-     assets load from the CURRENT rev directory (/css/timerpi.v61.css …,
-     swapped routes-side back to the real file by routes.registerStatic).
-     On a CSS/JS change bump EVERY occurrence of the rev segment here,
-     in display.html, display_board.html, settings.html, the Go lock pages
-     (routes.assetsRev) — import specifiers inside public/src/*.js stay
-     literal ('./mesh.js') because they resolve INSIDE the rev dir. The
-     no-cache header alone cannot be trusted behind cache-y middleboxes;
-     the path change is what actually lands new bytes. Older rev paths
-     keep resolving, so cached pages never break. -->
+<link rel="stylesheet" href="{{asset "/css/app.css"}}">
+<!-- JS/CSS URLs go through the asset template func (views/assets.go): a content-hash path segment busts caches. -->
 <script>
 /* Theme bootstrap before first paint: localStorage `timerpi.theme`, else the
    appliance default (B7 — blue-future is the product default), rendered into
@@ -58,14 +50,15 @@
 
 {{define "appbar"}}
 <header class="app-bar">
-  {{if ne .Page "home"}}<a class="nav-brand tp-brand" href="/" title="Shows">
+  <a class="nav-brand tp-brand" href="{{if .Event.Code}}/e/{{.Event.Code}}{{else}}/{{end}}" title="Back to the room list">
     <img src="/img/timerpi.svg" alt="TimerPi">
-  </a>{{end}}
+  </a>
   <nav class="nav">
-    {{if ne .Nav "home"}}
+    {{if .Event.Code}}<a class="nav-item tp-crumb" href="/e/{{.Event.Code}}" title="All rooms of this event">{{.Event.Name}} ›</a>{{end}}
+    <span class="nav-item tp-bar-title">{{.Show.Title}}</span>
     <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
     <a class="nav-item{{if eq .Nav "screens"}} is-active{{end}}" href="/screens/{{.Show.Code}}">Screens</a>
-    {{end}}
+    {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
   </nav>
   <div class="cluster push">
     {{if .Show.Code}}
@@ -86,7 +79,7 @@
         <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
       </div>
     </details>
-    <a class="nav-item" href="/logout" title="End the operator session">Logout</a>
+    <a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>
   </div>
 </header>
 {{end}}
@@ -128,7 +121,7 @@
        accepts CONSTANT template names for {{template}} — the previous
        {{template (printf "page-%s" .Page) .}} line failed at PARSE time.
        Same dispatch, constant names: Page ∈ home|dashboard. */ -}}
-{{if eq .Page "home"}}{{template "page-home" .}}{{else if eq .Page "screens"}}{{template "page-screens" .}}{{else}}{{template "page-dashboard" .}}{{end}}
+{{if eq .Page "screens"}}{{template "page-screens" .}}{{else}}{{template "page-dashboard" .}}{{end}}
 </main>
 {{template "appstatus" .}}
 {{- /* Offline overlay (dashboard instance; display.html keeps its own): JS

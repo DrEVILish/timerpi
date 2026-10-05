@@ -161,10 +161,19 @@ systemctl enable --now timerpi-healthcheck.timer   # every 5 min
 | bin/timerpi 0-byte / wrong arch, service looks healthy | `file bin/timerpi`; note uptime | NEVER `cp` into `bin/timerpi` while it serves (a truncating cp followed by a restart → exec failure); replace via temp + `mv` — update.sh does exactly this; recovery: re-run `make update` |
 | health flags at 03:1x–03:3x daily | backup window | expected: backup is hot, but disk IO spikes; a single FAIL inside the window is non-alarming unless persistent |
 
-## Operator password (A1, 2026-10-03)
-`POST /api/auth/password {"pw":"..."}` (UI: /settings → Operator Password) gates
-operator surfaces behind the password. `/d/<code>` stage pages and `/health`
-stay open on purpose — a display must never re-login after a power cut.
-Scripts can pass HTTP Basic (`-u operator:<pw>`). Changing or clearing the
-password invalidates every existing session cookie immediately (tokens derive
-from the password). Cleared = open access.
+## Passwords and sign-in
+
+There is no appliance password. Access is per event:
+
+- **Supervisor password** (set when the event is created) signs the
+  SuperOperator in at `/e/<event code>`. Change it on the SuperOperator
+  dashboard; every other supervisor session is signed out.
+- **Room password** (optional, set by the SuperOperator per room) protects
+  one room's moderator view.
+- **Box settings** (`/settings`: hostname, network, OSC, default theme)
+  need a SuperOperator session of any protected event on the box. They stay
+  open while no event has a supervisor password.
+- Screens (`/d/`), audience phones (`/a/`) and `/health` never sign in.
+- **Lost supervisor password:** stop the service and clear it with
+  `sqlite3 /var/lib/timerpi/timerpi.db "UPDATE events SET super_hash='' WHERE code='<CODE>';"`.
+  The event then admits anyone holding its code until a new password is set.

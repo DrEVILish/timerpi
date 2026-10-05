@@ -14,9 +14,7 @@ import (
 
 	"timerpi/oscbridge"
 
-	"timerpi/config"
 	"timerpi/timerpi"
-	"timerpi/views"
 )
 
 // registerAPI mounts /api/... (see PROTOCOL §REST) and the su share QR.
@@ -25,8 +23,6 @@ import (
 func registerAPI(r *gin.Engine, d *Deps) {
 	g := r.Group("/api")
 
-	g.POST("/shows", d.apiCreateShow)
-	g.GET("/shows", d.apiListShows)
 	g.GET("/shows/:ident", d.apiShowSnapshot)
 	g.DELETE("/shows/:ident", d.apiDeleteShow)
 	g.POST("/shows/:ident/clone", d.apiCloneShow)
@@ -36,9 +32,6 @@ func registerAPI(r *gin.Engine, d *Deps) {
 	g.POST("/shows/:ident/client-log", d.apiClientLog)
 	g.GET("/shows/:ident/client-log", d.apiClientLogTail)
 	g.GET("/shows/:ident/qr", d.apiShowQR)
-
-	// Per-show extra password (showauth.go; privacy tier 2).
-	registerShowAuth(g, d)
 
 	// Screens + presets (F1/F2; screens.go).
 	registerScreens(g, d)
@@ -105,72 +98,7 @@ func (d *Deps) engineFor(showID int64) (*timerpi.Engine, error) {
 
 // ------------------------------------------------------------------ shows --
 
-// POST /api/shows {title} → {"id":N} (homepage plain-JS reads res.json().id).
-func (d *Deps) apiCreateShow(c *gin.Context) {
-	if d.Store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "db wiring missing"})
-		return
-	}
-	var body struct {
-		Title string `json:"title"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Title) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"title\": …}"})
-		return
-	}
-	show, err := d.Store.CreateShow(strings.TrimSpace(body.Title))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	// Warm the engine so the ticker drives it from creation onward.
-	if d.Engines != nil {
-		if _, eerr := d.Engines.Get(show.ID); eerr != nil {
-			log.Printf("routes: engine warmup for show %d: %v", show.ID, eerr)
-		}
-	}
-	c.JSON(http.StatusCreated, gin.H{"id": show.ID, "code": show.Code, "title": show.Title})
-}
 
-// GET /api/shows — management listing. Privacy (2026-10-03): the code +
-// title are the show's credentials, so they are only served when the
-// operator password is set (the endpoint gates through AuthGate then).
-// Wide-open appliances get id/cue-count/length only — a LAN passer-by must
-// not be able to enumerate codes via HTTP.
-func (d *Deps) apiListShows(c *gin.Context) {
-	if d.Store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "db wiring missing"})
-		return
-	}
-	rows, err := d.listShowRows()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	verbose := config.HasAuth()
-	out := make([]gin.H, 0, len(rows))
-	for _, m := range rows {
-		row := gin.H{
-			"id":       m.Show.ID,
-			"cueCount": m.CueCount,
-			"totalMS":  m.TotalMS,
-			"totalFmt": views.FmtDur(m.TotalMS),
-		}
-		if verbose {
-			// Code-only public paths (Agent L scope change): the numeric id
-			// stays for bookkeeping; clients address everything by `code`.
-			code := timerpi.NormalizeCode(m.Show.Code)
-			row["code"] = code
-			row["title"] = m.Show.Title
-			if code != "" {
-				row["control"] = "/c/" + code
-				row["display"] = "/d/" + code
-			}
-		}
-		out = append(out, row)
-	}
-	c.JSON(http.StatusOK, out)
-}
 
 // POST /api/shows/:ident/notes {text} — the DAY-MEMO autosave endpoint (A7).
 // Show-gated like content; stores verbatim (operator voice), no length cap
@@ -527,7 +455,8 @@ func (d *Deps) apiSessionDelete(c *gin.Context) {
 // Each entry is stored (capped tail) AND journaled (journal survives even
 // DB trouble). At most 25 entries per request.
 func (d *Deps) apiClientLog(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	// Open: screens report errors without signing in (stored capped).
+	id, ok := d.requireShow(c)
 	if !ok {
 		return
 	}
@@ -950,7 +879,7 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 		c.String(http.StatusBadRequest, "qr data too long (max 512 chars)")
 		return
 	}
-	if _, ok := d.requireShowGated(c); !ok {
+	if _, ok := d.requireShow(c); !ok {
 		return
 	}
 	png, err := qrPNG(data, size)

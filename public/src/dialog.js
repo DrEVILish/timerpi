@@ -30,6 +30,8 @@ function buildDialog({ title, message, fields, ok, danger }) {
       input.className = 'input';
       input.id = f.id;
       input.value = f.value || '';
+      if (f.type) input.type = f.type;
+      if (f.autocomplete) input.autocomplete = f.autocomplete;
       if (f.placeholder) input.placeholder = f.placeholder;
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
       wrap.append(lbl, input);

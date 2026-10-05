@@ -1,7 +1,7 @@
 // audience tests (phase 0 stitch): /a/:code page renders, the audience
 // REST lane honors moderation-by-silence, votes replace per peer, and the
 // show-passphrase gate applies to the REST lane as the page does
-// (reuses browserGET/postJSONWithCookies from showauth_test).
+
 package routes_test
 
 import (
@@ -89,37 +89,17 @@ func TestAudienceGateAndFlow(t *testing.T) {
 		t.Fatalf("concealed question leaked to audience: %s", body)
 	}
 
-	// Show passphrase gates the audience lane like it gates the page:
-	// no unlock cookie → read/vote/ask all 401.
-	if res, b := postJSONWithCookies(t, ts, "/api/shows/"+ts.showCode+"/passphrase",
-		`{"pw":"op-pass"}`); res.StatusCode != 200 {
-		t.Fatalf("set passphrase: %d %s", res.StatusCode, b)
+	// A room's moderator password never gates the audience: phones read,
+	// vote and ask with no session at all.
+	if err := ts.db.SetRoomPassword(ts.showID, "op-pass"); err != nil {
+		t.Fatalf("set room password: %v", err)
 	}
-	for _, case_ := range []struct {
-		verb, path, body string
-	}{{"GET", "/api/audience/" + ts.showCode, ""},
-		{"POST", "/api/audience/" + ts.showCode + "/vote",
-			fmt.Sprintf(`{"pollId":%d,"choice":"0","peer":"ph9"}`, pid)},
-		{"POST", "/api/audience/" + ts.showCode + "/ask",
-			`{"kind":"qa","text":"007 probe","peer":"ph9"}`}} {
-		if code, _ := ts.call(case_.verb, case_.path, []byte(case_.body), ""); code != http.StatusUnauthorized {
-			t.Errorf("%s %s bypassed passphrase: %d", case_.verb, case_.path, code)
-		}
+	if code, body := ts.anon("GET", "/api/audience/"+ts.showCode, nil, ""); code != 200 ||
+		!strings.Contains(string(body), "Lunch?") || !strings.Contains(string(body), "counts") {
+		t.Fatalf("anonymous audience read: %d %.200s", code, body)
 	}
-	// With the unlock cookie, the lane reads again — counts and all.
-	res, _ := postJSONWithCookies(t, ts, "/api/shows/"+ts.showCode+"/unlock", `{"pw":"op-pass"}`)
-	var unlockCk *http.Cookie
-	for _, ck := range res.Cookies() {
-		if ck.Name != "" {
-			unlockCk = ck
-		}
-	}
-	if unlockCk == nil {
-		t.Fatal("unlock returned no cookie")
-	}
-	_, body := browserGET(t, ts, "/api/audience/"+ts.showCode, "application/json", unlockCk)
-	if !strings.Contains(string(body), "Lunch?") || !strings.Contains(string(body), "counts") {
-		t.Fatalf("gated read with cookie: %.200s", body)
+	if code, _ := ts.anon("GET", "/a/"+ts.showCode, nil, ""); code != 200 {
+		t.Fatalf("anonymous audience page: %d", code)
 	}
 }
 

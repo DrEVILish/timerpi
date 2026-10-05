@@ -30,6 +30,7 @@ type apiTest struct {
 	engines  *timerpi.Engines // the registry routes.Deps carries (CuTePi hook tests wire OnStart on it)
 	showID   int64            // internal; JSON bookkeeping only (Agent L contract)
 	showCode string           // share code: the ONLY public address
+	eventCode string          // parent event (the client is its SuperOperator)
 }
 
 func newAPITest(t *testing.T) *apiTest {
@@ -41,10 +42,11 @@ func newAPITest(t *testing.T) *apiTest {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	show, err := db.CreateShow("API Test Show")
+	ev, rooms, err := db.CreateEvent("API Test Event", testSuperPW, []string{"API Test Show"})
 	if err != nil {
-		t.Fatalf("create show: %v", err)
+		t.Fatalf("create event: %v", err)
 	}
+	show := rooms[0]
 
 	engines := timerpi.NewEngines(db)
 	tmpl, err := views.New(templatesRoot())
@@ -63,7 +65,37 @@ func newAPITest(t *testing.T) *apiTest {
 		srv.Close()
 		hub.Stop()
 	})
-	return &apiTest{t: t, srv: srv, db: db, engines: engines, showID: show.ID, showCode: show.Code}
+	ts := &apiTest{t: t, srv: srv, db: db, engines: engines, showID: show.ID, showCode: show.Code, eventCode: ev.Code}
+	ts.signInSuper()
+	return ts
+}
+
+// testSuperPW is every test event's supervisor password.
+const testSuperPW = "testpw"
+
+// signInSuper signs the shared test client in as the event's SuperOperator
+// (moderator rights in every room of the event).
+func (ts *apiTest) signInSuper() {
+	ts.t.Helper()
+	code, body := ts.call("POST", "/api/events/"+ts.eventCode+"/login", []byte(`{"pw":"`+testSuperPW+`"}`), "application/json")
+	if code != 200 {
+		ts.t.Fatalf("super sign-in: %d %s", code, body)
+	}
+}
+
+// newRoom adds another room to the test event (the client is already
+// SuperOperator there).
+func (ts *apiTest) newRoom(name string) timerpi.Show {
+	ts.t.Helper()
+	ev, ok := ts.db.ResolveEvent(ts.eventCode)
+	if !ok {
+		ts.t.Fatal("test event vanished")
+	}
+	sh, err := ts.db.CreateRoom(ev.ID, name)
+	if err != nil {
+		ts.t.Fatalf("create room: %v", err)
+	}
+	return sh
 }
 
 // engine exposes the built engine for route-presence assertions.
@@ -104,6 +136,27 @@ func (ts *apiTest) callType(method, path string, body []byte, ctype string) (int
 	return res.StatusCode, raw
 }
 
+// anon is call() from a fresh browser with no sessions (a stranger, a TV,
+// or an audience phone).
+func (ts *apiTest) anon(method, path string, body []byte, ctype string) (int, []byte) {
+	ts.t.Helper()
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, _ := http.NewRequest(method, ts.srv.URL+path, rd)
+	if ctype != "" {
+		req.Header.Set("Content-Type", ctype)
+	}
+	res, err := (&http.Client{}).Do(req)
+	if err != nil {
+		ts.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	return res.StatusCode, raw
+}
+
 func (ts *apiTest) call(method, path string, body []byte, ctype string) (int, []byte) {
 	return ts.callType(method, path, body, ctype)
 }
@@ -114,33 +167,26 @@ func (ts *apiTest) call(method, path string, body []byte, ctype string) (int, []
 func TestShowLifecycle(t *testing.T) {
 	ts := newAPITest(t)
 
-	// create
-	code, body := ts.call("POST", "/api/shows", []byte(`{"title":"Friday Night"}`), "application/json")
+	// create a room in the event (SuperOperator)
+	code, body := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms", []byte(`{"name":"Friday Night"}`), "application/json")
 	if code != http.StatusCreated {
 		t.Fatalf("create: %d %s", code, body)
 	}
 	var created struct {
-		ID   int64  `json:"id"`
 		Code string `json:"code"`
 	}
 	_ = json.Unmarshal(body, &created)
-	if created.ID == 0 {
-		t.Fatalf("create body = %s", body)
-	}
-	// Agent L: the code rides the create response (public address).
 	if !timerpi.ValidCode(created.Code) {
 		t.Errorf("create code = %q (want an 8-char Crockford code)", created.Code)
 	}
-	if stored, gerr := ts.db.GetShow(created.ID); gerr != nil || stored.Code != created.Code {
-		t.Errorf("create code %q ≠ stored %q (err %v)", created.Code, stored.Code, gerr)
+	createdID, ok := timerpi.ResolveShowID(ts.db, created.Code)
+	if !ok {
+		t.Fatalf("created room %q does not resolve", created.Code)
 	}
 
-	// list: OPEN appliance strips code+title (privacy — /api/shows must not
-	// leak credentials to a LAN passer-by); with the operator password set
-	// the endpoint is gated and may serve them again.
-	code, body = ts.call("GET", "/api/shows", nil, "")
-	if code != 200 || bytes.Contains(body, []byte("Friday Night")) || bytes.Contains(body, []byte(created.Code)) {
-		t.Errorf("list (must strip credentials on an open appliance): %d %s", code, body)
+	// There is no public list of rooms or shows.
+	if code, _ = ts.anon("GET", "/api/shows", nil, ""); code != http.StatusNotFound {
+		t.Errorf("GET /api/shows: %d, want 404 (no public listing)", code)
 	}
 
 	// snapshot persists the show + cues empty, addressed BY CODE
@@ -165,7 +211,7 @@ func TestShowLifecycle(t *testing.T) {
 
 	// Numeric ids are NO LONGER addresses (Agent L scope change) → 404:
 	// the internal id of the freshly created show refuses just like a miss.
-	if code, _ = ts.call("GET", "/api/shows/"+jsonNumber(created.ID), nil, ""); code != 404 {
+	if code, _ = ts.call("GET", "/api/shows/"+jsonNumber(createdID), nil, ""); code != 404 {
 		t.Errorf("numeric id snapshot: %d (want 404 in the code-only world)", code)
 	}
 	// unknown show → 404

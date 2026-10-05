@@ -37,19 +37,19 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | 2/3 | Room walk-in | 🟡 | `room` template works. Needs portrait form and rotation → **N4** |
 | 4/5 | Room audience display | 🟡 | `main` template, Show/Results end to end. Needs the audience target (**N5**), Q&A wall/spotlight (**N6**), quiz fix (**B2**) |
 | 6/7 | Room presenter display | 🟡 | `dsm` template is solid. Needs the presenter target (**N5**) |
-| 8/9 | Room moderator | ⚠️ | Dashboard is complete for timing/audience, but it's entered by room code, not event → room pick (**N1, N2**). Tablet pass needed (**N11**) |
-| 10 | SuperOperator | ⚠️ | `/super` is transport-only, gated by the device password, and nothing links to it (**N3**) |
-| 11 | Audience devices | ⚠️ | Works on an open appliance. Locked out when a device password is set (**B1**). Ideas/survey half-wired (**B3, B4**) |
+| 8/9 | Room moderator | 🟡 | ✅ Event code → pick room → optional room password. Room-isolated (tested). Dashboard is complete for timing/audience. Tablet pass still to do (**N11**) |
+| 10 | SuperOperator | 🟡 | ✅ `/e/<code>/admin`: live room cards (state, now/next, time left, screens) with GO/Pause/Blackout, blackout all, rooms admin (add, inline rename, reorder, delete, passwords), event settings (name, theme, map, password, delete). Moderates every room. Still to do: event-wide screens view (**N3**) |
+| 11 | Audience devices | ⚠️ | Open by design: no password ever gates phones (B1 fixed). Ideas and survey are half-wired (**B3, B4**) |
 
 ## 3. Requirements matrix
 
 | Req | Status | Note |
 |---|---|---|
-| E1–E3 events, join flow, rooms admin | ❌ | N1, N2, N3 |
-| E4 event export/import | 🟡 | v2 show bundle is full-fidelity per *room*. Needs event-level wrapping (N1) |
+| E1–E3 events, join flow, rooms admin | ✅ | Tested in `routes/events_test.go` |
+| E4 event export/import | 🟡 | Room export (`/api/shows/:c/file`) and room import into an event work. A single whole-event file is still to do |
 | T1–T5 timing | ✅ | Mature |
 | T6 import | ✅ | |
-| T7 blackout room / event | 🟡 | Room ✅. Event-wide exists as `/super` bulk (zone-scoped) → re-scope to event (N3) |
+| T7 blackout room / event | ✅ | Room, and event-wide from the SuperOperator dashboard |
 | S1 capture | 🟡 | Works. Must also set display type + rotation (N4) |
 | S2 layout editor | 🟡 | Works (17 tile types). Needs rotation/portrait preview (N4) |
 | S3 templates per display type | 🟡 | 10 templates, not grouped by type, no portrait variants (N4) |
@@ -77,7 +77,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | H1–H3 appliance, offline LAN, mesh | 🟡 | Hardware drills pending (H1–H4). UI files not embedded (C9) |
 | H4 CuTePi OSC | ✅ | |
 | H5 any browser as screen | ✅ | |
-| M2 day-ready model | ❌ | N10 |
+| M2 day-ready model | 🟡 | `cues.day` and `events.days` exist (always 1). Queries are not day-scoped yet (N10) |
 | htmx 4 vendored | ✅ | N8 |
 
 ## 4. Open work
@@ -86,7 +86,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | ID | Bug | Where |
 |---|---|---|
-| **B1** | With a device password set, `/a/`, `/api/audience/*` and `/zone/` are not AuthGate-exempt. Phones and walk-ins get redirected to `/login`. | `routes/auth.go` `authExempt` |
+| **B1** | ✅ Fixed 2026-10-05: there is no appliance password any more; audience and walk-in pages are open by design. | `routes/access.go` |
 | **B2** | The quiz correct answer never shows. The dashboard never sends `correct`, and `PollView.Correct` is `omitempty`, so index 0 is dropped. | `templates/dashboard.html`, `timerpi/polls.go:80` |
 | **B3** | Survey members drop on WS updates, and there is no survey UI or tile. *Proposal: remove `survey` (not in PRODUCT A1).* | `templates/audience.html`, `timerpi/polls.go` |
 | **B4** | Ideas are posted with `parent:0` and become top-level rows. There is no ideas tile. "Add mine" upvotes the whole item. | `templates/audience.html`, `public/src/board.js` |
@@ -98,16 +98,16 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | ID | Work | Spec | Notes |
 |---|---|---|---|
-| **N1** | **Event model.** `events` table (code, name, supervisor password hash, theme, map asset, day list), with `shows` becoming rooms (`event_id`, room name, position). Moderator password = today's show passphrase, now set by the SuperOperator. Migrate each existing show into a one-room event. Event-level export/import wraps the v2 room bundles | E1, E3, E4 | Keep room codes as the short address for `/a/` and `/d/` QR URLs |
-| **N2** | **Home page join flow:** create event (name + supervisor password + rooms) · enter event code → room list → optional moderator password → moderator view · "SuperOperator" → supervisor password | E1, E2 | Replaces the room-code-first home page |
-| **N3** | **SuperOperator = event admin.** Event dashboard: every room's live card, links into each room with full rights, add/edit/remove rooms, moderator passwords, event-wide screens view, event blackout, map, theme. Retire the appliance password (PRODUCT §7) | E3, S4, T7 | The appliance password is removed. Box settings need any event's supervisor password, and stay open with no events |
+| **N1** | ✅ Done 2026-10-05: `events` table; shows are rooms (`event_id`, `room_pos`, `room_pw` hash); PBKDF2 passwords; HMAC session cookies; orphan shows adopted at startup (zones → one event). Left: one whole-event export file | E1, E3, E4 | |
+| **N2** | ✅ Done 2026-10-05: new home page (join by code / create event / open a screen / recent), event lobby with room sign-in and SuperOperator sign-in. The old setup wizard and connect sheet are retired | E1, E2 | |
+| **N3** | 🟡 SuperOperator dashboard done (see surface 10). The appliance password is removed; box settings need any protected event's supervisor session. Left: an event-wide screens view | E3, S4, T7 | |
 | **N4** | **Display types + rotation.** Screens registry gets `type` (audience/walkin/presenter) and `rotation` (0/90/180/270). Capture modal sets both. Rotation is a CSS transform of the whole layout. Templates are grouped by type, with portrait walk-in variants. The editor previews rotation. Screen names rename inline by double-click/double-tap (S9) | S1–S3, S7, §3.2 | |
 | **N5** | **Two push targets.** Interaction gains `toAudience` and `toPresenter` flags. `results` applies to wherever it is shown. The audience read and phone frames carry audience-targeted items only. Boards render by screen type (audience displays ← audience target; presenter displays ← presenter target). The dashboard gets **Show to Audience**, **Show to Presenter**, **Results** and **Hide** | A4, A5 | Replaces single-focus `open`. Keep "one on-air item per target per room" |
 | **N6** | **Q&A wall + spotlight.** Submitted questions become children of the open Q&A item (like words), with status `pending → approved → answered` or `dismissed`, plus upvotes per question. New tiles: `qa-wall` (approved, by upvotes) and `spotlight`. Moderator: approve / spotlight / mark answered / dismiss | A7 | Fixes today's "each question replaces the on-air item" |
 | **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8 | |
 | **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
 | **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |
-| **N10** | **Day-ready model.** Sessions carry `day` (default = event's day 1). All queries are scoped by day. No UI yet | M2 | Do it inside N1's migration |
+| **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
 | **N11** | **Device-class UX.** Moderator view is touch-first for tablets (44 px targets, no hover-only actions). SuperOperator view is laptop-first. Audience page is phone-first | L6 | |
 
 ### 4.3 Cleanup (hanging leftovers)

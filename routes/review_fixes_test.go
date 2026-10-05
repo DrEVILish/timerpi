@@ -14,19 +14,17 @@ import (
 // operator-shaped API calls still refuse.
 func TestTVSubresourcesPassAuthGate(t *testing.T) {
 	ts := newAPITest(t)
-	setAuth(t, "review-gate-pw")
-
-	if code, _ := ts.call("GET", "/api/shows/"+ts.showCode+"/qr?data=x", nil, ""); code != http.StatusOK {
+	if code, _ := ts.anon("GET", "/api/shows/"+ts.showCode+"/qr?data=x", nil, ""); code != http.StatusOK {
 		t.Errorf("TV QR under auth gate: %d, want 200", code)
 	}
-	code, body := ts.call("POST", "/api/shows/"+ts.showCode+"/client-log",
+	code, body := ts.anon("POST", "/api/shows/"+ts.showCode+"/client-log",
 		[]byte(`{"entries":[{"kind":"error","message":"tv said hi","source":""}]}`), "application/json")
 	if code != http.StatusOK {
 		t.Errorf("TV client-log under auth gate: %d %s, want 200", code, body)
 	}
 	// Control: mutating operator endpoints still refuse.
-	if code, _ := ts.call("POST", "/api/shows", []byte(`{"title":"x"}`), "application/json"); code != http.StatusUnauthorized {
-		t.Errorf("operator POST under auth gate: %d, want 401", code)
+	if code, _ := ts.anon("POST", "/api/shows/"+ts.showCode+"/blank", []byte(`{"on":true}`), "application/json"); code != http.StatusUnauthorized {
+		t.Errorf("anonymous operator POST: %d, want 401", code)
 	}
 }
 
@@ -34,8 +32,8 @@ func TestTVSubresourcesPassAuthGate(t *testing.T) {
 func TestBodyCeiling(t *testing.T) {
 	ts := newAPITest(t)
 	big := `{"title":"` + strings.Repeat("a", 9<<20) + `"}`
-	if code, _ := ts.call("POST", "/api/shows", []byte(big), "application/json"); code == http.StatusCreated {
-		t.Fatalf("9 MiB create-show accepted; ceiling middleware dead")
+	if code, _ := ts.call("POST", "/api/events", []byte(big), "application/json"); code == http.StatusCreated {
+		t.Fatalf("9 MiB create-event accepted; ceiling middleware dead")
 	}
 	// Import paths get the 32 MiB ceiling: 9 MiB JSON must be *parsed* and
 	// refused for shape, not by the byte ceiling.

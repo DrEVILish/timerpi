@@ -26,7 +26,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"timerpi/boards"
-	"timerpi/config"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -313,16 +312,9 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		// chrome is operator furniture, not display furniture — the REST is
 		// already behind A1's AuthGate, so this just stops shipping a toolbar
 		// that can only ever answer 401s.
-		Editable:   c.Query("edit") == "1" && boardEditAllowed(c),
+		Editable:   c.Query("edit") == "1" && d.canModerate(c, showID),
 		LayoutJSON: template.JS(board.Layout),
 	}
-}
-
-// boardEditAllowed keeps ?edit=1 honest: free-form while no operator password
-// exists, credential-checked once one does (cookie or Basic; the /d/ page
-// itself never needs either, the editor does).
-func boardEditAllowed(c *gin.Context) bool {
-	return !config.HasAuth() || requestAuthed(c)
 }
 
 // boardJoinOf derives the share affordance off THIS request (absolute board

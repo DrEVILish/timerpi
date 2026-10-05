@@ -17,7 +17,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"timerpi/config"
 	"timerpi/routes"
 	"timerpi/timerpi"
 )
@@ -85,15 +84,13 @@ func (h *Hub) readJoin(s *session) bool {
 		return false // pre-join silence: close quietly, no err frame
 	}
 	var j struct {
-		V         int             `json:"v"`
-		T         string          `json:"t"`
-		Role      string          `json:"role"`
-		Show      json.RawMessage `json:"show"`
-		PeerID    string          `json:"peerId"`
-		JoinedAt  int64           `json:"joinedAt"`
-		AuthToken string          `json:"authToken"`
-		ShowToken string          `json:"showToken"`
-		Screen    string          `json:"screen"`
+		V        int             `json:"v"`
+		T        string          `json:"t"`
+		Role     string          `json:"role"`
+		Show     json.RawMessage `json:"show"`
+		PeerID   string          `json:"peerId"`
+		JoinedAt int64           `json:"joinedAt"`
+		Screen   string          `json:"screen"`
 	}
 	if jerr := json.Unmarshal(raw, &j); jerr != nil || j.T != "join" {
 		s.sendErr("first frame must be a join frame")
@@ -104,18 +101,8 @@ func (h *Hub) readJoin(s *session) bool {
 		s.sendErr(rerr.Error())
 		return false
 	}
-	// Per-show passphrase gate (showauth.go): locked shows refuse joins that
-	// present neither the ws upgrade cookie (a browser that unlocked) nor
-	// the join token (mesh.js stores it via the lock page).
-	if pw, perr := h.store.ShowPassphrase(showID); perr == nil && pw != "" {
-		if !routes.ShowUnlockedJoin(s.httpCookies, code, pw, j.ShowToken) {
-			log.Printf("ws: join refused: show %s is passphrase-locked", code)
-			s.sendErr("show password required (open the show page, enter it once)")
-			return false
-		}
-	}
 	if j.Role == "" {
-		j.Role = "controls"
+		j.Role = "display"
 	}
 	switch j.Role {
 	case "controls", "display", "screen", "audience":
@@ -123,15 +110,12 @@ func (h *Hub) readJoin(s *session) bool {
 		s.sendErr("unknown role " + strconv.Quote(j.Role))
 		return false
 	}
-	// A1 operator-password gate: with a password set, "controls" joins (the
-	// operator surface) must present the auth token issued by /api/login.
-	// Display and mesh joins stay open — a fresh stage TV has never logged
-	// in, and the mesh signalling channel is read-side P2P plumbing.
-	// ws/commands.go separately refuses commands from non-controls sessions,
-	// so the open display role cannot mutate (PROTOCOL §auth).
-	if config.HasAuth() && j.Role == "controls" && !config.CheckToken(j.AuthToken) {
-		log.Printf("ws: controls join refused: missing/invalid auth token")
-		s.sendErr("operator password required (open /login, then reconnect)")
+	// Operator joins need moderator access to this room (or the event's
+	// SuperOperator session) — the upgrade request's cookies carry it.
+	// Screens and phones stay open; they are read-only (commands.go).
+	if j.Role == "controls" && !routes.ModerateFromCookies(h.store, s.httpCookies, showID) {
+		log.Printf("ws: controls join refused for show %s: no moderator session", code)
+		s.sendErr("moderator access required (join the room from the home page)")
 		return false
 	}
 	s.id = orGenID(j.PeerID)

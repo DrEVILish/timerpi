@@ -922,7 +922,7 @@ function updateConnection() {
 function updateSharePanel(snap) {
   const qr = $('#share-qr');
   if (qr && qr.dataset.srcTpl) {
-    const url = `${location.origin}/d/${qr.dataset.show}`;
+    const url = `${location.origin}${qr.dataset.path || '/d/'}${qr.dataset.show}`;
     qr.src = qr.dataset.srcTpl.replace('__DATA__', encodeURIComponent(url));
     qr.dataset.srcTpl = '';
     const link = $('#share-display-link');
@@ -956,7 +956,7 @@ function initSharePanel() {
     const url = input?.value || $('#share-display-link')?.href;
     try {
       await navigator.clipboard.writeText(url);
-      toast('Display link copied', 'success');
+      toast('Link copied', 'success');
     } catch {
       input?.select();
       document.execCommand?.('copy');
@@ -1452,8 +1452,6 @@ function renderRecent() {
   });
 }
 
-/* ------------------------------------------------------------- show pw -- */
-
 function initShowClone() {
   // E1: duplicate the day — POST clone, then open the new dashboard.
   const form = $('#show-clone-form');
@@ -1470,42 +1468,8 @@ function initShowClone() {
         body: JSON.stringify({ title }),
       });
       const out = await res.json();
-      if (!res.ok || !out.code) { toast(out.error || 'could not clone the show', 'danger'); return; }
+      if (!res.ok || !out.code) { toast(out.error || 'could not duplicate the room', 'danger'); return; }
       location.href = `/c/${out.code}`;
-    } catch {
-      toast('network error', 'danger');
-    }
-  });
-}
-
-/* ------------------------------------------------------------- show pw -- */
-
-function initShowPass() {
-  // Extra per-show password (privacy tier 2, routes/showauth.go): the
-  // setter's own browser receives the unlock cookie + token immediately.
-  const form = $('#show-pass-form');
-  if (!form) return;
-  const code = document.body.dataset.show || mesh?.showId || '';
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pw = $('#show-pass')?.value || '';
-    try {
-      const res = await fetch(`/api/shows/${code}/passphrase`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ pw }),
-      });
-      const out = await res.json();
-      if (!res.ok) { toast(out.error || 'could not set the password', 'danger'); return; }
-      if (out.token) {
-        try { localStorage.setItem('tp.show.' + code, out.token); } catch { /* */ }
-      } else {
-        try { localStorage.removeItem('tp.show.' + code); } catch { /* */ }
-      }
-      toast(out.enabled
-        ? 'Show locked — other devices must enter it once'
-        : 'Show password removed', 'info');
-      form.reset();
     } catch {
       toast('network error', 'danger');
     }
@@ -2915,7 +2879,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowPass(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initAudiencePanel(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initAudiencePanel(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
   if (page === 'display') initFullscreenHint();
 

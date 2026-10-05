@@ -1,55 +1,32 @@
-{{- /* frag-share — fragments/share.html (see CONTRACT-UI.md). Agent L:
-     the panel is CODE-ONLY — .Share fields carry the normalized 8-char
-     share code (CodeFmt = 4-4 "K7QP-M3XB") and the QR/mirror/link point at
-     /d/<code>; the numeric show id is internal bookkeeping, never shown. */ -}}
+{{- /* frag-share — the room's sharing panel: the audience join QR + link
+     (phones scan it), and a link that opens one of this room's screens.
+     Room passwords are set by the SuperOperator (event admin page). */ -}}
 {{define "frag-share"}}
 <section class="panel" id="share-panel">
-  <div class="panel-header">Share</div>
+  <div class="panel-header">Audience join</div>
   <div class="stack is-gap-s">
-    <img id="share-qr" alt="Display QR code" width="160" height="160"
-         {{if .Share.Code}}data-show="{{.Share.Code}}"
+    <img id="share-qr" alt="Audience join QR code" width="160" height="160"
+         {{if .Share.Code}}data-show="{{.Share.Code}}" data-path="/a/"
          data-src-tpl="/api/shows/{{.Share.Code}}/qr?size=320&data=__DATA__"
-         src="/api/shows/{{.Share.Code}}/qr?size=320&data=%2Fd%2F{{.Share.Code}}"
+         src="/api/shows/{{.Share.Code}}/qr?size=320&data=%2Fa%2F{{.Share.Code}}"
          {{end}}>
-    <div class="stack is-gap-2xs">
-      <span class="label">Session code</span>
-      <span class="readout readout-lg mono" id="share-code">{{if .Share.CodeFmt}}{{.Share.CodeFmt}}{{else}}XXXX-XXXX{{end}}</span>
-      <span class="field-hint">Displays and phones join with this code or the link / QR.</span>
-    </div>
+    <span class="field-hint">Phones scan this to vote and ask questions. Put the join QR tile on a screen so the room can see it.</span>
     <div class="cluster is-gap-s">
       <input class="input is-mirror" id="share-url-mirror" readonly tabindex="-1"
-             value="{{if .Share.DisplayURL}}{{.Share.DisplayURL}}{{else}}{{if .Share.Code}}/d/{{.Share.Code}}{{end}}{{end}}" aria-label="Display link">
+             value="{{if .Share.Code}}/a/{{.Share.Code}}{{end}}" aria-label="Audience link">
       <button class="btn btn-sm" id="share-copy" type="button">
         <svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-copy"/></svg> Copy
       </button>
-      <a class="btn btn-sm btn-primary" id="share-display-link" href="{{if .Share.DisplayPath}}{{.Share.DisplayPath}}{{end}}"
-         target="_blank" rel="opener" data-kiosk>
-        <svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-screen-share"/></svg> Open
-      </a>
+      <a class="btn btn-sm" href="{{if .Share.Code}}/a/{{.Share.Code}}{{end}}" target="_blank" rel="noopener">Preview phone view</a>
     </div>
-
-    <!-- Privacy tier 2: the per-show extra password. Empty = code-only.
-         Setting one re-gates THIS show's operator + display pages and WS
-         joins; the same browser is auto-unlocked (7-day cookie). -->
     <div class="stack is-gap-2xs">
-      <span class="label">Extra show password</span>
-      <form id="show-pass-form" class="cluster is-gap-2xs">
-        <input class="input input-sm" type="password" id="show-pass" autocomplete="new-password"
-               placeholder="Add password" aria-label="Extra show password" style="min-width:0">
-        <button type="submit" class="btn btn-sm">Lock show</button>
-      </form>
-      <span class="field-hint">Leave empty to remove the gate (removes it for every device).</span>
-    </div>
-    <!-- E1: duplicate the day for recurring shows — fresh code, same
-         cues/notes/day-start, no passphrase (re-lock explicitly). -->
-    <div class="stack is-gap-2xs">
-      <span class="label">Clone this day</span>
+      <span class="label">Duplicate this room</span>
       <form id="show-clone-form" class="cluster is-gap-2xs">
         <input class="input input-sm" type="text" id="show-clone-title" autocomplete="off"
-               placeholder="Copy title (optional)" aria-label="Clone title (optional)" style="min-width:0">
-        <button type="submit" class="btn btn-sm" title="Duplicate this show with a fresh share code">Clone day</button>
+               placeholder="New room name (optional)" aria-label="New room name (optional)" style="min-width:0">
+        <button type="submit" class="btn btn-sm" title="Copy this running order into a new room of the event">Duplicate</button>
       </form>
-      <span class="field-hint">Same cues, notes and day start — new code, unlocked, stopped.</span>
+      <span class="field-hint">Same sessions, notes and day start — a new room, stopped, without a password.</span>
     </div>
   </div>
 </section>

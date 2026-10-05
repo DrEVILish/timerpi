@@ -1,0 +1,52 @@
+/* app.css — layout for the event-layer pages (home, event lobby,
+   SuperOperator dashboard, access pages). Layout only: colour, type and
+   components come from the active ftl-themes bundle (tokens + classes). */
+
+.tp-shell .app-main { overflow: auto; }
+.tp-page { width: 100%; max-width: 72rem; margin: 0 auto; padding: var(--space-l, 1.5rem) var(--space-m, 1rem) var(--space-2xl, 3rem); }
+.tp-narrow { max-width: 32rem; }
+
+.tp-hero-title { font-size: clamp(1.6rem, 3vw + 1rem, 2.6rem); line-height: 1.1; margin: 0; }
+.tp-section-title { font-size: 1.25rem; margin: 0; }
+.tp-bar-title { font-weight: 700; }
+
+.tp-doors { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); align-items: start; }
+.tp-door .panel-header { font-size: 1.1rem; }
+.tp-code-input { text-transform: uppercase; letter-spacing: .12em; font-size: 1.4rem; }
+.tp-btn-lg { min-height: 2.9rem; padding-inline: 1.25rem; font-size: 1.05rem; justify-content: center; }
+.tp-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: .4rem; }
+
+.tp-recent { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.tp-recent-item { display: flex; align-items: center; gap: .5rem; padding: .35rem .25rem; border-bottom: 1px solid var(--hairline, var(--border)); }
+.tp-recent-link { flex: 1; text-decoration: none; color: inherit; }
+
+.tp-room-grid { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.tp-room-card { display: flex; flex-direction: column; gap: var(--space-s, .75rem); }
+.tp-room-card .panel-header { font-size: 1.15rem; }
+
+.tp-live-grid { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+.tp-live-card { display: flex; flex-direction: column; gap: var(--space-xs, .5rem); }
+.tp-live-card .panel-header { display: flex; align-items: center; gap: .5rem; }
+.tp-live-clock { font-size: 2.4rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.tp-live-facts { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: 0; }
+.tp-live-facts dt { color: var(--muted); }
+.tp-live-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tp-rooms-table td { vertical-align: middle; }
+.tp-inline-edit { cursor: text; border-bottom: 1px dashed var(--border); padding: 0 .1rem; }
+.tp-inline-edit:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: 2px; }
+.tp-inline-input { min-width: 10rem; }
+
+.tp-settings-grid { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+.tp-map-thumb { max-height: 4rem; max-width: 8rem; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius, 4px); }
+
+/* Touch-first targets on tablets (moderators) — PRODUCT L6. */
+@media (pointer: coarse) {
+  .tp-shell .btn { min-height: 2.75rem; }
+  .tp-shell .btn-sm { min-height: 2.5rem; }
+}
+@media (max-width: 40rem) {
+  .tp-rooms-table thead { display: none; }
+  .tp-rooms-table tr { display: grid; grid-template-columns: auto 1fr; gap: .25rem .5rem; padding: .5rem 0; }
+  .tp-rooms-table td { display: block; }
+}

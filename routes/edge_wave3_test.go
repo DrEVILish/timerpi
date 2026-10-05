@@ -196,43 +196,6 @@ func TestImportAppendSalvage(t *testing.T) {
 
 // --- setup wizard + show-file guards (no setup_test.go exists) ---------------
 
-// GET /setup on a non-empty store redirects home; ?force=1 renders;
-// a bogus ?step= falls back to the identity step.
-func TestSetupWizardGuards(t *testing.T) {
-	ts := newAPITest(t)
-	noRedirect := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	get := func(path string) (int, http.Header, []byte) {
-		req, _ := http.NewRequest("GET", ts.srv.URL+path, nil)
-		res, err := noRedirect.Do(req)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		defer res.Body.Close()
-		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(res.Body)
-		return res.StatusCode, res.Header, buf.Bytes()
-	}
-
-	// DefaultClient would follow the redirect; assert the 307 itself.
-	if code, hdr, _ := get("/setup"); code != http.StatusTemporaryRedirect || hdr.Get("Location") != "/" {
-		t.Errorf("setup on ready store: %d loc=%q, want 307 to /", code, hdr.Get("Location"))
-	}
-
-	code, _, _ := get("/setup?force=1")
-	if code != http.StatusOK {
-		t.Errorf("setup force: %d, want 200", code)
-	}
-
-	code, _, body := get("/setup?force=1&step=bogus")
-	if code != http.StatusOK {
-		t.Fatalf("setup bogus step: %d, want 200", code)
-	}
-	if !strings.Contains(string(body), `<span class="is-here">1</span>`) {
-		t.Errorf("bogus step did not fall back to identity: %.300s", body)
-	}
-}
 
 // A show-file bundle with a future manifestVersion is refused before any
 // show is created (importShowFile has no route-level test at all).
@@ -243,7 +206,7 @@ func TestShowFileVersionMismatch(t *testing.T) {
 		t.Fatalf("ListShows: %v", err)
 	}
 	body := `{"manifestVersion":99,"show":{"title":"Future"},"cues":[]}`
-	code, resp := ts.call("POST", "/api/shows/import-file", []byte(body), "application/json")
+	code, resp := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", []byte(body), "application/json")
 	if code != http.StatusBadRequest || !strings.Contains(string(resp), "unsupported show file version") {
 		t.Fatalf("future bundle: %d %s", code, resp)
 	}

@@ -83,23 +83,12 @@ func TestCloneShowDefaultsE1(t *testing.T) {
 	if _, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "Only", DurationMS: 60_000}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	res, _ := postJSONWithCookies(t, ts, "/api/shows/"+ts.showCode+"/passphrase", `{"pw":"secret"}`)
-	if res.StatusCode != 200 {
-		t.Fatalf("lock source: %d", res.StatusCode)
+	if err := ts.db.SetRoomPassword(ts.showID, "secret"); err != nil {
+		t.Fatalf("lock source: %v", err)
 	}
-	var cook *http.Cookie
-	for _, ck := range res.Cookies() {
-		if strings.HasPrefix(ck.Name, "tp_show_") {
-			cook = ck
-		}
-	}
-	if cook == nil {
-		t.Fatal("no unlock cookie on lock")
-	}
-
-	res, raw := postJSONWithCookies(t, ts, "/api/shows/"+ts.showCode+"/clone", `{}`, cook)
-	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("clone locked source: %d %s", res.StatusCode, raw)
+	status, raw := ts.call("POST", "/api/shows/"+ts.showCode+"/clone", []byte(`{}`), "application/json")
+	if status != http.StatusCreated {
+		t.Fatalf("clone locked source: %d %s", status, raw)
 	}
 	var out struct {
 		Code  string `json:"code"`
@@ -111,9 +100,12 @@ func TestCloneShowDefaultsE1(t *testing.T) {
 	if out.Title != "Copy of API Test Show" {
 		t.Errorf("default title = %q", out.Title)
 	}
-	// Unlocked: the clone answers snapshots with no cookie.
-	if code, _ := ts.call("GET", "/api/shows/"+out.Code, nil, ""); code != 200 {
-		t.Errorf("clone inherited the gate: %d", code)
+	// The clone is a room of the same event, without the source's password.
+	src, _ := ts.db.GetShow(ts.showID)
+	id, ok := timerpi.ResolveShowID(ts.db, out.Code)
+	dst, _ := ts.db.GetShow(id)
+	if !ok || dst.EventID != src.EventID || dst.RoomPW != "" {
+		t.Errorf("clone: event %d (want %d), password inherited %v", dst.EventID, src.EventID, dst.RoomPW != "")
 	}
 }
 
@@ -122,7 +114,7 @@ func TestCloneShowDefaultsE1(t *testing.T) {
 func TestCloneFormShipsE1(t *testing.T) {
 	ts := newAPITest(t)
 	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	for _, sub := range []string{`id="show-clone-form"`, `id="show-clone-title"`, `Clone day`} {
+	for _, sub := range []string{`id="show-clone-form"`, `id="show-clone-title"`, `Duplicate`} {
 		if !strings.Contains(string(body), sub) {
 			t.Errorf("dashboard missing %q", sub)
 		}

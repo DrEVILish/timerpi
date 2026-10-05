@@ -207,6 +207,7 @@ func (d *DB) migrate() error {
 			{"hold_ms", "INTEGER NOT NULL DEFAULT 0"},
 			{"timer_kind", "TEXT NOT NULL DEFAULT 'COUNTDOWN'"},
 			{"start_at", "TEXT NOT NULL DEFAULT ''"},
+			{"day", "INTEGER NOT NULL DEFAULT 1"},
 		},
 		"messages": {
 			{"updated_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -222,6 +223,9 @@ func (d *DB) migrate() error {
 			{"day_start", "TEXT NOT NULL DEFAULT ''"},
 			{"blanked", "INTEGER NOT NULL DEFAULT 0"},
 			{"zone", "TEXT NOT NULL DEFAULT ''"},
+			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
+			{"room_pos", "INTEGER NOT NULL DEFAULT 0"},
+			{"room_pw", "TEXT NOT NULL DEFAULT ''"},
 		},
 		// PLAN §11.2 capture modal: per-screen Room/Location, and the
 		// screen name a captured waiting display adopts on its hop.
@@ -240,10 +244,13 @@ func (d *DB) migrate() error {
 			}
 		}
 	}
+	if err := d.createEventsSchema(); err != nil {
+		return err
+	}
 	if err := d.migrateShowCodes(); err != nil {
 		return err
 	}
-	return nil
+	return d.adoptOrphanShows()
 }
 
 // migrateShowCodes backfills the END-of-chain shows.code migration: every
@@ -328,7 +335,7 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 	if strings.TrimSpace(title) == "" {
 		title = "Copy of " + src.Title
 	}
-	dst, err := d.CreateShow(title)
+	dst, err := d.CreateRoom(src.EventID, title)
 	if err != nil {
 		return Show{}, err
 	}

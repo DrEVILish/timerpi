@@ -43,7 +43,7 @@ func TestHomePageOpenDisplay(t *testing.T) {
 		t.Fatalf("home: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`href="/d/"`, `Open Display`, `data-kiosk`} {
+	for _, sub := range []string{`href="/d/"`, `Open a screen`, `data-kiosk`, `id="join-form"`, `id="create-form"`, `Supervisor password`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("home missing %q", sub)
 		}
@@ -69,22 +69,6 @@ func TestNavDisplayEntity(t *testing.T) {
 	}
 	if strings.Contains(s, "Back to Shows") {
 		t.Error("dashboard still says Back to Shows (replaced by Logout)")
-	}
-	// Home: the appbar brand is HIDDEN there (the hero carries the logo,
-	// centred and 3x the appbar size); other pages keep the linked brand.
-	code, body = ts.call("GET", "/", nil, "")
-	if code != 200 {
-		t.Fatalf("home: %d", code)
-	}
-	s = string(body)
-	if strings.Contains(s, `nav-brand`) {
-		t.Error("home still renders the appbar brand (hero owns the logo now)")
-	}
-	if !strings.Contains(s, `tp-home-logo`) {
-		t.Error("home hero missing the big centred logo")
-	}
-	if strings.Contains(s, "Back to Shows") {
-		t.Error("home nav says Back to Shows")
 	}
 	// /d/ keeps the fullscreen contract.
 	code, body = ts.call("GET", "/d/", nil, "")

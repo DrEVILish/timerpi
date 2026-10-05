@@ -69,9 +69,7 @@ func (d *Deps) render(c *gin.Context, name string, data any) {
 // only.
 func homePage(d *Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		data := views.HomeData(nil)
-		data.Peers = d.peerCount()
-		d.render(c, "base", data)
+		d.render(c, "home", gin.H{"Page": "home", "DefaultTheme": config.DefaultTheme()})
 	}
 }
 
@@ -107,9 +105,8 @@ func dashboardPage(d *Deps) gin.HandlerFunc {
 			pageUnknownCode(c)
 			return
 		}
-		// Per-show passphrase gate (showauth.go): locked shows render the
-		// unlock page before ANY cue content is server-rendered.
-		if d.Store != nil && !showGateByShowID(c, d, showID) {
+		// Moderators of this room (or the event's SuperOperator) only.
+		if d.Store != nil && !d.moderatorPageGate(c, showID) {
 			return
 		}
 		if d.Engines == nil {
@@ -140,8 +137,22 @@ func dashboardPage(d *Deps) gin.HandlerFunc {
 			}
 		}
 		data.Peers = d.peerCount()
+		data.Event = d.eventRef(c, showID)
 		d.render(c, "base", data)
 	}
+}
+
+// eventRef builds the parent-event context for a room page.
+func (d *Deps) eventRef(c *gin.Context, showID int64) views.EventRef {
+	sh, err := d.Store.GetShow(showID)
+	if err != nil {
+		return views.EventRef{}
+	}
+	ev, err := d.Store.GetEvent(sh.EventID)
+	if err != nil {
+		return views.EventRef{}
+	}
+	return views.EventRef{Code: ev.Code, Name: ev.Name, IsSuper: d.isSuper(c, ev)}
 }
 
 // galleryPage is GET /screens/:ident — the operator screens gallery:
@@ -155,7 +166,7 @@ func galleryPage(d *Deps) gin.HandlerFunc {
 			pageUnknownCode(c)
 			return
 		}
-		if d.Store != nil && !showGateByShowID(c, d, showID) {
+		if d.Store != nil && !d.moderatorPageGate(c, showID) {
 			return
 		}
 		if d.Engines == nil {
@@ -180,19 +191,11 @@ func galleryPage(d *Deps) gin.HandlerFunc {
 		data.Page = "screens"
 		data.Nav = "screens"
 		data.Peers = d.peerCount()
+		data.Event = d.eventRef(c, showID)
 		d.render(c, "base", data)
 	}
 }
 
-// showGateByShowID is the show-arm of showGate for handlers that only have
-// the resolved id: loads the row, then applies the passphrase check.
-func showGateByShowID(c *gin.Context, d *Deps, showID int64) bool {
-	sh, err := d.Store.GetShow(showID)
-	if err != nil {
-		return true // unknown/merged row: let the normal 404/snapshot paths answer
-	}
-	return showGate(c, sh)
-}
 
 // now anchors IsDone flags; wall clock elsewhere.
 func (d *Deps) now() int64 { return time.Now().UnixMilli() }

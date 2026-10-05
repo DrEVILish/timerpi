@@ -30,10 +30,10 @@ func TestSharePanelAndCodeOnlyAddress(t *testing.T) {
 		t.Fatalf("dashboard /c/%s: %d", code, status)
 	}
 	for _, want := range []string{
-		`id="share-code"`, fmt4x4,
-		`/d/` + code,                 // display link + mirror
+		`/a/` + code,                 // audience link + mirror
+		`/d/` + code,                 // the app bar's Open Display link
 		`/api/shows/` + code + `/qr`, // QR route by code
-		`data=%2Fd%2F` + code,        // QR payload is the display link (edge-encoded)
+		`data=%2Fa%2F` + code,        // QR payload is the audience link (edge-encoded)
 	} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("dashboard missing %q", want)
