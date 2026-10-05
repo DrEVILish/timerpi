@@ -50,3 +50,18 @@ AGENTS.md; keep it current as machines/services change.
 - Static/theme trees are resolved relative to the process working
   directory (`routes.findDir`); the systemd unit pins WorkingDirectory to
   the checkout.
+
+## Source control & upstreams
+
+- **Never push to `third_party/ftl-themes` (or any dependency repo).** We are
+  not its primary developer. The rule: if you are not the primary developer
+  of a repo, you do not push to it — not from this box, not by advising it.
+  Pushes are allowed only for `DrEVILish/timerpi`, and only when asked.
+- Problems found in ftl-themes (bundle bugs, contract violations) → write
+  `reviews/upstream-issues/<slug>-<topic>.md` with repro + diagnosis +
+  proposed fix. File it as a GitHub issue against ftl-themes only when John
+  says so explicitly.
+- The `timerpi` theme commits stay **local to the submodule** (upstream does
+  not carry them yet). On each ftl-themes release: `git fetch`, rebase the
+  local work onto `origin/main`, rebuild `scripts/build.sh`, pass
+  `scripts/check.sh`, commit — locally. The appliance serves from this tree.

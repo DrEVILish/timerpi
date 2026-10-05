@@ -12,14 +12,14 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v47.js';
+import { Mesh, screenName } from './mesh.v50.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v47.js';
-import { createUndo } from './undo.v47.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v47.js';
-import { applyWaiting } from './waiting.v47.js';
+} from './engine.v50.js';
+import { createUndo } from './undo.v50.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v50.js';
+import { applyWaiting } from './waiting.v50.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -481,7 +481,9 @@ class ClockUI {
     cueTd.appendChild(labelWrap);
     const tags = document.createElement('div');
     tags.className = 'cluster is-gap-2xs';
-    for (const t of c.tags || []) {
+    // tags arrive as the raw string (server stores "VT GFX"); split to match
+    // views.tagsOf — for..of over the string painted one badge per LETTER.
+    for (const t of String(c.tags || '').split(/\s+/).filter(Boolean)) {
       const b = document.createElement('span');
       b.className = 'badge badge-accent';
       setText(b, t);
@@ -2612,13 +2614,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting
   // timerpi.js's mesh too meant TWO WS sessions per screen (double join,
-  // second election, peer-count inflation). The paint loop still starts:
-  // the board's own module owns its tiles; our selectors are nulled there.
+  // second election, peer-count inflation).
   const isBoard = page === 'display' && body.dataset.view === 'board';
   if (page === 'dashboard' || page === 'display') {
     try { window.__tpmesh = mesh; } catch { /* */ }
-    if (!isBoard) initMesh(showId, page === 'display' ? 'display' : 'controls', page);
-    clockUI.start();
+    // The paint loop belongs to the mesh client: board pages are owned by
+    // board.js (its own tick), and booting ours meant TWO joins per screen.
+    // clockUI is only constructed inside initMesh — never touch it here.
+    if (!isBoard) {
+      initMesh(showId, page === 'display' ? 'display' : 'controls', page);
+      clockUI.start();
+    }
   }
   if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowPass(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();

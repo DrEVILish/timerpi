@@ -1179,7 +1179,6 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
    uppercase mono labels; give each field a real floor. */
 .tp-inspector .row > .field { flex: 1 1 7rem; min-width: 7rem; }
 
-/* True-black themes set --border to the background (lcars/death-star —
-   contract wants a VISIBLE border; upstream pending). App tiles must not
-   lose their frame: blend toward the accent until the bundles fix. */
-.b-widget { border-color: color-mix(in srgb, var(--border, currentColor) 55%, var(--accent, #7C3AED) 45%); }
+/* Audit hardening RETIRED 2026-10-05: upstream 19c1e02 gave lcars/
+   death-star a visible --border and windows95 added .badge to its
+   panel-header reset (both issues confirmed fixed in the rebuilt bundles). */

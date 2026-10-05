@@ -1,5 +1,7 @@
 # lcars & death-star: `--border` equals the background → "visible border" contract broken
 
+> **STATUS: RESOLVED.** FIXED upstream — Option 1: --border now #333333 (lcars) / #1a1a1a (death-star), distinct from --bg. Verified in rebuilt lcars.css. Upstream commit 19c1e02, 2026-10-05.
+
 **Bundles:** `themes/lcars/theme.css` (`--border: #000000`, ≈ line 35),
 `themes/death-star/theme.css` (same pattern on true-black)
 **Severity:** medium (any app surface that draws a non-panel frame from

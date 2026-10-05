@@ -18,25 +18,28 @@
 
 import {
   applyCommand, tickZeroCrossing, activeCue,
-} from './engine.v47.js';
+} from './engine.v50.js';
 
 const SIGNALING_CHANNEL = 'timerpi';
 
 /**
- * Stable screen name for this browser tab's display (F1): ?screen= URL
- * param wins (and persists), then localStorage, then a generated name.
- * Persisting means a refresh/restart keeps the SAME identity, so operator
- * assignments (theme/board) follow the screen — not the session.
+ * Screen name for THIS browser window (F1, owner refinement 2026-10-05):
+ * `?screen=` URL param wins (a persistent override — kiosks/session
+ * restore reopen the same URL and reclaim the identity), then the
+ * window-scoped sessionStorage name (reload in the same window keeps its
+ * identity; a fresh window is a NEW screen). Deliberately NOT localStorage:
+ * multiple display windows on one browser must show as SEPARATE screens,
+ * not group under one shared name.
  */
 export function screenName() {
   let q = '';
   try { q = new URL(location.href).searchParams.get('screen') || ''; } catch { /* */ }
-  if (q) { try { localStorage.setItem('tp.screen', q); } catch { /* */ } return q; }
+  if (q) { try { sessionStorage.setItem('tp.screen', q); } catch { /* */ } return q; }
   let n = '';
-  try { n = localStorage.getItem('tp.screen') || ''; } catch { /* */ }
+  try { n = sessionStorage.getItem('tp.screen') || ''; } catch { /* */ }
   if (!n) {
     n = 'Screen-' + ((crypto.randomUUID?.() || Math.random().toString(36)).replace(/-/g, '').slice(0, 4).toUpperCase());
-    try { localStorage.setItem('tp.screen', n); } catch { /* */ }
+    try { sessionStorage.setItem('tp.screen', n); } catch { /* */ }
   }
   return n;
 }
@@ -247,7 +250,7 @@ export class Mesh {
           const to = String(m.name || '').trim();
           if (to && to !== this.screen) {
             this.screen = to;
-            try { localStorage.setItem('tp.screen', to); } catch { /* */ }
+            try { sessionStorage.setItem('tp.screen', to); } catch { /* */ }
             // URL identity outranks storage on next boot — a pinned
             // ?screen= tab would revert to its old name on reload and
             // stop following the operator's assignments.

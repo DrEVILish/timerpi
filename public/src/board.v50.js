@@ -26,11 +26,11 @@
 
 import {
   activeCue, cueAfter, elapsedMS, remainingMS, isOvertime, alertState,
-  clockView, computeSchedule, fmtDuration, fmtTimeOfDay,
-} from './engine.v47.js';
-import { Mesh, screenName } from './mesh.v47.js';
-import { applyTheme, setThemeVersion, initClientLog } from './theme.v47.js';
-import { applyWaiting } from './waiting.v47.js';
+  clockView, computeSchedule, fmtDuration, fmtRemaining, fmtTimeOfDay,
+} from './engine.v50.js';
+import { Mesh, screenName } from './mesh.v50.js';
+import { applyTheme, setThemeVersion, initClientLog } from './theme.v50.js';
+import { applyWaiting } from './waiting.v50.js';
 
 async function loadThemeVersion() {
   try {

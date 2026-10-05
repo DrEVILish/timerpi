@@ -1,5 +1,7 @@
 # windows95: `.badge` inside `.panel-header` renders white-on-white (invisible)
 
+> **STATUS: RESOLVED.** FIXED upstream — .badge added to the panel-header :is() reset (+ visible --badge-border). Verified in rebuilt bundle, commit range 9e54f97/dc22149, 2026-10-05.
+
 **Bundle:** `themes/windows95/theme.css` (dist `win…/windows95.css`) — contract v4
 **Severity:** medium (component text becomes unreadable on the theme's own surface)
 **Found by:** TimerPi 13-theme browser audit, 2026-10-05
