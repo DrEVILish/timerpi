@@ -354,3 +354,30 @@ one HDMI connector; so the build:
    the device password. (No per-person accounts: not this release.)
 4. Zone map = operator-uploaded image asset per zone.
 5. Product version string **2.0 "Rooms"**; plan section §11 in PLAN.md.
+
+### 11.8 Addendum — owner cross-check gaps (2026-10-05, folded into §11.3)
+
+Cross-checking §11 against the brief found five items missing; folds:
+
+6. **Join-QR slot.** §11.2 gains a `joinqr` slot (the room's audience QR
+   card, always-available on `room`/`main` templates, refreshToken when
+   Count link changes). The owner brief says members "scan a QR code
+   displayed on screen in the Room" — it was only implied before.
+7. **Per-item moderation.** Phase 5 also ships approve/hide/delete per
+   individual question or word (DB verbs exist; only poll-level existence
+   is handled today) — a mass abuse line in Q&A shouldn't take the room's
+   whole set down.
+8. **Join-storm reality.** §11.5 harness gains a second scenario: 1,000
+   phones scan within ~30 s (opening) — staggered joins + per-show WS
+   accept queue so the room's boards stay interactive during the crowd
+   stampede. Steady-rate alone would have hidden this.
+9. **Reduced motion.** Animations enum honors `prefers-reduced-motion` —
+   slot animations become state changes without motion. Ftl-themes
+   vocabulary carries the media query; accessibility basic.
+10. **Deployment shape (open, for John).** The browser-rendered walk-in
+    pages (`event`, `room`, `main`) need browser-capable hardware behind
+    the physical screens — today only `timer` is DRM-native. Decision due
+    Phase 2: kiosk-browser Pis, or extend the native renderer with the
+    slot system. CuTePi's second HDMI on a Pi 5 is the third option.
+11. Inherited debt: open review findings (waiting-room atomicity,
+    claim fail-open, `UpsertScreen` cap, etc.) fold into Phase 7 hardening.
