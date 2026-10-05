@@ -1,0 +1,28 @@
+# TimerPi — build-stamp drop-in (TEMPLATE; rendered by scripts/update.sh).
+#
+# REPO LOCATION: systemd/timerpi-build-stamp.drop.in
+# INSTALLED AS : /etc/systemd/system/timerpi.service.d/29-timerpi-build-stamp.conf
+#
+# Why: main.go deliberately embeds NO version constant (it is a conflict
+# surface — several agents patch it). So the deploy-side stamp lives in an
+# EnvironmentFile-free one-shot drop-in: update.sh rewrites exactly this
+# file after staging a new binary, and the two Environment lines do the
+# work:
+#
+#   * TIMERPI_BUILD_STAMP makes the stamp visible to anything that inherits
+#     the service environment (`systemctl show -p Environment timerpi`,
+#     and any future /health or footer code reading os.Getenv — the
+#     consolidation hook noted in reviews/NOTES-ops.md).
+#   * ExecStartPre echoes the stamp into the journal at every start, so
+#     `journalctl -u timerpi | head` answers "what's deployed?" without
+#     touching main.go.
+#
+# Operator hint (equivalent, manual):
+#   sudo systemctl edit timerpi --drop-in=39-local.conf -p \
+#     'Environment=TIMERPI_BUILD_STAMP=manual'
+#
+# One line per concern; update.sh may rewrite this file idempotently.
+
+[Service]
+Environment="TIMERPI_BUILD_STAMP=__VSTAMP__ build=__BUILD_TS__"
+ExecStartPre=/bin/sh -c 'echo "timerpi: build stamp $TIMERPI_BUILD_STAMP"'

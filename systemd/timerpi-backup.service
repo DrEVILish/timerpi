@@ -1,0 +1,21 @@
+# TimerPi — nightly hot SQLite backup job (systemd/ dir, see NOTES-ops).
+#
+# Hot backup: never stops timerpi.service; prefers sqlite3 .backup, falls
+# back to python3 stdlib snapshot, last resort copied-with-WAL (documented
+# caveat in docs/OPS.md §4). Keeps N=14 rotations in /var/lib/timerpi/backups.
+
+[Unit]
+Description=TimerPi — hot SQLite backup (no service stop)
+After=timerpi.service
+
+[Service]
+Type=oneshot
+# Root: the data dir and the service binary are root-owned; backup.sh only
+# needs read + write to /var/lib/timerpi/backups.
+User=root
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/opt/timerpi/scripts/backup.sh
+
+# Never hang the timer queue on a wedged backup loop.
+TimeoutStartSec=15min

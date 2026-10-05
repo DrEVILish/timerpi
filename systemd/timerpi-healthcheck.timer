@@ -1,0 +1,24 @@
+# TimerPi — 5-minute health pulse (systemd/ dir; enable ONLY on the Pi).
+#
+#   cp systemd/timerpi-healthcheck.{timer,service} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now timerpi-healthcheck.timer
+#
+# Piloted here, wired for real during the systemd integration pass
+# (reviews/NOTES-ops.md). Success criteria live in ONE place:
+# scripts/healthcheck.sh — the service is just a runner; failures surface
+# as the unit's exit code in the journal plus a line in
+# /var/lib/timerpi/health.last. A future pairing:
+# systemd/timerpi-healthcheck.service setting
+#   OnFailure=timerpi-health-fail@%n.service
+# is documented in NOTES-ops.md but intentionally NOT shipped yet.
+
+[Unit]
+Description=TimerPi — appliance health pulse (5 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=timerpi-healthcheck.service
+
+[Install]
+WantedBy=timers.target

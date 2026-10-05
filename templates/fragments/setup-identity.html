@@ -1,0 +1,27 @@
+{{- /*
+  frag-setup-identity — step 1 of the wizard: device identity.
+  hx-post /api/setup/identity → frag-setup-content replaces #wizard-body's
+  content via innerHTML swap.
+*/ -}}
+{{define "frag-setup-identity"}}
+<section class="panel">
+  <div class="panel-header">Name this TimerPi</div>
+  <form hx-post="/api/setup/identity" hx-target="#wizard-body" hx-swap="innerHTML" class="stack">
+    <div class="field-block field">
+      <label class="label" for="setup-name">Device name</label>
+      <input class="input input-lg" type="text" id="setup-name" name="name"
+             value="{{.Device}}" placeholder="Sound-desk Pi" autocomplete="off" required>
+      {{if .Host}}
+      <span class="field-hint">
+        The appliance answers at <code>http://{{.Host}}</code> — phones and TVs on
+        the same Wi-Fi reach it there.
+      </span>
+      {{end}}
+    </div>
+    <div class="field-error" role="alert"{{if not .Err}} hidden{{end}}>{{.Err}}</div>
+    <div class="cluster">
+      <button class="btn btn-primary" type="submit">Next: the running order →</button>
+    </div>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,944 @@
+/**
+ * TimerPi display board client — /d/:code?view=board.
+ *
+ * This module is THIS page's own glue: it imports client-parity math from
+ * shared engine.js READ-ONLY and joins the SHARED display mesh (Mesh from
+ * mesh.js, display role — the same init timerpi.js runs for its display
+ * role, mirrored here) for live data. Two halves:
+ *
+ *  1. RENDER — adopt PROTOCOL snapshots through the mesh (updatedAt
+ *     dominance inside Mesh; Fix-2 {"t":"schedule"} frame rows preferred,
+ *     degrading to client computeSchedule). Digits are never server-ticked;
+ *     the local clock re-anchors on serverTime (joined/state/pong). While
+ *     the server is down the board stays live peer-to-peer: the mesh master
+ *     keeps executing and broadcasting, and #b-offline / #b-link only report
+ *     LINK DOWN when no server AND no mesh path carry the show.
+ *  2. COMPOSE (operator only, ?edit=1) — Edit-layout/Done toggle, pointer
+ *     drag to move + corner resize (touch-capable), add-widget palette,
+ *     role presets (Stage/Lobby one-click layouts), per-widget settings,
+ *     debounced PUT autosave, reset-to-factory.
+ *
+ * EDIT-MODE SAFETY: ?edit=1 only RENDERS the toolbar — the grid stays locked
+ * until the operator presses "Edit layout" (body[data-editing]). On editable
+ * boots the join-card QR is rewritten to the LOCKED board URL (Go bakes
+ * ?edit=1 into Join.QR/Self) so a scanned TV never hands out compose access.
+ */
+
+import {
+  activeCue, cueAfter, elapsedMS, remainingMS, isOvertime, alertState,
+  clockView, computeSchedule, fmtDuration, fmtTimeOfDay,
+} from './engine.v48.js';
+import { Mesh, screenName } from './mesh.v48.js';
+import { applyTheme, setThemeVersion, initClientLog } from './theme.v48.js';
+import { applyWaiting } from './waiting.v48.js';
+
+async function loadThemeVersion() {
+  try {
+    const res = await fetch('/ftl/dist/themes.json');
+    const themes = await res.json();
+    if (Array.isArray(themes) && themes[0]?.version) setThemeVersion(themes[0].version);
+  } catch { /* offline or absent — current cache-bust value stands */ }
+}
+loadThemeVersion();
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t; };
+
+const body = document.body;
+const code = body.dataset.show || '';
+const boardId = body.dataset.board || '';
+const editable = body.dataset.editable === '1';
+// Gallery-modal compose: the iframe edits the board but must NOT
+// self-register a phantom screen — presence stays honest.
+const previewMode = new URLSearchParams(location.search).has('preview');
+const grid = $('#b-grid');
+
+/* State (snap/sched/editing) + serverNow live in the mesh block below —
+   the shared Mesh owns the snapshot, the clock offset and the link. */
+
+/* ---------------------------------------------------------------- layout -- */
+
+// Live layout document: parsed from the server-embedded #b-layout JSON
+// (the same doc PUT autosaves). Geometry edits mutate this + tile styles.
+let layout = { v: 1, widgets: [] };
+try {
+  const raw = $('#b-layout');
+  if (raw) layout = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
+} catch { /* corrupt embed: render-only, editor stays inert */ }
+const pristine = JSON.parse(JSON.stringify(layout)); // reset-to-saved baseline
+
+// FACTORY_DEFAULT mirrors boards.DefaultLayout() (Go) for Reset-to-default.
+// NOTE (NOTES-board.md): this is a deliberate mirror — the supervisor pass
+// should confirm a single-source alternative (e.g. GET default from REST).
+const FACTORY_DEFAULT = {
+  v: 1,
+  widgets: [
+    { id: 'countdown', type: 'countdown', x: 0, y: 0, w: 8, h: 3, opts: { tenths: '1' } },
+    { id: 'messages', type: 'messages', x: 8, y: 0, w: 4, h: 3 },
+    { id: 'cuelabel', type: 'cuelabel', x: 0, y: 3, w: 5, h: 1, opts: { source: 'label' } },
+    { id: 'speaker', type: 'speaker', x: 5, y: 3, w: 3, h: 1 },
+    { id: 'nextup', type: 'nextup', x: 8, y: 3, w: 4, h: 2 },
+    { id: 'progress', type: 'progress', x: 0, y: 4, w: 8, h: 1 },
+    { id: 'wallclock', type: 'wallclock', x: 8, y: 5, w: 4, h: 1, opts: { tenths: '0' } },
+    { id: 'dayprogress', type: 'dayprogress', x: 0, y: 5, w: 8, h: 1 },
+    { id: 'rate', type: 'rate', x: 0, y: 6, w: 2, h: 1 },
+    { id: 'showtitle', type: 'showtitle', x: 2, y: 6, w: 6, h: 1 },
+    { id: 'schedule', type: 'schedule', x: 8, y: 6, w: 4, h: 4, opts: { count: '5' } },
+  ],
+};
+
+// Role presets (supervisor scope): one-click starting layouts for the two
+// most common venue screens. Server-validated geometry (12 cols, no overlap)
+// so PUT accepts them verbatim; ids are the type names (unique per preset).
+const PRESETS = {
+  stage: {
+    v: 1,
+    widgets: [
+      { id: 'countdown', type: 'countdown', x: 0, y: 0, w: 8, h: 3, opts: { tenths: '1' } },
+      { id: 'messages', type: 'messages', x: 8, y: 0, w: 4, h: 3 },
+      { id: 'cuelabel', type: 'cuelabel', x: 0, y: 3, w: 8, h: 1, opts: { source: 'label' } },
+      { id: 'nextup', type: 'nextup', x: 8, y: 3, w: 4, h: 2 },
+      { id: 'progress', type: 'progress', x: 0, y: 4, w: 8, h: 1 },
+    ],
+  },
+  lobby: {
+    v: 1,
+    widgets: [
+      { id: 'showtitle', type: 'showtitle', x: 0, y: 0, w: 12, h: 1 },
+      { id: 'wallclock', type: 'wallclock', x: 0, y: 1, w: 5, h: 2, opts: { tenths: '0' } },
+      { id: 'messages', type: 'messages', x: 5, y: 1, w: 7, h: 2 },
+      { id: 'schedule', type: 'schedule', x: 0, y: 3, w: 12, h: 4, opts: { count: '5' } },
+    ],
+  },
+};
+
+// Palette defaults for newly added tiles (mirror of the Go registry).
+const TILE_DEFAULTS = {
+  countdown: { w: 8, h: 3, opts: { tenths: '1' } },
+  cuelabel: { w: 5, h: 1, opts: { source: 'label' } },
+  speaker: { w: 3, h: 1, opts: {} },
+  nextup: { w: 4, h: 2, opts: {} },
+  wallclock: { w: 4, h: 1, opts: { tenths: '0' } },
+  progress: { w: 8, h: 1, opts: {} },
+  dayprogress: { w: 8, h: 1, opts: {} },
+  messages: { w: 4, h: 3, opts: {} },
+  showtitle: { w: 6, h: 1, opts: {} },
+  rate: { w: 2, h: 1, opts: {} },
+  schedule: { w: 4, h: 4, opts: { count: '5' } },
+  notice: { w: 6, h: 2, opts: { text: 'Welcome' } },
+};
+
+const widgetOf = (wid) => (layout.widgets || []).find((w) => w.id === wid) || null;
+const tileOf = (wid) => (grid ? grid.querySelector(`[data-wid="${CSS.escape(wid)}"]`) : null);
+
+/* ------------------------------------------------- mesh (shared P2P) -- */
+
+// The shared mesh is the board's ONLY data path (mirrors timerpi.js's
+// display-role initMesh: same join identity, same frame handling). Mesh._adopt
+// enforces updatedAt dominance, so onMeshSnapshot just re-points at the
+// mesh's working copy; the mesh master keeps boards alive peer-to-peer while
+// the server is down (NOTES-board §5.7 offline honesty — fixed here).
+let mesh = null;
+
+let snap = null;   // latest mesh snapshot (mesh.snap working copy)
+let sched = null;  // last {"t":"schedule"} frame rows (else null → compute)
+let editing = false;
+
+const serverNow = () => (mesh ? mesh.now() : Date.now());
+
+function onMeshSnapshot() {
+  if (!mesh || !mesh.snap) return;
+  const s = mesh.snap;
+  if (snap && s.updatedAt < snap.updatedAt) return; // stale (paranoia; mesh guards too)
+  snap = s;
+  // E3 blackout: same body-flag paint as timerpi.js (board owns the only
+  // mesh session here, so this is the single repaint site).
+  if (document.body) document.body.dataset.blanked = s.show?.blanked ? 'true' : 'false';
+  if (sched && sched.dayStartTS !== (s.runtime.dayStartTS || 0)) sched = null;
+  renderStatic();
+  updateLink();
+}
+
+function initMesh() {
+  if (!code) return;
+  mesh = new Mesh({
+    showId: code,
+    role: 'display',
+    // F1: boards self-register a stable screen name (operator assigns
+    // theme/board from the dashboard's Screens panel); the gallery's
+    // preview iframe edits without registering.
+    screen: previewMode ? '' : screenName(),
+    onSnapshot: onMeshSnapshot,
+    onStatusChange: updateLink,
+    onFrame: (m) => {
+      switch (m.t) {
+        case 'schedule':
+          if (m.rows) {
+            sched = { rows: m.rows, totalMS: m.totalMS || 0, dayStartTS: m.dayStartTS || 0 };
+            renderStatic();
+          }
+          break;
+        case 'message':
+          if (m.message && mesh.snap) {
+            const list = mesh.snap.messages.filter((x) => x.id !== m.message.id);
+            if (m.message.shownAt || m.message.text) list.push(m.message);
+            mesh.snap.messages = list;
+            mesh.snap.updatedAt = Math.max(mesh.snap.updatedAt, m.updatedAt || 0) + 1;
+            if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
+          }
+          break;
+        case 'timer':
+        case 'cue':
+          if (m.runtime && mesh.snap && (m.updatedAt ?? 0) >= mesh.snap.updatedAt) {
+            Object.assign(mesh.snap.runtime, m.runtime);
+            mesh.snap.updatedAt = m.updatedAt ?? mesh.snap.updatedAt;
+            if (m.serverTime) mesh.clockOffset = m.serverTime - Date.now();
+            snap = mesh.snap;
+            if (sched && sched.dayStartTS !== (mesh.snap.runtime.dayStartTS || 0)) sched = null;
+            renderStatic();
+          }
+          break;
+        default:
+          // C2 (2026-10-04): the board page's mesh is THIS module's — the
+          // operator-pushed theme swap lands here (bundle + attr + icons via
+          // theme.js; policy REVIEW-2 R6). Everything else (oob/targets for
+          // dashboard surfaces, peers/signal) is mesh-internal or belongs to
+          // pages we are not on.
+          if (m.t === 'display' && m.theme && m.theme !== document.documentElement.getAttribute('data-theme')) {
+            applyTheme(m.theme);
+          }
+          // F1: the operator re-assigned this screen's board — navigate
+          // (locked screens only; an open editor must not lose its draft).
+          if (m.t === 'screen-board' && m.boardId && !editable) {
+            const cur = Number(new URLSearchParams(location.search).get('board') || 0);
+            if (cur !== m.boardId) {
+              const u = new URL(location.href);
+              u.searchParams.set('board', String(m.boardId));
+              location.replace(u.toString());
+            }
+          }
+          break;
+      }
+    },
+    onLog: () => { /* boards stay quiet; the link chip carries state */ },
+  });
+  mesh.start();
+  updateLink();
+}
+
+// Honest link state (same language as the .tp-dv-link chip on the variant
+// boards): LINK LIVE while the server OR any mesh path carries the show —
+// that includes being the mesh master ourselves. The strip only covers the
+// truly-dark case (no server, no master, no open peer). Before the first
+// snapshot the server-rendered initials are the content, so the strip waits
+// for snap (same pre-snapshot-hole rule as the variant module).
+function updateLink() {
+  if (mesh) applyWaiting(mesh.wsStatus); // orphaned board tab raises the waiting overlay
+  const strip = $('#b-offline');
+  const chip = $('#b-link');
+  const live = mesh ? (mesh.serverOnline() || mesh.isMaster() || mesh.openPeerIds().length > 0) : false;
+  if (chip) {
+    chip.dataset.online = live ? '1' : '0';
+    setText(chip, live ? 'LINK LIVE' : 'LINK DOWN');
+  }
+  if (strip) strip.classList.toggle('is-visible', !live && !!snap);
+}
+
+/* --------------------------------------------------------------- render -- */
+
+// fmtRemaining always prints tenths below 10 s; tenths:"0" strips them.
+function fmtClock(ms, tenths) {
+  const t = fmtRemaining(ms);
+  return tenths === '0' ? t.replace(/\.\d$/, '') : t;
+}
+
+function nextPlan() {
+  if (!snap) return { row: null, cue: null };
+  const r = snap.runtime;
+  const rows = sched?.rows || computeSchedule(snap).rows;
+  const nextPos = r.nextPos || (snap.cues.find((c) => c.pos > (r.activePos || 0)) || snap.cues[0] || {}).pos;
+  return {
+    row: rows.find((x) => x.pos === nextPos) || null,
+    cue: snap.cues.find((c) => c.pos === nextPos) || null,
+  };
+}
+
+function planStart(row) {
+  if (!snap || !row) return null;
+  return (snap.runtime.dayStartTS || serverNow()) + row.startMS;
+}
+
+// Structural repaint (adopt/schedule/opts change): labels, lists, messages.
+function renderStatic() {
+  if (!snap || !grid) return;
+  const cue = activeCue(snap);
+  const plan = nextPlan();
+  for (const tile of $$('.b-widget', grid)) {
+    const type = tile.dataset.widget;
+    const w = widgetOf(tile.dataset.wid);
+    switch (type) {
+      case 'countdown':
+        setText($('.b-js-cdlabel', tile), cue?.label || '');
+        break;
+      case 'cuelabel': {
+        const src = w?.opts?.source || 'label';
+        setText($('.b-js-cuelabel', tile), src === 'speaker' ? (cue?.speaker || '') : (cue?.label || ''));
+        break;
+      }
+      case 'speaker':
+        setText($('.b-js-speaker', tile), cue?.speaker ? `🎙 ${cue.speaker}` : '');
+        break;
+      case 'nextup':
+        setText($('.b-js-nextlabel', tile), plan.cue?.label || '');
+        setText($('.b-js-nextdur', tile), plan.cue ? fmtDuration(plan.cue.durationMS) : '');
+        setText($('.b-js-nextstart', tile), plan.row && planStart(plan.row) ? fmtTimeOfDay(planStart(plan.row)) : '--:--:--');
+        break;
+      case 'messages': {
+        const box = $('.b-js-msgs', tile);
+        if (box) {
+          box.textContent = '';
+          if (!snap.messages.length) {
+            const d = document.createElement('div');
+            d.className = 'b-msg-empty';
+            d.textContent = 'No messages on stage';
+            box.appendChild(d);
+          }
+          for (const m of snap.messages) {
+            const d = document.createElement('div');
+            d.className = 'b-msg';
+            if (m.color) d.style.borderColor = m.color;
+            const inner = document.createElement('div');
+            inner.textContent = m.text;
+            d.appendChild(inner);
+            box.appendChild(d);
+          }
+        }
+        break;
+      }
+      case 'showtitle':
+        setText($('.b-js-showtitle', tile), snap.show?.title || '');
+        break;
+      case 'notice':
+        setText($('.b-js-notice', tile), w?.opts?.text || '');
+        break;
+      case 'rate':
+        setText($('.b-js-rate', tile), `×${Number(snap.runtime.rate || 1).toFixed(2)}`);
+        break;
+      case 'progress':
+        setText($('.b-js-progresslabel', tile), cue?.label || '');
+        break;
+      case 'schedule': {
+        const ul = $('.b-js-sched', tile);
+        if (ul) {
+          ul.textContent = '';
+          const rows = sched?.rows || computeSchedule(snap).rows;
+          const byPos = new Map(rows.map((r) => [r.pos, r]));
+          const base = snap.runtime.dayStartTS || serverNow();
+          const want = w?.opts?.count || '5';
+          const list = want === 'all' ? snap.cues : snap.cues.slice(0, Number(want) || 5);
+          if (!list.length) {
+            const li = document.createElement('li');
+            li.textContent = 'No cues yet — build the running order in the control room.';
+            ul.appendChild(li);
+          }
+          for (const c of list) {
+            const planRow = byPos.get(c.pos);
+            const li = document.createElement('li');
+            li.dataset.pos = String(c.pos);
+            if (snap.runtime.activePos && c.pos === snap.runtime.activePos) li.className = 'is-active';
+            else if (snap.runtime.activePos && c.pos < snap.runtime.activePos) li.className = 'is-past';
+            const st = document.createElement('span');
+            st.className = 'mono';
+            st.textContent = planRow ? (snap.runtime.dayStartTS ? fmtTimeOfDay(base + planRow.startMS) : '+' + fmtDuration(planRow.startMS)) : '';
+            const lb = document.createElement('span');
+            lb.textContent = c.label;
+            const du = document.createElement('span');
+            du.className = 'mono';
+            du.textContent = fmtDuration(c.durationMS);
+            li.append(st, lb, du);
+            ul.appendChild(li);
+          }
+        }
+        break;
+      }
+      default: break;
+    }
+  }
+  tick(); // structural change implies fresh digits too
+}
+
+// Fast repaint (~10 Hz): clocks, bars, countdown, time-until.
+function tick() {
+  if (!snap || !grid) return;
+  const now = serverNow();
+  const cue = activeCue(snap);
+  const plan = nextPlan();
+  for (const tile of $$('.b-widget', grid)) {
+    const type = tile.dataset.widget;
+    const w = widgetOf(tile.dataset.wid);
+    switch (type) {
+      case 'countdown': {
+        const view = clockView(snap, now);
+        tile.dataset.state = view.state;
+        const el = $('.b-js-clock', tile);
+        if (el) {
+          el.dataset.state = view.state;
+          if (view.state === 'blank') setText(el, '—');
+          else if (view.state === 'held') setText(el, '0:00');
+          else if (view.state === 'idle' || view.state === 'armed') {
+            setText(el, cue ? fmtDuration(cue.durationMS) : '--:--');
+          } else if (view.remaining != null) {
+            setText(el, fmtClock(view.remaining, w?.opts?.tenths));
+          }
+        }
+        break;
+      }
+      case 'wallclock': {
+        const el = $('.b-js-wall', tile);
+        if (el) {
+          let t = fmtTimeOfDay(now);
+          if (w?.opts?.tenths === '1') t += `.${Math.floor((now % 1000) / 100)}`;
+          setText(el, t);
+        }
+        break;
+      }
+      case 'progress': {
+        const fill = $('.b-js-progress', tile);
+        if (fill && cue && cue.durationMS > 0) {
+          const e = Math.min(Math.max(elapsedMS(snap, now), 0), cue.durationMS);
+          // UX2: 2-decimal fractions — subpixel antialiasing was smearing the
+          // fill edge ("blurry bar"); keep the numbers short and the edge crisp.
+          fill.style.width = `${((e / cue.durationMS) * 100).toFixed(2)}%`;
+        } else if (fill) {
+          fill.style.width = '0%';
+        }
+        break;
+      }
+      case 'dayprogress': {
+        const fill = $('.b-js-dayprogress', tile);
+        if (fill) {
+          const tot = sched ? sched.totalMS : computeSchedule(snap).totalMS;
+          const base = snap.runtime.dayStartTS;
+          if (base && tot > 0) {
+            const rel = Math.min(Math.max(now - base, 0), tot);
+            fill.style.width = `${((rel / tot) * 100).toFixed(2)}%`;
+          } else {
+            fill.style.width = '0%';
+          }
+        }
+        break;
+      }
+      case 'nextup': {
+        const at = planStart(plan.row);
+        if (at) {
+          const left = at - now;
+          setText($('.b-js-nextin', tile), (left >= 0 ? 'in ' : '+') + fmtDuration(left));
+        }
+        break;
+      }
+      default: break;
+    }
+  }
+}
+
+/* --------------------------------------------------------------- compose -- */
+
+const saveStateEl = () => $('#b-save-state');
+function saveState(t) { const el = saveStateEl(); if (el) setText(el, t); }
+
+let saveTimer = 0;
+function scheduleSave() {
+  if (!editable) return;
+  saveState('Saving…');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 600);
+}
+
+async function saveNow() {
+  if (!editable || !code || !boardId) return;
+  clearTimeout(saveTimer);
+  saveState('Saving…');
+  try {
+    const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout: { v: 1, widgets: layout.widgets } }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `save failed (${res.status})`);
+    }
+    const d = new Date();
+    saveState(`Saved ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`);
+  } catch (e) {
+    saveState(`Save failed: ${e.message}`);
+  }
+}
+
+// Client-side mirror of the server clamp (server re-validates on PUT).
+function clampTile(t) {
+  t.x = Math.max(0, Math.min(11, t.x | 0));
+  t.w = Math.max(1, Math.min(12, t.w | 0));
+  if (t.x + t.w > 12) t.w = 12 - t.x;
+  t.y = Math.max(0, Math.min(99, t.y | 0));
+  t.h = Math.max(1, Math.min(12, t.h | 0));
+  return t;
+}
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+function applyGeometry(wid) {
+  const w = widgetOf(wid);
+  const tile = tileOf(wid);
+  if (!w || !tile) return;
+  tile.style.gridColumn = `${w.x + 1} / span ${w.w}`;
+  tile.style.gridRow = `${w.y + 1} / span ${w.h}`;
+  // Mobile list editor listens per tile to keep its digits true.
+  window.dispatchEvent(new CustomEvent('tp-geom-' + wid));
+}
+
+function addAlignButtons(tile) {
+  const chrome = $('.b-w-chrome', tile);
+  if (!chrome || chrome.querySelector('[data-align]')) return;
+  for (const side of ['left', 'right']) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'b-w-align';
+    b.dataset.align = side;
+    b.textContent = side === 'left' ? '⯇' : '⯈';
+    b.title = `Align ${side} edge`;
+    b.setAttribute('aria-label', `Align tile ${side}`);
+    chrome.appendChild(b);
+  }
+}
+
+function gridMetrics() {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return { colW: grid.getBoundingClientRect().width / 12, rowPitch: rem * 4.5 + rem * 0.6 };
+}
+
+function dragTile(tile, wid, startEvent, mode) {
+  startEvent.preventDefault();
+  const w = widgetOf(wid);
+  if (!w) return;
+  const { colW, rowPitch } = gridMetrics();
+  const startX = startEvent.clientX;
+  const startY = startEvent.clientY;
+  const orig = { ...w };
+  tile.classList.add('b-dragging');
+  const move = (e) => {
+    const dc = Math.round((e.clientX - startX) / colW);
+    const dr = Math.round((e.clientY - startY) / rowPitch);
+    if (mode === 'move') {
+      w.x = orig.x + dc;
+      w.y = orig.y + dr;
+    } else {
+      w.w = orig.w + dc;
+      w.h = orig.h + dr;
+    }
+    clampTile(w);
+    applyGeometry(w);
+  };
+  const up = () => {
+    tile.classList.remove('b-dragging');
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    clampTile(w);
+    // Overlap (against every OTHER tile) reverts the gesture, flashes a brief
+    // purple nudge on the offending tile (UX2 — visible at the pointer, not
+    // only in the far toolbar) and stays revert-only: never silently accept.
+    const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
+    if (hit) {
+      Object.assign(w, orig);
+      applyGeometry(w);
+      tile.classList.remove('b-overlap');
+      void tile.offsetWidth; // restart the shake on rapid retry
+      tile.classList.add('b-overlap');
+      setTimeout(() => tile.classList.remove('b-overlap'), 1000);
+      saveState('Blocked: tiles overlap');
+      return;
+    }
+    if (w.x !== orig.x || w.y !== orig.y || w.w !== orig.w || w.h !== orig.h) scheduleSave();
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+}
+
+/**
+ * Mobile tile editor (NOTES-board §5.3, shipped 2026-10-04): pointer
+ * drag/resize needs precision a phone finger doesn't have at 4.5rem rows ×
+ * 12 cols. Below 760 px, while editing, the #b-editor panel lists every
+ * tile with X/Y (move) and W/H (resize) steppers — the SAME widget
+ * documents as the grid, so clampTile/applyGeometry/scheduleSave overlap
+ * rules (and autosave) run identically for both gesture paths. Desktop
+ * tiers never display it (CSS keeps it at display:none) — the grid remains
+ * the tool there.
+ */
+// Geom listeners live on window (applyGeometry dispatches there); each
+// rebuild tears down the previous batch or Edit-toggles pile handlers on
+// dead rows (48 stale closures per toggle on a 12-tile board).
+const geomListeners = [];
+
+function buildEditorList(editing) {
+  const editor = $('#b-editor');
+  if (!editor) return;
+  for (const [ev, fn] of geomListeners) window.removeEventListener(ev, fn);
+  geomListeners.length = 0;
+  if (!editing) { editor.hidden = true; editor.textContent = ''; return; }
+  editor.hidden = true; // shown by the ≤760px CSS under data-editing
+  editor.textContent = '';
+  const title = document.createElement('strong');
+  title.textContent = 'Tiles';
+  editor.appendChild(title);
+  const grid1x = (wid, field, delta, minmax, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-sm';
+    b.textContent = delta > 0 ? '+' : '−';
+    b.setAttribute('aria-label', `${widgetOf(wid)?.type ?? 'tile'} ${label} ${delta > 0 ? '+' : '−'}`);
+    b.addEventListener('click', () => {
+      const w = widgetOf(wid);
+      if (!w) return;
+      const orig = { ...w };
+      w[field] = (w[field] | 0) + delta;
+      clampTile(w);
+      if ((layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o))) {
+        Object.assign(w, orig);
+        applyGeometry(wid);
+        saveState('Blocked: tiles overlap');
+        return;
+      }
+      if (orig[field] !== w[field]) { applyGeometry(wid); scheduleSave(); }
+    });
+    return b;
+  };
+  for (const w of layout.widgets || []) {
+    const row = document.createElement('div');
+    row.className = 'b-ed-row';
+    const name = document.createElement('span');
+    name.className = 'b-ed-name';
+    setText(name, w.type);
+    row.appendChild(name);
+    for (const [field, label] of [['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']]) {
+      const grp = document.createElement('span');
+      grp.className = 'cluster is-gap-2xs';
+      grp.appendChild(grid1x(w.id, field, -1, null, label));
+      const v = document.createElement('span');
+      v.className = 'mono b-ed-val';
+      const update = () => setText(v, String(widgetOf(w.id)?.[field] ?? ''));
+      update();
+      // Exact-refresh: applyGeometry dispatches tp-geom-<wid> after each write.
+      geomListeners.push(['tp-geom-' + w.id, update]);
+      window.addEventListener('tp-geom-' + w.id, update);
+      grp.appendChild(v);
+      grp.appendChild(grid1x(w.id, field, +1, null, label));
+      row.appendChild(grp);
+    }
+    const gear = document.createElement('button');
+    gear.type = 'button';
+    gear.className = 'btn btn-sm btn-icon';
+    gear.textContent = '⚙';
+    gear.setAttribute('aria-label', `${w.type} settings`);
+    gear.addEventListener('click', () => { openSettings(w.id); tick(); });
+    row.appendChild(gear);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-sm btn-icon btn-danger';
+    del.textContent = '🗑';
+    del.setAttribute('aria-label', `Delete ${w.type} tile`);
+    del.addEventListener('click', async () => {
+      layout.widgets = (layout.widgets || []).filter((x) => x.id !== w.id);
+      if (!layout.widgets.length) {
+        saveState('A board needs at least one tile');
+        layout.widgets = pristine.widgets.length ? JSON.parse(JSON.stringify(pristine.widgets)) : [FACTORY_DEFAULT.widgets[0]];
+        return;
+      }
+      await reloadEditing();
+    });
+    row.appendChild(del);
+    editor.appendChild(row);
+  }
+  const note = document.createElement('span');
+  note.className = 'field-hint';
+  note.textContent = 'X/Y move a tile; W/H resize it. Autosaves on change.';
+  editor.appendChild(note);
+}
+
+function clipBytes(s, n) {
+  const enc = new TextEncoder();
+  let bytes = 0;
+  let out = '';
+  for (const ch of s) {
+    const b = enc.encode(ch).length;
+    if (bytes + b > n) break;
+    bytes += b;
+    out += ch;
+  }
+  return out;
+}
+
+// Per-widget settings form (tenths / label source / schedule count /
+// notice text).
+function openSettings(wid) {  const w = widgetOf(wid);
+  const form = $('#b-settings');
+  if (!w || !form) return;
+  form.textContent = '';
+  form.hidden = false;
+  const title = document.createElement('strong');
+  title.textContent = `Tile ${w.type} (${w.id})`;
+  form.appendChild(title);
+  const mk = (labelText, control) => {
+    const lab = document.createElement('label');
+    lab.textContent = labelText;
+    lab.appendChild(control);
+    form.appendChild(lab);
+  };
+  if (w.type === 'countdown' || w.type === 'wallclock') {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = (w.opts?.tenths || '0') === '1';
+    cb.setAttribute('aria-label', 'Show tenths');
+    cb.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), tenths: cb.checked ? '1' : '0' };
+      scheduleSave();
+      tick();
+    });
+    mk('Tenths', cb);
+  }
+  if (w.type === 'cuelabel') {
+    const sel = document.createElement('select');
+    sel.className = 'select input-sm';
+    for (const v of ['label', 'speaker']) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v === 'label' ? 'Cue label' : 'Speaker';
+      sel.appendChild(o);
+    }
+    sel.value = w.opts?.source || 'label';
+    sel.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), source: sel.value };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Source cue field', sel);
+  }
+  if (w.type === 'schedule') {
+    const sel = document.createElement('select');
+    sel.className = 'select input-sm';
+    for (const v of ['3', '5', '8', 'all']) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v === 'all' ? 'All cues' : `${v} cues`;
+      sel.appendChild(o);
+    }
+    sel.value = w.opts?.count || '5';
+    sel.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), count: sel.value };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Rows', sel);
+  }
+  if (w.type === 'notice') {
+    const ta = document.createElement('textarea');
+    ta.className = 'input input-sm';
+    ta.rows = 3;
+    ta.value = w.opts?.text || '';
+    ta.setAttribute('aria-label', 'Notice text');
+    ta.addEventListener('change', () => {
+      // servers clip at 256 BYTES (rune-safe since the review); clamp to
+      // the same budget here so the editor shows what the TVs will.
+      const v = clipBytes(ta.value, 256);
+      ta.value = v;
+      w.opts = { ...(w.opts || {}), text: v };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Text', ta);
+  }
+  if (!form.children.length || form.children.length === 1) {
+    const none = document.createElement('span');
+    none.className = 'text-muted';
+    none.textContent = 'No settings for this tile.';
+    form.appendChild(none);
+  }
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn btn-sm';
+  close.textContent = 'Done';
+  close.addEventListener('click', () => { form.hidden = true; });
+  form.appendChild(close);
+}
+
+function freeSpot(w, h) {
+  const taken = (x, y) => (layout.widgets || []).some((o) => overlaps({ x, y, w, h }, o));
+  for (let y = 0; y <= 90; y++) {
+    for (let x = 0; x + w <= 12; x++) {
+      if (!taken(x, y)) return { x, y };
+    }
+  }
+  return { x: 0, y: 90 };
+}
+
+async function reloadEditing() {
+  try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
+  await saveNow();
+  location.reload();
+}
+
+function wireCompose() {
+  if (!editable || !grid) return;
+  const toggle = $('#b-edit-toggle');
+  const palette = $('#b-palette');
+  const settings = $('#b-settings');
+  const setEditing = (on) => {
+    editing = on;
+    body.toggleAttribute('data-editing', on);
+    if (toggle) {
+      toggle.textContent = on ? 'Done' : 'Edit layout';
+      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    if (palette) palette.hidden = !on;
+    if (!on && settings) settings.hidden = true;
+    if (on) for (const tile of $$('.b-widget', grid)) addAlignButtons(tile);
+    buildEditorList(on);
+  };
+  toggle?.addEventListener('click', () => setEditing(!editing));
+  // Re-enter editing after a structural reload (add/delete/reset/switch).
+  try {
+    if (sessionStorage.getItem('b-editing') === '1') {
+      sessionStorage.removeItem('b-editing');
+      setEditing(true);
+    }
+  } catch { /* private mode */ }
+  grid.addEventListener('pointerdown', (e) => {
+    if (!editing) return;
+    const tile = e.target.closest('.b-widget');
+    if (!tile) return;
+    const wid = tile.dataset.wid;
+    if (e.target.closest('[data-resize]')) dragTile(tile, wid, e, 'resize');
+    // UX2: the move handle is the chrome row minus its buttons — gear/delete
+    // must stay clean click targets, not drag launches.
+    else if (e.target.closest('.b-w-chrome') && !e.target.closest('button')) dragTile(tile, wid, e, 'move');
+  });
+  grid.addEventListener('click', async (e) => {
+    if (!editing) return;
+    const tile = e.target.closest('.b-widget');
+    if (!tile) return;
+    const al = e.target.closest('[data-align]');
+    if (al) {
+      const w = widgetOf(tile.dataset.wid);
+      if (w) {
+        w.x = al.dataset.align === 'left' ? 0 : 12 - w.w;
+        clampTile(w);
+        applyGeometry(w.id);
+        scheduleSave();
+      }
+      return;
+    }
+    if (e.target.closest('[data-gear]')) openSettings(tile.dataset.wid);
+    if (e.target.closest('[data-del]')) {
+      layout.widgets = (layout.widgets || []).filter((w) => w.id !== tile.dataset.wid);
+      if (!layout.widgets.length) {
+        saveState('A board needs at least one tile');
+        layout.widgets = pristine.widgets.length ? JSON.parse(JSON.stringify(pristine.widgets)) : [FACTORY_DEFAULT.widgets[0]];
+        return;
+      }
+      await reloadEditing(); // server re-renders tiles, then we relock into edit
+    }
+  });
+
+  $('#b-palette-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-add]');
+    if (!btn) return;
+    const type = btn.dataset.add;
+    const def = TILE_DEFAULTS[type];
+    if (!def) return;
+    const seen = new Set((layout.widgets || []).map((w) => w.id));
+    let id = type;
+    for (let n = 2; seen.has(id); n++) id = `${type}-${n}`;
+    const spot = freeSpot(Math.min(def.w, 12), def.h);
+    layout.widgets = [...(layout.widgets || []), {
+      id, type, x: spot.x, y: spot.y, w: Math.min(def.w, 12), h: def.h,
+      opts: { ...def.opts },
+    }];
+    await reloadEditing();
+  });
+
+  $('#b-preset-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-preset]');
+    if (!btn) return;
+    const preset = PRESETS[btn.dataset.preset];
+    if (!preset) return;
+    if (!window.confirm(`Replace this board with the ${btn.dataset.preset} layout? Unsaved tile moves are lost.`)) return;
+    layout = JSON.parse(JSON.stringify(preset));
+    await reloadEditing(); // server re-renders tiles, then we relock into edit
+  });
+
+  $('#b-reset')?.addEventListener('click', async () => {
+    if (!window.confirm('Reset this board to the factory layout?')) return;
+    layout = JSON.parse(JSON.stringify(FACTORY_DEFAULT));
+    await reloadEditing();
+  });
+
+  $('#b-boards')?.addEventListener('change', (e) => {
+    const id = e.target.value;
+    const url = new URL(location.href);
+    url.searchParams.set('board', id);
+    location.href = url.toString();
+  });
+
+  $('#b-new')?.addEventListener('click', async () => {
+    const name = window.prompt('New board name:', 'Lobby');
+    if (!name || !name.trim()) return;
+    try {
+      const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) throw new Error(`create failed (${res.status})`);
+      const created = await res.json();
+      const url = new URL(location.href);
+      url.searchParams.set('board', String(created.id));
+      location.href = url.toString();
+    } catch (err) {
+      saveState(`New board failed: ${err.message}`);
+    }
+  });
+}
+
+/* ---------------------------------------------------------------- boot -- */
+
+// Editable boots (?edit=1) rewrite the join-card QR to the LOCKED board URL:
+// Go bakes the ?edit=1 query into Join.QR/Self (routes/boards.go), so without
+// this a phone scanning the TV inherits compose access. The card href is the
+// control room (never editable); only the QR image + self line are re-pointed.
+function lockJoinCard() {
+  if (!editable || !code) return;
+  const locked = new URL(location.href);
+  locked.searchParams.delete('edit');
+  const qr = $('#b-join-qr');
+  if (qr) {
+    qr.src = `/api/shows/${encodeURIComponent(code)}/qr?data=${encodeURIComponent(locked.toString())}&size=132`;
+  }
+  const card = $('.b-join-card');
+  const selfLine = card ? $('.mono.text-truncate', card) : null;
+  if (selfLine) setText(selfLine, locked.toString());
+}
+
+initMesh();
+lockJoinCard();
+initClientLog();
+wireCompose();
+setInterval(tick, 100);
+// Mesh link is event-driven (onStatusChange) plus a 1 s poll so a master
+// handoff or a peer drop repaints the chip even between WS frames.
+setInterval(updateLink, 1000);
+renderStatic();
+tick();

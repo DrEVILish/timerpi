@@ -1,0 +1,70 @@
+{{- /*
+  display_board.html — customizable display board (Agent N;
+  route GET /d/:ident?view=board&board=<bid>, default board = show default).
+  Standalone document like display.html: ExecuteTemplate(w, "display_board",
+  *views.BoardPage). The grid (#b-grid) holds one b-widget section per tile
+  (fragments/b-widgets.html); live digits repaint from the WS snapshot via
+  /src/board.js (role=display join, engine.js imported read-only — shared
+  public/src/*.js untouched). timerpi.js boots too (theme/mesh/offline
+  participation, CONTRACT-id guards) exactly like the display variants.
+  Locked (default): pure display, no compose chrome. ?edit=1 renders the
+  operator toolbar (frag-b-toolbar); the Edit/Lock toggle flips
+  body[data-editing] for drag/resize/palette/settings.
+*/ -}}
+{{define "display_board"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="tp-display b-board" data-page="display" data-view="board" data-role="display"
+      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-blanked="{{.Show.Blanked}}">
+<div class="b-topbar">
+  <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
+  <span class="b-topbar-show">{{if .Show}}{{.Show.Title}}{{end}}</span>
+  <span class="b-topbar-board">{{.Board.Name}}</span>
+  <span class="b-link" id="b-link" data-online="1">LINK LIVE</span>
+</div>
+
+{{if .Editable}}{{template "frag-b-toolbar" .}}
+<section class="panel b-list-editor" id="b-editor" hidden aria-label="Tile editor (mobile)"></section>
+{{end}}
+
+<main class="b-grid" id="b-grid" aria-label="Display board {{.Board.Name}}">
+{{- range .Board.Widgets}}
+{{if eq .Type "countdown"}}{{template "frag-b-countdown" ($.WidgetDot .)}}
+{{else if eq .Type "cuelabel"}}{{template "frag-b-cuelabel" ($.WidgetDot .)}}
+{{else if eq .Type "speaker"}}{{template "frag-b-speaker" ($.WidgetDot .)}}
+{{else if eq .Type "nextup"}}{{template "frag-b-nextup" ($.WidgetDot .)}}
+{{else if eq .Type "wallclock"}}{{template "frag-b-wallclock" ($.WidgetDot .)}}
+{{else if eq .Type "progress"}}{{template "frag-b-progress" ($.WidgetDot .)}}
+{{else if eq .Type "dayprogress"}}{{template "frag-b-dayprogress" ($.WidgetDot .)}}
+{{else if eq .Type "messages"}}{{template "frag-b-messages" ($.WidgetDot .)}}
+{{else if eq .Type "showtitle"}}{{template "frag-b-showtitle" ($.WidgetDot .)}}
+{{else if eq .Type "rate"}}{{template "frag-b-rate" ($.WidgetDot .)}}
+{{else if eq .Type "notice"}}{{template "frag-b-notice" ($.WidgetDot .)}}
+{{else}}{{template "frag-b-schedule" ($.WidgetDot .)}}
+{{end}}
+{{- end}}
+</main>
+
+{{template "frag-b-chrome" .}}
+
+<script type="application/json" id="b-layout">{{.LayoutJSON}}</script>
+<div class="toast-region" popover="manual" id="toast-region"></div>
+<div class="tp-waiting" id="tp-waiting" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <h2>WAITING FOR CONNECTION…</h2>
+  <p class="text-muted">This screen has no show<span id="tp-waiting-name"></span>. A control room on this network can capture it from the Screens gallery.</p>
+</div>
+<!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
+<div class="tp-blanked" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <p>STANDBY</p>
+</div>
+<script src="/src/htmx.min.js" defer></script>
+<script type="module" src="/src/timerpi.v49.js"></script>
+<script type="module" src="/src/board.v49.js"></script>
+</body>
+</html>
+{{end}}

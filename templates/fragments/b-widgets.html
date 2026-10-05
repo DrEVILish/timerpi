@@ -1,0 +1,149 @@
+{{- /*
+  b-widgets.html — display-board widget tiles (Agent N; GET /d/:code?view=board,
+  root #b-grid in display_board.html).
+  Each fragment's dot is views.WidgetDot (.W = tile geometry+opts, .P = page
+  with every CONTRACT-UI field + server-rendered initials). Every tile is a
+  <section class="b-widget" id="b-w-<id>" data-widget="<type>"> — the id is
+  the board.js handle; live digits repaint from the WS snapshot (role=display
+  join in /src/board.js, engine.js imported read-only).
+  Edit chrome (.b-w-chrome + resize handle) is server-rendered on every tile
+  but painted only while editing (body[data-editing], timerpi.css) — locked
+  boards are pure display, no chrome.
+*/ -}}
+
+{{define "frag-b-countdown"}}
+<section class="b-widget b-w-countdown" id="b-w-{{.W.ID}}" data-widget="countdown" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Countdown</span><button class="b-w-gear" type="button" data-gear aria-label="Countdown settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove countdown">×</button></div>
+  <div class="b-w-body">
+    <div class="b-cd-label b-js-cdlabel">{{.P.Current.Label}}</div>
+    <span class="readout b-clock b-js-clock" data-state="{{.P.CountdownState}}">{{.P.CountdownFmt}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-cuelabel"}}
+<section class="b-widget b-w-cuelabel" id="b-w-{{.W.ID}}" data-widget="cuelabel" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Cue label</span><button class="b-w-gear" type="button" data-gear aria-label="Cue label settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove cue label">×</button></div>
+  <div class="b-w-body">
+    <span class="b-cue-label b-js-cuelabel">{{.P.Current.Label}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-speaker"}}
+<section class="b-widget b-w-speaker" id="b-w-{{.W.ID}}" data-widget="speaker" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Speaker</span><button class="b-w-del" type="button" data-del aria-label="Remove speaker">×</button></div>
+  <div class="b-w-body">
+    <span class="b-speaker b-js-speaker">{{if .P.Current.Speaker}}🎙 {{.P.Current.Speaker}}{{end}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-nextup"}}
+<section class="b-widget b-w-nextup" id="b-w-{{.W.ID}}" data-widget="nextup" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Next up</span><button class="b-w-del" type="button" data-del aria-label="Remove next up">×</button></div>
+  <div class="b-w-body">
+    <span class="b-eyebrow">NEXT</span>
+    <span class="b-next-label b-js-nextlabel">{{.P.Next.Label}}</span>
+    <span class="b-next-meta mono"><span class="b-js-nextdur">{{.P.Next.DurFmt}}</span> · <span class="b-js-nextstart">{{.P.Next.StartFmt}}</span> · <span class="b-js-nextin">--:--</span></span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-wallclock"}}
+<section class="b-widget b-w-wallclock" id="b-w-{{.W.ID}}" data-widget="wallclock" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Wall clock</span><button class="b-w-gear" type="button" data-gear aria-label="Wall clock settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove wall clock">×</button></div>
+  <div class="b-w-body">
+    <span class="readout b-wall b-js-wall">{{.P.NowFmt}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-progress"}}
+<section class="b-widget b-w-progress" id="b-w-{{.W.ID}}" data-widget="progress" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Cue progress</span><button class="b-w-del" type="button" data-del aria-label="Remove cue progress">×</button></div>
+  <div class="b-w-body">
+    <div class="b-bar" role="progressbar" aria-label="Active cue progress"><div class="b-bar-fill b-js-progress" style="width: {{.P.ProgressPct}}"></div></div>
+    <span class="b-bar-label b-js-progresslabel">{{.P.Current.Label}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-dayprogress"}}
+<section class="b-widget b-w-dayprogress" id="b-w-{{.W.ID}}" data-widget="dayprogress" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Day progress</span><button class="b-w-del" type="button" data-del aria-label="Remove day progress">×</button></div>
+  <div class="b-w-body">
+    <div class="b-bar b-bar-day" role="progressbar" aria-label="Day progress"><div class="b-bar-fill b-js-dayprogress" style="width: {{.P.DayPct}}"></div></div>
+    <span class="b-bar-scale mono"><span>{{.P.Schedule.DayStartFmt}}</span><span>{{.P.Schedule.DayEndFmt}}</span></span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-messages"}}
+<section class="b-widget b-w-messages" id="b-w-{{.W.ID}}" data-widget="messages" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Messages</span><button class="b-w-del" type="button" data-del aria-label="Remove messages">×</button></div>
+  <div class="b-w-body">
+    <div class="b-msgs b-js-msgs">
+{{- range .P.Messages}}
+      <div class="b-msg"{{if .Color}} style="border-inline-start-color: {{.Color}}"{{end}}><div>{{.Text}}</div></div>
+{{- else}}
+      <div class="b-msg-empty">No messages on stage</div>
+{{- end}}
+    </div>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-showtitle"}}
+<section class="b-widget b-w-showtitle" id="b-w-{{.W.ID}}" data-widget="showtitle" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Show title</span><button class="b-w-del" type="button" data-del aria-label="Remove show title">×</button></div>
+  <div class="b-w-body">
+    <span class="b-show-title b-js-showtitle">{{.P.Show.Title}}</span>
+    <span class="mono b-share-code">{{.P.Share.CodeFmt}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-rate"}}
+<section class="b-widget b-w-rate" id="b-w-{{.W.ID}}" data-widget="rate" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Rate</span><button class="b-w-del" type="button" data-del aria-label="Remove rate chip">×</button></div>
+  <div class="b-w-body">
+    <span class="b-rate b-js-rate">{{.P.RateFmt}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+
+{{define "frag-b-schedule"}}
+<section class="b-widget b-w-schedule" id="b-w-{{.W.ID}}" data-widget="schedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Schedule</span><button class="b-w-gear" type="button" data-gear aria-label="Schedule settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove schedule">×</button></div>
+  <div class="b-w-body">
+    <ul class="b-sched b-js-sched">
+{{- range .P.Cues}}
+      <li data-pos="{{.Pos}}"><span class="mono b-js-rowstart">{{.StartFmt}}</span> <span class="b-js-rowlabel">{{.Label}}</span> <span class="mono">{{.DurFmt}}</span></li>
+{{- else}}
+      <li>No cues yet — build the running order in the control room.</li>
+{{- end}}
+    </ul>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}
+{{define "frag-b-notice"}}
+<section class="b-widget b-w-notice" id="b-w-{{.W.ID}}" data-widget="notice" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  <div class="b-w-chrome"><span class="b-w-title">Notice</span><button class="b-w-gear" type="button" data-gear aria-label="Notice settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove notice">×</button></div>
+  <div class="b-w-body">
+    <span class="b-notice b-js-notice">{{.W.Opts.text}}</span>
+  </div>
+  <span class="b-w-resize" data-resize aria-hidden="true"></span>
+</section>
+{{end}}

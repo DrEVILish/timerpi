@@ -1,0 +1,40 @@
+# TimerPi — framebuffer splash service.
+#
+# Shows the TimerPi logo on /dev/fb0 at boot and keeps it there until the
+# main service signals ready, then releases the framebuffer (handles a
+# system without fbdev too — the splash is a no-op there).
+#
+# Semantics (the contract the units implement; see scripts/splash/README.md):
+#   * Type=oneshot + RemainAfterExit + the -fork flag: ExecStart spawns the
+#     real worker in a new session and returns instantly, so this unit is
+#     "complete" at once and does NOT delay timerpi.service (Before= holds
+#     an oneshot job until ExecStart exits) — the logo is already on screen
+#     by the time the web app starts.
+#   * The worker exits (fade) when /run/timerpi/ready appears (written by
+#     timerpi), after a 45 s cap, or on SIGTERM — never crashes boot.
+#   * ExecStop blanks the framebuffer on unit stop (reboot/shutdown) so the
+#     firmware logo does not linger.
+
+[Unit]
+Description=TimerPi — framebuffer splash (logo until app ready)
+DefaultDependencies=no
+After=systemd-graphical-pre.target local-fs.target
+Before=graphical.target timerpi.service
+Conflicts=reboot.target shutdown.target
+# No fbdev → nothing to draw (headless runs); skip instead of run+log.
+ConditionPathExists=/dev/fb0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/timerpi/bin/splash-draw -fork
+ExecStop=/opt/timerpi/bin/splash-draw -clear
+StandardOutput=journal
+StandardError=journal
+# Success path is "works or no-op": a missing fbdev or an odd driver must
+# never fail the boot graph (on-failure semantics).
+SuccessExitStatus=0
+Restart=no
+
+[Install]
+WantedBy=sysinit.target

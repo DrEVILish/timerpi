@@ -1,0 +1,65 @@
+# TimerPi — main appliance service.
+#
+# Installed by scripts/install-pi.sh; manual install:
+#   cp timerpi.service /etc/systemd/system/ && systemctl daemon-reload
+#   systemctl enable --now timerpi
+#
+# Contract notes (checked against main.go):
+#   * There are NO CLI flags — configuration comes from the JSON file in
+#     the data dir. The data dir is resolved from TIMERPI_DATA_DIR and
+#     defaults to /var/lib/timerpi, so no --config / -d argument is (or
+#     may be) passed here.
+#   * HTTP+WS single port comes from config.json (http_port); env
+#     CAPACITIMER_HTTP_PORT overrides at launch. The service pins it to 80
+#     explicitly so a stale per-machine env cannot move the appliance
+#     port; the Pi appliance contract is :80.
+#   * Assets (public/, templates/, third_party/ftl-themes) resolve
+#     relative to the process working directory → pinned to the checkout.
+#   * Writes /run/timerpi/ready (RuntimeDirectory owns the dir) when
+#     serving, which is the timerpi-splash ready-file handshake.
+
+[Unit]
+Description=TimerPi — cue-list show timer web appliance
+Documentation=https://github.com/drevilish/TimerPi
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/opt/timerpi
+ExecStart=/opt/timerpi/bin/timerpi
+Environment=CAPACITIMER_HTTP_PORT=80
+ExecStop=/bin/sh -c 'rm -f /run/timerpi/ready'
+
+# /run/timerpi hosts the splash ready-file handshake (see
+# scripts/splash/README.md) and may hold other runtime sockets later.
+RuntimeDirectory=timerpi
+RuntimeDirectoryMode=0755
+# Data: config.json + timerpi.db (SQLite) live here and must survive
+# reboots — only ProtectSystem (read-only /usr, /boot, /etc) is applied;
+# /var/lib/timerpi stays writable.
+ProtectSystem=full
+ProtectHome=read-only
+NoNewPrivileges=yes
+PrivateTmp=yes
+# mDNS announce/browse (zeroconf) needs AFpNetlink for interface signaling
+# and UDP sockets; restrict everything else without touching the audio of
+# the appliance.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Only the socket privilege this appliance actually uses port 80 with.
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+# The timer renderer (drm/) may later need /dev/dri and /dev/fb devices —
+# they remain reachable for root; do NOT add DevicePolicy=closed lightly.
+Restart=always
+RestartSec=2
+# Show appliance: give the process headroom for many WS clients.
+LimitNOFILE=65536
+# Never picket-page: restart rather than bail out on any non-zero exit.
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

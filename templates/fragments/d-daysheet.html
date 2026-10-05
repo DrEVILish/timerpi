@@ -1,0 +1,52 @@
+{{- /*
+  frag-d-daysheet — whole-day schedule board (Agent J; GET /d/:id?view=daysheet,
+  root #d-daysheet). Printable via ?print=1 (and inherent @media print in
+  display_variants.html's own style block — see that comment).
+  Rows are SERVER-COMPUTED once here (views' ComputeSchedule via CONTRACT
+  .Cues Start/End + day-bar IsDone/IsActive); the variant module rebuilds
+  them client-side on joined/state/schedule frames (client computeSchedule —
+  matching timerpi.ComputeSchedule; Fix-2's schedule frame rows preferred
+  when present). The tbody id is the module's rebuild target.
+*/ -}}
+{{define "frag-d-daysheet"}}
+<section id="d-daysheet" class="tp-dv-screen" data-view="daysheet">
+  <div class="tp-dv-top">
+    <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
+    <span class="tp-display-label">{{if .Show}}{{.Show.Title}}{{end}}</span>
+    <span class="cluster push tp-daysheet-meta">
+      {{if .Schedule}}{{if .Schedule.TotalMS}}<span>{{.Schedule.DayStartFmt}} → {{.Schedule.DayEndFmt}}</span><span class="mono">Total {{.Schedule.TotalFmt}}</span>{{end}}{{end}}
+      {{if .Schedule}}{{if not .Schedule.DayStartTS}}<span>Day not anchored — times are offsets</span>{{end}}{{end}}
+    </span>
+  </div>
+
+  <div class="tp-daysheet-scroller">
+    <!-- A7: the operator's day memo prints with the sheet (empty = nothing). -->
+    {{if .Notes}}<div class="tp-dayprint-notes" style="padding:.5em 0;border-bottom:1px solid var(--hairline,transparent);white-space:pre-wrap">{{.Notes}}</div>{{end}}    <table class="tp-daysheet">
+      <thead>
+        <tr><th scope="col">Start</th><th scope="col">Cue</th><th scope="col">Speaker</th><th scope="col">Run</th><th scope="col">End</th></tr>
+      </thead>
+      <tbody id="d-daysheet-rows">
+{{- range .Daysheet}}
+        <tr data-pos="{{.Pos}}" class="tp-cue-row{{if .IsBreak}} is-break{{end}}{{if .IsActive}} is-active tp-row-active{{end}}{{if .IsPast}} tp-row-past{{end}}{{if .IsNext}} tp-row-next{{end}}">
+          <td class="tp-cue-start">{{.StartFmt}}</td>
+          <td class="tp-cue-label">{{.Label}}</td>
+          <td class="tp-daysheet-speaker">{{.Speaker}}</td>
+          <td class="tp-cue-dur">{{.DurFmt}}</td>
+          <td class="tp-daysheet-end">{{.EndFmt}}</td>
+        </tr>
+{{- else}}
+        <tr class="tp-daysheet-empty"><td colspan="5">No cues yet — build the running order in the control room.</td></tr>
+{{- end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tp-dv-foot">
+    {{if .Share}}<span class="mono">Session {{.Share.CodeFmt}}</span>{{end}}
+    {{if .Hostname}}<span class="mono">{{.Hostname}}</span>{{end}}
+    <span class="push">upd. live via WS</span>
+  </div>
+
+  {{template "frag-dv-chrome" .Join}}
+</section>
+{{end}}

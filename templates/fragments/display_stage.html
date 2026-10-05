@@ -1,0 +1,42 @@
+{{- /*
+  frag-display — the display stage (id="d-stage", data-state drives paint).
+  Self-contained for OOB swap on display layout/theme changes:
+  WS {"t":"oob","target":"#d-stage"} re-renders it; {"t":"display"} may switch
+  the theme bundle client-side.
+  Digits (#d-clock) are painted by timerpi.js only.
+  UX2 (Agent U2): #d-chip is the stage urgency chip — timerpi.js paints it
+  only for states that must read at glance (overtime +count, WRAP UP, ALERT 2,
+  HELD/PAUSED/BLANK); quiet states leave it hidden so the clock is the loudest
+  thing here. MUST stay inside the oob-swapped subtree so a layout swap keeps it.
+*/ -}}
+{{define "frag-display"}}
+<div id="d-stage" class="tp-display-stage" data-state="idle">
+  <div class="tp-display-top">
+    <span class="tp-brand">
+      <img src="/img/timerpi.svg" alt="" width="26" height="26">
+    </span>
+    <span class="tp-display-label" id="d-label">{{if .Show}}{{.Show.Title}}{{end}}</span>
+    <span class="tp-state-chip" id="d-chip" hidden></span>
+  </div>
+
+  <div class="tp-display-center">
+    <span class="readout tp-clock" id="d-clock" data-state="idle">--:--</span>
+  </div>
+
+  <div class="tp-display-next">
+    <span>NEXT</span>
+    <strong id="d-next-label">{{if .Next}}{{.Next.Label}}{{end}}</strong>
+    <span class="mono" id="d-next-dur">{{if .Next}}{{.Next.DurFmt}}{{end}}</span>
+  </div>
+
+  <div class="tp-display-speaker" id="d-speaker">{{if .Current}}{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}{{end}}</div>
+
+  <div class="tp-display-status">
+    <span id="d-status">{{if .Show}}{{.Show.Title}}{{end}}</span>
+    {{if .Share}}<span class="mono">Session {{.Share.CodeFmt}}</span>{{end}}
+    {{if .Hostname}}<span class="mono">{{.Hostname}}</span>{{end}}
+  </div>
+
+  <div class="tp-stage-message" id="d-message" hidden><div></div></div>
+</div>
+{{end}}

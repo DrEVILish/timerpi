@@ -1,0 +1,27 @@
+{{define "frag-network"}}{{- /*
+  frag-network — the live mesh panel fragment (GET /frag/network, htmx
+  poll target for #net-panel on the settings page). Swaps INSIDE the
+  section (renderNetFrag targets with hx-swap="innerHTML").
+  Data: netVM (same shape as settings.html).
+*/ -}}
+{{- if .Err -}}
+<p class="text-muted" role="alert">{{.Err}}</p>
+{{- else -}}
+<table class="table net-peers">
+  <thead><tr><th>HOST</th><th>ADDR</th><th>ROLE</th><th>EPOCH</th><th>SEEN</th></tr></thead>
+  <tbody>
+    {{range .Peers}}
+    <tr>
+      <td class="mono">{{.Host}}</td>
+      <td class="mono">{{.Addr}}</td>
+      <td>{{.Role}}{{if .IsPrimary}} <span class="lamp lamp-ok">PRIMARY</span>{{end}}</td>
+      <td class="mono">{{.Epoch}}</td>
+      <td class="text-muted">{{.Age}} ago</td>
+    </tr>
+    {{else}}
+    <tr><td colspan="5" class="text-muted">No other TimerPi devices detected in the last 30 s.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{- end -}}
+{{end}}

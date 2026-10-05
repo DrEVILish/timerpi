@@ -1,0 +1,22 @@
+# TimerPi — nightly hot-backup timer (owns: systemd/ dir, see NOTES-ops).
+#
+# IMPORTANT LOCATION NOTE: this unit *pair* lives in the repo under
+# systemd/ (NOT repo root like timerpi.service) — install with:
+#   cp systemd/timerpi-backup.{timer,service} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now timerpi-backup.timer
+# Enable ONLY on the Pi appliance (dev container runs backups by hand;
+# docs/OPS.md §6).
+
+[Unit]
+Description=TimerPi — nightly hot SQLite backup schedule
+
+[Timer]
+# 03:15 local + jitter, so it never lands on a show; Persistent= catches a
+# missed run (device powered off) at next boot.
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=timerpi-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,109 @@
+{{- /*
+  index.html — homepage (page-home).
+
+  Privacy model (2026-10-03 rework): show codes/titles are NOT listed or
+  served anywhere public — the 8-character code IS the access credential and
+  an extra per-show password can be added on top. "Recent" below is filled
+  client-side from localStorage (this browser only); the server never
+  returns the code list (servert title strings come only from the unlocked
+  dashboard itself).
+*/ -}}
+{{define "page-home"}}
+<div class="stack is-gap-l">
+  <section class="hero tp-home-hero">
+    <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="56" height="56"></span>
+    <h1>TimerPi</h1>
+    <!-- Fix-3: hero copy pass — accuracy: appliance reachability is <hostname>.local (mDNS), same name the display status line carries. -->
+    <p class="hero-lede">
+      One cue list for the whole day, run as a web appliance. Operator dashboard,
+      fullscreen TV displays, and a LAN display mesh that keeps the show running
+      even when the network drops. Everything answers on your Pi at
+      <code>http://&lt;hostname&gt;.local</code>.
+    </p>
+    <div class="cluster is-gap-s">
+      <!-- U1 copy pass: what the appliance does FOR the operator, not the
+           stack that implements it (no dev jargon on the door). -->
+      <span class="badge badge-accent">Runs on your Pi — nothing outside your room</span>
+      <span class="badge">Every cue live on every display</span>
+      <span class="badge">1080p50 HDMI out</span>
+      <span class="badge">Codes stay private — shows are never listed publicly</span>
+    </div>
+  </section>
+
+  <div class="tp-home-grid">
+    <section class="panel">
+      <div class="panel-header">Create new show</div>
+      <div class="stack">
+        <form id="create-show" class="stack is-gap-s">
+          <div class="field">
+            <label class="label" for="show-title">Show title</label>
+            <input class="input input-lg" type="text" id="show-title" name="title"
+                   placeholder="Pawnee Townhall" autocomplete="off" required>
+            <span class="field-hint">One show is one day's running order. You can rename it later.</span>
+          </div>
+          <div class="cluster">
+            <!-- Fix-3: .btn-lg does not exist in core (verified xbmc.css) —
+                 size with the app-owned .tp-btn-lg glue (see timerpi.css Fix-3 block). -->
+            <button class="btn btn-primary tp-btn-lg" type="submit">
+              Create show <span class="indicator"></span>
+            </button>
+          </div>
+        </form>
+        <div class="field-error" id="create-error" role="alert" hidden></div>
+      </div>
+    </section>
+
+    <!-- Agent L (FIX-L): join-by-code panel — the share code is the ONLY
+         public address (8 alphanumeric chars, 4-4 display, e.g. K7QP-M3XB;
+         Crockford-style base32 minus I/L/O/U, case-insensitive input with
+         I→1, L→1, O→0, U→V typo maps; see timerpi/gen.go). Normalization
+         happens server-side; the client just pre-formats. -->
+    <section class="panel">
+      <div class="panel-header">Join a show by code</div>
+      <form id="join-show" class="stack is-gap-s">
+        <div class="field">
+          <label class="label" for="join-code">Session code</label>
+          <input class="input input-lg mono" type="text" id="join-code" name="code"
+                 placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false"
+                 maxlength="9" aria-label="Session code">
+          <span class="field-hint">Type the 4-4 code from the operator dashboard's Share panel.</span>
+        </div>
+        <div class="cluster">
+          <button class="btn btn-primary tp-btn-lg" type="submit">
+            Open <span class="indicator"></span>
+          </button>
+        </div>
+      </form>
+      <div class="field-error" id="join-error" role="alert" hidden></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Recent on this device</div>
+      <!-- Privacy: filled by timerpi.js from THIS browser's localStorage —
+           the server does not keep or serve a code list, so a stranger on
+           the LAN cannot enumerate shows (the 4-4 code is the credential).
+           Optional passphrase on a show appears as a hint chip here when
+           this device recorded one. -->
+      <ul class="list" id="tp-recent-list"></ul>
+      <p class="text-muted" id="tp-recent-empty" style="padding:.75rem">
+        Shows you open on this browser appear here (stored locally only).
+        Clear browser data to forget them.
+      </p>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-header">Import formats — grab an example, edit, re-import</div>
+    <!-- Fix-3: copy aligned with what actually ships — /api/import-example?fmt=xlsx|csv|json
+         exists (routes/api.go) and the dashboard import form is file + kind(auto|xlsx|xls|csv|json) + mode(replace|append). -->
+    <p class="text-muted">Import runs on each show’s dashboard: “Import cue list” takes a file
+      with auto-detected format (.xlsx, .xls, .csv or .json), appended or replacing the whole order.
+      Grab an example in any of the three editable formats below.</p>
+    <div class="cluster is-wrap">
+      <a class="btn" href="/api/import-example?fmt=xlsx"><svg class="icon"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Example .xlsx</a>
+      <a class="btn" href="/api/import-example?fmt=csv"><svg class="icon"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Example .csv</a>
+      <a class="btn" href="/api/import-example?fmt=json"><svg class="icon"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Example .json</a>
+    </div>
+  </section>
+</div>
+{{end}}

@@ -1,0 +1,507 @@
+{{- /*
+  display_variants.html — venue output boards (Agent J; route GET /d/:id,
+  dispatched on ?view= — see routes/display.go + reviews/NOTES-display.md).
+  Standalone document like display.html: ExecuteTemplate(w, "display_variants", variantData).
+  The stage view is NOT here (Fix-1 owns templates/display.html + frag-display);
+  this page shell executes exactly one root fragment:
+
+    frag-d-next       ?view=next       #d-next      NEXT-UP board
+    frag-d-daysheet   ?view=daysheet   #d-daysheet  whole-day schedule (printable)
+    frag-d-clock      ?view=clock      #d-vclock    lobby/pause filler clock
+
+  Per-screen quirks validated routes-side land as:
+    ?accent#/?bg# → :root --tp-accent/--tp-bg overrides (style block below)
+    ?fit=cover|contain|shadow → body[data-fit]
+    ?print=1 → body[data-print] (daysheet paper look on screen)
+
+  Client contract (shared JS UNTOUCHED — read-only reuse only):
+    * body data-page="display" → public/src/timerpi.js boots its mesh and
+      paints the CONTRACT ids we reuse (#d-next-label/-dur, #d-label,
+      #d-speaker, #tp-live-msg) plus the mesh-aware #tp-offline poll.
+    * the module below is THIS page's own glue: a second lightweight WS join
+      for the ids timerpi.js does not own (daysheet rows/needle, next-until
+      card, lobby clock digits), speaking joined/state/timer|cue, Fix-2's
+      {"t":"schedule"} frame rows (preferred, degrading to client
+      computeSchedule), and ping/pong clock re-anchor. oob/message/peers
+      frames are ignored (dashboard + stage surfaces only).
+    * offline: the server-side initial markup IS the fallback content; the
+      module flips #tp-offline only for the "link down before any snapshot"
+      hole the mesh-aware poll cannot cover (NOTES-display.md §offline).
+*/ -}}
+{{define "display_variants"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+{{if .Accent}}<style id="tp-accent-ovr">/* ?accent= — route-validated hex only */:root{--tp-accent:{{.Accent}};}</style>{{end}}
+{{if .BGFmt}}<style id="tp-bg-ovr">/* ?bg= — route-validated hex only */:root{--tp-bg:{{.BGFmt}};}</style>{{end}}
+<style>
+/* --------------------------------------------------------------------------
+   display-variant glue (tp- vocabulary; purple #7C3AED default accent — the
+   per-screen ?accent override is an operator OPT-IN, never a rebrand; green
+   stays in the logo artwork only, orange banned — Fix-3 locked).
+   -------------------------------------------------------------------------- */
+body.tp-dv {
+  overflow: hidden;
+  height: 100dvh;
+  background: var(--tp-bg, var(--bg));
+  color: var(--text);
+}
+.tp-dv-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1.6vh;
+  /* Supervisor[C5]: 4vh/4vw safe-area floor per docs/TIMERPI-THEME-SPEC.md
+     (was 2.6vh/3.4vw — content sat inside the overscan zone). */
+  padding: max(4vh, env(safe-area-inset-top, 0px)) max(4vw, env(safe-area-inset-right, 0px))
+           max(4vh, env(safe-area-inset-bottom, 0px)) max(4vw, env(safe-area-inset-left, 0px));
+}
+/* ?fit quirk: how the board sits inside the screen (NOTES-display.md). */
+body[data-fit="cover"] .tp-dv-screen { padding: 0; }
+body[data-fit="shadow"] .tp-dv-screen { padding-inline: max(3.4vw, 4.5vh); }
+body[data-fit="shadow"] .tp-dv-screen::after {
+  content: "";
+  position: absolute;
+  inset: max(1.2vh, env(safe-area-inset-top, 0px));
+  box-shadow: inset 0 0 0 .45vmin var(--tp-accent, #7C3AED);
+  pointer-events: none;
+}
+.tp-dv-top { display: flex; align-items: center; gap: 1rem; min-height: 0; }
+.tp-dv-top .tp-display-label {
+  font-size: clamp(1.5rem, 3.8vh, 3.6rem);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* per-screen accent opt-in: .tp-brand is the only brand element re-pointed
+   (timerpi.css Fix-3 rule: glue may size; an explicit ?accent request is the
+   operator's own color, default stays #7C3AED). */
+body.tp-dv .tp-brand { --accent: var(--tp-accent, #7C3AED); }
+
+/* ------------------------------- NEXT board ------------------------------- */
+.tp-dv-mid { display: flex; flex-direction: column; gap: 1.4vh; min-height: 0; justify-content: center; }
+.tp-dv-eyebrow {
+  font-size: clamp(1.2rem, 3.2vh, 3rem);
+  letter-spacing: .22em;
+  font-weight: 800;
+  color: var(--tp-accent, var(--accent));
+}
+.tp-dv-name {
+  font-size: clamp(2.6rem, 10vh, 10.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.tp-dv-speaker { font-size: clamp(1.4rem, 4.2vh, 4.2rem); color: var(--muted); }
+.tp-dv-until {
+  display: flex;
+  align-items: baseline;
+  gap: 2.4vw;
+  border-block: 2px solid var(--tp-accent, var(--accent));
+  padding-block: 1.6vh;
+  font-variant-numeric: tabular-nums;
+}
+.tp-dv-until-at { font-size: clamp(1.6rem, 5.2vh, 5.4rem); font-weight: 700; }
+.tp-dv-until-cue { font-size: clamp(.9rem, 1.9vh, 1.9rem); color: var(--muted); }
+.tp-dv-until-in { margin-inline-start: auto; font-size: clamp(2.2rem, 8vh, 8.6rem); font-weight: 800; }
+.tp-dv-until[data-past="1"] .tp-dv-until-in { color: var(--warning-text, var(--warning, currentColor)); }
+.tp-dv-cur {
+  display: flex;
+  gap: 1.6vw;
+  align-items: baseline;
+  font-size: clamp(1rem, 2.5vh, 2.3rem);
+  color: var(--muted);
+}
+.tp-dv-cur strong { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+
+/* ------------------------------ DAYSHEET table ---------------------------- */
+.tp-daysheet-scroller { overflow: auto; min-height: 0; }
+.tp-daysheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: clamp(1rem, 2.3vh, 2.1rem);
+  font-variant-numeric: tabular-nums;
+}
+.tp-daysheet th {
+  text-align: start;
+  font-size: .64em;
+  letter-spacing: .16em;
+  font-weight: 700;
+  color: var(--muted);
+  border-bottom: 2px solid var(--border);
+  padding: .35em .6em;
+}
+.tp-daysheet td { padding: .3em .6em; border-bottom: 1px solid var(--hairline, transparent); }
+.tp-daysheet .tp-cue-dur, .tp-daysheet .tp-cue-start, .tp-daysheet .tp-daysheet-end { white-space: nowrap; text-align: end; }
+.tp-daysheet .tp-cue-label { font-weight: 600; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-daysheet .tp-daysheet-speaker { color: var(--muted); max-width: 22vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-daysheet tr.is-break .tp-cue-label { font-style: italic; font-weight: 500; color: var(--muted); }
+.tp-daysheet tr.tp-row-active { --row-selected-bg: color-mix(in srgb, var(--tp-accent, var(--accent)) 22%, var(--surface)); }
+.tp-daysheet tr.tp-row-past { opacity: .5; }
+.tp-daysheet tr.tp-row-past .tp-cue-label {
+  text-decoration: line-through solid color-mix(in srgb, var(--muted) 55%, transparent) 1px;
+}
+.tp-daysheet tr.tp-row-done { opacity: .62; }
+.tp-daysheet tr#d-daysheet-needle td {
+  border: 0;
+  padding-block: .2em;
+  color: var(--tp-accent, var(--accent));
+  font-weight: 800;
+  letter-spacing: .2em;
+  font-size: .6em;
+  white-space: nowrap;
+}
+.tp-daysheet-empty td { color: var(--muted); font-style: italic; }
+.tp-daysheet-meta {
+  display: flex;
+  gap: 1.8rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: clamp(.85rem, 1.8vh, 1.7rem);
+  color: var(--muted);
+}
+
+/* ------------------------------- CLOCK board ------------------------------ */
+.tp-dv-center { display: flex; min-height: 0; flex-direction: column; justify-content: center; }
+.tp-vclock {
+  font-size: clamp(9rem, 36vh, 28rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+.tp-vclock-note { text-align: center; font-size: clamp(1.3rem, 3.8vh, 3.8rem); color: var(--muted); }
+
+/* --------------------------------- shared -------------------------------- */
+/* Supervisor[C5]: foot carries the session join credential — 2.2vh floor
+   per the theme spec (was 1.8vh, sub-legible at TV distance). */
+.tp-dv-foot { display: flex; gap: 1.6rem; align-items: baseline; color: var(--muted); font-size: clamp(.85rem, 2.2vh, 1.5rem); }
+
+/* message overlay reuses the stage paint (.tp-stage-message class); the id
+   #tp-live-msg is the one timerpi.js paints on every page. */
+#tp-live-msg.tp-stage-message { z-index: 6; }
+
+/* Screen-side JOIN affordance (corner card; deliberately small — a venue
+   board is not a sign-up sheet). QR <img> src is server-rendered against
+   the existing /api/shows/:id/qr route. */
+.tp-join-card {
+  position: absolute;
+  inset-block-end: max(2vh, env(safe-area-inset-bottom, 0px));
+  inset-inline-end: max(1.6vw, env(safe-area-inset-right, 0px));
+  display: grid;
+  justify-items: center;
+  gap: .3rem;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, .5rem);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.25;
+  text-decoration: none;
+  text-align: center;
+}
+.tp-join-card img { width: 7.4vh; min-width: 3.2rem; height: auto; image-rendering: pixelated; }
+.tp-join-card .mono { color: var(--text); }
+
+/* Link state chip (top-right): server renders an optimistic LIVE; the
+   inline module flips data-online + text on real frames only. */
+.tp-dv-link {
+  position: absolute;
+  inset-block-start: max(2vh, env(safe-area-inset-top, 0px));
+  inset-inline-end: max(1.6vw, env(safe-area-inset-right, 0px));
+  font-size: .8rem;
+  letter-spacing: .18em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: .2em .8em;
+  pointer-events: none;
+}
+.tp-dv-link[data-online="0"] { color: var(--danger-text, var(--danger)); border-color: var(--danger); }
+.tp-dv-link[data-online="1"] { color: var(--success-text, var(--success, currentColor)); border-color: var(--success, currentColor); }
+
+/* ------------------------------ PRINT variant -----------------------------
+   Own rules (timerpi.css @media print is dashboard-scoped). ?print=1 shows
+   the paper daysheet on screen; physical print pipelines use the same rules
+   via the media query. */
+@media print {
+  body.tp-dv {
+    overflow: visible;
+    height: auto;
+    background: #fff;
+    color: #000;
+    cursor: auto;
+  }
+  .tp-dv-screen { position: static; display: block; padding: 0; }
+  .tp-dv-screen::after { display: none; }
+  .tp-join-card, .tp-dv-link, .tp-offline, #tp-live-msg { display: none !important; }
+  .tp-dv-top { border-bottom: 2px solid #000; margin-bottom: .5em; padding-bottom: .3em; }
+  .tp-dv-top .tp-display-label { font-size: 14pt; }
+  .tp-daysheet-scroller { overflow: visible; }
+  .tp-daysheet { font-size: 9.5pt; }
+  .tp-daysheet th { border-bottom: 1pt solid #000; color: #000; padding: .25em .4em; }
+  .tp-daysheet td { border-bottom: .5pt solid #999; padding: .22em .4em; color: #000; }
+  .tp-daysheet tr.is-break .tp-cue-label { color: #333; }
+  .tp-daysheet tr.tp-row-active { background: #ddd; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tp-daysheet tr.tp-row-past { opacity: .65; }
+  .tp-daysheet tr#d-daysheet-needle td { color: #000; }
+  .tp-daysheet-meta { font-size: 8.5pt; color: #000; gap: 1em; }
+  .tp-vclock { font-size: 96pt; text-align: center; }
+  @page { margin: 1.1cm; }
+}
+/* Screen preview of the paper sheet (?print=1). */
+body.tp-dv[data-print="true"] {
+  overflow: visible;
+  height: auto;
+  background: #fff;
+  color: #000;
+}
+body.tp-dv[data-print="true"] .tp-dv-screen { position: static; display: block; padding: 0; }
+body.tp-dv[data-print="true"] .tp-dv-screen::after,
+body.tp-dv[data-print="true"] .tp-join-card,
+body.tp-dv[data-print="true"] .tp-dv-link,
+body.tp-dv[data-print="true"] .tp-offline,
+body.tp-dv[data-print="true"] #tp-live-msg { display: none; }
+body.tp-dv[data-print="true"] .tp-daysheet { font-size: 12pt; }
+</style>
+<script type="module">
+/* --------------------------------------------------------------------------
+   display-variant glue (THIS page only — public/src/*.js untouched).
+   Imports client-parity helpers from shared engine.js (read-only reuse) and
+   opens a lightweight extra WS join for the board surfaces timerpi.js does
+   not own: daysheet rows/needle + starts, next-until card, lobby clock.
+   Frames per PROTOCOL: joined/state (+timer|cue patches), Fix-2's
+   {"t":"schedule"} rows (preferred; degrade = client computeSchedule), and
+   ping/pong clock re-anchor. oob/message/peers/signal frames are ignored:
+   their targets live on the dashboard + stage.
+   -------------------------------------------------------------------------- */
+import { computeSchedule, fmtDuration, fmtTimeOfDay } from '/src/engine.js';
+
+const $ = (s) => document.querySelector(s);
+const setText = (s, t) => { const n = typeof s === 'string' ? $(s) : s; if (n && n.textContent !== t) n.textContent = t; };
+
+const view = document.body.dataset.view || 'next';
+/* Join credential: the body carries the share CODE (Agent L code-only
+   addressing — mesh.js + the hub resolve the join frame `show` field from
+   it; numeric row ids are refused). */
+const showId = document.body.dataset.show || '';
+
+let snap = null;  // latest adopted PROTOCOL snapshot (updatedAt dominance)
+let sched = null; // last Fix-2 schedule frame rows (else null → client compute)
+let offset = 0;   // serverNow = Date.now() + offset
+
+const now = () => Date.now() + offset;
+
+function adopt(s) {
+  if (snap && (s.updatedAt || 0) <= snap.updatedAt) return;
+  snap = s;
+  if (s.serverTime) offset = s.serverTime - Date.now();
+  if (sched && sched.dayStartTS !== (s.runtime.dayStartTS || 0)) sched = null; // stale anchors
+  renderStatic();
+}
+
+/* Planned instant of a schedule-row start; base = dayStartTS || server-now
+   (same rule timerpi.js uses for #tp-next-start). */
+function startAt(row) {
+  if (!snap || !row) return null;
+  return (snap.runtime.dayStartTS || now()) + row.startMS;
+}
+
+function renderStatic() {
+  if (!snap) return;
+  if (view === 'daysheet') renderSheet();
+  if (view === 'next') renderNextStatic();
+}
+
+/* Next board: #d-next-label/-dur are timerpi.js's (auto-painted); ours are
+   the NEXT cue's speaker, scheduled start and the time-until card. */
+function nextPlan() {
+  if (!snap) return { row: null, cue: null };
+  const r = snap.runtime;
+  const rows = sched?.rows || computeSchedule(snap).rows;
+  const nextPos = r.nextPos || (snap.cues.find(c => c.pos > (r.activePos || 0)) || snap.cues[0] || {}).pos;
+  return {
+    row: rows.find(x => x.pos === nextPos) || null,
+    cue: snap.cues.find(c => c.pos === nextPos) || null,
+  };
+}
+
+function renderNextStatic() {
+  const plan = nextPlan();
+  setText('#d-next-speaker', plan.cue?.speaker || '');
+  const at = startAt(plan.row);
+  setText('#d-next-start', at ? fmtTimeOfDay(at) : '--:--:--');
+}
+
+/* Daysheet: full row rebuild on structural frames; the per-second tick only
+   moves the needle (no innerHTML churn at TV distance). */
+function renderSheet() {
+  const tb = $('#d-daysheet-rows');
+  if (!tb) return;
+  const rows = sched?.rows || computeSchedule(snap).rows;
+  const rowOf = new Map(rows.map(r => [r.pos, r]));
+  const base = snap.runtime.dayStartTS || now();
+  const rel = now() - base;
+  const r = snap.runtime;
+  tb.textContent = '';
+  for (const c of snap.cues) {
+    const plan = rowOf.get(c.pos);
+    const tr = document.createElement('tr');
+    tr.dataset.pos = String(c.pos);
+    if (plan) {
+      tr.dataset.startMS = String(plan.startMS);
+      tr.dataset.endMS = String(plan.endMS);
+    }
+    let cls = c.kind === 'break' ? 'is-break' : '';
+    if (r.activePos && c.pos === r.activePos) cls += ' is-active tp-row-active';
+    else if (r.activePos && c.pos < r.activePos) cls += ' tp-row-past';
+    else if (c.pos === r.nextPos) cls += ' tp-row-next';
+    if (rel && plan && plan.endMS <= rel) cls += ' tp-row-done';
+    if (cls) tr.className = cls;
+    if (c.color) tr.style.setProperty('--tp-row-color', c.color);
+    const put = (txt, klass) => {
+      const td = document.createElement('td');
+      if (klass) td.className = klass;
+      td.textContent = txt;
+      tr.appendChild(td);
+    };
+    put(plan ? (snap.runtime.dayStartTS ? fmtTimeOfDay(base + plan.startMS) : '+' + fmtDuration(plan.startMS)) : '', 'tp-cue-start');
+    put(c.label, 'tp-cue-label');
+    put(c.speaker || '', 'tp-daysheet-speaker');
+    put(fmtDuration(c.durationMS), 'tp-cue-dur');
+    put(plan ? (snap.runtime.dayStartTS ? fmtTimeOfDay(base + plan.endMS) : '+' + fmtDuration(plan.endMS)) : '', 'tp-daysheet-end');
+    tb.appendChild(tr);
+  }
+  moveNeedle();
+}
+
+/* Current-needle line: "◀ NOW HH:MM:SS" between rows (before the first row
+   whose scheduled start is in the future, else after the last). */
+function moveNeedle() {
+  const tb = $('#d-daysheet-rows');
+  if (!tb || !snap) return;
+  if (!snap.cues.length) return;
+  let tr = tb.querySelector('#d-daysheet-needle');
+  if (!tr) {
+    tr = document.createElement('tr');
+    tr.id = 'd-daysheet-needle';
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    tr.appendChild(td);
+  }
+  const base = snap.runtime.dayStartTS || now();
+  const rel = now() - base;
+  const anchor = [...tb.querySelectorAll('tr[data-start-ms]')].find(n => Number(n.dataset.startMS) > rel);
+  if (anchor) anchor.before(tr);
+  else tb.appendChild(tr);
+  tr.firstElementChild.textContent = '◀ NOW ' + fmtTimeOfDay(now());
+}
+
+/* per-second tick (no rAF loop needed on these boards). */
+function tick() {
+  if (view === 'clock') setText('#d-vclock-time', fmtTimeOfDay(now()));
+  if (view === 'daysheet') moveNeedle();
+  if (view === 'next' && snap) {
+    const at = startAt(nextPlan().row);
+    const el = $('#d-next-until');
+    if (el && at) {
+      const left = at - now();
+      setText($('#d-next-until-in'), (left >= 0 ? 'in ' : '+') + fmtDuration(left));
+      el.dataset.past = left < 0 ? '1' : '0';
+    }
+  }
+}
+
+/* link: chip is ours; #tp-offline flips ONLY for the pre-snapshot hole (the
+   mesh-aware poll in timerpi.js owns it afterwards). */
+function link(online) {
+  const chip = $('.tp-dv-link'), strip = $('#tp-offline');
+  if (chip) {
+    chip.dataset.online = online ? '1' : '0';
+    setText(chip, online ? 'LINK LIVE' : 'LINK DOWN');
+  }
+  if (strip && online) strip.classList.remove('is-visible');
+  else if (strip && !online && !snap) strip.classList.add('is-visible');
+}
+
+/* lightweight session for THIS surface (client pings every 20s). */
+function wsJoin() {
+  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  const ws = new WebSocket(url);
+  let peerId;
+  try { peerId = crypto.randomUUID ? crypto.randomUUID() : 'dv-' + Math.random().toString(36).slice(2); }
+  catch { peerId = 'dv-' + Math.random().toString(36).slice(2); }
+  ws.onopen = () => {
+    link(true);
+    ws.send(JSON.stringify({ v: 1, t: 'join', role: 'display', show: showId, peerId, joinedAt: Date.now() }));
+    ws._ping = setInterval(() => { try { ws.send('{"t":"ping"}'); } catch { /* closing */ } }, 20000);
+  };
+  ws.onmessage = (e) => {
+    let m;
+    try { m = JSON.parse(e.data); } catch { return; }
+    switch (m.t) {
+      case 'joined':
+      case 'state':
+        if (m.snapshot) adopt(m.snapshot);
+        break;
+      case 'schedule':
+        if (m.rows) { sched = { rows: m.rows, totalMS: m.totalMS || 0, dayStartTS: m.dayStartTS || 0 }; renderStatic(); }
+        break;
+      case 'pong':
+        if (m.serverTime) offset = m.serverTime - Date.now();
+        break;
+      case 'timer':
+      case 'cue':
+        if (m.runtime && snap && (m.updatedAt ?? 0) >= snap.updatedAt) {
+          Object.assign(snap.runtime, m.runtime);
+          snap.updatedAt = m.updatedAt ?? snap.updatedAt;
+          if (m.serverTime) offset = m.serverTime - Date.now();
+          renderStatic();
+        }
+        break;
+      default: break;
+    }
+  };
+  link(false);
+  ws.onclose = () => { clearInterval(ws._ping); link(false); setTimeout(wsJoin, 3000); };
+  ws.onerror = () => { /* onclose follows */ };
+}
+
+wsJoin();
+setInterval(tick, 1000);
+tick();
+</script>
+</head>
+<body class="tp-display tp-dv" data-page="display" data-role="display" data-view="{{.View}}"
+      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-fit="{{.Fit}}"{{if .Print}} data-print="true"{{end}} data-blanked="{{.Show.Blanked}}">
+{{/* view dispatch — exactly one root fragment (thin wrapper, per contract) */}}
+{{if eq .View "next"}}
+{{template "frag-d-next" .}}
+{{else if eq .View "daysheet"}}
+{{template "frag-d-daysheet" .}}
+{{else}}
+{{template "frag-d-clock" .}}
+{{end}}
+
+<span class="tp-dv-link" data-online="1">LINK LIVE</span>
+<div class="tp-waiting" id="tp-waiting" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <h2>WAITING FOR CONNECTION…</h2>
+  <p class="text-muted">This screen has no show<span id="tp-waiting-name"></span>. A control room on this network can capture it from the Screens gallery.</p>
+</div>
+<!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
+<div class="tp-blanked" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <p>STANDBY</p>
+</div>
+</body>
+</html>
+{{end}}

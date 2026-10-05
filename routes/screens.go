@@ -1,0 +1,640 @@
+// screens.go — F1/F2: the operator's screens system.
+//
+// Every display tab self-registers a STABLE screen identity (?screen= URL
+// name, else localStorage, else generated — see public/src/mesh.js
+// screenName()) carried on the WS join. The registry (SQLite `screens`)
+// survives reconnects; the operator's dashboard panel (GET /screens) lists
+// all screens with live presence, lets them assign a theme + board per
+// screen (or Match one screen to all), rename/forget entries, and save the
+// whole configuration as named presets (SQLite `display_presets`) that
+// export/import as plain JSON files.
+//
+// Assignment reaches a live screen by targeted push over its own session
+// ({t:"display",theme} reuses the B7 theme frame; {t:"screen-board"} is
+// board.js's navigate signal; {t:"screen-rename"} makes a renamed tab
+// re-adopt + rejoin). Registry changes refresh every controls tab with
+// {t:"screens", …}. Display pages also fetch their own config on boot
+// (screens/self, ungated beyond the show itself — theme names and board
+// ids are not credentials; /d/ stays login-free by contract).
+package routes
+
+import (
+	"encoding/json"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"timerpi/boards"
+	"timerpi/timerpi"
+	"timerpi/views"
+)
+
+var screenThemeRe = regexp.MustCompile(`^[a-z0-9_-]{0,40}$`)
+
+// screenSessionView is one live tab (the gallery/panel disconnect button).
+type screenSessionView struct {
+	PeerID string `json:"peerId"`
+	Role   string `json:"role"`
+}
+
+// screenBoxView is one layout tile for the gallery preview.
+type screenBoxView struct {
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
+	W    int    `json:"w"`
+	H    int    `json:"h"`
+	Type string `json:"type"`
+}
+
+type screenView struct {
+	Name      string `json:"name"`
+	Theme     string `json:"theme"`
+	BoardID   int64  `json:"boardId"`
+	LastSeen  int64  `json:"lastSeen"`
+	Sessions  int    `json:"sessions"` // live tabs under this name
+	Connected bool   `json:"connected"`
+
+	BoardName    string              `json:"boardName,omitempty"`
+	Widgets      []screenBoxView     `json:"widgets,omitempty"`
+	Peers        []screenSessionView `json:"peers,omitempty"`
+	PreviewLabel string              `json:"previewLabel,omitempty"`
+	PreviewClock string              `json:"previewClock,omitempty"`
+	PreviewPct   int                 `json:"previewPct,omitempty"`
+}
+
+// registerScreens mounts the F1/F2 endpoints into the /api/shows group.
+func registerScreens(g *gin.RouterGroup, d *Deps) {
+	g.GET("/shows/:ident/screens", d.apiScreens)
+	g.GET("/shows/:ident/screens/self", d.apiScreenSelf)
+	g.POST("/shows/:ident/screens/config", d.apiScreenConfig)
+	g.POST("/shows/:ident/screens/match", d.apiScreenMatch)
+	g.POST("/shows/:ident/screens/rename", d.apiScreenRename)
+	g.POST("/shows/:ident/screens/forget", d.apiScreenForget)
+
+	g.GET("/shows/:ident/presets", d.apiPresetsList)
+	g.POST("/shows/:ident/presets", d.apiPresetsSave)
+	g.POST("/shows/:ident/presets/:pid/apply", d.apiPresetApply)
+	g.DELETE("/shows/:ident/presets/:pid", d.apiPresetDelete)
+	g.GET("/shows/:ident/presets/:pid/export", d.apiPresetExport)
+	g.POST("/shows/:ident/presets/import", d.apiPresetImport)
+}
+
+// screensPayload builds the panel/gallery view: registry rows merged with
+// live session presence, enriched with the assigned board's layout boxes and
+// current-snapshot preview values (the gallery shows what each screen IS
+// showing; the JS re-polls to keep it live).
+func (d *Deps) screensPayload(id int64) ([]screenView, error) {
+	rows, err := d.Store.ListScreens(id)
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]int{}
+	peers := map[string][][2]string{}
+	if d.Hub != nil {
+		live = d.Hub.ScreenSessions(id)
+		peers = d.Hub.ScreenPeers(id)
+	}
+	boardNames := map[int64]string{}
+	var defaultBoardID int64
+	if d.Store != nil {
+		if list, berr := boards.ListBoards(d.Store.DB, id); berr == nil && len(list) > 0 {
+			defaultBoardID = list[0].ID // the seeded show default leads the list
+			for _, b := range list {
+				boardNames[b.ID] = b.Name
+			}
+		}
+	}
+	var activeLabel, activeClock string
+	var activePct int
+	if d.Engines != nil {
+		if eng, gerr := d.Engines.Get(id); gerr == nil {
+			if snap, serr := eng.Snapshot(); serr == nil {
+				for _, c := range snap.Cues {
+					if c.Pos == snap.Runtime.ActivePos {
+						activeLabel = c.Label
+						if c.DurationMS > 0 {
+							p := (c.DurationMS - snap.Runtime.RemainingMS) * 100 / c.DurationMS
+							if p < 0 {
+								p = 0
+							}
+							if p > 100 {
+								p = 100
+							}
+							activePct = int(p)
+						}
+					}
+				}
+				if snap.Runtime.Running && !snap.Runtime.Paused && snap.Runtime.RemainingMS > 0 {
+					activeClock = views.FmtDur(snap.Runtime.RemainingMS)
+				} else {
+					activeClock = "idle"
+				}
+			}
+		}
+	}
+
+	out := make([]screenView, 0, len(rows)+len(live))
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[r.Name] = true
+		out = append(out, d.screenCard(r.Name, r.Theme, r.BoardID, r.LastSeen, live, peers,
+			boardNames, defaultBoardID, id, activeLabel, activeClock, activePct))
+	}
+	for name := range live { // tabs that joined before their registry row was read
+		if seen[name] {
+			continue
+		}
+		out = append(out, d.screenCard(name, "", 0, 0, live, peers, boardNames, defaultBoardID,
+			id, activeLabel, activeClock, activePct))
+	}
+	return out, nil
+}
+
+// screenCard assembles one panel/gallery entry with its preview boxes.
+func (d *Deps) screenCard(name, theme string, boardID, lastSeen int64,
+	live map[string]int, peers map[string][][2]string,
+	boardNames map[int64]string, defaultBoardID, showID int64,
+	activeLabel, activeClock string, activePct int) screenView {
+	v := screenView{Name: name, Theme: theme, BoardID: boardID, LastSeen: lastSeen,
+		Sessions: live[name], Connected: live[name] > 0,
+		PreviewLabel: activeLabel, PreviewClock: activeClock, PreviewPct: activePct}
+	for _, pr := range peers[name] {
+		v.Peers = append(v.Peers, screenSessionView{PeerID: pr[0], Role: pr[1]})
+	}
+	bid := boardID
+	if bid == 0 {
+		bid = defaultBoardID // unassigned screens render the show board
+	}
+	if n, ok := boardNames[bid]; ok {
+		v.BoardName = n
+	}
+	if d.Store != nil && bid != 0 {
+		if b, err := boards.GetBoard(d.Store.DB, showID, bid); err == nil {
+			for _, w := range b.Parsed().Widgets {
+				v.Widgets = append(v.Widgets, screenBoxView{X: w.X, Y: w.Y, W: w.W, H: w.H, Type: w.Type})
+			}
+		}
+	}
+	return v
+}
+
+// pushScreen applies one screen's stored config to its live tabs (theme +
+// board assignment frames).
+func (d *Deps) pushScreen(id int64, name string) {
+	if d.Hub == nil {
+		return
+	}
+	s, err := d.Store.GetScreenByName(id, name)
+	if err != nil {
+		return
+	}
+	var frames [][]byte
+	if s.Theme != "" {
+		if b, jerr := json.Marshal(map[string]any{"t": "display", "theme": s.Theme}); jerr == nil {
+			frames = append(frames, b)
+		}
+	}
+	if s.BoardID > 0 {
+		if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID}); jerr == nil {
+			frames = append(frames, b)
+		}
+	}
+	if len(frames) > 0 {
+		d.Hub.SendToScreen(id, name, frames...)
+	}
+}
+
+// notifyControls refreshes every operator panel with the new registry.
+func (d *Deps) notifyControls(id int64) {
+	if d.Hub == nil {
+		return
+	}
+	screens, err := d.screensPayload(id)
+	if err != nil {
+		return
+	}
+	if b, jerr := json.Marshal(map[string]any{"t": "screens", "screens": screens}); jerr == nil {
+		d.Hub.SendToRole(id, "controls", b)
+	}
+}
+
+// boardKnown reports whether bid names a board of this show (assignments
+// must not strand a locked TV on a 404 ?board= page).
+func (d *Deps) boardKnown(showID, bid int64) bool {
+	if bid <= 0 {
+		return bid == 0
+	}
+	_, err := boards.GetBoard(d.Store.DB, showID, bid)
+	return err == nil
+}
+
+// GET /api/shows/:ident/screens — the operator panel view (show-gated).
+func (d *Deps) apiScreens(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	screens, err := d.screensPayload(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "screens": screens})
+}
+
+// GET /api/shows/:ident/screens/self?name=… — a display's own assignment
+// (plain requireShow: not content, /d/ must stay login-free).
+func (d *Deps) apiScreenSelf(c *gin.Context) {
+	id, ok := d.requireShow(c)
+	if !ok {
+		return
+	}
+	name := timerpi.SanitizeScreenName(c.Query("name"))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "name required"})
+		return
+	}
+	s, err := d.Store.GetScreenByName(id, name)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "known": false})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "known": true, "theme": s.Theme, "boardId": s.BoardID})
+}
+
+// POST /api/shows/:ident/screens/config {name,theme,boardId} — assign one
+// screen (empty theme / 0 board = follow defaults). Persisted + pushed.
+func (d *Deps) apiScreenConfig(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name    string `json:"name"`
+		Theme   string `json:"theme"`
+		BoardID int64  `json:"boardId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, theme?, boardId?}"})
+		return
+	}
+	name := timerpi.SanitizeScreenName(body.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+		return
+	}
+	if !screenThemeRe.MatchString(body.Theme) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
+		return
+	}
+	if body.BoardID < 0 || !d.boardKnown(id, body.BoardID) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
+		return
+	}
+	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	d.pushScreen(id, name)
+	d.notifyControls(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// POST /api/shows/:ident/screens/match {from} — copy one screen's config
+// onto EVERY registered screen (the "make them all look like this one"
+// button) and push it live.
+func (d *Deps) apiScreenMatch(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		From string `json:"from"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {from}"})
+		return
+	}
+	from := timerpi.SanitizeScreenName(body.From)
+	src, err := d.Store.GetScreenByName(id, from)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown screen"})
+		return
+	}
+	rows, err := d.Store.ListScreens(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	matched, failed := 0, 0
+	for _, r := range rows {
+		if r.Name == from {
+			continue
+		}
+		if err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID); err != nil {
+			failed++
+			continue
+		}
+		d.pushScreen(id, r.Name)
+		matched++
+	}
+	d.notifyControls(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "matched": matched, "failed": failed})
+}
+
+// POST /api/shows/:ident/screens/rename {from,to} — move the registry row
+// and tell the live tab to adopt the new identity (it persists + rejoins).
+func (d *Deps) apiScreenRename(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {from,to}"})
+		return
+	}
+	to := timerpi.SanitizeScreenName(body.To)
+	if to == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+		return
+	}
+	if err := d.Store.RenameScreen(id, body.From, to); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if d.Hub != nil {
+		if b, jerr := json.Marshal(map[string]any{"t": "screen-rename", "name": to}); jerr == nil {
+			d.Hub.SendToScreen(id, timerpi.SanitizeScreenName(body.From), b)
+		}
+	}
+	d.notifyControls(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// POST /api/shows/:ident/screens/forget {name} — drop a screen from the
+// registry (a still-open tab simply re-registers on its next join).
+func (d *Deps) apiScreenForget(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name}"})
+		return
+	}
+	name := timerpi.SanitizeScreenName(body.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+		return
+	}
+	if err := d.Store.DeleteScreen(id, name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	d.notifyControls(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// ---------------------------------------------------------------------------
+// Presets (F2). A preset bundles the whole screen configuration:
+// {"screens":[{"name":…,"theme":…,"boardId":…}]}. It lives in SQLite (so
+// it survives server restarts and any browser sees it after a refresh),
+// and every preset exports as a plain JSON file that imports back.
+
+type presetData struct {
+	Screens []struct {
+		Name    string `json:"name"`
+		Theme   string `json:"theme"`
+		BoardID int64  `json:"boardId"`
+	} `json:"screens"`
+}
+
+const presetFileKind = "timerpi-display-preset"
+const presetFileVersion = 1
+
+func (d *Deps) presetSnapshotData(id int64) (string, error) {
+	rows, err := d.Store.ListScreens(id)
+	if err != nil {
+		return "", err
+	}
+	var pd presetData
+	for _, r := range rows {
+		el := struct {
+			Name    string `json:"name"`
+			Theme   string `json:"theme"`
+			BoardID int64  `json:"boardId"`
+		}{Name: r.Name, Theme: r.Theme, BoardID: r.BoardID}
+		pd.Screens = append(pd.Screens, el)
+	}
+	b, jerr := json.Marshal(pd)
+	return string(b), jerr
+}
+
+// GET /api/shows/:ident/presets — list (id, name, updatedAt, parsed data).
+func (d *Deps) apiPresetsList(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	rows, err := d.Store.ListPresets(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(rows))
+	for _, p := range rows {
+		var pd presetData
+		_ = json.Unmarshal([]byte(p.Data), &pd)
+		out = append(out, gin.H{"id": p.ID, "name": p.Name, "updatedAt": p.UpdatedAt, "data": pd})
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "presets": out})
+}
+
+// POST /api/shows/:ident/presets {name, data?} — save. Without data the
+// CURRENT registry is snapshotted (the "Save current" button).
+func (d *Deps) apiPresetsSave(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name string          `json:"name"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, data?}"})
+		return
+	}
+	name := timerpi.ClipUTF8(body.Name, 80)
+	data := string(body.Data)
+	if data == "" {
+		snap, serr := d.presetSnapshotData(id)
+		if serr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": serr.Error()})
+			return
+		}
+		data = snap
+	}
+	p, err := d.Store.SavePreset(id, name, data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	d.logAction(id, "presetSave", name)
+	c.JSON(http.StatusCreated, gin.H{"ok": true, "id": p.ID, "name": p.Name})
+}
+
+// POST /api/shows/:ident/presets/:pid/apply — write the preset onto every
+// screen it names (registry + live pushes).
+func (d *Deps) apiPresetApply(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, perr := strconv.ParseInt(c.Param("pid"), 10, 64)
+	if perr != nil || pid <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad preset id"})
+		return
+	}
+	p, err := d.Store.GetPreset(id, pid)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown preset"})
+		return
+	}
+	var pd presetData
+	if jerr := json.Unmarshal([]byte(p.Data), &pd); jerr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "preset data corrupt"})
+		return
+	}
+	applied := 0
+	for _, sc := range pd.Screens {
+		name := timerpi.SanitizeScreenName(sc.Name)
+		if name == "" || !screenThemeRe.MatchString(sc.Theme) ||
+			sc.BoardID < 0 || !d.boardKnown(id, sc.BoardID) {
+			continue // entries from another show's file never land here
+		}
+		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID); err != nil {
+			continue
+		}
+		d.pushScreen(id, name)
+		applied++
+	}
+	d.notifyControls(id)
+	d.logAction(id, "presetApply", p.Name)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "screens": applied})
+}
+
+// DELETE /api/shows/:ident/presets/:pid — drop a preset.
+func (d *Deps) apiPresetDelete(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, perr := strconv.ParseInt(c.Param("pid"), 10, 64)
+	if perr != nil || pid <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad preset id"})
+		return
+	}
+	if err := d.Store.DeletePreset(id, pid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// GET /api/shows/:ident/presets/:pid/export — download the preset as a
+// JSON file (the same shape apiPresetImport accepts).
+func (d *Deps) apiPresetExport(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, perr := strconv.ParseInt(c.Param("pid"), 10, 64)
+	if perr != nil || pid <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad preset id"})
+		return
+	}
+	p, err := d.Store.GetPreset(id, pid)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown preset"})
+		return
+	}
+	file := gin.H{
+		"kind":    presetFileKind,
+		"version": presetFileVersion,
+		"name":    p.Name,
+		"data":    json.RawMessage(p.Data),
+	}
+	b, jerr := json.MarshalIndent(file, "", "  ")
+	if jerr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": jerr.Error()})
+		return
+	}
+	slug := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(p.Name))
+	slug = strings.Trim(strings.ReplaceAll(slug, "--", "-"), "-")
+	if slug == "" {
+		slug = "preset"
+	}
+	c.Header("Content-Disposition", `attachment; filename="timerpi-`+slug+`.json"`)
+	c.Data(http.StatusOK, "application/json; charset=utf-8", b)
+}
+
+// POST /api/shows/:ident/presets/import — upload an exported JSON preset
+// (raw body or multipart field "file"); stored under its own name.
+func (d *Deps) apiPresetImport(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	raw, ferr := bundleBody(c)
+	if ferr != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": ferr})
+		return
+	}
+	var file struct {
+		Kind    string          `json:"kind"`
+		Version int             `json:"version"`
+		Name    string          `json:"name"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if jerr := json.Unmarshal(raw, &file); jerr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "not a TimerPi preset file"})
+		return
+	}
+	if file.Kind != presetFileKind || file.Version != presetFileVersion {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false,
+			"error": "not a TimerPi display preset (or unsupported version)"})
+		return
+	}
+	var pd presetData
+	if jerr := json.Unmarshal(file.Data, &pd); jerr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "preset data invalid"})
+		return
+	}
+	name := file.Name
+	if name == "" {
+		name = "Imported preset"
+	}
+	p, err := d.Store.SavePreset(id, name, string(file.Data))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	d.logAction(id, "presetImport", p.Name)
+	c.JSON(http.StatusCreated, gin.H{"ok": true, "id": p.ID, "name": p.Name})
+}

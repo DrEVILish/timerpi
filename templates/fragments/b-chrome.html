@@ -1,0 +1,78 @@
+{{- /*
+  b-chrome.html — display-board chrome (Agent N). Dot is *views.BoardPage.
+  frag-b-chrome: offline strip (own id `b-offline`, canonical strip wording
+  shared with base / display / d-chrome — keep the four in voice) + QR join
+  card (d-chrome pattern: mini QR of THIS board URL, control-room link,
+  <hostname>.local hint).
+  frag-b-toolbar: operator compose chrome (rendered only when .Editable, i.e.
+  ?edit=1): EDIT MODE badge + live note, board switcher + New,
+  Edit-layout/Done toggle, save state, add-widget palette, role presets
+  (Stage/Lobby one-click layouts), settings form, reset. Hidden in locked
+  display mode via the [data-editing] paint rules (timerpi.css) — no chrome
+  on a pure display.
+  EDIT-MODE SAFETY: the badge + live note tell a stagehand opening ?edit=1
+  that this URL composes; board.js rewrites the join-card QR to the LOCKED
+  board URL on editable boots (Go bakes ?edit=1 into Join.QR/Self —
+  routes/boards.go, out of UI scope) so a scanned TV never hands out
+  compose access.
+*/ -}}
+
+{{define "frag-b-chrome"}}
+<div class="b-offline" id="b-offline">
+  <div>
+    <h2>LINK DOWN</h2>
+    <p>Server unreachable — working from the local copy.</p>
+    <p class="text-muted">Reconnects automatically when the link returns.</p>
+  </div>
+</div>
+
+<a class="b-join-card" href="{{.Join.Control}}" data-kiosk>
+  <img id="b-join-qr" src="{{.Join.QR}}" alt="Display QR code" width="132" height="132">
+  {{if .Join.Host}}<span class="mono">{{.Join.Host}}.local</span>{{end}}
+  <span class="mono text-truncate">{{.Join.Self}}</span>
+  <span>Control room: {{.Join.Control}}</span>
+</a>
+{{end}}
+
+{{define "frag-b-toolbar"}}
+<div class="b-toolbar b-chrome" id="b-toolbar">
+  <span class="badge badge-accent" id="b-edit-badge">EDIT MODE</span>
+  <span class="b-board-name" id="b-board-name">{{.Board.Name}}</span>
+  <label class="b-boards-label" for="b-boards">Board</label>
+  <select class="select input-sm" id="b-boards">
+{{- range .Boards}}
+    <option value="{{.ID}}"{{if eq .ID $.BoardID}} selected{{end}}>{{.Name}}</option>
+{{- end}}
+  </select>
+  <button class="btn btn-sm" id="b-new" type="button">New</button>
+  <button class="btn btn-sm btn-primary" id="b-edit-toggle" type="button" aria-pressed="false">Edit layout</button>
+  <span class="b-save-state" id="b-save-state" role="status"></span>
+  <span class="b-edit-note">Changes save live to every screen showing this board.</span>
+</div>
+
+<div class="b-palette b-chrome" id="b-palette" hidden>
+  <span class="b-palette-title">Add widget</span>
+  <div class="b-palette-list" id="b-palette-list" role="list">
+    <button type="button" data-add="countdown" role="listitem">Countdown</button>
+    <button type="button" data-add="cuelabel" role="listitem">Cue label</button>
+    <button type="button" data-add="speaker" role="listitem">Speaker</button>
+    <button type="button" data-add="nextup" role="listitem">Next up</button>
+    <button type="button" data-add="wallclock" role="listitem">Wall clock</button>
+    <button type="button" data-add="progress" role="listitem">Cue progress</button>
+    <button type="button" data-add="dayprogress" role="listitem">Day progress</button>
+    <button type="button" data-add="messages" role="listitem">Messages</button>
+    <button type="button" data-add="showtitle" role="listitem">Show title</button>
+    <button type="button" data-add="rate" role="listitem">Rate chip</button>
+    <button type="button" data-add="schedule" role="listitem">Schedule</button>
+    <button type="button" data-add="notice" role="listitem">Notice</button>
+  </div>
+  <span class="b-palette-title">Layout</span>
+  <div class="b-palette-list" id="b-preset-list">
+    <button type="button" data-preset="stage" title="Countdown, next-up and messages for stage-side monitors">Stage</button>
+    <button type="button" data-preset="lobby" title="Wall clock, show title and schedule for lobby screens">Lobby</button>
+  </div>
+  <button class="btn btn-sm" id="b-reset" type="button" title="Restore the factory layout">Reset layout</button>
+</div>
+
+<form class="b-settings b-chrome" id="b-settings" hidden></form>
+{{end}}

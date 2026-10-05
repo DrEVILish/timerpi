@@ -1,0 +1,219 @@
+{{- /*
+  settings.html — device identity / mesh page (route GET /settings).
+  Standalone document like display.html (L0 shell: tokens only). Agent H;
+  recreated verbatim from routes/network.go netVM after the original was
+  lost with its cancelled session.
+
+  Data: netVM { Page, Title, Hostname, DeviceName, Role, State, Override,
+  Epoch, Version, Port, TXT, Primary, PrimaryEpoch, Peers[] {Host, Addr,
+  Role, Epoch, Age, IsPrimary}, OK, Err }.
+
+  Handles: POST /api/network/hostname {name} · POST /api/network/role
+  {force} · poll GET /frag/network every 5 s into #net-panel.
+*/ -}}
+{{define "settings"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TimerPi — {{.Title}}</title>
+<link rel="stylesheet" href="/css/timerpi.v49.css">
+<link rel="stylesheet" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
+<script defer src="/src/htmx.min.js"></script>
+<style>
+  /* Settings-page glue: two-column identity + peers, phone stacking. */
+  .tp-net {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 4vh 4vw;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .tp-net .net-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+  .tp-net .tp-note { min-height: 1.6em; }
+  .tp-net table.net-peers td, .tp-net table.net-peers th { padding: .55rem .75rem; }
+  .tp-net .net-role-chip { white-space: nowrap; }
+  @media (max-width: 760px) {
+    .tp-net table.net-peers { font-size: .95rem; }
+  }
+</style>
+</head>
+<body class="app" data-page="settings">
+<header class="bar">
+  <div class="bar-left">
+    <a class="tp-brand" href="/"><img src="/img/timerpi.svg" alt="TimerPi" style="height:1.6em"></a>
+    <strong>{{.Title}} · {{.Hostname}}</strong>
+  </div>
+  <div class="bar-right">
+    <span class="lamp lamp-ok" title="mesh page"></span>
+    <a class="btn btn-sm" href="/">Shows</a>
+  </div>
+</header>
+
+<main class="main tp-net">
+  <h1>DEVICE IDENTITY</h1>
+  <div id="net-note" class="tp-note">
+    {{if .OK}}<div class="alert alert-success" role="alert">{{.OK}}</div>{{end}}
+    {{if .Err}}<div class="field-error" role="alert">{{.Err}}</div>{{end}}
+  </div>
+
+  <section class="panel">
+    <h2>IDENTITY</h2>
+    <dl class="field-grid">
+      <div class="field"><dt>Hostname</dt><dd class="mono">{{.Hostname}}</dd></div>
+      <div class="field"><dt>Device name</dt><dd class="mono">{{if .DeviceName}}{{.DeviceName}}{{else}}—{{end}}</dd></div>
+      <div class="field"><dt>Version</dt><dd class="mono">{{.Version}}</dd></div>
+      <div class="field"><dt>HTTP + WS port</dt><dd class="mono">{{.Port}}</dd></div>
+      <div class="field"><dt>Role</dt><dd><span class="net-role-chip lamp">{{.Role}}</span> ({{.State}})</dd></div>
+      <div class="field"><dt>Authority epoch</dt><dd class="mono">{{.Epoch}}</dd></div>
+      <div class="field"><dt>Announces</dt><dd class="mono text-truncate">{{.TXT}}</dd></div>
+      <div class="field"><dt>Primary</dt><dd class="mono">{{if .Primary}}{{.Primary}} · epoch {{.PrimaryEpoch}}{{else}}—{{end}}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>ROLE OVERRIDE</h2>
+    <div class="field">
+      <select id="net-role" class="select input-sm">
+        <option value="auto" {{if eq .Override "auto"}}selected{{end}}>AUTO — first device up holds authority</option>
+        <option value="primary" {{if eq .Override "primary"}}selected{{end}}>PRIMARY — always authority (split-brain risk documented)</option>
+        <option value="member" {{if eq .Override "member"}}selected{{end}}>MEMBER — never claim, never takeover</option>
+      </select>
+      <p class="field-hint">Role override persists across reboots. Auto is correct for single-appliance venues.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>RENAME DEVICE</h2>
+    <p class="field-hint">Renames this TimerPi and re-announces mDNS so the crew reaches it at the new
+      <code>&lt;name&gt;.local</code> immediately. Section 2–63 characters, letters/digits/hyphens.</p>
+    <form id="net-rename" class="custom-time" hx-post="/api/network/hostname" hx-target="#net-note" hx-swap="innerHTML">
+      <input type="text" name="name" class="input" placeholder="{{.Hostname}}" aria-label="New hostname" required
+             pattern="[A-Za-z0-9][A-Za-z0-9-]{1,62}">
+      <button type="submit" class="btn btn-primary">Rename</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>OPERATOR PASSWORD</h2>
+    <p class="field-hint">Gates operator surfaces (shows, dashboards, settings) behind this password.
+      <em>Stage displays (<code>/d/…</code>) never need it</em> — a TV must not re-login after a power
+      cut. Empty = open access. Changing it signs out every other device immediately.</p>
+    <form id="auth-form" class="custom-time">
+      <input type="password" id="auth-pw" class="input" autocomplete="new-password"
+             placeholder="New password (blank = open access)" aria-label="New operator password">
+      <button type="submit" class="btn btn-primary">Save password</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>APPLIANCE DEFAULT THEME</h2>
+    <p class="field-hint">Which ftl bundle a freshly-opened operator page falls back to (per-browser picks still win).</p>
+    <div class="row is-items-center is-gap-s">
+      <select id="tp-def-theme" class="select input-sm" aria-label="Appliance default theme"></select>
+      <button id="tp-def-theme-save" class="btn btn-sm" type="button">Save default</button>
+      <span id="tp-def-theme-status" class="field-hint" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="panel" id="net-panel"
+           hx-get="/frag/network" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <h2>PEERS ON THIS NETWORK</h2>
+    {{if .Peers}}
+    <table class="table net-peers">
+      <thead><tr><th>HOST</th><th>ADDR</th><th>ROLE</th><th>EPOCH</th><th>SEEN</th></tr></thead>
+      <tbody id="net-peer-rows">
+        {{range .Peers}}
+        <tr>
+          <td class="mono">{{.Host}}</td>
+          <td class="mono">{{.Addr}}</td>
+          <td>{{.Role}}{{if .IsPrimary}} <span class="lamp lamp-ok net-role-chip">PRIMARY</span>{{end}}</td>
+          <td class="mono">{{.Epoch}}</td>
+          <td class="text-muted">{{.Age}} ago</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted" id="net-peer-empty">No other TimerPi devices detected in the last 30 s.
+      Discovery re-checks every 5 s.</p>
+    {{end}}
+  </section>
+
+  <p class="text-muted">This panel polls live; the numbers update without a reload.</p>
+</main>
+
+<script>
+// Role override + rename handlers post the raw JSON these endpoints take
+// (htmx form fields would need rework server-side; endpoints are JSON APIs).
+document.addEventListener('DOMContentLoaded', function () {
+  var roleSel = document.getElementById('net-role');
+  if (roleSel) roleSel.addEventListener('change', function () {
+    fetch('/api/network/role', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ force: roleSel.value }),
+    }).then(function (r) { return r.json(); }).then(function (out) {
+      var note = document.getElementById('net-note');
+      if (note) note.innerHTML = '<div class="' + (out.ok === false ? 'field-error' : 'alert alert-success') +
+        '" role="alert">' + (out.ok === false ? (out.error || 'rejected') : 'Role override saved: ' + roleSel.value) + '</div>';
+      setTimeout(function () { window.location.reload(); }, 900);
+    });
+  });
+
+  // Appliance default theme (B7): fetched list, DB-persisted selection.
+  var themeSel = document.getElementById('tp-def-theme');
+  if (themeSel) {
+    fetch('/api/theme').then(function (r) { return r.json(); }).then(function (j) {
+      var list = (j.themes || []).slice().sort();
+      for (var i = 0; i < list.length; i++) {
+        var o = document.createElement('option');
+        o.value = list[i]; o.textContent = list[i];
+        if (list[i] === j.fallback) o.textContent += ' (bundled default)';
+        themeSel.appendChild(o);
+      }
+      if (j.current) themeSel.value = j.current;
+    });
+    document.getElementById('tp-def-theme-save').addEventListener('click', function () {
+      fetch('/api/theme', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ theme: themeSel.value }),
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        var el = document.getElementById('tp-def-theme-status');
+        if (el) el.textContent = j.ok ? 'Saved — fresh browsers open in “' + (j.theme || 'blue-future (product default)') + '”' : (j.error || 'save failed');
+      });
+    });
+  }
+
+  // Operator password (A1): saves, sets the fresh auth token in
+  // localStorage so THIS device keeps its controls join, then reloads the
+  // (possibly now-gated) page.
+  var authForm = document.getElementById('auth-form');
+  if (authForm) authForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var pw = document.getElementById('auth-pw').value;
+    fetch('/api/auth/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pw: pw }),
+    }).then(function (r) { return r.json(); }).then(function (out) {
+      if (out.ok) {
+        if (out.token) {
+          try { localStorage.setItem('tp.atoken', out.token); } catch (err) { /* private mode */ }
+        } else {
+          try { localStorage.removeItem('tp.atoken'); } catch (err) { /* */ }
+        }
+        setTimeout(function () { window.location.reload(); }, 400);
+      }
+    });
+  });
+});
+</script>
+</body>
+</html>
+{{end}}

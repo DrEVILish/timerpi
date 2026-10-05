@@ -1,0 +1,39 @@
+{{- /* page-screens — the operator screens gallery (route GET /screens/:ident).
+
+  A live preview card per registered screen (layout boxes + current values,
+  polled from /api/shows/:code/screens every 4 s), the waiting room (shows
+  orphaned by a deleted show, with Capture/Dismiss), and a maximised layout
+  editor modal — an iframe of the board compose view in PREVIEW mode (it
+  joins the mesh but does NOT self-register as a screen, so editing never
+  pollutes presence). All content is textContent-only (CONTRACT-UI XSS
+  rule); every element uses the ftl-themes component vocabulary. */ -}}
+{{define "page-screens"}}
+<div class="stack is-gap-s">
+  <section class="panel">
+    <div class="panel-header">Screens gallery
+      <span class="badge push" id="tp-gal-count"></span>
+    </div>
+    <div id="tp-gal" class="tp-gal">
+      <p class="text-muted">Loading…</p>
+    </div>
+  </section>
+
+  <section class="panel" id="tp-waiting-panel">
+    <div class="panel-header">Displays waiting for a show
+      <span class="badge push" id="tp-waiting-count">0</span>
+    </div>
+    <div id="tp-waiting-list" class="stack is-gap-2xs">
+      <p class="text-muted">None — when a show is deleted its displays land here, then any control room can capture them into a live show.</p>
+    </div>
+  </section>
+</div>
+
+<dialog id="tp-screen-edit" class="tp-screen-edit">
+  <div class="tp-modal-bar">
+    <strong id="tp-screen-edit-title">Layout editor</strong>
+    <span class="field-hint">Add / remove / move / align tiles — saved live to the screen.</span>
+    <button type="button" class="btn btn-sm" id="tp-screen-edit-close">Close editor</button>
+  </div>
+  <iframe id="tp-screen-edit-frame" title="Screen layout editor"></iframe>
+</dialog>
+{{end}}

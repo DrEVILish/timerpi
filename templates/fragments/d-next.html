@@ -1,0 +1,37 @@
+{{- /*
+  frag-d-next — NEXT-UP board (Agent J; GET /d/:id?view=next, root #d-next).
+  Self-contained initial render (the hub's oob stream never targets variant
+  boards; live data is adopted by the variant module + timerpi.js over their
+  own WS sessions).
+  JS-painted ids: #d-next-label/-dur by timerpi.js (CONTRACT display ids,
+  reused), #d-next-speaker/-start and the #d-next-until(-in) card by the
+  variant module in display_variants.html. The small current-cue line =
+  #d-label + #d-speaker (both CONTRACT ids; they paint the ACTIVE cue).
+*/ -}}
+{{define "frag-d-next"}}
+<section id="d-next" class="tp-dv-screen" data-view="next">
+  <div class="tp-dv-top">
+    <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
+    <span class="tp-display-label">{{if .Show}}{{.Show.Title}}{{end}}</span>
+  </div>
+
+  <div class="tp-dv-mid">
+    <span class="tp-dv-eyebrow">NEXT</span>
+    <span class="tp-dv-name" id="d-next-label">{{if .Next}}{{.Next.Label}}{{end}}</span>
+    <span class="tp-dv-speaker" id="d-next-speaker"></span>
+    <div class="tp-dv-until" id="d-next-until" data-past="0">
+      <span class="tp-dv-until-cue">Scheduled start</span>
+      <span class="tp-dv-until-at mono" id="d-next-start">{{if .Next}}{{.Next.StartFmt}}{{end}}</span>
+      <span class="tp-dv-until-in" id="d-next-until-in">--:--</span>
+    </div>
+  </div>
+
+  <div class="tp-dv-cur">
+    <span>Now</span>
+    <strong id="d-label">{{if .Current}}{{.Current.Label}}{{end}}</strong>
+    <span id="d-speaker">{{if .Current}}{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}{{end}}</span>
+  </div>
+
+  {{template "frag-dv-chrome" .Join}}
+</section>
+{{end}}

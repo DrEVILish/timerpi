@@ -1,0 +1,136 @@
+{{- /*
+  setup.html — first-run wizard + printable connect sheet (routes/setup.go).
+
+  Root "setup" = the wizard (standalone document like display.html; route
+  GET /setup — never executes "base"). Root "setup-sheet" = the print-optimized
+  A5 connect card (route GET /setup/sheet?show=<code>; Agent L: code-only addressing).
+
+  Dot: routes.setupData — .Step ("identity"|"content"|"finish"), .Err,
+  .Device, .Host, .Port, .Base, .ShowID (internal), .ShowCode (Agent L:
+  the public address; links/QRs use it), .ShowTitle, .CueCount,
+  .CtrlURL/.DispURL/.SheetURL. All fields optional/zero-tolerant.
+*/ -}}
+{{define "setup"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<style>
+  /* wizard-only layout glue (scoped; no core recolor) */
+  .tp-setup { max-width: 46rem; margin-inline: auto; padding: 2rem 1rem 4rem; }
+  .tp-setup .steps { display: flex; gap: .5rem; align-items: center; justify-content: center;
+                     margin-block-end: 1.25rem; }
+  .tp-setup .steps span { width: 2rem; height: 2rem; border-radius: 999px; display: grid;
+                          place-items: center; background: var(--surface-2); color: var(--text-muted, var(--text));
+                          font-weight: 700; }
+  .tp-setup .steps span.is-here { background: #7C3AED; color: #fff; }
+  .tp-setup .steps::before, .tp-setup .steps::after { content: ""; height: 1px; width: 2.5rem;
+                          background: var(--surface-2); }
+  .tp-setup .field-block { margin-block-end: 1.25rem; }
+  .tp-setup .choice { display: block; padding-block: .9rem; }
+  .tp-setup .choice p { margin: 0 0 .5rem; }
+  .tp-setup .choice-meta { color: var(--text-muted, var(--text)); font-size: .95em; }
+  .tp-setup .qr-preview { display: block; margin-inline: auto; background: #fff; padding: .5rem;
+                          border-radius: .5rem; inline-size: 200px; height: auto; }
+  .tp-setup .divider { display: flex; align-items: center; gap: .75rem; color: var(--text-muted, var(--text));
+                       margin-block: 1rem; }
+  .tp-setup .divider::before, .tp-setup .divider::after { content: ""; height: 1px; flex: 1;
+                       background: var(--surface-2); }
+</style>
+</head>
+<body class="app" data-page="setup">
+<main class="tp-setup">
+  <h1 style="text-align:center">
+    <img src="/img/timerpi.svg" alt="" width="32" height="32" style="vertical-align:-8px">
+    TimerPi — first-run setup
+  </h1>
+
+  <div class="steps" aria-hidden="true">
+    <span class="{{if eq .Step "identity"}}is-here{{end}}">1</span>
+    <span class="{{if eq .Step "content"}}is-here{{end}}">2</span>
+    <span class="{{if eq .Step "finish"}}is-here{{end}}">3</span>
+  </div>
+
+  <div id="wizard-body">
+  {{if eq .Step "content"}}
+    {{template "frag-setup-content" .}}
+  {{else if eq .Step "finish"}}
+    {{template "frag-setup-finish" .}}
+  {{else}}
+    {{template "frag-setup-identity" .}}
+  {{end}}
+  </div>
+</main>
+<script src="/src/htmx.min.js" defer></script>
+</body>
+</html>
+{{end}}
+
+{{- /*
+  setup-sheet — printable connect card. Print: A5-friendly two-up card,
+  white (saves ink, scans best); screen: dark ftl-themed card.
+*/ -}}
+{{define "setup-sheet"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<style>
+  .tpp-wrap { max-width: 56rem; margin-inline: auto; padding: 2rem 1rem 4rem; }
+  .tpp-card { background: var(--surface); border: 1px solid var(--surface-2);
+              border-radius: 1rem; padding: 1.5rem; }
+  .tpp-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  .tpp-code { display: block; margin-inline: auto; background: #fff; padding: .75rem;
+              border-radius: .75rem; inline-size: 260px; max-width: 100%; height: auto; }
+  .tpp-url { display: block; text-align: center; font-size: 1.1em; margin-block: .75rem;
+             overflow-wrap: anywhere; }
+  .tpp-hint { text-align: center; color: var(--text-muted, var(--text)); margin-block-start: 1.5rem; }
+  @media print {
+    @page { size: A5 landscape; margin: 10mm; }
+    body { background: #fff !important; }
+    .tpp-card { background: #fff !important; border-color: #000 !important; color: #000 !important;
+                break-inside: avoid; }
+    .tpp-card, .tpp-card * { color: #000 !important; }
+    .tpp-card .text-muted { color: #444 !important; }
+    .tpp-toolbar { display: none !important; }
+  }
+</style>
+</head>
+<body class="app" data-page="sheet">
+<div class="tpp-wrap">
+  <div class="tpp-toolbar cluster push" style="justify-content: space-between; margin-block-end: 1rem;">
+    <span class="badge">Connect sheet — fold or pin it at the sound desk</span>
+    <span class="cluster">
+      <a class="btn" {{if .ShowCode}}href="/c/{{.ShowCode}}"{{end}}>Back to control room</a>
+      <button class="btn" type="button" onclick="window.print()">Print</button>
+    </span>
+  </div>
+
+  {{if .ShowTitle}}<h2 style="margin-block:0 1rem">{{.ShowTitle}}</h2>{{end}}
+
+  <section class="tpp-cards">
+    <div class="tpp-card">
+      <h3>Operator · control</h3>
+      <p class="tpp-url"><a href="{{.CtrlURL}}">{{.CtrlURL}}</a></p>
+      <img class="tpp-code" alt="QR code: control room URL"
+           src="/api/shows/{{.ShowCode}}/qr?data={{.CtrlURL | urlquery}}&amp;size=600">
+    </div>
+    <div class="tpp-card">
+      <h3>TV · display</h3>
+      <p class="tpp-url"><a href="{{.DispURL}}">{{.DispURL}}</a></p>
+      <img class="tpp-code" alt="QR code: display URL"
+           src="/api/shows/{{.ShowCode}}/qr?data={{.DispURL | urlquery}}&amp;size=600">
+    </div>
+  </section>
+
+  {{if .Host}}
+  <p class="tpp-hint">
+    Also reachable at <code>http://{{.Host}}/c/{{.ShowCode}}</code> (mDNS) and
+    <code>http://{{.Host}}/setup/sheet?show={{.ShowCode}}</code> — this card.
+    Phone: scan either code. TV: open the display link, press F for fullscreen.
+  </p>
+  {{end}}
+</div>
+</body>
+</html>
+{{end}}

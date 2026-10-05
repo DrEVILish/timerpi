@@ -1,0 +1,74 @@
+{{- /* frag-cuelist — fragments/cuelist.html (see CONTRACT-UI.md) */ -}}
+{{define "frag-cuelist"}}
+<div id="cuelist" class="scroll tp-cuelist-wrap tp-fragment">
+  {{if .Cues}}
+  <table class="table is-sticky is-striped">
+    <thead>
+      <tr>
+        <th>#</th><th>Cue</th><th>Speaker</th>
+        <th class="tp-cue-dur">Dur</th>
+        <th class="tp-cue-start">Start</th>
+        <th class="tp-cue-end">End</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Cues}}
+      <tr data-pos="{{.Pos}}">
+        <td class="tp-cue-pos">
+          {{- /* U1: plain number — the old draggable/grab-cursor span was a
+                 dead affordance (no drag handlers exist; reorder is the
+                 ▲ ▼ buttons), so the fake handle is gone. */ -}}
+          <span class="mono">{{printf "%02d" .Pos}}</span>
+        </td>
+        <td>
+          <div class="tp-cue-label">
+            {{if .IsBreak}}<span class="badge badge-accent">{{if eq .Kind "break"}}BREAK{{else}}HOLD{{end}}</span> {{end}}
+            {{.Label}}
+            <span class="badge tp-alert-badge" hidden></span>
+            {{if .AutoContinue}}<span class="badge" title="Auto-continues to the next cue at zero">AUTO</span>{{end}}
+            {{if .StartAt}}<span class="badge" title="Auto-starts at {{.StartAt}} while nothing runs">⏰ {{.StartAt}}</span>{{end}}
+          </div>
+          <div class="cluster is-gap-2xs">
+            {{range .Tags}}<span class="badge badge-accent">{{.}}</span>{{end}}
+            {{if .Alert1Fmt}}<span class="badge" title="Alert 1 threshold" data-alert1="{{.AlertColor1}}">⚠1 {{.Alert1Fmt}}</span>{{end}}
+            {{if .Alert2Fmt}}<span class="badge" title="Alert 2 threshold" data-alert2="{{.AlertColor2}}">⚠2 {{.Alert2Fmt}}</span>{{end}}
+            {{if ne .TimerKind "COUNTDOWN"}}<span class="badge">{{.TimerKind}}</span>{{end}}
+          </div>
+          {{if .Notes}}<div class="tp-cue-notes">{{.Notes}}</div>{{end}}
+        </td>
+        <td class="text-truncate">{{if .Speaker}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-microphone"/></svg> {{.Speaker}}{{end}}</td>
+        <td class="tp-cue-dur">{{.DurFmt}}{{if .HoldFmt}} <span class="tp-cue-notes">+{{.HoldFmt}} hold</span>{{end}}</td>
+        <td class="tp-cue-start mono">{{.StartFmt}}</td>
+        <td class="tp-cue-end mono">{{.EndFmt}}</td>
+        {{- /* Row transport (U1): sprite icons + aria-labels (Fix-3).
+               The row carries ONLY row-scoped actions now: GO, arm-here,
+               reorder, duplicate (A4), delete. Pause/Reset moved out — they
+               act on the ACTIVE cue, not this row, so having them here
+               invited mis-taps (the transport owns them). */ -}}
+        <td class="tp-cue-rowbtns">
+          <div class="btn-group">
+            <button class="btn btn-sm btn-go" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>
+            <button class="btn btn-sm btn-ghost" data-cmd="jump" data-pos="{{.Pos}}" data-start="false" title="Cue it up (playhead here, don't start yet)" aria-label="Cue up cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-right"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueMove" data-pos="{{.Pos}}" data-dir="up" title="Move up" aria-label="Move cue up"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-up"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueMove" data-pos="{{.Pos}}" data-dir="down" title="Move down" aria-label="Move cue down"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-down"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="Open cue inspector (all fields)" aria-label="Edit cue {{printf "%02d" .Pos}} — full inspector"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueDup" data-pos="{{.Pos}}" title="Duplicate cue — copy lands right after this row" aria-label="Duplicate cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-copy"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-danger" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue" aria-label="Delete cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <!-- A3: shown (client-side) when a filter matches nothing. -->
+  <p id="tp-cue-no-match" class="text-muted" hidden style="padding:.75rem">No cue matches this filter — <kbd>Esc</kbd> in the box clears it.</p>
+  {{else}}
+  <div class="empty-state">
+    <span class="empty-state-icon">∅</span>
+    <span class="empty-state-title">No cues yet</span>
+    <span class="empty-state-hint">Add one above, or drag an .xlsx / .csv / .json file onto the Import panel on the right — it attaches itself for you.</span>
+  </div>
+  {{end}}
+</div>
+{{end}}

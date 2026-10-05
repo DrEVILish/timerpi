@@ -1,0 +1,15 @@
+# TimerPi — health pulse runner (systemd/ dir).
+#
+# Exit code is the health signal: success criteria are duplicated from
+# scripts/healthcheck.sh itself (HTTP 200 AND ok:true in the JSON body);
+# the timer only decides *when* to run it.
+
+[Unit]
+Description=TimerPi — curl /health and record state
+After=timerpi.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/timerpi/scripts/healthcheck.sh
+TimeoutStartSec=1min

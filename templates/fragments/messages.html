@@ -1,0 +1,68 @@
+{{- /* frag-messages — fragments/messages.html (see CONTRACT-UI.md) */ -}}
+{{define "frag-messages"}}
+<section class="panel" id="messages-panel">
+  <div class="panel-header">Messages
+    <span class="badge push">{{len .Messages}}</span>
+  </div>
+
+  <div class="stack is-gap-s">
+    <div id="tp-live-msg" hidden><div class="alert alert-warning"></div></div>
+
+    <!-- U1: the wrap-up is THE confident stage action — one tap adds AND
+         shows it on every display (addMsg show:true). It left the compose
+         form: a required text field could block the submit, and a tap
+         under stress must never be gated. Red fill = danger semantics
+         (CONTRACT-UI §7: SPEC state colors are caution/WRAP-UP). -->
+    <button class="btn btn-danger tp-wrapup" type="button"
+            data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
+            title="Send “PLEASE WRAP UP!” to every display, on stage now" aria-label="Send the wrap-up message to the stage">
+      ⚠ WRAP UP! — show it now
+    </button>
+
+    <form class="cluster is-gap-s" data-cmd="addMsg">
+      <input class="input" type="text" name="text" placeholder="Message to stage…" aria-label="Message text" required>
+      <!-- Fix-3: vocabulary fix — core has no .select-sm; sizing pair is .select.input-sm.
+           Palette: purple-led per owner brand decision — #7C3AED is brand & default;
+           amber/red kept only as SPEC timer-alert state semantics (caution/WRAP-UP),
+           not brand; neon green #44ff88 removed (green is logo-artwork-only). -->
+      <select class="select input-sm" name="color" aria-label="Message color">
+        <option value="#7C3AED" selected>Brand</option>
+        <option value="">Theme</option>
+        <option value="#ffaa00">Amber</option>
+        <option value="#ff4444">Red</option>
+      </select>
+      <label class="row is-items-center is-gap-2xs" title="Put it on every display immediately (unchecked = queue it for the Show button)">
+        <input type="checkbox" name="show" value="true" checked style="width:auto"> Show now
+      </label>
+      <button class="btn btn-sm btn-primary" type="submit">Add</button>
+    </form>
+
+    {{if .Messages}}
+    <ul class="list">
+      {{range .Messages}}
+      <li class="list-item{{if .IsShown}} is-active{{end}}">
+        <span class="list-item-title">{{.Text}}</span>
+        <span class="list-item-meta">
+          <span>{{if .IsShown}}<span class="status status-warn">ON STAGE</span>{{else}}<span class="status">queued</span>{{end}}</span>
+          <span class="cluster is-gap-2xs">
+            {{if .IsShown}}
+            <button class="btn btn-sm" data-cmd="hideMsg" data-id="{{.ID}}">Hide</button>
+            {{else}}
+            <button class="btn btn-sm btn-go" data-cmd="showMsg" data-id="{{.ID}}">Show</button>
+            {{end}}
+          </span>
+        </span>
+      </li>
+      {{end}}
+    </ul>
+    <button class="btn btn-sm btn-ghost" data-cmd="clearMsgs">Clear all</button>
+    {{else}}
+    <div class="empty-state">
+      <span class="empty-state-icon">💬</span>
+      <span class="empty-state-title">No messages</span>
+      <span class="empty-state-hint">One tap on WRAP UP! puts it on every display — or type your own above and Add.</span>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}

@@ -1,0 +1,133 @@
+{{- /*
+  base.html — TimerPi shell layout.
+
+  Routes execute the whole template set and call ExecuteTemplate(w, "base", data).
+  The page body is chosen from data.Page → template "page-home" | "page-dashboard".
+  The display page (/d/:ident) is a standalone document: ExecuteTemplate(w, "display", data).
+
+  Data (any missing field may be zero-valued; templates must tolerate it):
+    .Page    string  "home" | "dashboard"   (dispatch key)
+    .Title   string  optional <title> prefix
+    .Nav     string  active nav key: "" | "home" | "cues" | "display"
+    .Role    string  "controls" | "display"
+    .ShowID  int64   dashboard only — INTERNAL (no public links use it)
+    .Show    {ID, Title, Code} — Code is the public address (Agent L)
+    .Peers   int     live connection counter (may be 0 pre-wire)
+*/ -}}
+{{define "head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>{{if .Title}}{{.Title}} · {{end}}TimerPi</title>
+<meta name="tp-default-theme" content="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<link rel="icon" href="/img/timerpi.svg" type="image/svg+xml">
+<link rel="stylesheet" id="theme-css-default" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
+<link rel="stylesheet" href="/css/timerpi.v49.css">
+<!-- ASSET REV policy — PATH revision, not a query string: /css and /src
+     assets load from the CURRENT rev directory (/css/timerpi.v49.css …,
+     swapped routes-side back to the real file by routes.registerStatic).
+     On a CSS/JS change bump EVERY occurrence of the rev segment here,
+     in display.html, display_board.html, settings.html, the Go lock pages
+     (routes.assetsRev) — import specifiers inside public/src/*.js stay
+     literal ('./mesh.js') because they resolve INSIDE the rev dir. The
+     no-cache header alone cannot be trusted behind cache-y middleboxes;
+     the path change is what actually lands new bytes. Older rev paths
+     keep resolving, so cached pages never break. -->
+<script>
+/* Theme bootstrap before first paint: localStorage `timerpi.theme`, else the
+   appliance default (B7 — blue-future is the product default), rendered into
+   html[data-theme] and the default link's href server-side. Only a stored
+   pick that differs from the default loads a second bundle. */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('timerpi.theme'); } catch (e) { /* */ }
+  if (!t) {
+    var m = document.querySelector('meta[name="tp-default-theme"]');
+    if (m) t = m.content.replace(/[^a-z0-9_-]/g, '');
+  }
+  t = t || 'blue-future';
+  var defLink = document.getElementById('theme-css-default');
+  var def = defLink ? (defLink.href.match(/dist\/([^\/]+)\.css$/) || ['', 'blue-future'])[1] : 'blue-future';
+  document.documentElement.setAttribute('data-theme', t);
+  if (t !== def) {
+    document.write('<link rel="stylesheet" href="/ftl/dist/' + encodeURIComponent(t) + '.css" id="theme-css-live">');
+  }
+})();
+</script>
+{{end}}
+
+{{define "appbar"}}
+<header class="app-bar">
+  <span class="nav-brand tp-brand">
+    <img src="/img/timerpi.svg" alt="" width="28" height="28" style="vertical-align:-6px">
+    TimerPi
+  </span>
+  <nav class="nav">
+    <a class="nav-item{{if eq .Nav "home"}} is-active{{end}}" href="/">Shows</a>
+    {{if .Show.Code}}
+    <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
+    <a class="nav-item{{if eq .Nav "display"}} is-active{{end}}" href="/d/{{.Show.Code}}" target="_blank" rel="opener" data-kiosk>Display</a>
+    <a class="nav-item{{if eq .Nav "screens"}} is-active{{end}}" href="/screens/{{.Show.Code}}">Screens</a>
+    {{end}}
+  </nav>
+  <div class="cluster push">
+    <label class="label" for="theme-select">Theme</label>
+    <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
+  </div>
+</header>
+{{end}}
+
+{{define "appstatus"}}
+{{if eq .Page "home"}}
+<footer class="app-status">
+  <div class="cluster is-gap-s">
+    <span class="text-muted">TimerPi · appliance</span>
+  </div>
+</footer>
+{{else}}
+<footer class="app-status">
+  <div class="cluster is-gap-s">
+    <span class="lamp" id="lamp-ws" title="Server link"></span>
+    <span class="lamp" id="lamp-mesh" title="Display mesh"></span>
+    <span id="conn-label" class="text-muted">connecting…</span>
+  </div>
+  <div class="cluster is-gap-s push">
+    <span class="text-muted">Peers <span class="mono" id="peers-count">1</span></span>
+    <span class="text-muted">Session <span class="mono" id="conn-code">{{if .Share.CodeFmt}}{{.Share.CodeFmt}}{{else}}——{{end}}</span></span>
+    {{if .Show}}{{if .Show.Title}}<span class="mono text-truncate">{{.Show.Title}}</span>{{end}}{{end}}
+  </div>
+</footer>
+{{end}}
+{{end}}
+
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="app" data-page="{{.Page}}" data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-role="{{.Role}}">
+{{template "appbar" .}}
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+{{- /* PSEUDOPATCH (routes agent, see NOTES-routes.md): html/template only
+       accepts CONSTANT template names for {{template}} — the previous
+       {{template (printf "page-%s" .Page) .}} line failed at PARSE time.
+       Same dispatch, constant names: Page ∈ home|dashboard. */ -}}
+{{if eq .Page "home"}}{{template "page-home" .}}{{else if eq .Page "screens"}}{{template "page-screens" .}}{{else}}{{template "page-dashboard" .}}{{end}}
+</main>
+{{template "appstatus" .}}
+{{- /* Offline overlay (dashboard instance; display.html keeps its own): JS
+       toggles .is-visible when the server link is down and no mesh peer
+       carries the show. Copy is the canonical strip wording — keep the four
+       strips byte-identical in voice (base / display / d-chrome / b-chrome).
+       No aria-hidden: the visible overlay carries announced content. */ -}}
+<div class="tp-offline" id="tp-offline">
+  <div><h2>LINK DOWN</h2><p>Server unreachable — working from the local copy.</p><p class="text-muted">Reconnects automatically when the link returns.</p></div>
+</div>
+<div class="toast-region" popover="manual" id="toast-region"></div>
+<script src="/src/htmx.min.js" defer></script>
+<script type="module" src="/src/timerpi.v49.js"></script>
+</body>
+</html>
+{{end}}

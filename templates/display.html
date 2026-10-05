@@ -1,0 +1,47 @@
+{{- /*
+  display.html — fullscreen TV display (route GET /d/:ident — CODE addressed,
+  agent L scope change). Standalone document (L0 shell: tokens only, no .app
+  chrome) — ExecuteTemplate(w, "display", data).
+  Data: .Show {ID,Title,Code}, .ShowID, .Current, .Next, .Share (CodeFmt), .Hostname.
+*/ -}}
+{{define "display"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<style>
+  /* display-only glue that must precede JS */
+</style>
+</head>
+<body class="tp-display" data-page="display" data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-role="display" data-blanked="{{.Show.Blanked}}">
+{{template "frag-display" .}}
+
+<div class="tp-waiting" id="tp-waiting" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <h2>WAITING FOR CONNECTION…</h2>
+  <p class="text-muted">This screen has no show<span id="tp-waiting-name"></span>. A control room on this network can capture it from the Screens gallery.</p>
+</div>
+<!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
+<div class="tp-blanked" aria-hidden="true">
+  <img src="/img/timerpi.svg" alt="">
+  <p>STANDBY</p>
+</div>
+
+<!-- Fix-3 (a11y): was aria-hidden="true" — the overlay carries the link-down message
+     operators must hear when visible; when hidden (display:none) it is still out of the a11y tree.
+     Copy is the canonical strip wording — keep the four strips in voice
+     (base / display / d-chrome / b-chrome). -->
+<div class="tp-offline" id="tp-offline">
+  <div>
+    <h2>LINK DOWN</h2>
+    <p>Server unreachable — working from the local copy.</p>
+    <p class="text-muted">Reconnects automatically when the link returns.</p>
+  </div>
+</div>
+
+<div class="toast-region" popover="manual" id="toast-region"></div>
+<script src="/src/htmx.min.js" defer></script>
+<script type="module" src="/src/timerpi.v49.js"></script>
+</body>
+</html>
+{{end}}

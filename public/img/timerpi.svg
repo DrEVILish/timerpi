@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 96" role="img" aria-label="TimerPi">
+  <!--
+    TimerPi wordmark: clock mark + wordmark. Brand tokens (PROTOCOL.md
+    §Branding): primary purple #7C3AED (ring, "Pi"); secondary green
+    #22C55E appears ONLY inside the logo mark (minute hand); backgrounds
+    stay dark neutral #14161a-family; ink #E8E6E3. No other accent colour
+    is used.
+    The <text> falls back to the viewer's sans-serif stack (no webfont
+    dependency), so it renders anywhere <img src="/img/timerpi.svg"> is
+    used.
+  -->
+  <!-- clock mark -->
+  <g transform="translate(48,48)">
+    <circle r="40" fill="#1E2126"/>
+    <circle r="40" fill="none" stroke="#7C3AED" stroke-width="7"/>
+    <!-- hour hand (towards 10) -->
+    <line x1="0" y1="0" x2="-17" y2="-22" stroke="#E8E6E3" stroke-width="6.5" stroke-linecap="round"/>
+    <!-- minute hand (towards 2) — the secondary green accent -->
+    <line x1="0" y1="0" x2="19" y2="-27" stroke="#22C55E" stroke-width="5.5" stroke-linecap="round"/>
+    <circle r="5" fill="#E8E6E3"/>
+  </g>
+  <!-- wordmark: primary purple carries the identity -->
+  <text x="106" y="61" fill="#E8E6E3"
+        font-family="ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="42" font-weight="600" letter-spacing="0.5">Timer<tspan fill="#7C3AED">Pi</tspan></text>
+</svg>
