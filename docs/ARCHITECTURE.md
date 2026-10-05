@@ -5,6 +5,8 @@
 > What the product must do is in [PRODUCT.md](PRODUCT.md). What is done and open is in [../STATUS.md](../STATUS.md).
 >
 > Last verified against the code: 2026-10-05 (commit `ccd415f`, app version 2.0).
+> §1–§13 describe the code **as it is**. §14 sketches how it moves to the
+> event model in PRODUCT. Update §1–§13 as each STATUS item lands.
 
 ---
 
@@ -15,7 +17,7 @@
 | Server | Go 1.25, single binary, **gin** for HTTP and **gorilla/websocket** for WS, on **one port**, listening on `0.0.0.0` (default 80) |
 | Storage | **SQLite** via `sqlx` + `mattn/go-sqlite3` (CGO), WAL mode. One file: `<data dir>/timerpi.db` |
 | Templates | Go `html/template`, server-rendered pages and fragments |
-| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 2.0.11** is vendored (`public/src/htmx.min.js`) but used lightly (setup, settings, import form). Most interactivity is plain JS plus WS frames |
+| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 2.0.11** is vendored today (`public/src/htmx.min.js`) and used lightly (setup, settings, import form). Most interactivity is plain JS plus WS frames. **Target: htmx 4, vendored locally** (owner decision; STATUS N8) |
 | Styling | **ftl-themes**, served at `/ftl/` from `third_party/ftl-themes`. TimerPi adds layout-only CSS in `public/css/timerpi.css` |
 | QR | `skip2/go-qrcode` |
 | Import | `tealeg/xlsx` + `excelize` (XLSX/XLS), CSV, JSON (`importdocs/`) |
@@ -115,7 +117,7 @@ settings.
 |---|---|---|
 | stage | countdown, messages, cuelabel, nextup, progress, dayprogress, wallclock, rate, showtitle | default timer |
 | lobby | showtitle, wallclock, messages, schedule | — |
-| event | showtitle, map, schedule, wallclock, notice | #1 (single-room only; see STATUS gap G1) |
+| event | showtitle, map, schedule, wallclock, notice | #1 (single-room only; see STATUS N7) |
 | room | showtitle, wallclock, cuelabel, speaker, nextup, schedule, joinqr, notice | #2/#3 |
 | main | showtitle, poll, qa, wordcloud, joinqr, notice | #4/#5 |
 | dsm | countdown, poll, progress, cuelabel, speaker, nextup, wallclock, joinqr, dayprogress | #6/#7 |
@@ -156,7 +158,7 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 ## 9. Themes (ftl-themes)
 
 - `third_party/ftl-themes` is a **separate git clone** of `github.com/DrEVILish/ftl-themes`. It is **not a submodule and is git-ignored**, so a fresh clone of this repo has no themes until you clone it (README "Quick start").
-- The `timerpi` theme exists only as **4 local commits** in that clone and is not upstream. See STATUS question Q3.
+- A `timerpi` theme exists only as 4 local commits in the old dev clone. It is **shelved**: the owner chose `blue-future` as the TimerPi default, and a custom theme will be designed later. STATUS C2 pins ftl-themes as a submodule at an upstream commit.
 - **Default theme:** `blue-future` (`config.DefaultTheme`), changeable at `/settings` or `POST /api/theme`. Every page server-renders `html[data-theme]` and the default bundle link. `theme.js` applies a browser-local pick (`localStorage timerpi.theme`) or an operator-pushed per-screen theme, and retargets icon sprites to `/ftl/dist/icons/<theme>.svg`.
 - **Rule:** new UI uses ftl-themes component classes and tokens. `timerpi.css` carries layout only.
 
@@ -190,3 +192,50 @@ strips `/(css|src|img)/vN/` path segments for the lock/login pages. Stale
 | Screens | Any browser in kiosk mode pointed at `/d/`. The Pi's own HDMI can instead run the native DRM countdown (`TIMERPI_DISPLAY`) |
 
 Runbooks: [OPS.md](OPS.md), [PI-DEPLOY.md](PI-DEPLOY.md), [HW-DRILLS.md](HW-DRILLS.md).
+
+## 14. Target shape: the event model (PRODUCT §3, STATUS §1)
+
+The direction for STATUS N1–N10, so new code lands in the right place. These
+are not built yet.
+
+**Data**
+
+```
+events      id, code (8-char), name, supervisor_pw_hash, theme, map_asset_id, created_at
+event_days  id, event_id, date, pos              -- v2: exactly one row per event
+shows       + event_id, + room_name, + room_pos  -- a show IS a room; keeps its own code
+            passphrase → the room's moderator password (set by the SuperOperator)
+cues        + day_id (defaults to the event's only day)
+polls       + to_audience, + to_presenter (replace single-focus 'open')
+            child rows: + status pending|approved|answered|dismissed (Q&A wall)
+screens     + type audience|walkin|presenter, + rotation 0|90|180|270,
+            + event_id (event-level walk-ins have no room)
+```
+
+**Addresses**
+
+| Address | Opens |
+|---|---|
+| Event code | The SuperOperator and moderator entry (`/e/<event code>`, then pick a room) |
+| Room code | The short machine address for QR and screen URLs (`/a/<room>`, `/d/<room>`). It is never typed by people |
+
+**Auth**
+
+| Role | Gate |
+|---|---|
+| SuperOperator | Event-scoped session from the supervisor password. Grants every room of that event, including content |
+| Moderator | Room-scoped session from the event code + room pick + optional moderator password |
+| Device password | Narrows to appliance settings only (`/settings`) |
+
+**Hub**
+
+- The per-show buckets stay as they are.
+- Walk-in event screens subscribe to an **event bucket** that receives a light per-room summary frame (`rooms`: current/next per room) on any room's state change. Full snapshots never go to the event bucket.
+- Poll frames are filtered by target: audience bucket and audience screens get `to_audience` items; presenter screens get `to_presenter` items.
+
+**Migration**
+
+- Each existing show becomes a one-room event.
+- Its zone label becomes the event name when several shows share a zone; those shows merge into one event.
+- Zone maps become event maps.
+- Existing v2 room bundles keep importing as a one-room event.

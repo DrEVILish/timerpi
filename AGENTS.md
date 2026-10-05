@@ -7,7 +7,7 @@ For every contributor, human or AI. Keep it short and current.
 ## 1. Read before you build
 
 1. [docs/PRODUCT.md](docs/PRODUCT.md) says **what** to build. If a task conflicts with it, stop and ask the owner. Do not quietly redesign.
-2. [STATUS.md](STATUS.md) says what is open. Pick work from it and cite its IDs (B1, G3, …) in commits.
+2. [STATUS.md](STATUS.md) says what is open. Pick work from it and cite its IDs (B1, N3, …) in commits.
 3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROTOCOL.md](PROTOCOL.md) say how the code works today.
 4. `docs/archive/` is history. Never treat it as a spec.
 
@@ -23,7 +23,7 @@ The previous docs became append-only logs: three trackers and many handoff notes
 - **Update in the same commit** as the code change. A change to a route or frame touches PROTOCOL; a change to a feature's status touches STATUS.
 - **Edit in place; don't append batch logs.** History belongs in `git log`, not in docs.
 - **Never cite a file that doesn't exist.** No new `NOTES-*.md` handoff files; put lasting facts in the four docs above.
-- Owner decisions go in PRODUCT §6 with a date.
+- Owner decisions go in PRODUCT §7 with a date.
 
 ## 3. Build and test
 
@@ -41,13 +41,14 @@ The previous docs became append-only logs: three trackers and many handoff notes
 - Static and theme trees resolve relative to the working directory (`routes.findDir`). The systemd unit pins `WorkingDirectory`.
 - Share codes are the only public address. Numeric IDs never resolve.
 - User text reaches the DOM through `textContent` only, never `innerHTML`.
+- htmx: **htmx 4 only, vendored in `public/src/`**. Never load from a CDN, and never add a second htmx version.
 - Use ftl-themes component classes and tokens for all UI. `public/css/timerpi.css` is for layout only. Never use the browser's `confirm`/`prompt`; use the `dialog.js` helpers.
 - Display screens carry no operator chrome. Display screens always animate; only the audience page honours `prefers-reduced-motion`.
 
 ## 5. Source control and upstreams
 
 - Push only to `DrEVILish/timerpi`, and only when asked. Work on a branch; never force-push `main`.
-- **ftl-themes** (`third_party/ftl-themes`, a separate clone, git-ignored): don't push to it. Record problems as `reviews/upstream-issues/<topic>.md` with repro and proposed fix, and file them upstream only when the owner says so. (Under review: STATUS Q3.)
+- **ftl-themes** (`third_party/ftl-themes`, a separate clone, git-ignored): don't push to it. Record problems as `reviews/upstream-issues/<topic>.md` with repro and proposed fix, and file them upstream only when the owner says so. ftl-themes is to become a submodule pinned to an upstream commit (STATUS C2).
 - The same rule applies to **CuTePi** and any other dependency repo.
 
 ## 6. Environment reference

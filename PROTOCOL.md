@@ -27,7 +27,7 @@
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
 | `GET /d/:ident` | screen | `?view=stage` (default) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (auth) |
 | `GET /a/:code` | audience | Phone page (gated by the room password). **Not auth-exempt yet (STATUS B1)** |
-| `GET /zone/:name` | screen | Event walk-in for a zone (server-rendered, 30 s refresh; STATUS G1) |
+| `GET /zone/:name` | screen | Event walk-in for a zone (server-rendered, 30 s refresh; to be replaced by a live event walk-in, STATUS N7) |
 | `GET /health` | probe | `{ok, version:"2.0", uptime, device, title, sessions:{connected}}` |
 
 Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`), `/assets/:id` (uploaded blobs, public).
