@@ -18,7 +18,7 @@ One paragraph: this theme belongs in a **dark vision-mixing / showcaller desk an
 - `third_party/ftl-themes/CONTRACT.md` — token + component contract this spec builds against.
 - `third_party/ftl-themes/docs/authoring-a-theme.md` — how the ftl developer builds it (one `theme.css`, root-scope `--*` overrides only, `color-scheme: dark`).
 - Format reference: `themes/xbmc/README.md` + `themes/cue-lab/README.md` (story + core values + tell-tales checklist).
-- TimerPi usage: `templates/CONTRACT-UI.md` (`.app` shell, `.readout` / `.meter` / `.transport` / `.btn-go` / `.lamp`, tables, modals; element ids in §6; `data-state` values `idle armed running paused held overtime alert1 alert2` in §6; brand decision §7; Fix-3 amendments §9) and `reviews/FIX3-report.md`.
+- TimerPi usage: `docs/archive/CONTRACT-UI.md` (`.app` shell, `.readout` / `.meter` / `.transport` / `.btn-go` / `.lamp`, tables, modals; element ids in §6; `data-state` values `idle armed running paused held overtime alert1 alert2` in §6; brand decision §7; Fix-3 amendments §9).
 - Logo: `public/img/timerpi.svg` — dark neutrals `#14161a`-family, ink `#E8E6E3`, purple ring + purple "Pi" (`#7C3AED`), green minute hand (`#22C55E`, logo-only).
 
 ## Core values

@@ -1,70 +1,62 @@
-# AGENTS.md
+# AGENTS.md — rules for working on this repo
 
-Environment notes for agents working on this repo. Modeled on CuTePi's
-AGENTS.md; keep it current as machines/services change.
+For every contributor, human or AI. Keep it short and current.
 
-**ALWAYS IN ENGLISH** — all agent output is English: replies, commit
-messages, docs, code comments, reviews — no exceptions.
+**Always in English**: replies, commits, docs, code comments.
 
-## Dev container
+## 1. Read before you build
 
-- Everything is built and tested in `/opt/timerpi` (Go 1.25 at
-  /usr/local/go, `go` on PATH; `git`; host `gcc` for CGO;
-  `aarch64-linux-gnu-gcc` for the Pi cross-build).
-- Run the dev server with `make run` (port 8080, data dir `./data`).
-  Never develop against `/var/lib/timerpi` on this box.
-- `go build ./...` and `go vet ./...` must pass before you finish.
-- After finishing a code item, rebuild the server and restart its
-  service so the change is live, then smoke-check it:
-  `make build` (writes `bin/timerpi`, the binary `timerpi.service`
-  runs) → `systemctl restart timerpi` → `systemctl is-active timerpi`
-  → `curl -s http://localhost/health`. Never leave a finished item
-  running on a stale binary.
-- Do **not** run `go mod tidy`: the dependency set is pinned by
-  `tools/deps/deps.go` (deleting that file drops requirements from
-  go.mod). Add new deps there first, then use them.
+1. [docs/PRODUCT.md](docs/PRODUCT.md) says **what** to build. If a task conflicts with it, stop and ask the owner. Do not quietly redesign.
+2. [STATUS.md](STATUS.md) says what is open. Pick work from it and cite its IDs (B1, G3, …) in commits.
+3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROTOCOL.md](PROTOCOL.md) say how the code works today.
+4. `docs/archive/` is history. Never treat it as a spec.
 
-## Targets / services
+## 2. Doc discipline (why the reset happened)
 
-| Role | Port | Notes |
-|------|------|-------|
-| Dev container | 8080 | `make run`, data in `./data` |
-| Pi (target)   | 80   | systemd unit `timerpi.service`, data in `/var/lib/timerpi` |
+The previous docs became append-only logs: three trackers and many handoff notes, each partly stale. Avoid that:
 
-- Fill in the Pi's addresses/service names here once hardware is assigned
-- The origin guard (`routes.OriginGuard`) wraps everything and is
-  **open by default**: with `allowed_hosts` empty (the default) ANY Host is
-  accepted, so reverse proxies and custom domains work out of the box. A
-  non-empty `allowed_hosts` switches to strict mode: only listed names plus
-  always-local hosts (IP literals, localhost, dotless names, `.local`/
-  `.lan`-style suffixes, the machine hostname) pass — everything else gets
-  HTTP 421. To lock a proxied appliance down, list its proxy domain in
-  `allowed_hosts` in that machine's `/var/lib/timerpi/config.json`, then
-  `systemctl restart timerpi`. The WebSocket upgrader must call
-  `routes.SameOriginRequest` in its `CheckOrigin`.
+- **One fact, one place.**
+  - Requirements → PRODUCT.
+  - Status and open work → STATUS.
+  - Design → ARCHITECTURE.
+  - Wire contract → PROTOCOL.
+- **Update in the same commit** as the code change. A change to a route or frame touches PROTOCOL; a change to a feature's status touches STATUS.
+- **Edit in place; don't append batch logs.** History belongs in `git log`, not in docs.
+- **Never cite a file that doesn't exist.** No new `NOTES-*.md` handoff files; put lasting facts in the four docs above.
+- Owner decisions go in PRODUCT §6 with a date.
 
-## Conventions
+## 3. Build and test
 
-- Config access rides `config`'s RWMutex via getters/setters — never read
-  package state directly.
-- The `Host`/`Origin` guard (`routes.OriginGuard`) wraps everything; the
-  WebSocket upgrader must call `routes.SameOriginRequest` in its
-  `CheckOrigin`.
-- Static/theme trees are resolved relative to the process working
-  directory (`routes.findDir`); the systemd unit pins WorkingDirectory to
-  the checkout.
+- Go 1.25, CGO (gcc) for SQLite. For the Pi: `aarch64-linux-gnu-gcc` + `make build-arm64`.
+- `make run`: dev server on :8080 with data in `./data`. Never point development at `/var/lib/timerpi`.
+- Before finishing: `go build ./... && go vet ./... && go test ./...` must pass. Every feature or bug fix lands with a test.
+- If the machine runs `timerpi.service` from this checkout: `make build` → `systemctl restart timerpi` → `curl -s localhost/health`. Never leave a stale binary serving.
+- **Do not run `go mod tidy`.** Dependencies are pinned by `tools/deps/deps.go`; add new deps there first.
+- Changing JS/CSS: bump the asset version with `tools/bump-assets.sh`, so screens don't run cached code (see ARCHITECTURE §12).
 
-## Source control & upstreams
+## 4. Code conventions
 
-- **Never push to `third_party/ftl-themes` (or any dependency repo).** We are
-  not its primary developer. The rule: if you are not the primary developer
-  of a repo, you do not push to it — not from this box, not by advising it.
-  Pushes are allowed only for `DrEVILish/timerpi`, and only when asked.
-- Problems found in ftl-themes (bundle bugs, contract violations) → write
-  `reviews/upstream-issues/<slug>-<topic>.md` with repro + diagnosis +
-  proposed fix. File it as a GitHub issue against ftl-themes only when John
-  says so explicitly.
-- The `timerpi` theme commits stay **local to the submodule** (upstream does
-  not carry them yet). On each ftl-themes release: `git fetch`, rebase the
-  local work onto `origin/main`, rebuild `scripts/build.sh`, pass
-  `scripts/check.sh`, commit — locally. The appliance serves from this tree.
+- Config is read and written only through `config` getters/setters (RWMutex).
+- `routes.OriginGuard` wraps everything. The WS upgrader's `CheckOrigin` must call `routes.SameOriginRequest`.
+- Static and theme trees resolve relative to the working directory (`routes.findDir`). The systemd unit pins `WorkingDirectory`.
+- Share codes are the only public address. Numeric IDs never resolve.
+- User text reaches the DOM through `textContent` only, never `innerHTML`.
+- Use ftl-themes component classes and tokens for all UI. `public/css/timerpi.css` is for layout only. Never use the browser's `confirm`/`prompt`; use the `dialog.js` helpers.
+- Display screens carry no operator chrome. Display screens always animate; only the audience page honours `prefers-reduced-motion`.
+
+## 5. Source control and upstreams
+
+- Push only to `DrEVILish/timerpi`, and only when asked. Work on a branch; never force-push `main`.
+- **ftl-themes** (`third_party/ftl-themes`, a separate clone, git-ignored): don't push to it. Record problems as `reviews/upstream-issues/<topic>.md` with repro and proposed fix, and file them upstream only when the owner says so. (Under review: STATUS Q3.)
+- The same rule applies to **CuTePi** and any other dependency repo.
+
+## 6. Environment reference
+
+| Role | Port | Data |
+|---|---|---|
+| Dev | 8080 (`make run`) | `./data` |
+| Appliance | 80 (`timerpi.service`) | `/var/lib/timerpi` |
+
+Env: `TIMERPI_DATA_DIR`, `CAPACITIMER_HTTP_PORT` (legacy name; STATUS C1), `TIMERPI_DISPLAY` / `TIMERPI_FBDEV` / `TIMERPI_DISPLAY_SHOW` (native renderer), `TIMERPI_HW_TEST` (hardware tests), `TIMERPI_LAN_ADDR`, `TP_LOAD=1` (audience load harness).
+
+Reverse proxy and custom domains work by default (open Host guard). To lock an appliance to its domain, set `allowed_hosts` in `/var/lib/timerpi/config.json` and restart.

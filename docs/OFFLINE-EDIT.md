@@ -157,4 +157,4 @@ op bumps `snap.updatedAt` and sets `_advancedOffline`.
   re-copy after editing).
 - Throwaway-port live probe: two divergent cue sets → merged snapshot
   (never against `:80` data), then `systemctl restart timerpi` + `:80`
-  smoke curls. See `reviews/FIXO-report.md` for the evidence log.
+  smoke curls. (The original evidence log was not kept in the repo.)

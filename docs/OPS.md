@@ -81,7 +81,7 @@ WS clients reconnect on their own after the restart (~2 s out from
 
 ## 3. How versions surface
 
-* `curl -s http://localhost/health` → `{"ok":true,"uptime":…,"sessions":{"connected":N},…}`
+* `curl -s http://localhost/health` → `{"ok":true,"version":"2.0","uptime":…,"sessions":{"connected":N},…}`
   (live clients; rises/falls with WS connections, that's normal).
 * `cat /var/lib/timerpi/update.stamp` → `vstamp=… build=… updated=…` —
   the exact sha256-short of the serving binary.
@@ -92,12 +92,9 @@ WS clients reconnect on their own after the restart (~2 s out from
 * `systemctl show -p Environment timerpi` → the same stamp as
   `TIMERPI_BUILD_STAMP`.
 
-main.go deliberately embeds **no version constant** (conflict surface —
-several agents patch it). The stamp lives deploy-side; once the
-consolidation pass adds a linkable `var` to package main, extend the
-Makefile `build` targets with
-`-ldflags "-X main.BuildTimestamp=$(BUILD_TIMESTAMP)"` and let a footer /
-`/health` field read it at runtime (hook in `reviews/NOTES-ops.md`).
+`/health` reports the product version (`"2.0"`, a constant in
+`routes/setup.go`). The per-build identity (which exact binary) lives
+deploy-side in `update.stamp`, as above.
 
 ## 4. Backup detail
 
@@ -146,7 +143,7 @@ systemctl enable --now timerpi-healthcheck.timer   # every 5 min
   land in `journalctl -u timerpi-healthcheck.service` plus the
   `health.failed` flag file. **Failure hook (piloted):** a future pairing
   `OnFailure=timerpi-health-fail@%n.service` could notify an operator
-  (mail/webhook) — see NOTES-ops; deliberately not shipped yet.
+  (mail/webhook) — deliberately not shipped yet.
 * The build-stamp drop-in above is a third, non-timer piece of the same
   dir: `/etc/systemd/system/timerpi.service.d/29-timerpi-build-stamp.conf`,
   regenerated idempotently by every real update run.
