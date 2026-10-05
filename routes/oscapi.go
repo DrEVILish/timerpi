@@ -21,6 +21,37 @@ var OscInbound = &oscbridge.Inbound{}
 func registerOscRoutes(r gin.IRouter, d *Deps) {
 	r.GET("/api/osc", d.apiOscGet)
 	r.POST("/api/osc", d.apiOscSet)
+	r.POST("/api/osc/test", d.apiOscTest)
+}
+
+// POST /api/osc/test — send one probe packet to the configured CuTePi/QLab
+// peer. UDP has no ack (QLab's channel is fire-and-forget), so "ok" means
+// the packet left this host without an OS error — never that CuTePi acted
+// on it. The address is one CuTePi's QLab listener ignores.
+func (d *Deps) apiOscTest(c *gin.Context) {
+	if d.Store == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
+		return
+	}
+	kv, err := d.oscSettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if kv["osc.out.enabled"] != "1" || kv["osc.out.host"] == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "outbound bridge not configured"})
+		return
+	}
+	host := kv["osc.out.host"]
+	port := kv["osc.out.port"]
+	if port == "" {
+		port = "53000"
+	}
+	if err := oscbridge.Send(host+":"+port, "/timerpi/test"); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "sent": host + ":" + port})
 }
 
 func (d *Deps) oscSettings() (map[string]string, error) {

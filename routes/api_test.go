@@ -27,8 +27,9 @@ type apiTest struct {
 	t        *testing.T
 	srv      *httptest.Server
 	db       *timerpi.DB
-	showID   int64  // internal; JSON bookkeeping only (Agent L contract)
-	showCode string // share code: the ONLY public address
+	engines  *timerpi.Engines // the registry routes.Deps carries (CuTePi hook tests wire OnStart on it)
+	showID   int64            // internal; JSON bookkeeping only (Agent L contract)
+	showCode string           // share code: the ONLY public address
 }
 
 func newAPITest(t *testing.T) *apiTest {
@@ -62,7 +63,7 @@ func newAPITest(t *testing.T) *apiTest {
 		srv.Close()
 		hub.Stop()
 	})
-	return &apiTest{t: t, srv: srv, db: db, showID: show.ID, showCode: show.Code}
+	return &apiTest{t: t, srv: srv, db: db, engines: engines, showID: show.ID, showCode: show.Code}
 }
 
 // engine exposes the built engine for route-presence assertions.

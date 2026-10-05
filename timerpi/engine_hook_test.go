@@ -7,6 +7,7 @@ package timerpi
 
 import (
 	"testing"
+	"time"
 )
 
 func TestEngineOnStartFires(t *testing.T) {
@@ -58,5 +59,45 @@ func TestEngineOnStartFires(t *testing.T) {
 	}
 	if len(fired) != 2 {
 		t.Fatalf("second go did not fire: %v", fired)
+	}
+}
+
+// Auto-advance (AutoContinue) and alert transitions: the media hook fires
+// for the AUTO-STARTED cue, and stays silent for pure alert flips.
+func TestEngineOnStartFiresOnAutoAdvance(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Auto Fire")
+	cues := []Cue{
+		{Label: "One", DurationMS: 1000, EndAction: EndHold, AutoContinue: true},
+		{Label: "Two", DurationMS: 60_000},
+	}
+	for _, cue := range cues {
+		if _, err := d.CreateCue(show.ID, cue); err != nil {
+			t.Fatalf("seed cue: %v", err)
+		}
+	}
+	engines := NewEngines(d)
+	var fired []int64
+	engines.OnStart = func(showID, pos int64) { fired = append(fired, pos) }
+	e, err := engines.Get(show.ID)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if err := e.Go(); err != nil {
+		t.Fatalf("go: %v", err)
+	}
+	// Alert flips (warning thresholds crossing) must NOT fire the hook.
+	if err := e.Tick(time.Now().UnixMilli() + 200); err != nil {
+		t.Fatalf("tick alert: %v", err)
+	}
+	if len(fired) != 1 {
+		t.Fatalf("alert transition fired the hook: %v", fired)
+	}
+	// Past cue 1's zero crossing: AutoContinue starts cue 2 → fires.
+	if err := e.Tick(time.Now().UnixMilli() + 1500); err != nil {
+		t.Fatalf("tick advance: %v", err)
+	}
+	if len(fired) != 2 || fired[1] != 2 {
+		t.Fatalf("auto-advance did not fire for cue 2: %v", fired)
 	}
 }

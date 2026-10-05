@@ -308,6 +308,7 @@ func (e *Engine) SetDayStart(ts int64) error {
 func (e *Engine) Tick(nowMS int64) error {
 	e.mu.Lock()
 	changed := false
+	startedPos := int64(0) // a cue auto-started this tick (media hook)
 	cues, err := e.deps.Cues()
 	if err != nil {
 		e.mu.Unlock()
@@ -335,6 +336,7 @@ func (e *Engine) Tick(nowMS int64) error {
 				if next := nextPosOf(cues, e.rt.ActivePos); next > 0 {
 					if serr := e.startLocked(next); serr == nil {
 						e.lastCrossed = false
+						startedPos = next // PLAN §11.6: media hook hears auto-advance
 					}
 				}
 				// No next cue: hold at zero.
@@ -362,6 +364,7 @@ func (e *Engine) Tick(nowMS int64) error {
 		if next := autoStartDue(cues, e.rt.ActivePos, nowMS); next > 0 {
 			if serr := e.startLocked(next); serr == nil {
 				changed = true
+				startedPos = next // E5 scheduled start fires the hook too
 			}
 		}
 	}
@@ -370,11 +373,18 @@ func (e *Engine) Tick(nowMS int64) error {
 		return nil
 	}
 	snap, err := e.commitLocked()
+	// PLAN §11.6: auto-advance (AutoContinue) and E5 wall-clock auto-start
+	// started a cue under the lock — the outbound media hook must hear
+	// about them exactly like a hand GO. fireStart locks, so emit after
+	// the unlock.
 	e.mu.Unlock()
 	if err != nil {
 		return err
 	}
 	e.notify(snap)
+	if startedPos > 0 && e.onFire != nil {
+		e.onFire(startedPos)
+	}
 	return nil
 }
 

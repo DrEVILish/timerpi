@@ -129,3 +129,51 @@ func TestInboundListener(t *testing.T) {
 		t.Fatal("no error report")
 	}
 }
+
+func TestFireOutDelivers(t *testing.T) {
+	// A local UDP listener stands in for the CuTePi/QLab peer.
+	srv, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer srv.Close()
+	addr := srv.LocalAddr().String()
+
+	oscbridge_Target_backup := Target
+	Target = func() string { return addr }
+	defer func() { Target = oscbridge_Target_backup }()
+
+	FireOut("cue", 3)
+	got := readPacket(t, srv)
+	if got != "/cue/3/start" {
+		t.Fatalf("cue fire: %q", got)
+	}
+	FireOut("panic", 0)
+	if got := readPacket(t, srv); got != "/panic" {
+		t.Fatalf("panic: %q", got)
+	}
+	FireOut("go", 0)
+	if got := readPacket(t, srv); got != "/go" {
+		t.Fatalf("go: %q", got)
+	}
+	// Disabled target: silence, no error.
+	Target = func() string { return "" }
+	FireOut("go", 0)
+	Target = func() string { return addr }
+	FireOut("nonsense", 0) // unknown kind: OutAddress "" → nothing sent
+}
+
+func readPacket(t *testing.T, srv net.PacketConn) string {
+	t.Helper()
+	buf := make([]byte, 512)
+	srv.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := srv.ReadFrom(buf)
+	if err != nil {
+		return "" // timeout = nothing sent
+	}
+	m, err := Parse(buf[:n])
+	if err != nil {
+		t.Fatalf("peer parse: %v", err)
+	}
+	return m.Address
+}

@@ -324,8 +324,23 @@ Animation enum per tile
    on results (board ✔ + phone). Tests: `routes/moderation_test.go`
    (cloud → submit → approve → upvote → hide → delete) + create
    validation; rev v57.
-6. **CuTePi destination bridge** — §11.6 (finish the otrientation the WIP
-   started; outbound fire on GO/BLANK; pairing UI in Settings).
+6. **CuTePi destination bridge** — ✅ 2026-10-05: the bridge is complete.
+   Outbound: every cue start fires `/cue/<pos>/start` to the paired
+   QLab/CuTePi peer — hand GO (engine onFire), auto-advance (AutoContinue)
+   and E5 wall-clock auto-start now ALL fire (Tick Recording found the
+   auto paths bypassing the hook; they emit after the lock via a started
+   marker). BLANK on → `/panic`, off → `/go`, across REST + WS + the super
+   panel. Settings gains the **CuTePi media bridge (OSC)** section:
+   inbound listener + port, outbound host + QLab port, Save (re-syncs the
+   UDP listener live), and a **Send test packet** button — honest about
+   UDP: ok means the packet left, never that CuTePi acted (QLab's channel
+   has no replies). `/api/osc/test` backs it. Capability records in the
+   device mesh stay with the upstream request (CuTePi#4) — a v1 pairing is
+   host:port in settings, the mDNS picker is CuTePi-side work. Tests:
+   `oscbridge` FireOut→peer delivery, engine hook on auto-advance (alerts
+   stay silent), routes e2e (GO/BLANK → wire) + test endpoint
+   (unconfigured 400 + probe packet on the wire); rev stays v57 (page
+   templates only).
 7. **Hardening + version const** — `appVersion = "2.0"` in Go (health +
    footer), README/PROJECT bump, load-harness numbers recorded, review pass,
    `-race` suite, deploy to the Pi.

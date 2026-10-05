@@ -12,6 +12,41 @@
   {force} · poll GET /frag/network every 5 s into #net-panel.
 */ -}}
 {{define "settings"}}
+<script>
+  // PLAN §11.6: OSC bridge settings (global kv via /api/osc).
+  document.addEventListener('DOMContentLoaded', function () {
+    var status = document.getElementById('osc-status');
+    var say = function (msg, cls) {
+      status.textContent = msg;
+      status.className = 'field-hint' + (cls ? ' ' + cls : '');
+    };
+    fetch('/api/osc').then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.ok || !j.config) return;
+      document.getElementById('osc-in-enabled').value = j.config.in.enabled ? '1' : '';
+      document.getElementById('osc-in-port').value = j.config.in.port || '';
+      document.getElementById('osc-out-enabled').value = j.config.out.enabled ? '1' : '';
+      document.getElementById('osc-out-host').value = j.config.out.host || '';
+      document.getElementById('osc-out-port').value = j.config.out.port || '';
+    }).catch(function () {});
+    document.getElementById('osc-save').addEventListener('click', function () {
+      fetch('/api/osc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          in: { enabled: document.getElementById('osc-in-enabled').value === '1', port: document.getElementById('osc-in-port').value.trim() },
+          out: { enabled: document.getElementById('osc-out-enabled').value === '1', host: document.getElementById('osc-out-host').value.trim(), port: document.getElementById('osc-out-port').value.trim() }
+        })
+      }).then(function (r) { return r.json().then(function (j) { return { code: r.code || r.status, j: j }; }); })
+        .then(function (x) { say(x.j.ok ? 'Bridge saved — listener re-synced.' : (x.j.error || 'save failed'), x.j.ok ? 'field-hint' : 'field-error'); })
+        .catch(function () { say('network error', 'field-error'); });
+    });
+    document.getElementById('osc-test').addEventListener('click', function () {
+      say('Sending…');
+      fetch('/api/osc/test', { method: 'POST' }).then(function (r) { return r.json().then(function (j) { return { code: r.status, j: j }; }); })
+        .then(function (x) { say(x.j.ok ? 'Packet sent to ' + x.j.sent + ' (UDP: no ack from CuTePi).' : (x.j.error || 'test failed'), x.j.ok ? 'field-hint' : 'field-error'); })
+        .catch(function () { say('network error', 'field-error'); });
+    });
+  });
+</script>
 <!DOCTYPE html>
 <html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <head>
@@ -118,6 +153,51 @@
       <select id="tp-def-theme" class="select input-sm" aria-label="Appliance default theme"></select>
       <button id="tp-def-theme-save" class="btn btn-sm" type="button">Save default</button>
       <span id="tp-def-theme-status" class="field-hint" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <!-- PLAN §11.6 phase 6: the CuTePi/QLab destination pairing. UDP OSC is
+       fire-and-forget (no ack from CuTePi), so the test button proves the
+       packet left — not that the peer acted. -->
+  <section class="panel">
+    <h2>CUTEPI MEDIA BRIDGE (OSC)</h2>
+    <p class="field-hint">Pair a CuTePi media wall: cue starts fire its QLab
+      channel (<code>/cue/&lt;pos&gt;/start</code>) and BLANK cuts it to the panic
+      holding image. Off by default — enable only on a trusted control LAN
+      (OSC carries no authentication). UDP has no ack: the test button
+      proves the packet left, never that the peer acted.</p>
+    <div class="field-grid">
+      <div class="field">
+        <label class="label" for="osc-in-enabled">Inbound listener (QLab/Companion → TimerPi)</label>
+        <select class="select input-sm" id="osc-in-enabled">
+          <option value="">Off</option>
+          <option value="1">On</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="osc-in-port">Inbound port</label>
+        <input class="input input-sm mono" id="osc-in-port" placeholder="9000" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label class="label" for="osc-out-enabled">Outbound (TimerPi → CuTePi)</label>
+        <select class="select input-sm" id="osc-out-enabled">
+          <option value="">Off</option>
+          <option value="1">On</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="osc-out-host">CuTePi host</label>
+        <input class="input input-sm mono" id="osc-out-host" placeholder="cuitepi.local">
+      </div>
+      <div class="field">
+        <label class="label" for="osc-out-port">QLab port</label>
+        <input class="input input-sm mono" id="osc-out-port" placeholder="53000">
+      </div>
+    </div>
+    <div class="cluster" style="margin-top:.6rem">
+      <button type="button" class="btn btn-primary" id="osc-save">Save bridge</button>
+      <button type="button" class="btn" id="osc-test">Send test packet</button>
+      <span id="osc-status" class="field-hint" aria-live="polite"></span>
     </div>
   </section>
 
