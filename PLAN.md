@@ -332,6 +332,12 @@ one HDMI connector; so the build:
   (resume). One paired CuTePi per show (settings kv: `osc.out.host/port`),
   pairing UI in Settings (a host picker that pings and shows CuTePi's
   current QLab channel), off by default.
+- **Deeper join, filed upstream:** request logged as
+  [CuTePi #4](https://github.com/DrEVILish/CuTePi/issues/4) — a "live
+  endpoint" cue item so CuTePi can show TimerPi pages (timer / polls /
+  walk-in schedule) as cue content on its own wall, with panic fallback
+  and revocable room-scoped pairing tokens. Until that ships, rooms
+  needing a live wall run the TimerPi page on a second output/screen.
 - **Capability records, not a new protocol.** The CuTePi partner is a
   device-mesh entry with `role=cutepi` + OSC host (network.go identity
   vocabulary) so panels can show "Room A media: <host>.local alive".
@@ -371,9 +377,12 @@ Cross-checking §11 against the brief found five items missing; folds:
    phones scan within ~30 s (opening) — staggered joins + per-show WS
    accept queue so the room's boards stay interactive during the crowd
    stampede. Steady-rate alone would have hidden this.
-9. **Reduced motion.** Animations enum honors `prefers-reduced-motion` —
-   slot animations become state changes without motion. Ftl-themes
-   vocabulary carries the media query; accessibility basic.
+9. **Reduced motion — audience devices ONLY.** `prefers-reduced-motion` is
+   honored **exclusively on the audience phone page** (`/a/`): animations
+   become plain state changes there if the phone asks. Display and screen
+   pages (`/d/`, boards, zone pages, walk-in layouts) **never** follow the
+   setting — the room must always run its designed animation, every client,
+   whatever that device's OS preference is.
 10. **Deployment shape (open, for John).** The browser-rendered walk-in
     pages (`event`, `room`, `main`) need browser-capable hardware behind
     the physical screens — today only `timer` is DRM-native. Decision due
@@ -381,3 +390,24 @@ Cross-checking §11 against the brief found five items missing; folds:
     slot system. CuTePi's second HDMI on a Pi 5 is the third option.
 11. Inherited debt: open review findings (waiting-room atomicity,
     claim fail-open, `UpsertScreen` cap, etc.) fold into Phase 7 hardening.
+
+### 11.9 Show-file full fidelity (owner directive: ALL items export/import)
+
+Today `.timerpi.json` carries cues + messages + schedule only. The v2
+bundle (manifest **v2**, ZIP like CuTePi's `.CTP`: `manifest.json` +
+`assets/`) round-trips **every item of a show**:
+
+- cues + messages + schedule (today's content, unchanged shape);
+- **all interaction items** — polls/Q&A/wordcloud/ideas/quiz rows with
+  moderation state (`hidden/open/results`), submitted questions and words,
+  and vote rows (peer-token hashes; re-import dedupes by `(poll,peer)`);
+- **screens config** (per-show screen identities + preset links) and
+  **display_presets** of that show (layouts/templates + their slot data);
+- **zone label** + the zone **map asset** (file lands in `assets/`,
+  referenced by hash);
+- current skill-file hygiene stays: exported only when the show is HOLD;
+  runtime playhead state remains non-portable (lands ARMED), documented.
+
+Import: manifest v2 accepted; v1 (old plain-JSON cues+messages) keeps
+importing for one major lifetime. Version const + health exposure in
+Phase 7 with §11.3.
