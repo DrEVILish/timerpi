@@ -22,7 +22,7 @@ func recordResponse(r *gin.Engine, req *http.Request) *httptest.ResponseRecorder
 func loadConfigForTest(t *testing.T) {
 	t.Helper()
 	t.Setenv("TIMERPI_DATA_DIR", t.TempDir())
-	t.Setenv("CAPACITIMER_HTTP_PORT", "8080")
+	t.Setenv("TIMERPI_HTTP_PORT", "8080")
 	config.LoadConfig()
 }
 

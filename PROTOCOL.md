@@ -28,6 +28,7 @@
 | `GET /d/:ident` | screen | `?view=stage` (default) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (auth) |
 | `GET /a/:code` | audience | Phone page (gated by the room password). **Not auth-exempt yet (STATUS B1)** |
 | `GET /zone/:name` | screen | Event walk-in for a zone (server-rendered, 30 s refresh; to be replaced by a live event walk-in, STATUS N7) |
+| `GET /favicon.ico` | browser | 301 to `/img/timerpi.svg` |
 | `GET /health` | probe | `{ok, version:"2.0", uptime, device, title, sessions:{connected}}` |
 
 Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`), `/assets/:id` (uploaded blobs, public).
@@ -90,7 +91,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 
 ### Join (first frame, within 10 s)
 ```json
-{"v":1,"t":"join","role":"controls|display|audience","show":"<code>",
+{"v":1,"t":"join","role":"controls|display|screen|audience","show":"<code>",
  "peerId":"<uuid>","joinedAt":<ms>,"authToken":"…","showToken":"…","screen":"<name>"}
 ```
 - `controls` needs `authToken` when a device password is set.
@@ -120,7 +121,7 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
 ### Client → server
 - `{"t":"ping"}`. Client pings every 20 s; the server pings every 30 s and drops after 75 s of silence.
 - `{"t":"signal","to":"<peerId>","data":{…}}` (not allowed on the audience lane).
-- `{"v":1,"t":"cmd","action":…,"args":{…}}`. The audience lane is refused always; other non-controls roles are refused when a password is set (STATUS B6):
+- `{"v":1,"t":"cmd","action":…,"args":{…}}`. Only `controls` sessions may send commands; every other role is read-only. Unknown roles are refused at join:
 
 | action | args |
 |---|---|

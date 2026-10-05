@@ -26,7 +26,7 @@ build-splash-arm64:
 
 # Dev run: separate data dir so the dev checkout never touches /var/lib.
 run:
-	TIMERPI_DATA_DIR=./data CAPACITIMER_HTTP_PORT=8080 go run .
+	TIMERPI_DATA_DIR=./data TIMERPI_HTTP_PORT=8080 go run .
 
 test:
 	go test ./...

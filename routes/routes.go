@@ -98,7 +98,7 @@ func New(d *Deps) *gin.Engine {
 	registerHealth(r, d, SessionsCount)
 	registerAuth(r)       // /login + /api/login + /api/auth/password (A1)
 	registerTheme(r)      // B7: appliance default theme (GET/POST /api/theme)
-	registerPages(r, d)   // GET /, /c/:ident, /frag/shows (/d/:ident in display.go)
+	registerPages(r, d)   // GET /, /c/:ident, /screens/:ident (/d/ in display.go)
 	RegisterDisplay(r, d) // GET /d/:ident — stage passthrough + view dispatch
 	RegisterSetup(r, d)   // GET /setup + /setup/sheet + /api/setup/*
 	RegisterNetwork(r)    // GET /settings + /api/network/* (503s until InstallNetwork)
@@ -174,6 +174,8 @@ func registerFTL(r *gin.Engine) {
 // registerHealth is the readiness probe. Sessions wiring: the injected
 // hub's counter when present, else the standalone SessionsCount seam.
 func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
+	// Browsers probe /favicon.ico on pages without an icon link.
+	r.GET("/favicon.ico", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/img/timerpi.svg") })
 	r.GET("/health", func(c *gin.Context) {
 		var connected map[string]int
 		if d.Hub != nil {
@@ -187,13 +189,12 @@ func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
 			total = standalone()
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"ok":     true,
+			"ok":      true,
 			"version": appVersion(),
-			"uptime": time.Since(startedAt).Truncate(time.Second).String(),
-			"device": config.DeviceName(),
-			"title":  config.Title(),
+			"uptime":  time.Since(startedAt).Truncate(time.Second).String(),
+			"device":  config.DeviceName(),
+			"title":   config.Title(),
 			"sessions": gin.H{
-				// ws/hub.go counts per role: controls/display/mesh.
 				"connected": total,
 			},
 		})

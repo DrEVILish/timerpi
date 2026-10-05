@@ -19,7 +19,7 @@ func TestDisplayReadyPage(t *testing.T) {
 	s := string(body)
 	for _, sub := range []string{
 		`READY FOR SHOW OPERATOR`, `id="tp-waiting"`,
-		`data-waiting="1"`, `runWaiting`, `/src/waiting.js`,
+		`data-waiting="1"`, `runWaiting`, `waiting.js`,
 	} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("/d/ missing %q", sub)

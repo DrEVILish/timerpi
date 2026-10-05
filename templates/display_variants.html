@@ -283,7 +283,7 @@ body.tp-dv[data-print="true"] .tp-daysheet { font-size: 12pt; }
    ping/pong clock re-anchor. oob/message/peers/signal frames are ignored:
    their targets live on the dashboard + stage.
    -------------------------------------------------------------------------- */
-import { computeSchedule, fmtDuration, fmtTimeOfDay } from '/src/engine.js';
+import { computeSchedule, fmtDuration, fmtTimeOfDay } from '{{asset "/src/engine.js"}}';
 
 const $ = (s) => document.querySelector(s);
 const setText = (s, t) => { const n = typeof s === 'string' ? $(s) : s; if (n && n.textContent !== t) n.textContent = t; };

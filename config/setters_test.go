@@ -10,7 +10,7 @@ import (
 func TestSetTitleValidation(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TIMERPI_DATA_DIR", dir)
-	t.Setenv("CAPACITIMER_HTTP_PORT", "")
+	t.Setenv("TIMERPI_HTTP_PORT", "")
 	LoadConfig()
 
 	if err := SetTitle(""); err == nil {
@@ -34,7 +34,7 @@ func TestSetTitleValidation(t *testing.T) {
 func TestSetDeviceNameValidation(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TIMERPI_DATA_DIR", dir)
-	t.Setenv("CAPACITIMER_HTTP_PORT", "")
+	t.Setenv("TIMERPI_HTTP_PORT", "")
 	LoadConfig()
 
 	if err := SetDeviceName("   "); err == nil {

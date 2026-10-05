@@ -4,7 +4,6 @@
 package routes
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -18,7 +17,8 @@ import (
 	"timerpi/views"
 )
 
-// registerPages mounts GET /, GET /c/:ident, GET /d/:ident, GET /frag/shows.
+// registerPages mounts GET /, GET /c/:ident and GET /screens/:ident
+// (/d/:ident lives in display.go).
 // Public addressing is CODE-ONLY (Agent L scope change): :ident must be a
 // normalized share code; numeric ids 404 — they are internal DB keys, not
 // addresses.
@@ -192,62 +192,6 @@ func showGateByShowID(c *gin.Context, d *Deps, showID int64) bool {
 		return true // unknown/merged row: let the normal 404/snapshot paths answer
 	}
 	return showGate(c, sh)
-}
-
-// displayPage is GET /d/:ident — the fullscreen TV stage. :ident is a
-// share code (Agent L scope change): digits/unknown → friendly 404.
-func displayPage(d *Deps) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		showID, ok := d.resolveIdent(c.Param("ident"))
-		if !ok {
-			pageUnknownCode(c)
-			return
-		}
-		if d.Store != nil && !showGateByShowID(c, d, showID) {
-			return // locked show: the unlock page was served (TVs too)
-		}
-		if d.Engines == nil {
-			c.String(http.StatusNotImplemented, "engine wiring missing (mismatched build)")
-			return
-		}
-		eng, err := d.Engines.Get(showID)
-		if err != nil {
-			pageNotFound(c)
-			return
-		}
-		// F1 layout assignment: a named screen with an assigned board IS
-		// that board's display — a fresh stage load steers to its board
-		// (owner report: changing the layout in /screens/ did nothing on
-		// the display). Live reassignment still navigates via the
-		// screen-board frame; the editor (?edit=1) keeps its draft.
-		if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" && d.Store != nil {
-			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && scr.BoardID > 0 && c.Query("edit") != "1" {
-				u := *c.Request.URL
-				u.Path = "/d/" + c.Param("ident")
-				q := u.Query()
-				q.Set("view", "board")
-				q.Set("board", fmt.Sprintf("%d", scr.BoardID))
-				q.Set("screen", name)
-				u.RawQuery = q.Encode()
-				c.Redirect(http.StatusFound, u.String())
-				return
-			}
-		}
-		snap, err := eng.Snapshot()
-		if err != nil {
-			pageNotFound(c)
-			return
-		}
-		data := views.ShowData(snap, d.now(), hostname())
-		if data == nil {
-			pageError(c, err)
-			return
-		}
-		data.Role = "display" // lands on <body data-role>
-		data.Nav = "display"
-		data.Peers = d.peerCount()
-		d.render(c, "display", data)
-	}
 }
 
 // now anchors IsDone flags; wall clock elsewhere.

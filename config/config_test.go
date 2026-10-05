@@ -12,7 +12,7 @@ import (
 func TestLoadConfigEnvOverrides(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TIMERPI_DATA_DIR", dir)
-	t.Setenv("CAPACITIMER_HTTP_PORT", "8080")
+	t.Setenv("TIMERPI_HTTP_PORT", "8080")
 
 	// Pre-existing config with a stale port the env must override.
 	if err := os.WriteFile(filepath.Join(dir, "config.json"),
@@ -40,7 +40,7 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 func TestFirstRunWritesDefaultConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TIMERPI_DATA_DIR", dir)
-	os.Unsetenv("CAPACITIMER_HTTP_PORT")
+	os.Unsetenv("TIMERPI_HTTP_PORT")
 
 	LoadConfig()
 

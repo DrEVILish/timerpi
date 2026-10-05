@@ -95,7 +95,7 @@ install_drop_in() {
 
 verify_health() {
   local port p conf="$DATA_DIR/config.json"
-  p="${CAPACITIMER_HTTP_PORT:-}"
+  p="${TIMERPI_HTTP_PORT:-${CAPACITIMER_HTTP_PORT:-}}"
   if [ -z "$p" ] && [ -f "$conf" ]; then
     p="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("http_port",80))' "$conf" 2>/dev/null || echo 80)"
   fi

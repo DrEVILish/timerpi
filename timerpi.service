@@ -10,7 +10,7 @@
 #     defaults to /var/lib/timerpi, so no --config / -d argument is (or
 #     may be) passed here.
 #   * HTTP+WS single port comes from config.json (http_port); env
-#     CAPACITIMER_HTTP_PORT overrides at launch. The service pins it to 80
+#     TIMERPI_HTTP_PORT overrides at launch. The service pins it to 80
 #     explicitly so a stale per-machine env cannot move the appliance
 #     port; the Pi appliance contract is :80.
 #   * Assets (public/, templates/, third_party/ftl-themes) resolve
@@ -31,7 +31,7 @@ Group=root
 
 WorkingDirectory=/opt/timerpi
 ExecStart=/opt/timerpi/bin/timerpi
-Environment=CAPACITIMER_HTTP_PORT=80
+Environment=TIMERPI_HTTP_PORT=80
 ExecStop=/bin/sh -c 'rm -f /run/timerpi/ready'
 
 # /run/timerpi hosts the splash ready-file handshake (see

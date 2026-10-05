@@ -53,9 +53,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TimerPi — {{.Title}}</title>
-<link rel="stylesheet" href="/css/timerpi.v61.css">
+<link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
 <link rel="stylesheet" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
-<script defer src="/src/htmx.min.js"></script>
+<script defer src="{{asset "/src/htmax.min.js"}}"></script>
 <style>
   /* Settings-page glue: two-column identity + peers, phone stacking. */
   .tp-net {

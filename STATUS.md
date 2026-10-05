@@ -78,7 +78,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | H4 CuTePi OSC | ✅ | |
 | H5 any browser as screen | ✅ | |
 | M2 day-ready model | ❌ | N10 |
-| htmx 4 vendored | ❌ | N8 |
+| htmx 4 vendored | ✅ | N8 |
 
 ## 4. Open work
 
@@ -91,7 +91,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **B3** | Survey members drop on WS updates, and there is no survey UI or tile. *Proposal: remove `survey` (not in PRODUCT A1).* | `templates/audience.html`, `timerpi/polls.go` |
 | **B4** | Ideas are posted with `parent:0` and become top-level rows. There is no ideas tile. "Add mine" upvotes the whole item. | `templates/audience.html`, `public/src/board.js` |
 | **B5** | Audience tiles render edit chrome without the `Editable` guard. | `templates/fragments/b-audience.html` |
-| **B6** | Any role string is accepted on join. On an open appliance a `display` session can send commands. | `ws/session.go`, `ws/commands.go` |
+| **B6** | ✅ Fixed 2026-10-05: unknown roles are refused at join, and only `controls` may send commands. | `ws/session.go`, `ws/commands.go` |
 | **B7** | Zone page: an unanchored day computes from epoch, so every row shows as done. The configured theme is ignored. (Superseded by N7, but cheap to fix meanwhile.) | `routes/zone.go` |
 
 ### 4.2 New work from the spec (in dependency order)
@@ -105,7 +105,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N5** | **Two push targets.** Interaction gains `toAudience` and `toPresenter` flags. `results` applies to wherever it is shown. The audience read and phone frames carry audience-targeted items only. Boards render by screen type (audience displays ← audience target; presenter displays ← presenter target). The dashboard gets **Show to Audience**, **Show to Presenter**, **Results** and **Hide** | A4, A5 | Replaces single-focus `open`. Keep "one on-air item per target per room" |
 | **N6** | **Q&A wall + spotlight.** Submitted questions become children of the open Q&A item (like words), with status `pending → approved → answered` or `dismissed`, plus upvotes per question. New tiles: `qa-wall` (approved, by upvotes) and `spotlight`. Moderator: approve / spotlight / mark answered / dismiss | A7 | Fixes today's "each question replaces the on-air item" |
 | **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8 | |
-| **N8** | **htmx 4.** Vendor `htmx.org@4.0.0` locally (`public/src/htmx.js`, no CDN). Remove 2.0.11 and the unused `htmx-ext-ws.js`. Port the existing `hx-` usage (setup, settings, import form) to htmx 4 semantics. New server-rendered UI prefers htmx 4 over hand-written fetch code where it fits | H2, PRODUCT §7 | htmx 4 changes attribute inheritance and event names. Re-test every `hx-` site |
+| **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
 | **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |
 | **N10** | **Day-ready model.** Sessions carry `day` (default = event's day 1). All queries are scoped by day. No UI yet | M2 | Do it inside N1's migration |
 | **N11** | **Device-class UX.** Moderator view is touch-first for tablets (44 px targets, no hover-only actions). SuperOperator view is laptop-first. Audience page is phone-first | L6 | |
@@ -114,10 +114,10 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | ID | Item |
 |---|---|
-| **C1** | Rename env `CAPACITIMER_HTTP_PORT` → `TIMERPI_HTTP_PORT` (keep the old name as a fallback). Fix the `mesh.js` header. |
-| **C2** | ftl-themes is a git-ignored clone, not a submodule, so fresh checkouts have no styling. Pin it as a **submodule at an upstream commit**. The local `timerpi` theme commits are shelved (owner: blue-future is the default; a custom theme comes later). Remove the `timerpi` theme from the picker until then. |
-| **C3** | Remove dead code: `displayPage` (`routes/pages.go`), the stale `RegisterDisplay` note, the `/frag/shows` comments, and the `mesh.js` check for an unsent `screen` role. |
-| **C4** | One cache-bust scheme. Delete the `*.v59`/`*.v60` copies. |
+| **C1** | ✅ Done: `TIMERPI_HTTP_PORT` (legacy name still honoured). |
+| **C2** | ✅ Done: ftl-themes is a submodule pinned to an upstream commit. The local `timerpi` theme is shelved (branch `timerpi-theme-local` in the old clone), so it is no longer in the picker. |
+| **C3** | ✅ Done: dead `displayPage`, the stale registration guard, `htmx-ext-ws.js` and the `/frag/shows` comments are removed. (`screen` is a valid join role, so the `mesh.js` check stays.) |
+| **C4** | ✅ Done: one scheme, the `asset` template func with a content-hash path segment (ARCHITECTURE §12). The versioned copies and `bump-assets.sh` are deleted. |
 | **C5** | `board.js` hard-codes a copy of `DefaultLayout()`. Read it from `/api/board-templates`. |
 | **C6** | Code comments cite archived or never-existing docs (`PLAN §11`, `NOTES-board`, `reviews/UX1-…`). Repoint them. |
 | **C7** | Stale comments: `audience.html` calls itself a "stub", and the `/health` comment claims per-role counts. |

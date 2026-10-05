@@ -16,7 +16,7 @@
 # `test -e /var/lib/timerpi/health.failed` — can react without journal
 # scraping. See reviews/NOTES-ops.md for the OnFailure= pairing note.
 #
-# Port: $CAPACITIMER_HTTP_PORT > config.json http_port > 80 (mirrors the
+# Port: $TIMERPI_HTTP_PORT (legacy $CAPACITIMER_HTTP_PORT) > config.json http_port > 80 (mirrors the
 # unit's pinned env; sandbox/dev data dirs get :
 # PORT from their config.json).
 set -u
@@ -24,7 +24,7 @@ set -u
 DATA_DIR="${TIMERPI_DATA_DIR:-/var/lib/timerpi}"
 
 port() {
-  local p="${CAPACITIMER_HTTP_PORT:-}"
+  local p="${TIMERPI_HTTP_PORT:-${CAPACITIMER_HTTP_PORT:-}}"
   local conf="$DATA_DIR/config.json"
   if [ -z "$p" ] && [ -f "$conf" ]; then
     if command -v python3 >/dev/null 2>&1; then

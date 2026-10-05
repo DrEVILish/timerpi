@@ -152,7 +152,7 @@ systemctl enable --now timerpi-healthcheck.timer   # every 5 min
 
 | symptom | where to look | fix |
 |---|---|---|
-| **port taken** (`-`, bind error at boot or after update) | `journalctl -u timerpi`; `ss -ltnp | grep ':80'` | stop the neighbor (`apache2`, `nginx`, dev leftovers) or pin a port: `http_port` in `/var/lib/timerpi/config.json` then restart; `CAPACITIMER_HTTP_PORT` env in the unit intentionally WINS only for the unit, config edit is the appliance way |
+| **port taken** (`-`, bind error at boot or after update) | `journalctl -u timerpi`; `ss -ltnp | grep ':80'` | stop the neighbor (`apache2`, `nginx`, dev leftovers) or pin a port: `http_port` in `/var/lib/timerpi/config.json` then restart; `TIMERPI_HTTP_PORT` env in the unit intentionally WINS only for the unit, config edit is the appliance way |
 | **WS not connecting** (display loads, then dies) | browser console → WS frame; `journalctl -u timerpi` | server in strict mode: `allowed_hosts` in `/var/lib/timerpi/config.json` does not list your host → add it or ship open mode; reverse proxy must pass `Host` verbatim and allow `/ws` upgrades |
 | **mDNS absent** (`<name>.local` unreachable) | `avahi-browse -rt _timerpi._tcp`; `systemctl status avahi-daemon` | firewall UDP 5353; avahi only gets enabled by the installer's `--hostname` path — re-run `scripts/install-pi.sh --hostname …` or `hostnamectl set-hostname` |
 | **splash timing out** (logo sticks 45 s, then boot continues) | `test -e /run/timerpi/ready`; `journalctl -u timerpi` | app not becoming healthy — see next row; splash auto-releases regardless, boot is not blocked |

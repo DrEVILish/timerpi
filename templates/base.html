@@ -22,7 +22,7 @@
 <meta name="tp-default-theme" content="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <link rel="icon" href="/img/timerpi.svg" type="image/svg+xml">
 <link rel="stylesheet" id="theme-css-default" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
-<link rel="stylesheet" href="/css/timerpi.v61.css">
+<link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
 <!-- ASSET REV policy — PATH revision, not a query string: /css and /src
      assets load from the CURRENT rev directory (/css/timerpi.v61.css …,
      swapped routes-side back to the real file by routes.registerStatic).
@@ -140,8 +140,8 @@
   <div><h2>LINK DOWN</h2><p>Server unreachable — working from the local copy.</p><p class="text-muted">Reconnects automatically when the link returns.</p></div>
 </div>
 <div class="toast-region" popover="manual" id="toast-region"></div>
-<script src="/src/htmx.min.js" defer></script>
-<script type="module" src="/src/timerpi.v61.js"></script>
+<script src="{{asset "/src/htmax.min.js"}}" defer></script>
+<script type="module" src="{{asset "/src/timerpi.js"}}"></script>
 </body>
 </html>
 {{end}}

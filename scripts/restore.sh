@@ -85,7 +85,7 @@ start_srv() {
   systemctl start timerpi || { systemctl status timerpi --no-pager 2>/dev/null | tail -5; return 1; }
 }
 port() {  # /health port: env > config.json > 80
-  local p="${CAPACITIMER_HTTP_PORT:-}"
+  local p="${TIMERPI_HTTP_PORT:-${CAPACITIMER_HTTP_PORT:-}}"
   if [ -z "$p" ] && command -v python3 >/dev/null 2>&1 && [ -f "$CONF" ]; then
     p="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("http_port",80))' "$CONF" 2>/dev/null || echo 80)"
   fi

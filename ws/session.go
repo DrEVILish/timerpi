@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -115,6 +116,12 @@ func (h *Hub) readJoin(s *session) bool {
 	}
 	if j.Role == "" {
 		j.Role = "controls"
+	}
+	switch j.Role {
+	case "controls", "display", "screen", "audience":
+	default:
+		s.sendErr("unknown role " + strconv.Quote(j.Role))
+		return false
 	}
 	// A1 operator-password gate: with a password set, "controls" joins (the
 	// operator surface) must present the auth token issued by /api/login.

@@ -2882,7 +2882,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Safety net: if htmx ever performs an oob swap itself (fragments shipped
   // with hx-swap-oob), the swapped-in nodes must be re-reached too — and
   // the A3 filter must re-apply to the fresh rows immediately.
-  document.addEventListener('htmx:oobAfterSwap', () => {
+  document.addEventListener('htmx:after:swap', () => {
     clockUI?._collect();
     clockUI?.renderRows();
     // Fresh <use> nodes carry template-default sprite paths — retarget them

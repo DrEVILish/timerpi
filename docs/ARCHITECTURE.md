@@ -17,7 +17,7 @@
 | Server | Go 1.25, single binary, **gin** for HTTP and **gorilla/websocket** for WS, on **one port**, listening on `0.0.0.0` (default 80) |
 | Storage | **SQLite** via `sqlx` + `mattn/go-sqlite3` (CGO), WAL mode. One file: `<data dir>/timerpi.db` |
 | Templates | Go `html/template`, server-rendered pages and fragments |
-| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 2.0.11** is vendored today (`public/src/htmx.min.js`) and used lightly (setup, settings, import form). Most interactivity is plain JS plus WS frames. **Target: htmx 4, vendored locally** (owner decision; STATUS N8) |
+| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 4.0.0** is vendored as `public/src/htmax.min.js` (htmx plus its bundled extensions: ws, sse, preload, …). Reference docs: `docs/reference/htmx4/`. Today it is used lightly (setup, settings, import form); most interactivity is plain JS plus WS frames |
 | Styling | **ftl-themes**, served at `/ftl/` from `third_party/ftl-themes`. TimerPi adds layout-only CSS in `public/css/timerpi.css` |
 | QR | `skip2/go-qrcode` |
 | Import | `tealeg/xlsx` + `excelize` (XLSX/XLS), CSV, JSON (`importdocs/`) |
@@ -43,7 +43,7 @@ oscbridge/           OSC codec + UDP listener + outbound hooks (CuTePi/QLab)
 drm/                 native KMS/fbdev countdown renderer for the Pi's HDMI
 templates/           pages + fragments (*.html)
 public/              css/, src/ (JS modules), img/
-third_party/ftl-themes/   theme bundles (separate git clone, git-ignored — see §9)
+third_party/ftl-themes/   theme bundles (git submodule — see §9)
 scripts/ systemd/    install, update, backup, restore, healthcheck, splash
 docs/                product, architecture, runbooks; docs/archive/ = historical notes
 ```
@@ -98,7 +98,7 @@ settings.
 | Role | Bucket | Receives | Can send commands |
 |---|---|---|---|
 | `controls` (operator) | show bucket (cap 512/show) | full snapshots, oob fragments, schedule, poll, screens | yes (needs operator token if a device password is set) |
-| `display` (stage, variants, boards) | show bucket | snapshots, poll, theme/board pushes | **should be no**. See STATUS bug B6 |
+| `display` / `screen` (stage, variants, boards) | show bucket | snapshots, poll, theme/board pushes | no (read-only) |
 | `audience` (phones) | **separate audience bucket** (cap 4000/show) | `poll` frames only, never cue state | never |
 
 - The fanout is serialised per show.
@@ -157,8 +157,8 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 
 ## 9. Themes (ftl-themes)
 
-- `third_party/ftl-themes` is a **separate git clone** of `github.com/DrEVILish/ftl-themes`. It is **not a submodule and is git-ignored**, so a fresh clone of this repo has no themes until you clone it (README "Quick start").
-- A `timerpi` theme exists only as 4 local commits in the old dev clone. It is **shelved**: the owner chose `blue-future` as the TimerPi default, and a custom theme will be designed later. STATUS C2 pins ftl-themes as a submodule at an upstream commit.
+- `third_party/ftl-themes` is a **git submodule** of `github.com/DrEVILish/ftl-themes`, pinned to an upstream commit. Clone with `--recursive` (or run `git submodule update --init`).
+- **Default theme `blue-future`.** A custom TimerPi theme will be designed later. An earlier local `timerpi` theme is shelved; it is kept only on the branch `timerpi-theme-local` inside the old dev box's clone.
 - **Default theme:** `blue-future` (`config.DefaultTheme`), changeable at `/settings` or `POST /api/theme`. Every page server-renders `html[data-theme]` and the default bundle link. `theme.js` applies a browser-local pick (`localStorage timerpi.theme`) or an operator-pushed per-screen theme, and retargets icon sprites to `/ftl/dist/icons/<theme>.svg`.
 - **Rule:** new UI uses ftl-themes component classes and tokens. `timerpi.css` carries layout only.
 
@@ -177,18 +177,21 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 
 ## 12. Static assets and cache-busting
 
-`Cache-Control: no-cache` is sent on everything. JS/CSS are loaded as
-**versioned file copies** (`timerpi.v61.js`, `board.v61.js`,
-`timerpi.v61.css`, …) produced by `tools/bump-assets.sh`. `registerStatic` also
-strips `/(css|src|img)/vN/` path segments for the lock/login pages. Stale
-`v59`/`v60` copies remain in `public/`; see STATUS cleanup C4.
+`Cache-Control: no-cache` is sent on everything. Templates link JS/CSS
+through the `asset` template func (`views/assets.go`):
+`{{asset "/src/timerpi.js"}}` becomes `/src/v<rev>/timerpi.js`. `<rev>` is a
+hash of `public/src` + `public/css`, computed at startup. `registerStatic`
+strips the `/v<rev>/` segment. The revision is a path segment, so relative
+ES-module imports (`./mesh.js`) inherit it, and query-ignoring caches still
+see new URLs after an update. There are no versioned file copies and no bump
+script. Restart the server after JS/CSS edits.
 
 ## 13. Deployment shape
 
 | Target | How |
 |---|---|
 | Dev | `make run`. Port 8080, data in `./data` |
-| Linux server / Pi | `make build` (or `build-arm64`), `timerpi.service`. Data in `/var/lib/timerpi`. Port via `CAPACITIMER_HTTP_PORT` (legacy name; see STATUS C1) |
+| Linux server / Pi | `make build` (or `build-arm64`), `timerpi.service`. Data in `/var/lib/timerpi`. Port via `TIMERPI_HTTP_PORT` |
 | Screens | Any browser in kiosk mode pointed at `/d/`. The Pi's own HDMI can instead run the native DRM countdown (`TIMERPI_DISPLAY`) |
 
 Runbooks: [OPS.md](OPS.md), [PI-DEPLOY.md](PI-DEPLOY.md), [HW-DRILLS.md](HW-DRILLS.md).

@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"timerpi/config"
+	"timerpi/views"
 )
 
 // authExempt reports whether a path may pass without proof of identity.
@@ -101,12 +102,6 @@ func requestAuthed(c *gin.Context) bool {
 	user, pw, ok := c.Request.BasicAuth()
 	return ok && config.CheckPassword(pw) && strings.EqualFold(user, "operator")
 }
-
-// assetsRev is the current PATH revision for static assets: templates emit
-// /css/<rev>/…, /src/<rev>/… and the NoRoute rewriter maps it back to the
-// public/ tree. Bump on every CSS/JS change (one string + the template sed);
-// older rev paths keep resolving so cached pages never 404.
-const assetsRev = "v61"
 
 // registerAuth mounts the login round-trip and the password setter.// Routes registered here are intentionally NOT in any tests' page lists —
 // they are the first lines of defense, not page furniture.
@@ -246,7 +241,7 @@ func loginPageHTML(next string) string {
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>TimerPi — operator login</title>` +
 		`<link rel="stylesheet" href="/ftl/dist/blue-future.css">` +
-		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v61.css"></head>` +
+		`<link rel="stylesheet" href="` + views.Asset("/css/timerpi.css") + `"></head>` +
 		`<body class="app"><main class="main" style="max-width:26rem;margin:8vh auto;padding:0 4vw">` +
 		`<h1>OPERATOR LOGIN</h1>` +
 		`<p class="text-muted">This appliance has an operator password. The stage display (` +

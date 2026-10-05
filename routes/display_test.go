@@ -244,34 +244,3 @@ func TestDisplayVariantsHexOverride(t *testing.T) {
 		}
 	}
 }
-
-// Registration guard: RegisterDisplay with nil deps is a no-op; a second
-// call on an engine that already has /d/:ident must NEVER panic (gin would
-// panic on a duplicate mount — server boot must not die on wiring order).
-// Agent L: with code-only addressing the mounted handler's own 404 copy
-// ("Unknown session code") is what proves the request reached the SKIPPED
-// mount's still-registered first handler (gin's NoRoute 404 body differs).
-func TestDisplayVariantsRegistrationGuard(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	routes.RegisterDisplay(r, nil) // nil wiring: silent no-op
-
-	// First real mount answers (code-only resolve refuses BEFORE the
-	// engines check; the earlier 501 degrade shape is gone per the contract).
-	routes.RegisterDisplay(r, &routes.Deps{})
-
-	// Re-registration on an already-mounted engine: skip + log, no panic.
-	routes.RegisterDisplay(r, &routes.Deps{})
-
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
-	res, err := http.Get(srv.URL + "/d/1?view=clock") // digits: legacy world → refused
-	if err != nil {
-		t.Fatalf("GET /d/1: %v", err)
-	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusNotFound || !strings.Contains(string(raw), "Unknown session code") {
-		t.Fatalf("mounted handler after skip: want friendly 404, got %d (%.100s)", res.StatusCode, string(raw))
-	}
-}

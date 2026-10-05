@@ -1,18 +1,15 @@
-// Package routes — display.go: venue display-variant boards (Agent J).
+// Package routes — display.go: screen pages under /d/.
 //
-// One screen URL, dispatched on ?view= (contract addendum documented in
-// reviews/NOTES-display.md; templates live in templates/display_variants.html
-// + templates/fragments/d-*.html, all owned here):
-//
-//	GET /d/:ident                   → fullscreen stage (Fix-1's display.html;
-//	                                  thin passthrough of pages.go's body)
+//	GET /d/                         → READY card; registers in the waiting room
+//	GET /d/:ident                   → fullscreen stage (templates/display.html)
 //	GET /d/:ident?view=next         → NEXT-UP board (+ time-until card)
 //	GET /d/:ident?view=daysheet     → whole-day schedule table (printable)
 //	GET /d/:ident?view=clock        → lobby/pause filler clock
+//	GET /d/:ident?view=board        → layout board (routes/boards.go)
 //	GET /d/:ident?view=stage        → 302 to the canonical bare URL
 //
-// Per-screen quirks (query only, VALIDATED HERE, applied by the template as
-// scoped CSS vars / body data — no shared JS involvement):
+// Per-screen quirks (query only, validated here, applied by the template as
+// scoped CSS vars / body data):
 //
 //	?accent=%237C3AED   hex only (#hex or bare hex, 3/6 digits) → --tp-accent
 //	?bg=%23000000       hex only → --tp-bg
@@ -21,23 +18,10 @@
 //
 // Bad hex answers 400; screens bookmark the URL so a typo must not serve a
 // board that silently ignores the override.
-//
-// CONSOLIDATION SEAM (one line — see reviews/NOTES-display.md): routes.New
-// must drop pages.go's `r.GET("/d/:ident", displayPage(d))` and add
-// `RegisterDisplay(r, d)` after registerAPI(r, d). Until then this handler
-// is exercised by routes/display_test.go + throwaway instances only. The
-// registration is guarded: when /d/:ident is already mounted it logs and
-// SKIPS (gin panics on duplicate registration — never let an integration
-// order flip blow up the server boot).
-//
-// The inline client for the variant boards is display_variants.html's own
-// module (imports public/src/engine.js read-only for client-parity math);
-// shared JS in public/src/*.js is untouched.
 package routes
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,24 +42,11 @@ const (
 	defaultStage = ""      // bare URL default = the existing fullscreen timer
 )
 
-// RegisterDisplay mounts GET /d/:ident with the view dispatch above. See
-// the package doc block for the one-line consolidation seam. Agent L
-// (scope change): the path param is :ident — share CODE only (matching
-// pages.go's registration keeps gin's route tree one-wildcard-safe; a
-// differing name here would panic Register). Resolution is code-only via
-// Deps.resolveIdent.
+// RegisterDisplay mounts the /d/ screen routes. :ident is a share code
+// only (Deps.resolveIdent); numeric ids 404.
 func RegisterDisplay(r gin.IRouter, d *Deps) {
 	if d == nil {
 		return
-	}
-	if eng, ok := r.(*gin.Engine); ok {
-		for _, ri := range eng.Routes() {
-			if ri.Method == http.MethodGet && ri.Path == "/d/:ident" {
-				log.Printf("routes: /d/:ident already registered (pages.go displayPage); " +
-					"RegisterDisplay skipped — consolidation must swap the pages.go line per reviews/NOTES-display.md")
-				return
-			}
-		}
 	}
 	r.GET("/d/:ident", d.displayVariants)
 	// PLAN §11.3 phase 1: /d/ with NO code — a walk-in display in ready
@@ -172,9 +143,6 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	}
 
 	if view == defaultStage {
-		// Stage passthrough: exactly pages.go displayPage's body (the stage
-		// template stays Fix-1's; consolidator may delete displayPage —
-		// this branch is then the WHOLE /d/ route).
 		data := views.ShowData(snap, d.now(), hostname())
 		data.Role = "display" // lands on <body data-role>
 		data.Nav = "display"

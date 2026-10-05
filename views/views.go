@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -634,7 +635,8 @@ type Set struct {
 func New(dir string) (*Set, error) {
 	s := &Set{}
 	root := os.DirFS(dir)
-	t, err := template.New("").ParseFS(root, "*.html", "fragments/*.html")
+	SetPublicDir(filepath.Join(filepath.Dir(dir), "public"))
+	t, err := template.New("").Funcs(template.FuncMap{"asset": Asset}).ParseFS(root, "*.html", "fragments/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("views: parsing templates in %s: %w", dir, err)
 	}

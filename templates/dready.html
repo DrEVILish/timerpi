@@ -28,8 +28,8 @@
 <!-- Unversioned on purpose: the appliance serves everything no-cache, and
      the reference must survive rev bumps without touching this template. -->
 <script type="module">
-  import { runWaiting } from '/src/waiting.js';
-  import { screenName } from '/src/mesh.js';
+  import { runWaiting } from '{{asset "/src/waiting.js"}}';
+  import { screenName } from '{{asset "/src/mesh.js"}}';
   runWaiting();
   // The operator identifies THIS screen in the waiting list by name.
   document.getElementById('tp-ready-name').textContent = screenName();

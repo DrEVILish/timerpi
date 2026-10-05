@@ -58,6 +58,6 @@ The previous docs became append-only logs: three trackers and many handoff notes
 | Dev | 8080 (`make run`) | `./data` |
 | Appliance | 80 (`timerpi.service`) | `/var/lib/timerpi` |
 
-Env: `TIMERPI_DATA_DIR`, `CAPACITIMER_HTTP_PORT` (legacy name; STATUS C1), `TIMERPI_DISPLAY` / `TIMERPI_FBDEV` / `TIMERPI_DISPLAY_SHOW` (native renderer), `TIMERPI_HW_TEST` (hardware tests), `TIMERPI_LAN_ADDR`, `TP_LOAD=1` (audience load harness).
+Env: `TIMERPI_DATA_DIR`, `TIMERPI_HTTP_PORT` (legacy `CAPACITIMER_HTTP_PORT` still honoured), `TIMERPI_DISPLAY` / `TIMERPI_FBDEV` / `TIMERPI_DISPLAY_SHOW` (native renderer), `TIMERPI_HW_TEST` (hardware tests), `TIMERPI_LAN_ADDR`, `TP_LOAD=1` (audience load harness).
 
 Reverse proxy and custom domains work by default (open Host guard). To lock an appliance to its domain, set `allowed_hosts` in `/var/lib/timerpi/config.json` and restart.

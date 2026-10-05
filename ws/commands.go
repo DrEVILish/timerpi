@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"timerpi/config"
 	"timerpi/oscbridge"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -108,8 +107,10 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		s.sendErr("audience is read-only (vote on the room's web page)")
 		return
 	}
-	if config.HasAuth() && s.role != "controls" {
-		s.sendErr("operator password required (role " + s.role + " is read-only while auth is on)")
+	// Screens (display role) are strictly read-side: they fan state in and
+	// relay P2P signals, but never mutate (STATUS B6).
+	if s.role != "controls" {
+		s.sendErr("role " + s.role + " is read-only")
 		return
 	}
 	args := map[string]any{}

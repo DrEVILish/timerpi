@@ -25,7 +25,8 @@ import (
 // working.
 type Config struct {
 	// HTTPPort is the single HTTP+WS port. Default 80; the
-	// CAPACITIMER_HTTP_PORT env var overrides it at launch.
+	// TIMERPI_HTTP_PORT env var overrides it at launch (legacy name
+	// CAPACITIMER_HTTP_PORT is still honoured as a fallback).
 	HTTPPort int `json:"http_port"`
 	// Title is the operator-facing show/site title shown in the UI.
 	Title string `json:"title,omitempty"`
@@ -92,7 +93,7 @@ func resolveDataDir(getenv func(string) string) string {
 func defaults(getenv func(string) string) Config {
 	var c Config
 	c.HTTPPort = defaultPort
-	if raw := getenv("CAPACITIMER_HTTP_PORT"); raw != "" {
+	if raw := portEnv(getenv); raw != "" {
 		if p, err := strconv.Atoi(raw); err == nil && p > 0 && p < 65536 {
 			c.HTTPPort = p
 		}
@@ -130,7 +131,7 @@ func LoadConfig() {
 	}
 
 	// Env overrides win over the file.
-	if raw := os.Getenv("CAPACITIMER_HTTP_PORT"); raw != "" {
+	if raw := portEnv(os.Getenv); raw != "" {
 		if p, err := strconv.Atoi(raw); err == nil && p > 0 && p < 65536 {
 			conf.HTTPPort = p
 		}
@@ -400,4 +401,13 @@ func SetAllowedHosts(raw string) error {
 // ConfigFilePath returns where config.json lives (for help text/UI).
 func ConfigFilePath() string {
 	return configFile(DataDir())
+}
+
+// portEnv reads the port override: TIMERPI_HTTP_PORT, else the legacy
+// CAPACITIMER_HTTP_PORT (older unit files still set it).
+func portEnv(getenv func(string) string) string {
+	if v := getenv("TIMERPI_HTTP_PORT"); v != "" {
+		return v
+	}
+	return getenv("CAPACITIMER_HTTP_PORT")
 }

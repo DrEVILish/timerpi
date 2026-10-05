@@ -1,5 +1,5 @@
 /**
- * TimerPi client mesh (ported from the Capacitimer P2P display mesh)
+ * TimerPi client mesh
  *
  * Manages a show connection for a browser client:
  *   - WebSocket to the TimerPi server (authoritative while reachable)

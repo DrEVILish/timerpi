@@ -25,7 +25,7 @@ Read in this order:
 | [PROTOCOL.md](PROTOCOL.md) | Wire contract: every route and WebSocket frame |
 | [AGENTS.md](AGENTS.md) | Rules for anyone (human or AI) changing this repo |
 | [docs/OPS.md](docs/OPS.md) · [docs/PI-DEPLOY.md](docs/PI-DEPLOY.md) · [docs/HW-DRILLS.md](docs/HW-DRILLS.md) | Run, deploy and prove on hardware |
-| [docs/OFFLINE-EDIT.md](docs/OFFLINE-EDIT.md) · [docs/TIMERPI-THEME-SPEC.md](docs/TIMERPI-THEME-SPEC.md) | Offline mesh editing spec · `timerpi` theme spec |
+| [docs/OFFLINE-EDIT.md](docs/OFFLINE-EDIT.md) · [docs/TIMERPI-THEME-SPEC.md](docs/TIMERPI-THEME-SPEC.md) | Offline mesh editing spec · shelved draft for a future custom theme |
 | [docs/archive/](docs/archive/README.md) | Historical notes. Not current |
 
 ## Quick start (development)
@@ -33,9 +33,8 @@ Read in this order:
 Requirements: Go 1.25, gcc (CGO for SQLite), git.
 
 ```sh
-git clone https://github.com/DrEVILish/timerpi.git && cd timerpi
-# Themes are NOT vendored or a submodule (see STATUS C2), so fetch them:
-git clone https://github.com/DrEVILish/ftl-themes.git third_party/ftl-themes
+git clone --recursive https://github.com/DrEVILish/timerpi.git && cd timerpi
+# (already cloned? run: git submodule update --init)
 make run            # http://localhost:8080, data in ./data
 make test           # go test ./...
 ```

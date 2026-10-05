@@ -310,7 +310,7 @@ func TestWSJoinAuthGate(t *testing.T) {
 		}
 		break
 	}
-	if cm["t"] != "err" || !strings.Contains(fmtStr(cm["message"]), "operator password") {
+	if cm["t"] != "err" || !strings.Contains(fmtStr(cm["message"]), "read-only") {
 		t.Fatalf("display cmd allowed: %+v", cm)
 	}
 }

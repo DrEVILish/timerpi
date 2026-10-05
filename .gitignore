@@ -1,5 +1,4 @@
 /data/
 /bin/
-/third_party/
 *.log
 nohup.out

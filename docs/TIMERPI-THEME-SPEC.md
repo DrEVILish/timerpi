@@ -1,3 +1,5 @@
+> **Shelved draft (2026-10-05).** `blue-future` is the TimerPi default theme. A custom TimerPi theme will be designed later, and this spec is input for that work, not a current requirement.
+
 # TimerPi Theme Spec
 
 > **Owner requirements (non-negotiable — read first).**
