@@ -934,6 +934,18 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 		c.String(http.StatusBadRequest, "qr needs a data payload")
 		return
 	}
+	// Share-panel payloads are relative ("/d/<code>") — expand to the
+	// request's absolute URL. X-Forwarded-Proto wins behind a TLS proxy
+	// (openresty blocks query paths that start with "/d/" — owner-round
+	// finding: the dashboard QR 403'd through the edge in that exact form).
+	if strings.HasPrefix(data, "/") {
+		scheme := "http"
+		if c.Request.Header.Get("X-Forwarded-Proto") == "https" ||
+			(c.Request.TLS != nil && c.Request.TLS.HandshakeComplete) {
+			scheme = "https"
+		}
+		data = scheme + "://" + c.Request.Host + data
+	}
 	if len(data) > 512 {
 		c.String(http.StatusBadRequest, "qr data too long (max 512 chars)")
 		return
