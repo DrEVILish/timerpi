@@ -254,6 +254,16 @@ func (h *Hub) register(s *session) bool {
 			}
 		}
 	}
+	// PLAN §11.5 owner round: EVERY joining session (boards + operators too,
+	// not just the audience lane) learns the on-air interaction immediately —
+	// a results board reloading mid-vote must show the bars without waiting
+	// for the next vote (results polls block NEW votes, so the delta would
+	// never fire; owner-visible bug: reload ≠ bars).
+	if h.pollsFnFor() != nil {
+		if pv, perr := h.pollsFnFor()(s.showID); perr == nil {
+			s.sendFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+		}
+	}
 	h.logf("ws: %s joined show %d as %s (%d connected)", s.id, s.showID, s.role, everyone.len())
 	return true
 }

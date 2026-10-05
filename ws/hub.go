@@ -739,7 +739,6 @@ func (h *Hub) BroadcastPoll(showID int64) {
 		targets = append(targets, s2)
 	}
 	h.mu.Unlock()
-	h.logf("DBG BroadcastPoll: frame=%d bytes targets=%d", len(frame), len(targets))
 	for _, s2 := range targets {
 		s2.offer(frame)
 	}
