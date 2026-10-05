@@ -11,8 +11,7 @@
 {{define "page-home"}}
 <div class="stack is-gap-l">
   <section class="hero tp-home-hero">
-    <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="56" height="56"></span>
-    <h1>TimerPi</h1>
+    <span class="tp-brand"><img src="/img/timerpi.svg" alt="TimerPi" width="72" height="72"></span>
     <!-- Fix-3: hero copy pass — accuracy: appliance reachability is <hostname>.local (mDNS), same name the display status line carries. -->
     <p class="hero-lede">
       One cue list for the whole day, run as a web appliance. Operator dashboard,
@@ -86,7 +85,10 @@
         “READY FOR SHOW OPERATOR” until you capture it into a show.
       </p>
       <div class="cluster" style="padding:0 .75rem .75rem">
-        <a class="btn tp-btn-lg" href="/d/" target="_blank" rel="opener">Open as display</a>
+        <a class="btn tp-btn-lg" href="/d/" target="_blank" rel="opener" data-kiosk title="Open a ready display — capture it into a show from the Screens gallery">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Open Display
+        </a>
       </div>
     </section>
 

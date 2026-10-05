@@ -59,15 +59,22 @@
 {{define "appbar"}}
 <header class="app-bar">
   <span class="nav-brand tp-brand">
-    <img src="/img/timerpi.svg" alt="" width="28" height="28" style="vertical-align:-6px">
-    TimerPi
+    <img src="/img/timerpi.svg" alt="TimerPi" width="28" height="28" style="vertical-align:-6px">
   </span>
   <nav class="nav">
-    <a class="nav-item{{if eq .Nav "home"}} is-active{{end}}" href="/">Shows</a>
+    {{if eq .Nav "home"}}<a class="nav-item is-active" href="/">Shows</a>
+    {{else}}<a class="nav-item" href="/" title="Back to the show list">Back to Shows</a>{{end}}
     {{if .Show.Code}}
     <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
-    <a class="nav-item{{if eq .Nav "display"}} is-active{{end}}" href="/d/{{.Show.Code}}" target="_blank" rel="opener" data-kiosk>Display</a>
     <a class="nav-item{{if eq .Nav "screens"}} is-active{{end}}" href="/screens/{{.Show.Code}}">Screens</a>
+    {{end}}
+    {{if .Show.Code}}
+    <!-- The one display affordance: same entity as the home page's Open
+         Display (a kiosk window onto the show's stage). -->
+    <a class="nav-item{{if eq .Nav "display"}} is-active{{end}}" href="/d/{{.Show.Code}}" target="_blank" rel="opener" data-kiosk title="Open this show's display">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Open Display
+    </a>
     {{end}}
   </nav>
   <div class="cluster push">

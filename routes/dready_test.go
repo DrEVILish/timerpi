@@ -43,10 +43,46 @@ func TestHomePageOpenDisplay(t *testing.T) {
 		t.Fatalf("home: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`href="/d/"`, `Open as display`, `target="_blank"`} {
+	for _, sub := range []string{`href="/d/"`, `Open Display`, `data-kiosk`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("home missing %q", sub)
 		}
+	}
+}
+
+// The home Open Display button and the dashboard nav Display link are the
+// SAME entity (one kiosk-window affordance, one display surface family):
+// the dashboard nav says "Back to Shows" (you are inside a show) and its
+// display link reads "Open Display" with the monitor icon; /d/ carries the
+// tap-to-fullscreen contract every display page has.
+func TestNavDisplayEntity(t *testing.T) {
+	ts := newAPITest(t)
+	code, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
+	if code != 200 {
+		t.Fatalf("dashboard: %d", code)
+	}
+	s := string(body)
+	for _, sub := range []string{`Back to Shows`, `Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`} {
+		if !strings.Contains(s, sub) {
+			t.Errorf("dashboard nav missing %q", sub)
+		}
+	}
+	// On the home page itself the nav still reads plain "Shows" (you ARE
+	// there) — no "Back to Shows" on home.
+	code, body = ts.call("GET", "/", nil, "")
+	if code != 200 {
+		t.Fatalf("home: %d", code)
+	}
+	if strings.Contains(string(body), "Back to Shows") {
+		t.Error("home nav says Back to Shows on the shows page itself")
+	}
+	if !strings.Contains(string(body), `Open Display`) {
+		t.Error("home missing Open Display")
+	}
+	// /d/ keeps the fullscreen contract.
+	code, body = ts.call("GET", "/d/", nil, "")
+	if code != 200 || !strings.Contains(string(body), "requestFullscreen") {
+		t.Fatalf("/d/ fullscreen contract missing: %d", code)
 	}
 }
 
