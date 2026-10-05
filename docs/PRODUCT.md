@@ -52,7 +52,6 @@ Every screen is styled by **ftl-themes** and animates items in and out.
 | **Moderator** | Tablet or laptop | Home page → type the **event code** → **pick their room** from the list → type the room's **moderator password** *if one is set* | Everything for **their room only**: run the timer, edit sessions, stage messages, create/push/moderate interactions, manage the room's screens. Cannot see or change other rooms |
 | **Audience** | Own phone or tablet (iPhone, Android) | Scan the room's QR code (`/a/<code>`). No login, no app | Vote, answer, ask, upvote, submit words/ideas, but only on what is pushed to Audience |
 | **Screen** | TV, projector, kiosk | Open `/d/` and get captured by a moderator or the SuperOperator | Nothing. Shows its layout |
-| **Device admin** *(appliance owner)* | Any | Optional device password | Appliance-level settings only: hostname, network, mesh, OSC, default theme. Not event content |
 
 **Rules**
 
@@ -60,6 +59,7 @@ Every screen is styled by **ftl-themes** and animates items in and out.
 - The moderator password is **optional, per room**, and set by the SuperOperator. With no password, the event code plus the room pick is enough.
 - The supervisor password is **required** at event creation.
 - No personal accounts and no personal data. Codes and passwords are the credentials.
+- Box-level settings (hostname, network, OSC, default theme) need the SuperOperator password of any event on the box. They are open while no event exists.
 
 ### 3.2 Display types
 
@@ -106,6 +106,7 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 - **S6** Screens never show operator chrome. Editing happens only in the operator's preview.
 - **S7** **Rotation**: a per-screen setting of 0/90/180/270°. The page rotates its whole layout in software, so a landscape TV hung portrait works without OS configuration.
 - **S8** Event-level walk-in displays aggregate **all rooms** of the event (current session per room, full-day schedule per room, event map). They are live, not page reloads.
+- **S9** Each screen has **its own theme and its own layout**, chosen independently. A screen's name can be edited **inline by double-click / double-tap** wherever operators see it (screens list, previews).
 
 ### 4.4 Audience interaction (Slido-style)
 
@@ -205,9 +206,8 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-05 | **htmx 4**, vendored locally. |
 | 2026-10-05 | Three display types: Audience, Walk-in (portrait, rotation setting), Presenter. Device classes: audience = phones/tablets, moderator = tablet/laptop, SuperOperator = laptop. |
 
-### Assumptions to confirm
-
-- **AS1** "Moderator password" is set **per room** by the SuperOperator, with a one-click "apply to all rooms". If you meant one password for the whole event, the flow is unchanged; only the settings screen changes.
-- **AS2** The appliance-level **device password** stays, as a separate optional lock for device settings. If you'd rather drop it, the supervisor password of any event would *not* grant device settings.
-- **AS3** **Zones** (today's grouping label) are replaced by the event: the event walk-in shows all rooms of the event. Sub-areas (floors) can come back later as a filter.
-- **AS4** Results follow the targets: "Show results" reveals results wherever the item is currently shown.
+| 2026-10-05 | Passwords: **one supervisor password per event** (SuperOperator/admin) and **one optional password per room** (moderator). |
+| 2026-10-05 | **No separate appliance password.** Box settings (hostname, network, OSC, default theme) need the SuperOperator password of any event on the box, and stay open while the box holds no events. |
+| 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
+| 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
+| 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

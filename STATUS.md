@@ -58,6 +58,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | S6 no chrome on screens | ⚠️ | B5 |
 | S7 rotation | ❌ | N4 |
 | S8 live event walk-in | ❌ | N7 |
+| S9 per-screen theme + layout, inline rename | 🟡 | Theme + layout per screen ✅. Rename is a button/prompt, not inline double-click (N4) |
 | A1 kinds | ⚠️ | Poll ✅ · Word cloud ✅ · Quiz ⚠️ B2 · Q&A ⚠️ N6 · Ideas ⚠️ B4 |
 | A2 room-scoped | ✅ | |
 | A3 hidden until pushed | ✅ | Absent from the payload |
@@ -97,13 +98,13 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | ID | Work | Spec | Notes |
 |---|---|---|---|
-| **N1** | **Event model.** `events` table (code, name, supervisor password hash, theme, map asset, day list), with `shows` becoming rooms (`event_id`, room name, position). Moderator password = today's show passphrase, now set by the SuperOperator. Migrate each existing show into a one-room event. Event-level export/import wraps the v2 room bundles | E1, E3, E4, AS1 | Keep room codes as the short address for `/a/` and `/d/` QR URLs |
+| **N1** | **Event model.** `events` table (code, name, supervisor password hash, theme, map asset, day list), with `shows` becoming rooms (`event_id`, room name, position). Moderator password = today's show passphrase, now set by the SuperOperator. Migrate each existing show into a one-room event. Event-level export/import wraps the v2 room bundles | E1, E3, E4 | Keep room codes as the short address for `/a/` and `/d/` QR URLs |
 | **N2** | **Home page join flow:** create event (name + supervisor password + rooms) · enter event code → room list → optional moderator password → moderator view · "SuperOperator" → supervisor password | E1, E2 | Replaces the room-code-first home page |
-| **N3** | **SuperOperator = event admin.** Event dashboard: every room's live card, links into each room with full rights, add/edit/remove rooms, moderator passwords, event-wide screens view, event blackout, map, theme. Retire device-password-as-super | E3, S4, T7 | Device password stays for appliance settings only (AS2) |
-| **N4** | **Display types + rotation.** Screens registry gets `type` (audience/walkin/presenter) and `rotation` (0/90/180/270). Capture modal sets both. Rotation is a CSS transform of the whole layout. Templates are grouped by type, with portrait walk-in variants. The editor previews rotation | S1–S3, S7, §3.2 | |
-| **N5** | **Two push targets.** Interaction gains `toAudience` and `toPresenter` flags. `results` applies to wherever it is shown. The audience read and phone frames carry audience-targeted items only. Boards render by screen type (audience displays ← audience target; presenter displays ← presenter target). The dashboard gets **Show to Audience**, **Show to Presenter**, **Results** and **Hide** | A4, A5, AS4 | Replaces single-focus `open`. Keep "one on-air item per target per room" |
+| **N3** | **SuperOperator = event admin.** Event dashboard: every room's live card, links into each room with full rights, add/edit/remove rooms, moderator passwords, event-wide screens view, event blackout, map, theme. Retire the appliance password (PRODUCT §7) | E3, S4, T7 | The appliance password is removed. Box settings need any event's supervisor password, and stay open with no events |
+| **N4** | **Display types + rotation.** Screens registry gets `type` (audience/walkin/presenter) and `rotation` (0/90/180/270). Capture modal sets both. Rotation is a CSS transform of the whole layout. Templates are grouped by type, with portrait walk-in variants. The editor previews rotation. Screen names rename inline by double-click/double-tap (S9) | S1–S3, S7, §3.2 | |
+| **N5** | **Two push targets.** Interaction gains `toAudience` and `toPresenter` flags. `results` applies to wherever it is shown. The audience read and phone frames carry audience-targeted items only. Boards render by screen type (audience displays ← audience target; presenter displays ← presenter target). The dashboard gets **Show to Audience**, **Show to Presenter**, **Results** and **Hide** | A4, A5 | Replaces single-focus `open`. Keep "one on-air item per target per room" |
 | **N6** | **Q&A wall + spotlight.** Submitted questions become children of the open Q&A item (like words), with status `pending → approved → answered` or `dismissed`, plus upvotes per question. New tiles: `qa-wall` (approved, by upvotes) and `spotlight`. Moderator: approve / spotlight / mark answered / dismiss | A7 | Fixes today's "each question replaces the on-air item" |
-| **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8, AS3 | |
+| **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8 | |
 | **N8** | **htmx 4.** Vendor `htmx.org@4.0.0` locally (`public/src/htmx.js`, no CDN). Remove 2.0.11 and the unused `htmx-ext-ws.js`. Port the existing `hx-` usage (setup, settings, import form) to htmx 4 semantics. New server-rendered UI prefers htmx 4 over hand-written fetch code where it fits | H2, PRODUCT §7 | htmx 4 changes attribute inheritance and event names. Re-test every `hx-` site |
 | **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |
 | **N10** | **Day-ready model.** Sessions carry `day` (default = event's day 1). All queries are scoped by day. No UI yet | M2 | Do it inside N1's migration |
@@ -122,7 +123,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **C7** | Stale comments: `audience.html` calls itself a "stub", and the `/health` comment claims per-role counts. |
 | **C8** | Write `docs/UI-CONTRACT.md` (element ids, `data-state`, oob targets, ftl vocabulary) to replace the archived CONTRACT-UI. |
 | **C9** | `templates/`, `public/` and ftl-themes are read from disk, not embedded. Embed them, or add a `make dist` tarball. |
-| **C10** | The zone concept goes away with N1/N7 (AS3). Remove `shows.zone`, `/api/shows/:ident/zone`, `/api/zone-map` and the `/super?zone=` filter once events land. Migrate zone maps to event maps. |
+| **C10** | The zone concept goes away with N1/N7 . Remove `shows.zone`, `/api/shows/:ident/zone`, `/api/zone-map` and the `/super?zone=` filter once events land. Migrate zone maps to event maps. |
 
 ### 4.4 Hardware / field proof
 
@@ -147,4 +148,4 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 ## 5. Open questions
 
-The assumptions AS1–AS4 are in PRODUCT §7. Everything else from the first round is answered.
+None. All owner questions are answered (PRODUCT §7).

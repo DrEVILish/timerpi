@@ -225,7 +225,7 @@ screens     + type audience|walkin|presenter, + rotation 0|90|180|270,
 |---|---|
 | SuperOperator | Event-scoped session from the supervisor password. Grants every room of that event, including content |
 | Moderator | Room-scoped session from the event code + room pick + optional moderator password |
-| Device password | Narrows to appliance settings only (`/settings`) |
+| Appliance password | **Removed.** `/settings` needs any event's supervisor session; it is open while no events exist |
 
 **Hub**
 
