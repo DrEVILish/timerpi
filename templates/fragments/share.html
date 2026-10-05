@@ -9,7 +9,7 @@
     <img id="share-qr" alt="Display QR code" width="160" height="160"
          {{if .Share.Code}}data-show="{{.Share.Code}}"
          data-src-tpl="/api/shows/{{.Share.Code}}/qr?size=320&data=__DATA__"
-         src="/api/shows/{{.Share.Code}}/qr?size=320&data=/d/{{.Share.Code}}"
+         src="/api/shows/{{.Share.Code}}/qr?size=320&data=%2Fd%2F{{.Share.Code}}"
          {{end}}>
     <div class="stack is-gap-2xs">
       <span class="label">Session code</span>
