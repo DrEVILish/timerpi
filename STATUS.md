@@ -68,9 +68,9 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | A7 Q&A wall / spotlight / dismiss / answered | ✅ | Plus auto-approve per item |
 | A8 per-item moderation | ✅ | Approve / dismiss per entry; word approval covers identical words |
 | A9 QR join, one vote per device | ✅ | |
-| A10 1,000 per room / 200 on a Pi | 🟡 | 1,000 passes in the dev container (p95 24 ms). Not on a Pi or real Wi-Fi (H5) |
+| A10 1,000 per room / 200 on a Pi | 🟡 | Dev container: 1,000 phones, p95 30 ms, 1,000/1,000 join storm; poll broadcasts coalesced (≤4/s per room) so vote bursts do not fan out per vote. Not yet on a Pi or real Wi-Fi (H5) |
 | L1 ftl-themes, default `blue-future` | ✅ | Default already `blue-future`. ftl-themes fetch not reproducible (C2) |
-| L2–L3 animation everywhere, operator-set | ⚠️ | Only poll/qa/wordcloud tiles (N9) |
+| L2–L3 animation everywhere, operator-set | ✅ | N9 |
 | L4 reduced motion on phones only | ✅ | |
 | L5 viewport sizing | ✅ | Layouts are canvases that fill the screen; tile text scales with the tile (container query units), so 720p/4K/portrait all work |
 | L6 device-class UX (tablet moderator) | 🟡 | N11 |
@@ -106,9 +106,9 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N6** | ✅ Done 2026-10-05: entries with pending/approved/answered/dismissed, upvotes, spotlight, auto-approve; moderator panel rebuilt (`moderate.js`) | A7 | |
 | **N7** | ✅ Done 2026-10-05: `rooms` + `eventschedule` tiles, event map default on the map tile, `/api/shows/:room/walkin` feed | S8 | |
 | **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
-| **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |
+| **N9** | ✅ Done 2026-10-05: layout default animation (`anim`/`animMS`) + per-tile override for every content tile, set in the editor; content tiles animate on change | L2, L3 | |
 | **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
-| **N11** | **Device-class UX.** Moderator view is touch-first for tablets (44 px targets, no hover-only actions). SuperOperator view is laptop-first. Audience page is phone-first | L6 | |
+| **N11** | 🟡 Room page reorganised into Run · Audience · Setup tabs (tablet-friendly, wraps); touch targets ≥44 px on coarse pointers on the new pages. A dedicated tablet layout for the Run tab is still open | L6 | |
 
 ### 4.3 Cleanup (hanging leftovers)
 
@@ -119,9 +119,9 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **C3** | ✅ Done: dead `displayPage`, the stale registration guard, `htmx-ext-ws.js` and the `/frag/shows` comments are removed. (`screen` is a valid join role, so the `mesh.js` check stays.) |
 | **C4** | ✅ Done: one scheme, the `asset` template func with a content-hash path segment (ARCHITECTURE §12). The versioned copies and `bump-assets.sh` are deleted. |
 | **C5** | 🟡 Template presets now come from the server catalog. `board.js` still carries a `FACTORY_DEFAULT` copy for "Reset". |
-| **C6** | Code comments cite archived or never-existing docs (`PLAN §11`, `NOTES-board`, `reviews/UX1-…`). Repoint them. |
-| **C7** | Stale comments: `audience.html` calls itself a "stub", and the `/health` comment claims per-role counts. |
-| **C8** | Write `docs/UI-CONTRACT.md` (element ids, `data-state`, oob targets, ftl vocabulary) to replace the archived CONTRACT-UI. |
+| **C6** | ✅ References to files that never existed are removed. Citations of `PLAN §…`, `CONTRACT-UI`, `NOTES-board` resolve via `docs/archive/README.md`. |
+| **C7** | ✅ Done. |
+| **C8** | ✅ `docs/UI-CONTRACT.md`. |
 | **C9** | `templates/`, `public/` and ftl-themes are read from disk, not embedded. Embed them, or add a `make dist` tarball. |
 | **C10** | The zone concept goes away with N1/N7 . Remove `shows.zone`, `/api/shows/:ident/zone`, `/api/zone-map` and the `/super?zone=` filter once events land. Migrate zone maps to event maps. |
 

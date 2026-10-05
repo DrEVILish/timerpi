@@ -55,9 +55,8 @@
   </a>
   <nav class="nav">
     {{if .Event.Code}}<a class="nav-item tp-crumb" href="/e/{{.Event.Code}}" title="All rooms of this event">{{.Event.Name}} ›</a>{{end}}
-    <span class="nav-item tp-bar-title">{{.Show.Title}}</span>
-    <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
-    <a class="nav-item{{if eq .Nav "screens"}} is-active{{end}}" href="/screens/{{.Show.Code}}">Screens</a>
+    <a class="nav-item tp-bar-title{{if eq .Nav "screens"}}{{else}} is-active{{end}}" href="/c/{{.Show.Code}}" title="This room's dashboard">{{.Show.Title}}</a>
+    {{if eq .Nav "screens"}}<span class="nav-item is-active">Screens</span>{{end}}
     {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
   </nav>
   <div class="cluster push">
@@ -117,7 +116,7 @@
 {{template "appbar" .}}
 <aside class="app-rail" aria-hidden="true"></aside>
 <main class="app-main">
-{{- /* PSEUDOPATCH (routes agent, see NOTES-routes.md): html/template only
+{{- /* PSEUDOPATCH (routes agent, see (an old handoff note, not kept)): html/template only
        accepts CONSTANT template names for {{template}} — the previous
        {{template (printf "page-%s" .Page) .}} line failed at PARSE time.
        Same dispatch, constant names: Page ∈ home|dashboard. */ -}}

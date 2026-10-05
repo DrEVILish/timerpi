@@ -130,9 +130,10 @@
    rows) — inside the compact header clusters the operator form must stay on
    ONE line (label + duration + Add; day time + Save), or it re-stacks and
    the header eats three rows. */
+.tp-daybar-block #tp-day-start-form { flex-wrap: nowrap; }
+.tp-cuelist-head form[data-cmd="cueAdd"] { flex-wrap: wrap; }
 .tp-cuelist-head form[data-cmd="cueAdd"],
 .tp-daybar-block #tp-day-start-form {
-  flex-wrap: nowrap;
   align-items: center;
 }
 .tp-cuelist-head form[data-cmd="cueAdd"] .input,

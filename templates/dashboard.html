@@ -12,8 +12,14 @@
   tight grid instead of bar strip + orphan space under the table.
 */ -}}
 {{define "page-dashboard"}}
-<div class="stack is-gap-s" style="min-height:100%">
-  <div class="tp-dash">
+<div class="stack is-gap-s tp-room" style="min-height:100%">
+  <nav class="tabs tp-room-tabs" role="tablist" aria-label="Room views">
+    <button class="tab is-active" role="tab" data-tab="run" aria-selected="true">Run</button>
+    <button class="tab" role="tab" data-tab="audience" aria-selected="false">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></button>
+    <button class="tab" role="tab" data-tab="setup" aria-selected="false">Setup</button>
+    <a class="tab" href="/screens/{{.Show.Code}}">Screens</a>
+  </nav>
+  <div class="tp-dash" data-panel="run">
 
     {{template "frag-current" .}}
 
@@ -78,42 +84,39 @@
     <aside class="tp-dash-right stack">
       {{template "frag-messages" .}}
 
-      {{template "frag-share" .}}
 
+
+
+    </aside>
+  </div>
+
+  <div class="tp-aud-layout" data-panel="audience" hidden>
       <!-- Audience interaction (PRODUCT §4.4): items are created hidden,
            then shown to the Audience (phones + audience screens) and/or
            the Presenter (DSM). Rendered by /src/moderate.js. -->
-      <section class="panel" id="tp-aud-panel">
+      <section class="panel tp-aud-main" id="tp-aud-panel">
         <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span>
           <button class="btn btn-sm btn-primary push" type="button" id="tp-aud-new">+ New item</button></div>
         <div class="tp-onair" id="tp-aud-onair"></div>
         <div id="tp-aud-items" class="stack is-gap-s"></div>
       </section>
+      <aside class="stack">
+      {{template "frag-share" .}}
+      </aside>
+  </div>
 
-      <!-- F1/F2: the screens system — every connected display tab self-registers
-           a stable name; assign theme/board per screen, match one to all,
-           save/apply presets (server-side, exportable/importable JSON). -->
-      <section class="panel" id="screens-panel">
-        <div class="panel-header">Screens
-          <span class="badge push" id="tp-screens-count"></span>
-          <a class="badge" href="/screens/{{.Show.Code}}">Gallery →</a>
-        </div>
-        <div id="tp-screens" class="stack is-gap-2xs">
-          <p class="text-muted">Open a display page to register a screen.</p>
-        </div>
-        <div class="stack is-gap-2xs" style="margin-top:.75rem">
-          <span class="label">Presets</span>
-          <div id="tp-presets" class="stack is-gap-2xs"></div>
-          <form id="tp-preset-save" class="cluster is-gap-2xs">
-            <input class="input input-sm" name="name" placeholder="Preset name" aria-label="Preset name" required style="min-width:0">
-            <button class="btn btn-sm" type="submit">Save current</button>
-          </form>
-          <label class="btn btn-sm btn-ghost" style="cursor:pointer">Import preset
-            <input type="file" id="tp-preset-import" accept="application/json,.json" hidden>
-          </label>
-        </div>
+  <div class="tp-setup-grid" data-panel="setup" hidden>
+      <section class="panel">
+        <div class="panel-header">Duplicate this room</div>
+    <div class="stack is-gap-2xs">
+      <form id="show-clone-form" class="cluster is-gap-2xs">
+        <input class="input input-sm" type="text" id="show-clone-title" autocomplete="off"
+               placeholder="New room name (optional)" aria-label="New room name (optional)" style="min-width:0">
+        <button type="submit" class="btn btn-sm" title="Copy this running order into a new room of the event">Duplicate</button>
+      </form>
+      <span class="field-hint">Same sessions, notes and day start — a new room, stopped, without a password.</span>
+    </div>
       </section>
-
       <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
            on drop); the hint names the gesture so the affordance is obvious
            before anything is dragged. -->
@@ -150,7 +153,29 @@
         </form>
         <div id="import-result" class="tp-fragment" aria-live="polite"></div>
       </section>
-    </aside>
+      <!-- F1/F2: the screens system — every connected display tab self-registers
+           a stable name; assign theme/board per screen, match one to all,
+           save/apply presets (server-side, exportable/importable JSON). -->
+      <section class="panel" id="screens-panel">
+        <div class="panel-header">Screens
+          <span class="badge push" id="tp-screens-count"></span>
+          <a class="badge" href="/screens/{{.Show.Code}}">Gallery →</a>
+        </div>
+        <div id="tp-screens" class="stack is-gap-2xs">
+          <p class="text-muted">Open a display page to register a screen.</p>
+        </div>
+        <div class="stack is-gap-2xs" style="margin-top:.75rem">
+          <span class="label">Presets</span>
+          <div id="tp-presets" class="stack is-gap-2xs"></div>
+          <form id="tp-preset-save" class="cluster is-gap-2xs">
+            <input class="input input-sm" name="name" placeholder="Preset name" aria-label="Preset name" required style="min-width:0">
+            <button class="btn btn-sm" type="submit">Save current</button>
+          </form>
+          <label class="btn btn-sm btn-ghost" style="cursor:pointer">Import preset
+            <input type="file" id="tp-preset-import" accept="application/json,.json" hidden>
+          </label>
+        </div>
+      </section>
   </div>
 </div>
 

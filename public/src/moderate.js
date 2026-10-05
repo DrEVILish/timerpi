@@ -70,6 +70,13 @@ function render() {
     badge.textContent = totalPending ? `${totalPending} to review` : String(items.length);
     badge.classList.toggle('badge-accent', totalPending > 0);
   }
+  const tabBadge = document.getElementById('tp-aud-tabcount');
+  if (tabBadge) {
+    const live = items.filter((i) => i.toAudience || i.toPresenter).length;
+    tabBadge.hidden = !totalPending && !live;
+    tabBadge.textContent = totalPending ? `${totalPending} new` : 'live';
+    tabBadge.classList.toggle('badge-accent', totalPending > 0);
+  }
   const onAud = items.find((i) => i.toAudience);
   const onPre = items.find((i) => i.toPresenter);
   const air = document.getElementById('tp-aud-onair');

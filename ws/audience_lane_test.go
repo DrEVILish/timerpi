@@ -7,6 +7,7 @@ package ws
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"timerpi/timerpi"
 )
@@ -75,4 +76,41 @@ func TestAudienceLaneCappedSeparately(t *testing.T) {
 	}
 	// (Direct sh.aud access from the test races unregister's delete — the
 	// AudSessions counter above is the synchronized view.)
+}
+
+// A vote burst is coalesced: 200 BroadcastPoll calls in a tight loop reach
+// a phone as a handful of frames, the last carrying the final state.
+func TestPollBroadcastCoalesced(t *testing.T) {
+	ts := newTestServer(t, false)
+	n := 0
+	ts.hub.SetPollsFunc(func(int64) (timerpi.OnAir, error) {
+		n++
+		return timerpi.OnAir{Audience: &timerpi.PollView{ID: 1, Kind: timerpi.KindPoll, Question: "Q", State: timerpi.StateOpen, Total: int64(n)}}, nil
+	})
+	c := ts.joinClient(t, "audience", "phone-burst")
+	defer c.close()
+	c.read(t) // join reply
+	for i := 0; i < 200; i++ {
+		ts.hub.BroadcastPoll(ts.showID)
+	}
+	time.Sleep(600 * time.Millisecond)
+	frames := 0
+	var last map[string]any
+	for {
+		c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+		var m map[string]any
+		if err := c.conn.ReadJSON(&m); err != nil {
+			break
+		}
+		if m["t"] == "poll" {
+			frames++
+			last = m
+		}
+	}
+	if frames == 0 || frames > 4 {
+		t.Fatalf("200 changes → %d frames, want 1–4", frames)
+	}
+	if p, _ := last["poll"].(map[string]any); p == nil || p["total"].(float64) < 2 {
+		t.Fatalf("last frame not the latest state: %v", last)
+	}
 }

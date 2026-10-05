@@ -25,6 +25,7 @@ Read in this order:
 | [PROTOCOL.md](PROTOCOL.md) | Wire contract: every route and WebSocket frame |
 | [AGENTS.md](AGENTS.md) | Rules for anyone (human or AI) changing this repo |
 | [docs/OPS.md](docs/OPS.md) · [docs/PI-DEPLOY.md](docs/PI-DEPLOY.md) · [docs/HW-DRILLS.md](docs/HW-DRILLS.md) | Run, deploy and prove on hardware |
+| [docs/UI-CONTRACT.md](docs/UI-CONTRACT.md) | Pages, scripts, CSS and DOM hooks |
 | [docs/OFFLINE-EDIT.md](docs/OFFLINE-EDIT.md) · [docs/TIMERPI-THEME-SPEC.md](docs/TIMERPI-THEME-SPEC.md) | Offline mesh editing spec · shelved draft for a future custom theme |
 | [docs/archive/](docs/archive/README.md) | Historical notes. Not current |
 
@@ -41,13 +42,15 @@ make test           # go test ./...
 
 Then:
 
-1. Open `http://localhost:8080`, create a room, and add sessions.
-2. Open `http://localhost:8080/d/` in another window. It becomes a screen.
-3. Capture that screen from the room's **Screens** page, and pick a template (DSM, Main, Room walk-in…).
-4. Phones join at `/a/<room code>` (the QR is on the Main/Room templates).
+1. Open `http://localhost:8080` and **Create an event**: a name, a supervisor password and your rooms. You land on the SuperOperator dashboard.
+2. Open a room (**Open room**) and add sessions on the **Run** tab.
+3. Open `http://localhost:8080/d/` in another window. It shows a ready card.
+4. On the room's **Screens** tab, **Set up** that screen: pick Audience, Walk-in or Presenter, a layout and how it is mounted.
+5. On the **Audience** tab, create a poll and press **Show to Audience**. Phones join with the room's QR (`/a/<room code>`).
+6. Moderators join from the home page with the event code, then pick their room.
 
 ## Where things live
 
-`/` home · `/c/<code>` room operator · `/screens/<code>` room screens ·
-`/super` SuperOperator · `/d/` new screen · `/d/<code>` room screen ·
-`/a/<code>` audience · `/zone/<name>` event walk-in · `/settings` device.
+`/` home · `/e/<event>` pick a room · `/e/<event>/admin` SuperOperator ·
+`/c/<room>` room (Run · Audience · Setup) · `/screens/<room>` screens ·
+`/d/` new screen · `/d/<room>` room screen · `/a/<room>` phones · `/settings` box.

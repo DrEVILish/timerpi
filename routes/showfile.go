@@ -274,7 +274,7 @@ type showFileSchedule struct {
 // edits (gap note: cues/messages written straight from the store are the
 // full rows; the PROTOCOL snapshot shape lacks message shownAt for hidden
 // messages, so the store listing is what round-trips them — see
-// NOTES-setup.md).
+// (an old handoff note, not kept)).
 func (d *Deps) apiShowFile(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {

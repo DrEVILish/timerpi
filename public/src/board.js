@@ -279,8 +279,7 @@ function renderAudience(tile, type, w) {
   const was = tile.dataset.bVis === '1';
   const sig = vis ? `${p.id}:${p.state}` : '';
   const changed = tile.dataset.bItem !== sig;
-  const mode = w?.opts?.anim || 'fade';
-  const ms = Number(w?.opts?.animMS) || 400;
+  const { mode, ms } = animOf(w);
   tile.dataset.bVis = vis ? '1' : '0';
   tile.dataset.bItem = sig;
   if (vis) {
@@ -445,6 +444,33 @@ function renderEventSchedule(tile) {
   }
 }
 
+// Animation for a tile: its own opts.anim / animMS, else the layout's
+// default (PRODUCT L2/L3). Screens always animate.
+function animOf(w) {
+  const mode = w?.opts?.anim || layout.anim || 'fade';
+  const ms = Number(w?.opts?.animMS) || Number(layout.animMS) || 400;
+  return { mode, ms };
+}
+
+// Every content tile animates when what it says changes (new session,
+// new message, next-up moves on…). Ticking tiles (clocks, bars) don't.
+const TICKING = new Set(['countdown', 'wallclock', 'progress', 'dayprogress', 'rate', 'poll', 'qa', 'wordcloud']);
+function animateChanges() {
+  if (!grid || editing) return;
+  for (const tile of $$('.b-widget', grid)) {
+    const type = tile.dataset.widget;
+    if (TICKING.has(type)) continue;
+    const body = $('.b-w-body', tile);
+    if (!body) continue;
+    const sig = body.textContent.replace(/\s+/g, ' ').trim();
+    const before = tile.dataset.bSig;
+    tile.dataset.bSig = sig;
+    if (before === undefined || before === sig) continue;
+    const { mode, ms } = animOf(widgetOf(tile.dataset.wid));
+    if (mode !== 'none') playAnim(body, mode, ms, 'in');
+  }
+}
+
 function playAnim(box, mode, ms, dir, done) {
   box.style.setProperty('--b-anim-ms', `${ms}ms`);
   const cls = `b-anim-${dir}-${mode}`;
@@ -459,6 +485,11 @@ function playAnim(box, mode, ms, dir, done) {
 
 // Structural repaint (adopt/schedule/opts change): labels, lists, messages.
 function renderStatic() {
+  renderStaticBody();
+  animateChanges();
+}
+
+function renderStaticBody() {
   if (!snap || !grid) return;
   const cue = activeCue(snap);
   const plan = nextPlan();
@@ -684,7 +715,7 @@ async function saveNow() {
     const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', widgets: layout.widgets } }),
+      body: JSON.stringify({ layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', anim: layout.anim || 'fade', animMS: Number(layout.animMS) || 400, widgets: layout.widgets } }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1029,18 +1060,20 @@ function openSettings(wid) {  const w = widgetOf(wid);
       renderStatic();
     });
     mk('Follows', tsel);
-    // Operator-customisable appear/disappear animation.
+  }
+  if (!['countdown', 'wallclock', 'progress', 'dayprogress', 'rate'].includes(w.type)) {
+    // Operator-customisable appear/disappear animation (PRODUCT L2/L3):
+    // blank = the layout's default (set in the Canvas controls).
     const sel = document.createElement('select');
     sel.className = 'input input-sm';
-    for (const m of ['fade', 'slide', 'pop', 'none']) {
-      const o = document.createElement('option');
-      o.value = m;
-      o.textContent = m;
-      sel.appendChild(o);
+    for (const [v, label] of [['', 'Layout default'], ['fade', 'Fade'], ['slide', 'Slide'], ['pop', 'Pop'], ['none', 'None']]) {
+      sel.appendChild(new Option(label, v));
     }
-    sel.value = w.opts?.anim || 'fade';
+    sel.value = w.opts?.anim || '';
     sel.addEventListener('change', () => {
-      w.opts = { ...(w.opts || {}), anim: sel.value };
+      const o = { ...(w.opts || {}) };
+      if (sel.value) o.anim = sel.value; else delete o.anim;
+      w.opts = o;
       scheduleSave();
       renderStatic();
     });
@@ -1051,16 +1084,19 @@ function openSettings(wid) {  const w = widgetOf(wid);
     num.min = '120';
     num.max = '3000';
     num.step = '20';
-    num.value = w.opts?.animMS || '400';
+    num.placeholder = String(layout.animMS || 400);
+    num.value = w.opts?.animMS || '';
     num.setAttribute('aria-label', 'Animation duration (ms)');
     num.addEventListener('change', () => {
-      const v = String(Math.min(3000, Math.max(120, Number(num.value) || 400)));
-      num.value = v;
-      w.opts = { ...(w.opts || {}), animMS: v };
+      const o = { ...(w.opts || {}) };
+      if (num.value === '') delete o.animMS;
+      else { const v = String(Math.min(3000, Math.max(120, Number(num.value) || 400))); num.value = v; o.animMS = v; }
+      w.opts = o;
       scheduleSave();
     });
     mk('Duration (ms)', num);
   }
+
   if (w.type === 'map') {
     // Asset PICKER (owner "fiddly" round): select a named upload instead
     // of typing a raw id.
@@ -1303,6 +1339,17 @@ document.addEventListener('keydown', (e) => {
     layout.orientation = orient.value;
     layout.rows = Math.max(canvasRows(), orient.value === 'portrait' ? 16 : 8);
     await reloadEditing();
+  });
+  const animSel = $('#b-anim');
+  const animMs = $('#b-anim-ms');
+  if (animSel) animSel.value = layout.anim || 'fade';
+  if (animMs) animMs.value = String(layout.animMS || 400);
+  animSel?.addEventListener('change', () => { layout.anim = animSel.value; scheduleSave(); });
+  animMs?.addEventListener('change', () => {
+    const v = Math.min(3000, Math.max(120, Number(animMs.value) || 400));
+    animMs.value = String(v);
+    layout.animMS = v;
+    scheduleSave();
   });
   rowsIn?.addEventListener('change', () => {
     const ext = (layout.widgets || []).reduce((n, w) => Math.max(n, w.y + w.h), 1);

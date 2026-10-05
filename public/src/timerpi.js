@@ -907,7 +907,9 @@ function updateConnection() {
   // U1: say the transition out loud once — an operator staring at the cue
   // table learns the show now runs on the mesh (or that the server is back).
   if (prevOnline === true && !online) toast(statusLabel(mesh), 'info');
-  if (prevOnline === false && online) toast('Server link back — everything resyncs automatically', 'success');
+  // "Back" only after a real outage — never on the first connect.
+  if (prevOnline === false && online && updateConnection.wasOnline) toast('Server link back — everything resyncs automatically', 'success');
+  if (online) updateConnection.wasOnline = true;
   prevOnline = online;
   const lampWs = $('#lamp-ws'), lampMesh = $('#lamp-mesh');
   const label = $('#conn-label');
@@ -1777,6 +1779,31 @@ function initScreens() {
   });
 }
 
+/* ------------------------------------------------------------ room tabs -- */
+
+// Run · Audience · Setup on the room page. The choice lives in the URL hash
+// so a reload (or a bookmark) lands on the same view.
+function initRoomTabs() {
+  const tabs = [...document.querySelectorAll('.tp-room-tabs [data-tab]')];
+  if (!tabs.length) return;
+  const show = (name) => {
+    if (!tabs.some((t) => t.dataset.tab === name)) name = 'run';
+    for (const t of tabs) {
+      const on = t.dataset.tab === name;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', String(on));
+    }
+    for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
+  };
+  for (const t of tabs) {
+    t.addEventListener('click', () => {
+      history.replaceState(null, '', t.dataset.tab === 'run' ? location.pathname : `#${t.dataset.tab}`);
+      show(t.dataset.tab);
+    });
+  }
+  show(location.hash.slice(1) || 'run');
+}
+
 /* -------------------------------------------------- inline rate editor -- */
 
 function resetRate() {
@@ -2407,7 +2434,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initModerate(showId); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
   if (page === 'display') initFullscreenHint();
 

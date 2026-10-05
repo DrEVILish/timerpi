@@ -72,6 +72,12 @@
       <option value="portrait">Portrait 9:16</option>
     </select>
     <label class="cluster is-gap-2xs">Rows <input class="input input-sm" id="b-rows" type="number" min="1" max="48" style="width:4.5rem" aria-label="Canvas rows"></label>
+    <label class="cluster is-gap-2xs">Animation
+      <select class="select input-sm" id="b-anim" aria-label="Default animation for this layout">
+        <option value="fade">Fade</option><option value="slide">Slide</option><option value="pop">Pop</option><option value="none">None</option>
+      </select>
+      <input class="input input-sm" id="b-anim-ms" type="number" min="120" max="3000" step="20" style="width:5rem" aria-label="Default animation duration (ms)"> ms
+    </label>
   </div>
   <span class="b-palette-title">Layout</span>
   <div class="b-palette-list" id="b-preset-list" aria-label="Start from a template">

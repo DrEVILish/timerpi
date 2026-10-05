@@ -57,6 +57,12 @@ type Hub struct {
 	// pollsFn reads the show's on-air audience interaction (active poll
 	// with counts); injected like msgsFn. nil → snapshot carries none.
 	pollsFn func(showID int64) (timerpi.OnAir, error)
+	// pollCoalesce batches BroadcastPoll per show: a burst of votes (a
+	// thousand phones answering at once) becomes a few broadcasts a
+	// second instead of one full recount + fanout per vote.
+	pollMu      sync.Mutex
+	pollPending map[int64]bool
+	pollLast    map[int64]time.Time
 	// seeder returns all show ids, so the ticker drives engines no one has
 	// joined this process lifetime (created over REST).
 	seeder func() []int64
@@ -717,7 +723,37 @@ func (h *Hub) AudSessions() int {
 // the audience lane and the board/control sessions (PLAN §11.5: a vote
 // must never trigger a full-snapshot fanout). A nil poll ships as null —
 // the section disappears by absence (§11.4).
+// pollBatchWindow is the minimum gap between poll broadcasts of one show.
+var pollBatchWindow = 250 * time.Millisecond
+
 func (h *Hub) BroadcastPoll(showID int64) {
+	h.pollMu.Lock()
+	if h.pollPending == nil {
+		h.pollPending, h.pollLast = map[int64]bool{}, map[int64]time.Time{}
+	}
+	if h.pollPending[showID] {
+		h.pollMu.Unlock()
+		return // a send is already scheduled; it will carry this change too
+	}
+	wait := pollBatchWindow - time.Since(h.pollLast[showID])
+	if wait <= 0 {
+		h.pollLast[showID] = time.Now()
+		h.pollMu.Unlock()
+		h.broadcastPollNow(showID)
+		return
+	}
+	h.pollPending[showID] = true
+	h.pollMu.Unlock()
+	time.AfterFunc(wait, func() {
+		h.pollMu.Lock()
+		h.pollPending[showID] = false
+		h.pollLast[showID] = time.Now()
+		h.pollMu.Unlock()
+		h.broadcastPollNow(showID)
+	})
+}
+
+func (h *Hub) broadcastPollNow(showID int64) {
 	var on timerpi.OnAir
 	if fn := h.pollsFnFor(); fn != nil {
 		if v, err := fn(showID); err == nil {

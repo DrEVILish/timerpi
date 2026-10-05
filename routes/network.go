@@ -7,7 +7,7 @@
 //	routes.RegisterNetwork(g)   // inside routes.New, before registerStatic
 //
 // and main.go installs the device through routes.InstallNetwork (&mesh deps).
-// Details, including the ws-side subscriptions, live in NOTES-network.md.
+// Details, including the ws-side subscriptions, live in (an old handoff note, not kept).
 // Until both happen the handlers answer 503 and pages 503 — no nil panics.
 //
 // Global CSRF/origin middleware (r.Use(OriginGuard())) applies to every
@@ -50,7 +50,7 @@ func networkDepsFor() *NetworkDeps {
 }
 
 // RegisterNetwork mounts the mesh endpoints on the router (did NOT run at
-// build time — integration owns the call site; see NOTES-network.md):
+// build time — integration owns the call site; see (an old handoff note, not kept)):
 //
 //	GET  /api/network                 — self identity + detected peers
 //	GET  /api/network/example-detect  — peers seen in the last 30 s

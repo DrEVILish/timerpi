@@ -133,7 +133,7 @@ type SnapshotSource interface {
 
 // Event reports a role flip (integration hook: the ws hub re-broadcasts its
 // peers frame so browsers/dashboards see the new authority, see
-// NOTES-network.md).
+// (an old handoff note, not kept)).
 type Event struct {
 	Device string `json:"device"`
 	From   State  `json:"from"`

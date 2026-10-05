@@ -19,15 +19,6 @@
       </button>
       <a class="btn btn-sm" href="{{if .Share.Code}}/a/{{.Share.Code}}{{end}}" target="_blank" rel="noopener">Preview phone view</a>
     </div>
-    <div class="stack is-gap-2xs">
-      <span class="label">Duplicate this room</span>
-      <form id="show-clone-form" class="cluster is-gap-2xs">
-        <input class="input input-sm" type="text" id="show-clone-title" autocomplete="off"
-               placeholder="New room name (optional)" aria-label="New room name (optional)" style="min-width:0">
-        <button type="submit" class="btn btn-sm" title="Copy this running order into a new room of the event">Duplicate</button>
-      </form>
-      <span class="field-hint">Same sessions, notes and day start — a new room, stopped, without a password.</span>
-    </div>
   </div>
 </section>
 {{end}}

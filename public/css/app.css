@@ -235,3 +235,11 @@ body.b-board .b-join-label { font-size: clamp(.8rem, min(8cqh, 6cqw), 2.5rem); }
 .tp-screen-edit iframe { aspect-ratio: auto; height: min(84vh, calc(min(96vw, 1600px) * 9 / 16 + 7rem)); }
 .tp-screen-edit.is-portrait { width: min(96vw, 46rem); }
 .tp-screen-edit.is-portrait iframe { height: 86vh; }
+
+/* ------------------------------------------------- room page tabs */
+.tp-room-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }
+.tp-room-tabs .tab { min-height: 2.6rem; }
+.tp-aud-layout { display: grid; gap: var(--space-m, 1rem); grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
+.tp-aud-layout #tp-aud-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: .75rem; align-items: start; }
+.tp-setup-grid { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); align-items: start; }
+@media (max-width: 52rem) { .tp-aud-layout { grid-template-columns: 1fr; } }

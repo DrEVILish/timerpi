@@ -2,7 +2,7 @@
 // against REAL templates + engine + SQLite over httptest, exercising the
 // RegisterDisplay seam directly (an engine WITHOUT registerPages, since
 // routes.New still owns /d/:showid pre-consolidation — see
-// reviews/NOTES-display.md).
+// (an old handoff note, not kept)).
 package routes_test
 
 import (
@@ -109,7 +109,7 @@ func (ts *displayTest) want(code int, body, name string, subs ...string) {
 // ParseFS: the whole templates dir (incl. display_variants.html + the
 // d-*.html fragments) parses standalone; the variant specifics (.View/.Join
 // dots) are exercised by the route tests below — fragment exec only happens
-// through the variant page dot by design (NOTES-display.md contract note).
+// through the variant page dot by design ((an old handoff note, not kept) contract note).
 func TestDisplayVariantsParseFS(t *testing.T) {
 	if _, err := views.New(templatesRoot()); err != nil {
 		t.Fatalf("parse: %v", err)

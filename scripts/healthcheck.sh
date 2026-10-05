@@ -14,7 +14,7 @@
 # exits 0/1. Failure hook: pid-flag /var/lib/timerpi/health.failed
 # (created on FAIL, removed on OK) so any watcher —
 # `test -e /var/lib/timerpi/health.failed` — can react without journal
-# scraping. See reviews/NOTES-ops.md for the OnFailure= pairing note.
+# scraping. See (an old handoff note, not kept) for the OnFailure= pairing note.
 #
 # Port: $TIMERPI_HTTP_PORT (legacy $CAPACITIMER_HTTP_PORT) > config.json http_port > 80 (mirrors the
 # unit's pinned env; sandbox/dev data dirs get :
@@ -60,6 +60,6 @@ if [ "$state" = "OK" ]; then
 fi
 # NOTE (journal hook): running under systemd, this non-zero exit already
 # produces "journalctl -u timerpi-healthcheck.service" lines; an
-# OnFailure= unit pair is documented in reviews/NOTES-ops.md, not shipped.
+# OnFailure= unit pair is documented in (an old handoff note, not kept), not shipped.
 echo "[health $NOW] FAIL $URL — no 200/ok:true (port $(port)); see docs/OPS.md §5" >&2
 exit 1

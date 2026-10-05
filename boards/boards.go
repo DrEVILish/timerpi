@@ -56,7 +56,12 @@ type Layout struct {
 	V           int      `json:"v"`
 	Rows        int      `json:"rows,omitempty"`
 	Orientation string   `json:"orientation,omitempty"`
-	Widgets     []Widget `json:"widgets"`
+	// Anim / AnimMS: the layout's default appear/disappear animation
+	// (fade | slide | pop | none; 120–3000 ms). Tiles may override it
+	// with opts.anim / opts.animMS.
+	Anim    string   `json:"anim,omitempty"`
+	AnimMS  int      `json:"animMS,omitempty"`
+	Widgets []Widget `json:"widgets"`
 }
 
 // Canvas defaults and limits.
@@ -291,9 +296,17 @@ func DefaultLayoutJSON() string {
 // filled (w1…), opts maps sanitized (length caps). Unknown types and
 // overlaps are NOT fixed here — ValidateLayout rejects those.
 func NormalizeLayout(in Layout) Layout {
-	out := Layout{V: 1, Rows: in.Rows, Orientation: in.Orientation, Widgets: make([]Widget, 0, len(in.Widgets))}
+	out := Layout{V: 1, Rows: in.Rows, Orientation: in.Orientation, Anim: in.Anim, AnimMS: in.AnimMS, Widgets: make([]Widget, 0, len(in.Widgets))}
 	if out.Orientation != "portrait" {
 		out.Orientation = "landscape"
+	}
+	switch out.Anim {
+	case "fade", "slide", "pop", "none":
+	default:
+		out.Anim = "fade"
+	}
+	if out.AnimMS < 120 || out.AnimMS > 3000 {
+		out.AnimMS = 400
 	}
 	seen := map[string]bool{}
 	for i, w := range in.Widgets {

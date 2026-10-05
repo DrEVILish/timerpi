@@ -1,6 +1,6 @@
 {{- /*
   display_variants.html — venue output boards (Agent J; route GET /d/:id,
-  dispatched on ?view= — see routes/display.go + reviews/NOTES-display.md).
+  dispatched on ?view= — see routes/display.go + (an old handoff note, not kept)).
   Standalone document like display.html: ExecuteTemplate(w, "display_variants", variantData).
   The stage view is NOT here (Fix-1 owns templates/display.html + frag-display);
   this page shell executes exactly one root fragment:
@@ -26,7 +26,7 @@
       frames are ignored (dashboard + stage surfaces only).
     * offline: the server-side initial markup IS the fallback content; the
       module flips #tp-offline only for the "link down before any snapshot"
-      hole the mesh-aware poll cannot cover (NOTES-display.md §offline).
+      hole the mesh-aware poll cannot cover ((an old handoff note, not kept) §offline).
 */ -}}
 {{define "display_variants"}}
 <!DOCTYPE html>
@@ -58,7 +58,7 @@ body.tp-dv {
   padding: max(4vh, env(safe-area-inset-top, 0px)) max(4vw, env(safe-area-inset-right, 0px))
            max(4vh, env(safe-area-inset-bottom, 0px)) max(4vw, env(safe-area-inset-left, 0px));
 }
-/* ?fit quirk: how the board sits inside the screen (NOTES-display.md). */
+/* ?fit quirk: how the board sits inside the screen ((an old handoff note, not kept)). */
 body[data-fit="cover"] .tp-dv-screen { padding: 0; }
 body[data-fit="shadow"] .tp-dv-screen { padding-inline: max(3.4vw, 4.5vh); }
 body[data-fit="shadow"] .tp-dv-screen::after {

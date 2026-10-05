@@ -6,6 +6,12 @@
   them, browsers waiting to be set up (opened on /d/) can be captured into
   this room. Rendered by /src/screens.js (textContent only). */ -}}
 {{define "page-screens"}}
+<nav class="tabs tp-room-tabs" aria-label="Room views">
+  <a class="tab" href="/c/{{.Show.Code}}">Run</a>
+  <a class="tab" href="/c/{{.Show.Code}}#audience">Audience</a>
+  <a class="tab" href="/c/{{.Show.Code}}#setup">Setup</a>
+  <a class="tab is-active" href="/screens/{{.Show.Code}}" aria-current="page">Screens</a>
+</nav>
 <div class="tp-page stack is-gap-l" id="tp-screens-page" data-room="{{.Show.Code}}" data-room-name="{{.Show.Title}}">
   <section class="stack is-gap-2xs">
     <div class="row is-items-center is-gap-s is-wrap">
