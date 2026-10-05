@@ -311,13 +311,19 @@ Animation enum per tile
    fd-limit aware): **1000 phones joined, 1000/1000 join storm, p95
    broadcast latency 24 ms** (target <100 ms), ≥99% delivery — numbers
    from this container, race-clean.
-5. **Interaction UX on displays** — results bar graphs (`ProgressBar`
-   ftl component rows: label, filled bar, `% of total`, total-votes line),
-   question wall (moderated list, show/hide), word cloud (DOM tiles sized by
-   votes, themeable badge/tag vocabulary), operator transport: PER-CARD
-   `Ask | Show | Results | Hide` buttons wired to the existing state machine;
-   audience page sections appear/hide with the slot animation; quiz flow
-   kept as last kind (right/wrong reveal = results state reuse).
+5. **Interaction UX on displays** — ✅ 2026-10-05: board widgets (bars,
+   word tiles, upvotes) shipped in phase 2; this round added the OPERATOR
+   transport: an "Audience" dashboard panel — create form (kind, question,
+   options) and per-item **Show / Results / Hide / Delete** wired to the
+   hidden→open→results machine, live counts inline, plus the moderation
+   queue (audience submissions listed as hidden children with
+   **Approve / Hide / Delete**; approve surfaces the word/question on the
+   wall + phones via BroadcastPoll). Audience page: sections appear/disappear
+   with animation — and per the owner's scoping this page (and only this
+   page) honors prefers-reduced-motion. Quiz reveal: correct option marked
+   on results (board ✔ + phone). Tests: `routes/moderation_test.go`
+   (cloud → submit → approve → upvote → hide → delete) + create
+   validation; rev v57.
 6. **CuTePi destination bridge** — §11.6 (finish the otrientation the WIP
    started; outbound fire on GO/BLANK; pairing UI in Settings).
 7. **Hardening + version const** — `appVersion = "2.0"` in Go (health +

@@ -39,7 +39,15 @@
   footer { text-align:center; font-size:.8rem; color:var(--text-muted, #888); }
   .tp-aud-splash { text-align:center; padding:2rem 0; }
   .tp-aud-splash img { height:6rem; opacity:.5; }
-  @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
+  .aud-in { animation: audIn .35s ease-out; }
+  @keyframes audIn { from { opacity: 0; transform: translateY(.6rem); } to { opacity: 1; transform: none; } }
+  .aud-out { opacity: 0; transition: opacity .2s ease-in; }
+  /* prefers-reduced-motion is honored HERE ONLY (owner scoping): audience
+     phones may drop motion; display pages never do. */
+  @media (prefers-reduced-motion: reduce) {
+    .aud-in { animation: none; }
+    .aud-out { opacity: 0; transition: none; }
+  }
 </style>
 </head>
 <body class="tp-aud" data-page="audience" data-show-code="{{.Show.Code}}">
@@ -77,10 +85,28 @@
     return row;
   }
 
+  var lastSig = null;
   function render(d) {
-    main.innerHTML = "";
-    note.textContent = "";
-    renderItem(d.poll, d);
+    var sig = JSON.stringify(d);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    var swap = function () {
+      main.innerHTML = "";
+      note.textContent = "";
+      renderItem(d.poll, d);
+      main.classList.remove("aud-in");
+      void main.offsetWidth; // restart the entrance animation
+      main.classList.add("aud-in");
+    };
+    if (main.childElementCount) {
+      main.classList.add("aud-out");
+      setTimeout(function () {
+        main.classList.remove("aud-out");
+        swap();
+      }, 220);
+    } else {
+      swap();
+    }
   }
 
   function renderItem(p, d) {
@@ -100,7 +126,11 @@
       var total = p.total || 0;
       (p.options || []).forEach(function (opt, i) {
         var c = (p.counts || [])[i] || 0;
-        barRow(main, opt, c, total, myChoice[p.id] === String(i));
+        var row = barRow(main, opt, c, total, myChoice[p.id] === String(i));
+        if (p.kind === "quiz" && i === p.correct) {
+          row.firstChild.firstChild.textContent = "\u2714 " + opt;
+          row.firstChild.firstChild.style.color = "var(--success, #22C55E)";
+        }
       });
       note.textContent = total + " vote" + (total === 1 ? "" : "s") + " counted";
       return;
@@ -113,12 +143,12 @@
       var b = el("button", "tp-aud-opt", "Add mine");
       b.onclick = function () { vote(p.id, "1"); };
       main.appendChild(b);
-      askBox(p.kind);
+      askBox(p.id, p.kind);
       return;
     }
     if (p && p.state === "open" && p.kind === "wordcloud") {
       main.appendChild(el("p", "tp-aud-q", p.question));
-      askBox(p.kind);
+      askBox(p.id, p.kind);
       return;
     }
     if (p && p.kind === "survey" && (d.survey || []).length) {
@@ -133,7 +163,7 @@
     main.appendChild(sp);
   }
 
-  function askBox(kind) {
+  function askBox(pollID, kind) {
     var holder = elP(main, "div", "tp-aud-ask");
     var input = el("input", ""); input.placeholder = kind === "wordcloud"
       ? "one word" : "your question…"; input.maxLength = 280;
@@ -147,7 +177,9 @@
       send.disabled = true;
       fetch("/api/audience/" + code + "/ask", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: kind, text: text, peer: peer })
+        // Cloud/idea words join the open item (parent) so they surface on
+        // its wall when approved; questions stand alone.
+        body: JSON.stringify({ kind: kind, text: text, peer: peer, parent: kind === "wordcloud" ? pollID : 0 })
       }).then(function () {
           note.textContent = "Sent — it shows once the room operator lets it through.";
           input.value = "";

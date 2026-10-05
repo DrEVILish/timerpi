@@ -80,6 +80,32 @@
 
       {{template "frag-share" .}}
 
+      <!-- PLAN §11.3 phase 5: the audience interaction surface — create
+           polls / Q&A / word clouds, per-item Show / Results / Hide, and
+           the moderation queue for audience submissions. -->
+      <section class="panel" id="tp-aud-panel">
+        <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span></div>
+        <form id="tp-aud-create" class="stack is-gap-2xs" style="padding:.5rem .75rem">
+          <div class="cluster">
+            <select class="select input-sm" id="tp-aud-kind" aria-label="Item kind">
+              <option value="poll">Poll</option>
+              <option value="qa">Q&amp;A</option>
+              <option value="wordcloud">Word cloud</option>
+              <option value="ideas">Ideas</option>
+              <option value="quiz">Quiz</option>
+            </select>
+          </div>
+          <input class="input input-sm" id="tp-aud-question" maxlength="200"
+                 placeholder="Question or prompt…" aria-label="Question">
+          <div id="tp-aud-opts-row" hidden>
+            <input class="input input-sm" id="tp-aud-opts" maxlength="400"
+                   placeholder="Options, comma separated" aria-label="Options">
+          </div>
+          <button class="btn btn-sm btn-primary" type="submit">Create (hidden)</button>
+        </form>
+        <div id="tp-aud-items" class="stack is-gap-2xs" style="padding:.25rem .75rem .75rem"></div>
+      </section>
+
       <!-- F1/F2: the screens system — every connected display tab self-registers
            a stable name; assign theme/board per screen, match one to all,
            save/apply presets (server-side, exportable/importable JSON). -->

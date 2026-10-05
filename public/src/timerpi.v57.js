@@ -12,14 +12,15 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v54.js';
+import { Mesh, screenName } from './mesh.v57.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v54.js';
-import { createUndo } from './undo.v54.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v54.js';
-import { applyWaiting } from './waiting.v54.js';
+} from './engine.v57.js';
+import { createUndo } from './undo.v57.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v57.js';
+import { applyWaiting } from './waiting.v57.js';
+import { tpConfirm, tpPrompt } from './dialog.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -93,6 +94,12 @@ async function initTheme() {
   // sprite's name as data — applyIconTheme rewrites <use> hrefs per theme),
   // and oob swaps add new <use> nodes; the swap handler re-runs this.
   applyIconTheme(current);
+  // Change Theme dropdown closes when the user clicks/taps anywhere else.
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.tp-theme-menu[open]').forEach((d) => {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
   const select = $('#theme-select');
   if (!select) return;
   try {
@@ -1680,13 +1687,14 @@ function initScreens() {
     if (!row) return;
     const name = row.dataset.name;
     if (e.target.closest('.tp-screen-name')) {
-      const to = window.prompt(`Rename screen "${name}" to:`, name);
+      const res = await tpPrompt(null, name, { title: `Rename screen "${name}"`, ok: 'Rename', fields: [{ id: 'to', label: 'New name', value: name }] });
+      const to = res?.to;
       if (to && to.trim() && to !== name) await screensPost('rename', { from: name, to: to.trim() });
       return;
     }
     const kickBtn = e.target.closest('[data-kick]');
     if (kickBtn) {
-      if (!window.confirm(`Disconnect session ${kickBtn.dataset.kick}? That display stays down until its page is reloaded.`)) return;
+      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kickBtn.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
       try {
         const res = await fetch(`/api/shows/${screensCode()}/sessions/${encodeURIComponent(kickBtn.dataset.kick)}`, { method: 'DELETE' });
         const j = await res.json().catch(() => ({}));
@@ -1704,7 +1712,7 @@ function initScreens() {
       const ok = await screensPost('config', screenRowConfig(row));
       if (ok) await screensPost('match', { from: name });
     } else if (act === 'forget') {
-      if (window.confirm(`Forget screen "${name}"? An open display tab re-registers on its next join.`)) {
+      if (await tpConfirm('An open display tab re-registers on its next join.', { title: `Forget screen "${name}"?`, ok: 'Forget', danger: true })) {
         await screensPost('forget', { name });
       }
     }
@@ -1724,7 +1732,7 @@ function initScreens() {
     } else if (pact === 'export') {
       location.href = `/api/shows/${screensCode()}/presets/${pid}/export`;
     } else if (pact === 'del') {
-      if (!window.confirm('Delete this preset?')) return;
+      if (!(await tpConfirm('The preset is removed for every operator of this show.', { title: 'Delete this preset?', ok: 'Delete', danger: true }))) return;
       try {
         await fetch(`/api/shows/${screensCode()}/presets/${pid}`, { method: 'DELETE' });
         presetsRefresh();
@@ -1946,7 +1954,7 @@ function initGallery() {
     if (!s) return;
     const kick = e.target.closest('[data-kick]');
     if (kick) {
-      if (!window.confirm(`Disconnect session ${kick.dataset.kick}? That display stays down until its page is reloaded.`)) return;
+      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kick.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
       await galPost(`/api/shows/${code}/sessions/${encodeURIComponent(kick.dataset.kick)}`, { method: 'DELETE' });
       pull();
       return;
@@ -1972,7 +1980,7 @@ function initGallery() {
       if (typeof dlg?.showModal === 'function') dlg.showModal();
       else dlg?.setAttribute('open', '');
     } else if (act === 'forget') {
-      if (!window.confirm(`Forget screen "${s.name}"? An open display re-registers on its next join.`)) return;
+      if (!(await tpConfirm('An open display re-registers on its next join.', { title: `Forget screen "${s.name}"?`, ok: 'Forget', danger: true }))) return;
       await galPost(`/api/shows/${code}/screens/forget`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1982,16 +1990,68 @@ function initGallery() {
     }
   });
 
+  // PLAN §11.2: Capture opens a modal — Name / Theme / Location / Layout —
+  // and the captured display leaves the waiting list immediately.
+  const capDlg = document.getElementById('tp-capture');
+  let capWid = 0;
+  const capNextName = () => {
+    const used = new Set(gal.screens.map((s) => s.name));
+    let n = 1;
+    while (used.has(`Screen ${n}`)) n++;
+    return `Screen ${n}`;
+  };
+  const capFill = (w) => {
+    document.getElementById('tp-capture-host').textContent = w ? w.host : '';
+    document.getElementById('tp-capture-name').value = capNextName();
+    const themeSel = document.getElementById('tp-capture-theme');
+    themeSel.textContent = '';
+    themeSel.appendChild(galEl('option', null, 'Operator default')).value = '';
+    for (const t of gal.themes) {
+      const o = themeSel.appendChild(galEl('option', null, t.label + (t.scheme === 'light' ? ' light' : '')));
+      o.value = t.dataTheme;
+    }
+    themeSel.value = '';
+    document.getElementById('tp-capture-room').value = '';
+    const boardSel = document.getElementById('tp-capture-board');
+    boardSel.textContent = '';
+    boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
+    for (const b of gal.boards) {
+      const o = boardSel.appendChild(galEl('option', null, b.name || `Board ${b.id}`));
+      o.value = String(b.id);
+    }
+    boardSel.value = '0';
+  };
+  document.getElementById('tp-capture-cancel')?.addEventListener('click', () => capDlg?.close());
+  document.getElementById('tp-capture-go')?.addEventListener('click', async () => {
+    const body = JSON.stringify({
+      code,
+      name: document.getElementById('tp-capture-name').value,
+      theme: document.getElementById('tp-capture-theme').value,
+      room: document.getElementById('tp-capture-room').value,
+      boardId: Number(document.getElementById('tp-capture-board').value || 0),
+    });
+    const r = await galPost(`/api/waiting/${capWid}/capture`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+    });
+    if (r.ok) {
+      toast(`Captured as "${r.name}" — it joins within seconds`, 'success');
+      capDlg?.close();
+      pull();
+      // The display polls every 2 s and then joins; front-load refreshes so
+      // the new screen shows up here the moment it lands.
+      for (const delay of [1000, 2000, 3500, 5000]) setTimeout(pull, delay);
+    }
+  });
+
   document.getElementById('tp-waiting-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-wact]');
     if (!btn) return;
     if (btn.dataset.wact === 'capture') {
-      const r = await galPost(`/api/waiting/${btn.dataset.wid}/capture`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      if (r.ok) toast('Captured — the display navigates here within seconds', 'success');
+      capWid = Number(btn.dataset.wid);
+      capFill(gal.waiting.find((w) => w.id === capWid));
+      if (typeof capDlg?.showModal === 'function') capDlg.showModal();
+      else capDlg?.setAttribute('open', '');
+      return; // the modal drives the rest
     } else if (btn.dataset.wact === 'dismiss') {
       await galPost(`/api/waiting/${btn.dataset.wid}`, { method: 'DELETE' });
     }
@@ -2197,6 +2257,189 @@ function initDayStart() {
   // button is handled by the document-delegated click listener and the
   // scheduled-start form by the delegated submit listener (direct
   // bindings would both die on re-render AND double-fire before it).
+}
+
+
+/* ------------------------------------------------------- audience panel -- */
+
+// initAudiencePanel — the operator's interaction surface (PLAN §11.3
+// phase 5): create items, per-item Show / Results / Hide transport wired to
+// the hidden→open→results state machine, and the moderation queue for
+// audience submissions (approve = open, hide = silent again, delete).
+// Client-rendered like the gallery (operator-only page, 3 s poll); every
+// mutation fans out via /api BroadcastPoll so boards + phones stay live.
+const aud = { items: [] };
+
+function audEl(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = String(text);
+  return e;
+}
+
+function initAudiencePanel() {
+  const host = document.getElementById('tp-aud-items');
+  if (!host) return;
+  const code = document.body.dataset.show || '';
+
+  aud.pull = async () => {
+    try {
+      const j = await (await fetch(`/api/shows/${code}/polls`)).json();
+      if (j && j.ok) { aud.items = j.polls || []; renderAudiencePanel(); }
+    } catch { /* offline — the next poll retries */ }
+  };
+
+  const kindSel = document.getElementById('tp-aud-kind');
+  const optsRow = document.getElementById('tp-aud-opts-row');
+  kindSel?.addEventListener('change', () => {
+    optsRow.hidden = !(kindSel.value === 'poll' || kindSel.value === 'quiz');
+  });
+  document.getElementById('tp-aud-create')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const kind = kindSel.value;
+    const question = document.getElementById('tp-aud-question').value.trim();
+    const optsRaw = document.getElementById('tp-aud-opts').value.trim();
+    const options = optsRaw ? optsRaw.split(',').map((x) => x.trim()).filter(Boolean) : [];
+    const r = await fetch(`/api/shows/${code}/polls`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, question, options }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      document.getElementById('tp-aud-question').value = '';
+      document.getElementById('tp-aud-opts').value = '';
+      toast('Created (hidden — Show when ready)', 'success');
+      aud.pull();
+    } else {
+      toast(j.error || 'create failed', 'danger');
+    }
+  });
+
+  host.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-aud]');
+    if (!btn) return;
+    const id = Number(btn.dataset.audid);
+    const act = btn.dataset.aud;
+    if (act === 'del') {
+      if (!(await tpConfirm('The item and its votes are removed for everyone.', { title: 'Delete this item?', ok: 'Delete', danger: true }))) return;
+      await fetch(`/api/shows/${code}/polls/${id}`, { method: 'DELETE' });
+    } else if (act === 'state') {
+      await fetch(`/api/shows/${code}/polls/${id}/state`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ state: btn.dataset.val }),
+      });
+    }
+    aud.pull();
+  });
+
+  aud.pull();
+  setInterval(aud.pull, 3000);
+}
+
+function renderAudiencePanel() {
+  const host = document.getElementById('tp-aud-items');
+  if (!host) return;
+  host.textContent = '';
+  const count = document.getElementById('tp-aud-count');
+  if (count) count.textContent = String(aud.items.length);
+
+  const top = aud.items.filter((p) => !p.parent);
+  const children = aud.items.filter((p) => p.parent);
+
+  if (!top.length) {
+    host.appendChild(audEl('p', 'text-muted', 'No items yet — create a poll, Q&A or word cloud above.'));
+  }
+  for (const p of top) {
+    host.appendChild(audItemCard(p));
+    // Moderation queue: submitted words/ideas still hidden under this item
+    // (moderation by silence — they surface only when approved).
+    const subs = children.filter((c) => c.parent === p.id && c.state === 'hidden');
+    if (subs.length) {
+      const mod = audEl('div', 'tp-aud-mod stack is-gap-2xs');
+      mod.appendChild(audEl('div', 'text-muted', `${subs.length} waiting for approval:`));
+      for (const c of subs) mod.appendChild(audSubRow(c));
+      host.appendChild(mod);
+    }
+  }
+  // Orphan submissions (a question asked while nothing was open).
+  for (const c of children) {
+    if (c.state === 'hidden' && !top.some((p) => p.id === c.parent)) {
+      host.appendChild(audSubRow(c));
+    }
+  }
+}
+
+function audItemCard(p) {
+  const card = audEl('div', 'tp-aud-item');
+  const head = audEl('div');
+  head.style.display = 'flex';
+  head.style.alignItems = 'baseline';
+  head.style.gap = '.5rem';
+  head.appendChild(audEl('strong', null, p.question || `(${p.kind})`));
+  head.appendChild(audEl('span', 'badge', p.kind));
+  head.appendChild(audEl('span', 'badge' + (p.state === 'open' ? ' badge-accent' : ''), p.state));
+  card.appendChild(head);
+  if (p.state !== 'hidden') {
+    if ((p.kind === 'poll' || p.kind === 'quiz') && p.options?.length) {
+      const total = Math.max(1, p.total || 0);
+      p.options.forEach((label, i) => {
+        const n = (p.counts || [])[i] || 0;
+        card.appendChild(audEl('div', 'text-muted', `${label} — ${n} · ${Math.round((n / total) * 100)}%`));
+      });
+      card.appendChild(audEl('div', 'text-muted', `${p.total || 0} votes`));
+    }
+    if ((p.kind === 'qa' || p.kind === 'ideas') && p.upvotes) {
+      card.appendChild(audEl('div', 'text-muted', `${p.upvotes} likes`));
+    }
+    if (p.kind === 'wordcloud') {
+      const n = aud.items.filter((c) => c.parent === p.id && c.state === 'open').length;
+      card.appendChild(audEl('div', 'text-muted', `${n} words on the wall`));
+    }
+  }
+  const verbs = audEl('div', 'tp-aud-verbs');
+  const mk = (label, val, primary) => {
+    const b = audEl('button', 'btn btn-sm' + (primary ? ' btn-primary' : ''), label);
+    b.type = 'button';
+    b.dataset.aud = 'state';
+    b.dataset.audid = String(p.id);
+    b.dataset.val = val;
+    if (p.state === val) b.disabled = true;
+    return b;
+  };
+  verbs.append(mk('Show', 'open', true), mk('Results', 'results', false), mk('Hide', 'hidden', false));
+  const del = audEl('button', 'btn btn-sm btn-ghost', 'Delete');
+  del.type = 'button';
+  del.dataset.aud = 'del';
+  del.dataset.audid = String(p.id);
+  verbs.appendChild(del);
+  card.appendChild(verbs);
+  return card;
+}
+
+// audSubRow — one moderated submission with Approve / Hide / Delete.
+function audSubRow(c) {
+  const row = audEl('div', 'tp-aud-sub');
+  row.appendChild(audEl('span', null, c.question));
+  const verbs = audEl('span', 'tp-aud-verbs');
+  const approve = audEl('button', 'btn btn-sm btn-primary', 'Approve');
+  approve.type = 'button';
+  approve.dataset.aud = 'state';
+  approve.dataset.audid = String(c.id);
+  approve.dataset.val = 'open';
+  const hide = audEl('button', 'btn btn-sm', 'Hide');
+  hide.type = 'button';
+  hide.dataset.aud = 'state';
+  hide.dataset.audid = String(c.id);
+  hide.dataset.val = 'hidden';
+  const del = audEl('button', 'btn btn-sm btn-ghost', 'Delete');
+  del.type = 'button';
+  del.dataset.aud = 'del';
+  del.dataset.audid = String(c.id);
+  verbs.append(approve, hide, del);
+  row.appendChild(verbs);
+  return row;
 }
 
 /* ------------------------------------------------------------ day memo -- */
@@ -2628,7 +2871,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowPass(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowPass(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initAudiencePanel(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
   if (page === 'display') initFullscreenHint();
 
