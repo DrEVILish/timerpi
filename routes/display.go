@@ -36,6 +36,7 @@
 package routes
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -134,6 +135,20 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	if !ok {
 		pageUnknownCode(c)
 		return
+	}
+	// F1 layout assignment: a named screen with an assigned board IS that
+	// board's display — a fresh stage load steers to its board view
+	// (owner report: changing the layout in /screens/ did nothing on the
+	// display). Live reassignment navigates via the screen-board frame
+	// (timerpi.js); the editor keeps its draft and is not steered.
+	if view == defaultStage && c.Query("screen") != "" && d.Store != nil && c.Query("edit") != "1" {
+		if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
+			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && scr.BoardID > 0 {
+				c.Redirect(http.StatusFound, fmt.Sprintf("/d/%s?view=board&board=%d&screen=%s",
+					c.Param("ident"), scr.BoardID, url.QueryEscape(name)))
+				return
+			}
+		}
 	}
 	if d.Engines == nil {
 		c.String(http.StatusNotImplemented, "engine wiring missing (mismatched build)")

@@ -4,6 +4,7 @@
 package routes
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -213,6 +214,24 @@ func displayPage(d *Deps) gin.HandlerFunc {
 		if err != nil {
 			pageNotFound(c)
 			return
+		}
+		// F1 layout assignment: a named screen with an assigned board IS
+		// that board's display — a fresh stage load steers to its board
+		// (owner report: changing the layout in /screens/ did nothing on
+		// the display). Live reassignment still navigates via the
+		// screen-board frame; the editor (?edit=1) keeps its draft.
+		if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" && d.Store != nil {
+			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && scr.BoardID > 0 && c.Query("edit") != "1" {
+				u := *c.Request.URL
+				u.Path = "/d/" + c.Param("ident")
+				q := u.Query()
+				q.Set("view", "board")
+				q.Set("board", fmt.Sprintf("%d", scr.BoardID))
+				q.Set("screen", name)
+				u.RawQuery = q.Encode()
+				c.Redirect(http.StatusFound, u.String())
+				return
+			}
 		}
 		snap, err := eng.Snapshot()
 		if err != nil {

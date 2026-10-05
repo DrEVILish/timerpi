@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"timerpi/boards"
 )
 
 func TestCaptureWithConfig(t *testing.T) {
@@ -123,5 +125,69 @@ func TestCaptureWithConfig(t *testing.T) {
 	code, b = ts.call("GET", "/api/shows/"+ts.showCode+"/screens", nil, "")
 	if code != 200 || !strings.Contains(string(b), `"room":"Hall A"`) {
 		t.Fatalf("screens payload room: %d %.200s", code, b)
+	}
+}
+
+// Layout assignment steers the DISPLAY (owner report): a named screen with
+// an assigned board loads its board view even from the bare stage URL; an
+// unassigned screen stays on the stage.
+func TestLayoutAssignmentSteersStage(t *testing.T) {
+	ts := newAPITest(t)
+	boards.Migrate(ts.db.DB)
+	if _, err := boards.CreateBoard(ts.db.DB, ts.showID, "Lobby Display",
+		`{"v":1,"widgets":[{"id":"clock","type":"wallclock","x":0,"y":0,"w":4,"h":1}]}`); err != nil {
+		t.Fatalf("board: %v", err)
+	}
+	// Two waiting displays captured — one assigned the board, one not.
+	for i, name := range []string{"TV-1", "TV-2"} {
+		if code, _ := ts.call("POST", "/api/waiting/register",
+			[]byte(fmt.Sprintf(`{"name":%q,"host":"tv%d.local"}`, name, i)), ""); code != 200 {
+			t.Fatalf("register %s: %d", name, code)
+		}
+	}
+	var ids []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	code, b := ts.call("GET", "/api/waiting", nil, "")
+	json.Unmarshal([]byte(b), &struct {
+		Waiting []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"waiting"`
+	}{Waiting: ids})
+	_ = ids
+	// (list order is id ASC; capture both by name lookup)
+	wlist := struct {
+		Waiting []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"waiting"`
+	}{}
+	json.Unmarshal([]byte(b), &wlist)
+	byName := map[string]int64{}
+	for _, w := range wlist.Waiting {
+		byName[w.Name] = w.ID
+	}
+	for _, name := range []string{"TV-1", "TV-2"} {
+		if code, bb := ts.call("POST", fmt.Sprintf("/api/waiting/%d/capture", byName[name]),
+			[]byte(fmt.Sprintf(`{"code":%q}`, ts.showCode)), ""); code != 200 {
+			t.Fatalf("capture %s: %d %s", name, code, bb)
+		}
+	}
+	// Assign the board to TV-1 only.
+	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/screens/config",
+		[]byte(`{"name":"TV-1","boardId":1}`), ""); code != 200 {
+		t.Fatalf("config: %d %s", code, b)
+	}
+	// TV-1's stage URL lands on the board (redirect follows to the widget grid).
+	code, b = ts.call("GET", "/d/"+ts.showCode+"?screen=TV-1", nil, "")
+	if code != 200 || !strings.Contains(string(b), `data-widget="wallclock"`) {
+		t.Fatalf("assigned screen did not render its board: %d %.200s", code, b)
+	}
+	// TV-2 (unassigned) still gets the stage.
+	code, b = ts.call("GET", "/d/"+ts.showCode+"?screen=TV-2", nil, "")
+	if code != 200 || strings.Contains(string(b), `data-widget=`) {
+		t.Fatalf("unassigned screen should stay on the stage: %d %.200s", code, b)
 	}
 }

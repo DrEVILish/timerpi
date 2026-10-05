@@ -848,6 +848,23 @@ function initMesh(showId, role, page) {
             applyTheme(m.theme);
           }
           break;
+        case 'screen-board':
+          // F1: the operator re-assigned this screen's Layout. Display
+          // pages navigate: stage → the assigned board's view; board view
+          // → the new board; boardId 0 → back to the stage. (An open
+          // layout editor keeps its draft, per the board.js rule.)
+          if (document.body.dataset.role === 'display' && !/edit=1/.test(location.search)) {
+            const u = new URL(location.href);
+            if (m.boardId > 0) {
+              u.searchParams.set('view', 'board');
+              u.searchParams.set('board', String(m.boardId));
+            } else {
+              u.searchParams.delete('view');
+              u.searchParams.delete('board');
+            }
+            if (u.toString() !== location.href) location.replace(u.toString());
+          }
+          break;
         case 'timer':
         case 'cue':
           if (m.runtime && mesh.snap && (m.updatedAt ?? 0) >= mesh.snap.updatedAt) {
