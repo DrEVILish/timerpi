@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"timerpi/config"
+	"timerpi/oscbridge"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -140,6 +141,13 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 			return
 		}
 		h.logAction(s, action, "")
+		// Outbound media bridge: BLANK cuts CuTePi to its panic holding
+		// image; unblank resumes the playout peer.
+		if action == "blank" {
+			oscbridge.FireOut("panic", 0)
+		} else {
+			oscbridge.FireOut("go", 0)
+		}
 		errOf(eng.Notify())
 	case "jump":
 		// jump default = arm without starting; start:true begins now.

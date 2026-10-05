@@ -330,7 +330,8 @@ func TestClockLoopWithFakeBackend(t *testing.T) {
 	c := NewClock(back, p)
 	c.interval = time.Millisecond
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	// 250 ms: generous enough for -race builds (~20× slower present loop)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	if err := c.Run(ctx); err != nil {
 		t.Fatalf("Run: %v", err)

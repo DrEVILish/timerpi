@@ -152,6 +152,28 @@ func (d *DB) migrate() error {
 			last_seen  INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (show_id, name)
 		);`,
+		`CREATE TABLE IF NOT EXISTS polls (
+		id       INTEGER PRIMARY KEY AUTOINCREMENT,
+		show_id  INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+		kind     TEXT NOT NULL DEFAULT 'poll',
+		question TEXT NOT NULL DEFAULT '',
+		options  TEXT NOT NULL DEFAULT '[]',
+		correct  INTEGER NOT NULL DEFAULT -1,
+		state    TEXT NOT NULL DEFAULT 'hidden',
+		parent   INTEGER NOT NULL DEFAULT 0,
+		author   TEXT NOT NULL DEFAULT '',
+		ts       INTEGER NOT NULL DEFAULT 0,
+		updated  INTEGER NOT NULL DEFAULT 0
+	);`,
+		`CREATE INDEX IF NOT EXISTS idx_polls_show ON polls (show_id, updated);`,
+		`CREATE TABLE IF NOT EXISTS votes (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+		peer    TEXT NOT NULL,
+		choice  TEXT NOT NULL DEFAULT '',
+		ts      INTEGER NOT NULL DEFAULT 0,
+		UNIQUE (poll_id, peer)
+	);`,
 		`CREATE TABLE IF NOT EXISTS display_presets (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			show_id    INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
@@ -190,6 +212,7 @@ func (d *DB) migrate() error {
 			{"notes", "TEXT NOT NULL DEFAULT ''"},
 			{"day_start", "TEXT NOT NULL DEFAULT ''"},
 			{"blanked", "INTEGER NOT NULL DEFAULT 0"},
+			{"zone", "TEXT NOT NULL DEFAULT ''"},
 		},
 	}
 	for table, cols := range extra {
@@ -320,6 +343,17 @@ func (d *DB) ListShows() ([]Show, error) {
 	var shows []Show
 	err := d.Select(&shows, `SELECT * FROM shows ORDER BY updated_at DESC, id ASC`)
 	return shows, err
+}
+
+// SetShowZone writes the event-grouping label (proposal #3). Same charset
+// as screen names ("Hall A") — one sanitizer, one vocabulary. Empty clears.
+func (d *DB) SetShowZone(showID int64, zone string) error {
+	zone = SanitizeScreenName(zone)
+	if _, err := d.Exec(`UPDATE shows SET zone = ?, updated_at = ? WHERE id = ?`,
+		zone, nowMS(), showID); err != nil {
+		return fmt.Errorf("timerpi: set show zone: %w", err)
+	}
+	return nil
 }
 
 // GetShow fetches one show; sql.ErrNoRows when missing (callers 404 on it).

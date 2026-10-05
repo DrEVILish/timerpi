@@ -1146,3 +1146,39 @@ body[data-waiting] .tp-waiting { display: grid; }
 .tp-waiting img { width: clamp(6rem, 18vh, 12rem); height: auto; }
 .tp-waiting h2 { font-size: clamp(1.2rem, 4.2vh, 2.6rem); letter-spacing: .28em; color: var(--muted, #99a); }
 .tp-waiting p { max-width: 46ch; }
+
+/* --------------------------------------------------------------------------
+   THEME AUDIT FIXES (2026-10-05, 13-theme browser critic pass). No theme
+   scored 8+; the blockers were OUR paint bugs, not bundle defects (the two
+   JS crashes are fixed in board.js/timerpi.js). Append-only per the banner
+   discipline above. */
+
+/* BLANK painted outside the rail panel: .transport is a nowrap row and the
+   5-button + BLANK set exceeds the ~24rem #tp-now column — wrap it (the
+   lcars theme ships exactly this override for its own transport). */
+#tp-now .transport { flex-wrap: wrap; row-gap: .4rem; }
+
+/* Stage status line: --muted is contract-certified on SURFACES; the stage
+   paints it directly on --bg (win95 teal: 2.09:1 — invisible). Primary text
+   + opacity keeps the hierarchy; the trailing gutter stops the corner
+   join-card/fullscreen-hint cluster from landing on top of the text. */
+.tp-display-status { color: var(--text); opacity: .72; min-width: 0; flex-wrap: wrap;
+  padding-inline-end: clamp(12rem, 30vw, 26rem); }
+
+/* HELD on dark TV surfaces: --warning-text is tuned for light surfaces
+   (ios's readable-on-white brown is ~1.5:1 on its black-glass readout).
+   Display clocks paint the bright FILL token; dashboards keep the §9c
+   -text variant on their own surfaces. */
+.tp-display .tp-clock[data-state="held"] { color: var(--warning); }
+
+/* Link toasts landed over the app-bar's Theme label on every operator
+   page; park them below the bar (display surfaces have no bar). */
+body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-top, 0px)); }
+
+/* Inspector paired fields collapsed to 61px fragments ("Lesli") under the
+   uppercase mono labels; give each field a real floor. */
+.tp-inspector .row > .field { flex: 1 1 7rem; min-width: 7rem; }
+
+/* Audit hardening RETIRED 2026-10-05: upstream 19c1e02 gave lcars/
+   death-star a visible --border and windows95 added .badge to its
+   panel-header reset (both issues confirmed fixed in the rebuilt bundles). */

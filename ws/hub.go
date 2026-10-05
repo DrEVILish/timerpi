@@ -51,6 +51,9 @@ type Hub struct {
 	// shown-only); injected from routes. nil → message oob falls back to
 	// the snapshot subset.
 	msgsFn func(showID int64) ([]timerpi.Message, error)
+	// pollsFn reads the show's on-air audience interaction (active poll
+	// with counts); injected like msgsFn. nil → snapshot carries none.
+	pollsFn func(showID int64) (*timerpi.PollView, error)
 	// seeder returns all show ids, so the ticker drives engines no one has
 	// joined this process lifetime (created over REST).
 	seeder func() []int64
@@ -115,6 +118,9 @@ func (h *Hub) SetStore(db *timerpi.DB) { h.store = db }
 
 // SetMessagesFunc wires the full-message DB reader.
 func (h *Hub) SetMessagesFunc(fn func(int64) ([]timerpi.Message, error)) { h.msgsFn = fn }
+
+// SetPollsFunc wires the on-air audience-interaction reader.
+func (h *Hub) SetPollsFunc(fn func(int64) (*timerpi.PollView, error)) { h.pollsFn = fn }
 
 // SetSeeder wires the show-id lister (for the ticker's engine discovery).
 func (h *Hub) SetSeeder(fn func() []int64) { h.seeder = fn }
@@ -357,6 +363,13 @@ func (h *Hub) getShowHub(showID int64) *showHub {
 // renders; digits never), then the full state frame LAST (clients adopt
 // the snapshot after their DOM is swapped).
 func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
+	// Audience-layer merge: the poll carried into EVERY frame (schedule
+	// lead, oobs and state) below — one reader, none stale.
+	if h.pollsFn != nil {
+		if v, err := h.pollsFn(showID); err == nil {
+			snap.Poll = v
+		}
+	}
 	h.mu.Lock()
 	sh := h.byShow[showID]
 	n := 0

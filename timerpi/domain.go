@@ -67,6 +67,10 @@ type Show struct {
 	Title     string `db:"title"      json:"title"`
 	CreatedAt int64  `db:"created_at" json:"createdAt"`
 	UpdatedAt int64  `db:"updated_at" json:"updatedAt"`
+	// Zone is the event-grouping label (proposal #3): shows sharing a zone
+	// appear as rooms on the /zone/<name> walk-in/event display. Empty = no
+	// event grouping (single-show use stays unaffected).
+	Zone string `db:"zone" json:"zone"`
 	// Code is the public, shareable, unique 8-character share code
 	// (ALPHANUMERIC Crockford-style base32, stored bare, displayed 4-4 →
 	// timerpi/gen.go is the rulebook). Empty only mid-migration reads.

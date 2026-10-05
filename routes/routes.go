@@ -98,8 +98,18 @@ func New(d *Deps) *gin.Engine {
 	RegisterSetup(r, d)   // GET /setup + /setup/sheet + /api/setup/*
 	RegisterNetwork(r)    // GET /settings + /api/network/* (503s until InstallNetwork)
 	registerAPI(r, d)     // REST per PROTOCOL §REST + CONTRACT-UI §3
-	RegisterBoards(r, d)  // display-board CRUD (Agent N; ?view=board renders in display.go)
-	if d.Hub != nil {     // WS upgrade — same port, same origin rules
+	// PLAN §11 (Rooms v2, stitched phase 0): audience surface, zone walk-in
+	// pages, OSC bridge settings; the OSC listener boots on saved settings.
+	registerAudienceRoutes(r, d)
+	registerZoneRoutes(r, d)
+	registerOscRoutes(r, d)
+	if d.Store != nil {
+		if oserr := d.oscSync(); oserr != nil {
+			log.Printf("routes: osc listener boot: %v", oserr)
+		}
+	}
+	RegisterBoards(r, d) // display-board CRUD (Agent N; ?view=board renders in display.go)
+	if d.Hub != nil {    // WS upgrade — same port, same origin rules
 		d.Hub.Register(r)
 	}
 	registerStatic(r) // public/ assets as catch-all (NoRoute)

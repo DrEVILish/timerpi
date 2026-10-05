@@ -23,6 +23,7 @@ import (
 
 	"timerpi/config"
 	"timerpi/mesh"
+	"timerpi/oscbridge"
 	"timerpi/routes"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -51,6 +52,26 @@ func main() {
 	defer db.Close()
 	engines := timerpi.NewEngines(db)
 
+	// PLAN §11.6 outbound media bridge (OSC, stitched phase 0): cue fires
+	// (engine onFire → registry OnStart) go to the paired CuTePi/QLab peer;
+	// BLANK routes the panic image. Target read per event from settings.
+	engines.OnStart = func(showID, pos int64) { oscbridge.FireOut("cue", pos) }
+	oscbridge.Target = func() string {
+		kv, err := db.AllSettings()
+		if err != nil || kv["osc.out.enabled"] != "1" {
+			return ""
+		}
+		host := kv["osc.out.host"]
+		if host == "" {
+			return ""
+		}
+		port := kv["osc.out.port"]
+		if port == "" {
+			port = "53000" // QLab/CuTePi default
+		}
+		return host + ":" + port
+	}
+
 	// Template registry: parse once (hot reload is -dev only).
 	tmplSet, err := views.New(findTemplates())
 	if err != nil {
@@ -62,6 +83,8 @@ func main() {
 	hub := ws.NewHub(engines, tmplSet.Fragment)
 	hub.SetStore(db)
 	hub.SetMessagesFunc(db.ListMessages)
+	// PLAN §11 audience layer: the on-air interaction rides every frame.
+	hub.SetPollsFunc(db.ActivePoll)
 	hub.SetSeeder(func() []int64 {
 		shows, err := db.ListShows()
 		if err != nil {

@@ -23,6 +23,10 @@ type Engine struct {
 	// Tick bookkeeping (not persisted): a fresh start resets both.
 	lastAlert   int
 	lastCrossed bool
+
+	// onFire is the outbound media hook (OSCbridge wiring, proposal #8):
+	// invoked after a mutation leaves a cue RUNNING, with the running pos.
+	onFire func(pos int64)
 }
 
 // EngineDeps inject the edges. Nil entries get defaults; see DB.EngineDeps
@@ -220,7 +224,9 @@ func argFloat(args map[string]any, key string) float64 {
 // Start anchors the cue at pos (0 = the armed cue, else the first cue) at
 // the wall clock and runs it.
 func (e *Engine) Start(pos int64) error {
-	return e.runMutation(func() error { return e.startLocked(pos) })
+	err := e.runMutation(func() error { return e.startLocked(pos) })
+	e.fireStart()
+	return err
 }
 
 // Pause freezes the running cue: scaled elapsed is parked in
@@ -243,7 +249,9 @@ func (e *Engine) Reset() error {
 // Go fires the next unarmed cue: the armed one when idle/held, otherwise the
 // cue after the running one; from a fresh idle show it starts cue 1.
 func (e *Engine) Go() error {
-	return e.runMutation(e.goLocked)
+	err := e.runMutation(e.goLocked)
+	e.fireStart()
+	return err
 }
 
 // Next arms the next cue after the active one (or the first when idle).
@@ -259,6 +267,21 @@ func (e *Engine) Prev() error {
 // Jump arms the cue at pos (stopping any running cue): anchor-less, elapsed 0.
 func (e *Engine) Jump(pos int64) error {
 	return e.runMutation(func() error { return e.jumpLocked(pos) })
+}
+
+// fireStart ticks the outbound media hook when the mutation left a cue
+// RUNNING (start/go; resume/pause re-anchor without firing). Reads the
+// post-mutation runtime — the hook consumer replays only the fresh cue.
+func (e *Engine) fireStart() {
+	if e.onFire == nil {
+		return
+	}
+	e.mu.Lock()
+	pos, running := e.rt.ActivePos, e.rt.Running
+	e.mu.Unlock()
+	if running && pos > 0 {
+		e.onFire(pos)
+	}
 }
 
 // SetRate changes the countdown rate multiplier, re-anchoring so the
@@ -751,6 +774,10 @@ type Engines struct {
 	mu     sync.Mutex
 	db     *DB
 	byShow map[int64]*Engine
+	// OnStart is the outbound media hook (oscbridge, proposal #8): fire a
+	// peer (CuTePi via QLab-OSC) when a cue starts running. Wire once at
+	// boot, before any engine exists.
+	OnStart func(showID, pos int64)
 }
 
 // NewEngines returns an engine registry over the DB.
@@ -768,6 +795,14 @@ func (r *Engines) Get(showID int64) (*Engine, error) {
 	e, err := NewEngine(showID, r.db.EngineDeps(showID))
 	if err != nil {
 		return nil, err
+	}
+	// Outbound media hook (oscbridge, proposal #8): set once at boot, read
+	// without the registry lock — assignment happens before any engine
+	// exists (main wires it immediately after NewEngines).
+	e.onFire = func(pos int64) {
+		if r.OnStart != nil {
+			r.OnStart(showID, pos)
+		}
 	}
 	// B4: a show with a scheduled day start ("09:00") auto-anchors at
 	// engine construction — service reboot before the show should not

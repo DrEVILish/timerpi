@@ -176,6 +176,10 @@ func AnnounceOnInterfaces(name string, port int, meta ServiceMeta, ifaces []net.
 	log.Printf("mdns: announcing %q (%s) on port %d", name, ServiceType, port)
 
 	self := normalizeHost(meta.Host)
+	// Snapshot the watch knobs once: they are package globals the tests
+	// retune via defer-restore, so the goroutine must not re-read them
+	// after the test's restore may already have run (-race caught that).
+	watchIv, watchLs := watchInterval, watchListen
 	var collision atomic.Bool
 	done := make(chan struct{})
 	var once sync.Once
@@ -189,12 +193,12 @@ func AnnounceOnInterfaces(name string, port int, meta ServiceMeta, ifaces []net.
 			cancel()
 		}()
 
-		ticker := time.NewTicker(watchInterval)
+		ticker := time.NewTicker(watchIv)
 		defer ticker.Stop()
 		for {
 			// First pass runs immediately, then every watchInterval:
 			// announcements from a different host claiming our name.
-			if entries := collectEntries(ctx, ifaces, watchListen); entries != nil {
+			if entries := collectEntries(ctx, ifaces, watchLs); entries != nil {
 				if lookForCollision(entries, name, self) && collision.CompareAndSwap(false, true) {
 					log.Printf("mdns: NAME CONFLICT: %q is also announced by another host — consider renaming", name)
 				}
@@ -328,12 +332,16 @@ func collectEntries(parent context.Context, ifaces []net.Interface, window time.
 		return nil
 	}
 
+	var mu sync.Mutex // out is appended by the drain goroutine while the
+	// parent may already be snapshotting after ctx fires — synchronize it.
 	var out []*zeroconf.ServiceEntry
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
 		for e := range ch {
+			mu.Lock()
 			out = append(out, e)
+			mu.Unlock()
 		}
 	}()
 	select {
@@ -342,7 +350,10 @@ func collectEntries(parent context.Context, ifaces []net.Interface, window time.
 		// Deadline reached: leave residual entries behind; the bounded
 		// channel makes the producer block, not crash.
 	}
-	return out
+	mu.Lock()
+	snapshot := append([]*zeroconf.ServiceEntry(nil), out...)
+	mu.Unlock()
+	return snapshot
 }
 
 // buildPeers dedupes raw entries into Peers (pure, testable).

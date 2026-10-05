@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/oscbridge"
+
 	"timerpi/config"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -457,6 +459,13 @@ func (d *Deps) apiShowBlank(c *gin.Context) {
 		return
 	}
 	d.logAction(id, "blank", fmt.Sprintf("%v", *body.On))
+	// Outbound media bridge: BLANK cuts CuTePi to its panic holding image;
+	// unblank resumes the playout peer.
+	if *body.On {
+		oscbridge.FireOut("panic", 0)
+	} else {
+		oscbridge.FireOut("go", 0)
+	}
 	if eng, gerr := d.engineFor(id); gerr == nil {
 		if nerr := eng.Notify(); nerr != nil {
 			log.Printf("routes: notify after blank: %v", nerr)

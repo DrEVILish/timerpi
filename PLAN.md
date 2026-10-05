@@ -228,10 +228,19 @@ widget layouts — no second layout engine:
 
 ### 11.3 Phases (each lands with tests; asset rev bumps as UI ships)
 
-0. **Stitch the in-flight WIP** — fix the 3 build breaks, complete
-   `audience.html` (stub page permitted), add the missing `timerpi/polls.go`
-   unit tests (Vote dedupe, state machine, PollCounts math, moderation
-   visibility), full suite green, commit.
+0. **Stitch the in-flight WIP** — ✅ 2026-10-05: fixes went deeper than
+   the 3 listed build breaks: the WIP's OSC codec was wire-broken
+   (under-padded strings, missing tag terminator — Build/Parse rewritten
+   with a shared `oscString` framer), the three route groups were never
+   mounted, `hub.SetPollsFunc`/`Engines.OnStart`/`oscbridge.Target` were
+   never wired in main, and the audience REST lane bypassed the
+   show-passphrase gate its own comment promised (fixed once in
+   `resolveAudienceCode`). `audience.html` ships as the working REST-lane
+   stub (rev v51). Tests: `timerpi/polls_test.go` (lifecycle), 
+   `oscbridge/oscbridge_test.go` (codec + real UDP listener), 
+   `routes/audience_test.go` (page + gate + flow). Suite: 12 pkgs green,
+   `-race` clean (took two pre-existing flakes with it: mdns
+   `collectEntries` data race, drm test window).
 1. **`/d/` no-code display + home button** — `GET /d/` (no code) renders a
    READY splash, takes identity from sessionStorage (`tp.screen`, generated
    `Screen-XXXX` otherwise), walks `POST /api/waiting/register` immediately,
