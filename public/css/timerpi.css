@@ -1227,3 +1227,16 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 @keyframes b-anim-slide-out { from { opacity: 1; } to { opacity: 0; transform: translateY(1.2rem); } }
 @keyframes b-anim-pop-in { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
 @keyframes b-anim-pop-out { from { opacity: 1; } to { opacity: 0; transform: scale(.86); } }
+
+/* ---------------------------------------------------------------------------
+   PLAN nav pass — Change Theme dropdown + brand link + appbar cluster. */
+a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
+.tp-theme-menu { position: relative; }
+.tp-theme-menu summary { list-style: none; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.tp-theme-menu summary::-webkit-details-marker { display: none; }
+.tp-theme-menu[open] summary { color: var(--accent, #7C3AED); }
+.tp-theme-pop { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 60;
+  display: flex; flex-direction: column; gap: .35rem; padding: .7rem .8rem;
+  background: var(--surface, #15151d); border: 1px solid var(--border, #333);
+  border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); min-width: 13rem; }
+.app-bar .nav-item { display: inline-flex; align-items: center; gap: .35rem; }

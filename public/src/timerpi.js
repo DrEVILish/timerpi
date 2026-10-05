@@ -114,6 +114,8 @@ async function initTheme() {
     applyTheme(slug);
     try { localStorage.setItem(THEME_KEY, slug); } catch { /* */ }
     toast(`Theme: ${select.selectedOptions[0]?.textContent || slug}`);
+    // The picker lives in the Change Theme dropdown — close it on pick.
+    select.closest('details')?.removeAttribute('open');
   });
 }
 

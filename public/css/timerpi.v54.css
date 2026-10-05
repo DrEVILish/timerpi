@@ -1182,3 +1182,61 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 /* Audit hardening RETIRED 2026-10-05: upstream 19c1e02 gave lcars/
    death-star a visible --border and windows95 added .badge to its
    panel-header reset (both issues confirmed fixed in the rebuilt bundles). */
+
+/* ---------------------------------------------------------------------------
+   PLAN §11.2 phase 2 — audience/venue board widgets + tile animations.
+   ftl tokens only; displays ALWAYS animate (owner: prefers-reduced-motion
+   is honored on audience phones only, never on display pages). */
+
+.b-poll-q { font-size: clamp(1rem, 2.2vw, 1.7rem); font-weight: 600; overflow-wrap: anywhere; }
+.b-poll-meta { color: var(--muted, #9a9aa8); font-size: .9em; margin: .2rem 0 .6rem; }
+.b-poll-opt { margin-bottom: .55rem; }
+.b-poll-opt-head { display: flex; justify-content: space-between; gap: .8rem; font-size: .95em; }
+.b-poll-opt.is-correct .b-poll-opt-head { color: var(--success, #22C55E); font-weight: 600; }
+.b-poll-bar { height: .55rem; margin-top: .25rem; border-radius: 4px;
+  background: var(--surface-2, #26262f); overflow: hidden; }
+.b-poll-bar i { display: block; height: 100%; width: 0;
+  background: var(--accent, #7C3AED); transition: width .5s ease; }
+.b-poll-opt.is-correct .b-poll-bar i { background: var(--success, #22C55E); }
+
+.b-qa .b-poll-q { font-size: clamp(1.1rem, 2.6vw, 2rem); }
+
+.b-cloud { display: flex; flex-wrap: wrap; gap: .5rem; align-content: flex-start; }
+.b-cloud-tile { padding: .25rem .7rem; border: 1px solid var(--border, #3a3a45);
+  border-radius: 999px; background: var(--surface-2, #1d1d27); overflow-wrap: anywhere; }
+.b-cloud-tile.is-top { border-color: var(--accent, #7C3AED); color: var(--accent, #7C3AED); }
+
+.b-w-map .b-w-body, .b-w-joinqr .b-w-body { display: flex; flex-direction: column;
+  align-items: center; justify-content: center; height: 100%; }
+.b-js-map { max-width: 100%; max-height: 100%; object-fit: contain; }
+.b-map-empty { text-align: center; padding: 1rem; font-size: .9em; }
+.b-js-joinqr { width: min(100%, 22vh); aspect-ratio: 1; background: #fff; border-radius: 8px; }
+.b-join-label { margin-top: .4rem; color: var(--muted, #9a9aa8); font-size: .9em;
+  text-align: center; overflow-wrap: anywhere; }
+
+/* Tile entrance/exit — the operator picks the mode per tile (anim/animMS). */
+.b-js-poll, .b-js-qa, .b-js-cloud { --b-anim-ms: 400ms; }
+.b-anim-in-fade { animation: b-anim-fade var(--b-anim-ms) ease-out; }
+.b-anim-out-fade { animation: b-anim-fade var(--b-anim-ms) ease-in reverse forwards; }
+.b-anim-in-slide { animation: b-anim-slide-in var(--b-anim-ms) ease-out; }
+.b-anim-out-slide { animation: b-anim-slide-out var(--b-anim-ms) ease-in forwards; }
+.b-anim-in-pop { animation: b-anim-pop-in var(--b-anim-ms) cubic-bezier(.2, 1.4, .4, 1); }
+.b-anim-out-pop { animation: b-anim-pop-out var(--b-anim-ms) ease-in forwards; }
+@keyframes b-anim-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes b-anim-slide-in { from { opacity: 0; transform: translateY(1.2rem); } to { opacity: 1; transform: none; } }
+@keyframes b-anim-slide-out { from { opacity: 1; } to { opacity: 0; transform: translateY(1.2rem); } }
+@keyframes b-anim-pop-in { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+@keyframes b-anim-pop-out { from { opacity: 1; } to { opacity: 0; transform: scale(.86); } }
+
+/* ---------------------------------------------------------------------------
+   PLAN nav pass — Change Theme dropdown + brand link + appbar cluster. */
+a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
+.tp-theme-menu { position: relative; }
+.tp-theme-menu summary { list-style: none; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.tp-theme-menu summary::-webkit-details-marker { display: none; }
+.tp-theme-menu[open] summary { color: var(--accent, #7C3AED); }
+.tp-theme-pop { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 60;
+  display: flex; flex-direction: column; gap: .35rem; padding: .7rem .8rem;
+  background: var(--surface, #15151d); border: 1px solid var(--border, #333);
+  border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); min-width: 13rem; }
+.app-bar .nav-item { display: inline-flex; align-items: center; gap: .35rem; }

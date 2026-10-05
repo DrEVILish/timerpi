@@ -78,16 +78,6 @@
     <aside class="tp-dash-right stack">
       {{template "frag-messages" .}}
 
-      <!-- A7: the day memo — operators keep loose notes; autosaved verbatim
-           per show (debounced). Visible on the daysheet + stage print too. -->
-      <section class="panel">
-        <div class="panel-header">Day notes</div>
-        <textarea id="tp-day-notes" class="input" rows="5" aria-label="Day notes (autosaves)"
-                  placeholder="Water cue at 14:00 · giveaway desk left of stage…"
-                  >{{.Notes}}</textarea>
-        <span class="field-hint" id="tp-notes-status" aria-live="polite">Autosaves as you type.</span>
-      </section>
-
       {{template "frag-share" .}}
 
       <!-- F1/F2: the screens system — every connected display tab self-registers

@@ -62,22 +62,24 @@ func TestNavDisplayEntity(t *testing.T) {
 		t.Fatalf("dashboard: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`Back to Shows`, `Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`} {
+	for _, sub := range []string{`Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`, `Change Theme`, `href="/logout"`} {
 		if !strings.Contains(s, sub) {
-			t.Errorf("dashboard nav missing %q", sub)
+			t.Errorf("dashboard appbar missing %q", sub)
 		}
 	}
-	// On the home page itself the nav still reads plain "Shows" (you ARE
-	// there) — no "Back to Shows" on home.
+	if strings.Contains(s, "Back to Shows") {
+		t.Error("dashboard still says Back to Shows (replaced by Logout)")
+	}
+	// Home: brand links back to the shows list; no logout-only dead end.
+	if !strings.Contains(s, `href="/"`) {
+		t.Error("home brand does not link to /")
+	}
 	code, body = ts.call("GET", "/", nil, "")
 	if code != 200 {
 		t.Fatalf("home: %d", code)
 	}
 	if strings.Contains(string(body), "Back to Shows") {
-		t.Error("home nav says Back to Shows on the shows page itself")
-	}
-	if !strings.Contains(string(body), `Open Display`) {
-		t.Error("home missing Open Display")
+		t.Error("home nav says Back to Shows")
 	}
 	// /d/ keeps the fullscreen contract.
 	code, body = ts.call("GET", "/d/", nil, "")

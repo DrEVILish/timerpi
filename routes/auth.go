@@ -106,7 +106,7 @@ func requestAuthed(c *gin.Context) bool {
 // /css/<rev>/…, /src/<rev>/… and the NoRoute rewriter maps it back to the
 // public/ tree. Bump on every CSS/JS change (one string + the template sed);
 // older rev paths keep resolving so cached pages never 404.
-const assetsRev = "v53"
+const assetsRev = "v54"
 
 // registerAuth mounts the login round-trip and the password setter.// Routes registered here are intentionally NOT in any tests' page lists —
 // they are the first lines of defense, not page furniture.
@@ -114,6 +114,12 @@ func registerAuth(r *gin.Engine) {
 	r.GET("/login", loginPage)
 	r.POST("/api/login", loginAPI)
 	r.POST("/api/auth/password", authPasswordAPI)
+	// PLAN nav pass: the appbar Logout — clears the operator session and
+	// lands back on the shows list. Harmless when no password is set.
+	r.GET("/logout", func(c *gin.Context) {
+		c.SetCookie("tp_auth", "", -1, "/", "", false, true)
+		c.Redirect(http.StatusFound, "/")
+	})
 }
 
 // ---- B7: appliance default theme (which ftl bundle fresh browsers use) ---
@@ -240,7 +246,7 @@ func loginPageHTML(next string) string {
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>TimerPi — operator login</title>` +
 		`<link rel="stylesheet" href="/ftl/dist/blue-future.css">` +
-		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v53.css"></head>` +
+		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v54.css"></head>` +
 		`<body class="app"><main class="main" style="max-width:26rem;margin:8vh auto;padding:0 4vw">` +
 		`<h1>OPERATOR LOGIN</h1>` +
 		`<p class="text-muted">This appliance has an operator password. The stage display (` +

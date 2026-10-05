@@ -12,14 +12,14 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v51.js';
+import { Mesh, screenName } from './mesh.v54.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v51.js';
-import { createUndo } from './undo.v51.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v51.js';
-import { applyWaiting } from './waiting.v51.js';
+} from './engine.v54.js';
+import { createUndo } from './undo.v54.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v54.js';
+import { applyWaiting } from './waiting.v54.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -114,6 +114,8 @@ async function initTheme() {
     applyTheme(slug);
     try { localStorage.setItem(THEME_KEY, slug); } catch { /* */ }
     toast(`Theme: ${select.selectedOptions[0]?.textContent || slug}`);
+    // The picker lives in the Change Theme dropdown — close it on pick.
+    select.closest('details')?.removeAttribute('open');
   });
 }
 

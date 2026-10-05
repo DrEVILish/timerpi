@@ -22,9 +22,9 @@
 <meta name="tp-default-theme" content="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <link rel="icon" href="/img/timerpi.svg" type="image/svg+xml">
 <link rel="stylesheet" id="theme-css-default" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
-<link rel="stylesheet" href="/css/timerpi.v53.css">
+<link rel="stylesheet" href="/css/timerpi.v54.css">
 <!-- ASSET REV policy — PATH revision, not a query string: /css and /src
-     assets load from the CURRENT rev directory (/css/timerpi.v53.css …,
+     assets load from the CURRENT rev directory (/css/timerpi.v54.css …,
      swapped routes-side back to the real file by routes.registerStatic).
      On a CSS/JS change bump EVERY occurrence of the rev segment here,
      in display.html, display_board.html, settings.html, the Go lock pages
@@ -58,28 +58,35 @@
 
 {{define "appbar"}}
 <header class="app-bar">
-  <span class="nav-brand tp-brand">
+  <a class="nav-brand tp-brand" href="/" title="Shows">
     <img src="/img/timerpi.svg" alt="TimerPi" width="28" height="28" style="vertical-align:-6px">
-  </span>
+  </a>
   <nav class="nav">
-    {{if eq .Nav "home"}}<a class="nav-item is-active" href="/">Shows</a>
-    {{else}}<a class="nav-item" href="/" title="Back to the show list">Back to Shows</a>{{end}}
-    {{if .Show.Code}}
+    {{if ne .Nav "home"}}
     <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
     <a class="nav-item{{if eq .Nav "screens"}} is-active{{end}}" href="/screens/{{.Show.Code}}">Screens</a>
     {{end}}
+  </nav>
+  <div class="cluster push">
     {{if .Show.Code}}
     <!-- The one display affordance: same entity as the home page's Open
-         Display (a kiosk window onto the show's stage). -->
+         Display (a kiosk window onto the show's stage). FAR RIGHT. -->
     <a class="nav-item{{if eq .Nav "display"}} is-active{{end}}" href="/d/{{.Show.Code}}" target="_blank" rel="opener" data-kiosk title="Open this show's display">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       Open Display
     </a>
     {{end}}
-  </nav>
-  <div class="cluster push">
-    <label class="label" for="theme-select">Theme</label>
-    <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
+    <details class="tp-theme-menu">
+      <summary class="btn btn-sm" title="Change theme">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="9" cy="8" r="1.6"/></svg>
+        Change Theme
+      </summary>
+      <div class="tp-theme-pop">
+        <label class="label" for="theme-select">Theme</label>
+        <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
+      </div>
+    </details>
+    <a class="nav-item" href="/logout" title="End the operator session">Logout</a>
   </div>
 </header>
 {{end}}
@@ -134,7 +141,7 @@
 </div>
 <div class="toast-region" popover="manual" id="toast-region"></div>
 <script src="/src/htmx.min.js" defer></script>
-<script type="module" src="/src/timerpi.v53.js"></script>
+<script type="module" src="/src/timerpi.v54.js"></script>
 </body>
 </html>
 {{end}}
