@@ -27,10 +27,10 @@
 import {
   activeCue, cueAfter, elapsedMS, remainingMS, isOvertime, alertState,
   clockView, computeSchedule, fmtDuration, fmtRemaining, fmtTimeOfDay,
-} from './engine.v55.js';
-import { Mesh, screenName } from './mesh.v55.js';
-import { applyTheme, setThemeVersion, initClientLog } from './theme.v55.js';
-import { applyWaiting } from './waiting.v55.js';
+} from './engine.v58.js';
+import { Mesh, screenName } from './mesh.v58.js';
+import { applyTheme, setThemeVersion, initClientLog } from './theme.v58.js';
+import { applyWaiting } from './waiting.v58.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 
 async function loadThemeVersion() {
@@ -178,6 +178,14 @@ function initMesh() {
           if (m.rows) {
             sched = { rows: m.rows, totalMS: m.totalMS || 0, dayStartTS: m.dayStartTS || 0 };
             renderStatic();
+          }
+          break;
+        case 'poll':
+          // PLAN §11.5: poll-only deltas ride the lane — boards stay live
+          // on votes without a full snapshot fanout.
+          if (mesh.snap) {
+            mesh.snap.poll = m.poll || null;
+            if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
           }
           break;
         case 'message':

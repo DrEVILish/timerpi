@@ -18,7 +18,7 @@
 
 import {
   applyCommand, tickZeroCrossing, activeCue,
-} from './engine.v55.js';
+} from './engine.v58.js';
 
 const SIGNALING_CHANNEL = 'timerpi';
 
@@ -285,10 +285,17 @@ export class Mesh {
         case 'err':
           this.onLog('error', m.message || 'server error');
           if (/session deleted/i.test(m.message || '')) {
-            // Operator deleted this session (gallery/panel action): stop
-            // the retry loop — auto-reconnect would undo the delete.
+            // Operator deleted this session (gallery/panel action): the
+            // display returns to its LAUNCH state — the /d/ ready surface
+            // re-registers it in the waiting room, ready to be captured by
+            // any show (owner rule: disconnect ⇒ launch state). Auto-
+            // reconnect here would undo the delete, and a hydrated page
+            // keeps showing a show that disowned it.
             this._deleted = true;
             try { this._ws.close(); } catch { /* */ }
+            if (this.role === 'screen' || this.role === 'display') {
+              try { location.href = '/d/?screen=' + encodeURIComponent(screenName()); } catch { location.href = '/d/'; }
+            }
             return;
           }
           if (/unknown (show|session code)/i.test(m.message || '')) {

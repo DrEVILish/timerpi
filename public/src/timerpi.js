@@ -1974,7 +1974,10 @@ function initGallery() {
       });
       if (r.ok) toast('Applied to screen', 'success');
     } else if (act === 'edit') {
-      if (frame) frame.src = `/d/${code}?view=board&edit=1&preview=1${s.boardId ? `&board=${s.boardId}` : ''}`;
+      // The editor must look like THE DISPLAY, not like the operator's
+      // browser: adopt the screen's assigned theme (?theme= preview) so
+      // the compose view matches what the screen actually renders.
+      if (frame) frame.src = `/d/${code}?view=board&edit=1&preview=1${s.boardId ? `&board=${s.boardId}` : ''}${s.theme ? `&theme=${encodeURIComponent(s.theme)}` : ''}`;
       const title = document.getElementById('tp-screen-edit-title');
       if (title) title.textContent = `Layout editor — ${s.name}`;
       if (typeof dlg?.showModal === 'function') dlg.showModal();
