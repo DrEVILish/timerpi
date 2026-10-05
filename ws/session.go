@@ -243,6 +243,7 @@ func (h *Hub) register(s *session) bool {
 			if scr.BoardID > 0 {
 				s.sendFrame("t", "screen-board", "boardId", scr.BoardID)
 			}
+			s.sendFrame("t", "screen-look", "kind", scr.Kind, "rotation", scr.Rotation)
 		}
 	}
 	// PLAN §11.5 owner round: EVERY joining session (boards + operators too,

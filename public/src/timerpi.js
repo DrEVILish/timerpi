@@ -22,6 +22,7 @@ import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './th
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 import { initModerate, refresh as moderateRefresh } from './moderate.js';
+import { initScreens as initScreensPage, pull as screensPull } from './screens.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -838,9 +839,17 @@ function initMesh(showId, role, page) {
         case 'poll':
           moderateRefresh();
           break;
+        case 'screen-look':
+          // A screen's rotation (portrait poster screens), pushed live.
+          if (document.body.dataset.role === 'display') {
+            if (m.rotation) document.documentElement.dataset.rotate = String(m.rotation);
+            else delete document.documentElement.dataset.rotate;
+          }
+          break;
         case 'screens':
           screensCache.screens = m.screens || [];
           renderScreens();
+          screensPull();
           break;
         case 'peers':
           screensRefreshSoon(); // live counts changed (a screen joined/left)
@@ -1768,310 +1777,6 @@ function initScreens() {
   });
 }
 
-/* ------------------------------------------------------- screens gallery --
- * GET /screens/:ident — a live preview card per registered screen (layout
- * map + current values, 4 s poll), the waiting room with Capture/Dismiss,
- * and a maximised layout-editor modal (iframe of the board compose view in
- * preview mode: it edits WITHOUT self-registering a phantom screen).
- * textContent-only everywhere (XSS rule); ftl-themes component classes.
- */
-const gal = { screens: [], waiting: [], boards: [], themes: [], templates: [] };
-
-function galEl(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = String(text);
-  return e;
-}
-
-function renderGallery() {
-  const host = document.getElementById('tp-gal');
-  if (!host) return;
-  const liveN = gal.screens.filter((s) => s.connected).length;
-  const count = document.getElementById('tp-gal-count');
-  if (count) count.textContent = `${gal.screens.length} screens · ${liveN} live`;
-  host.textContent = '';
-  if (!gal.screens.length) {
-    host.appendChild(galEl('p', 'text-muted', 'No screens yet — open /d/<code> on a display; it registers itself here.'));
-  }
-  gal.screens.forEach((s, idx) => {
-    const card = galEl('div', 'tp-gal-card');
-    card.dataset.idx = String(idx);
-    const head = galEl('div', 'tp-gal-head');
-    head.append(galEl('strong', null, s.name),
-      galEl('span', 'badge' + (s.connected ? ' badge-accent' : ''), s.connected ? `LIVE ×${s.sessions}` : 'offline'));
-    if (s.theme) head.appendChild(galEl('span', 'badge', s.theme));
-    card.appendChild(head);
-
-    const prev = galEl('div', 'tp-gal-prev');
-    for (const w of (s.widgets || [])) {
-      const box = galEl('span', 'tp-gal-w', w.type);
-      box.style.left = `${(w.x / 12) * 100}%`;
-      box.style.width = `${(w.w / 12) * 100}%`;
-      const y = Math.min(w.y, 11);
-      box.style.top = `${(y / 12) * 100}%`;
-      box.style.height = `${(Math.min(w.h, 12 - y) / 12) * 100}%`;
-      prev.appendChild(box);
-    }
-    if (!(s.widgets || []).length) prev.appendChild(galEl('span', 'tp-gal-empty', 'stage (no board layout)'));
-    card.appendChild(prev);
-
-    const info = galEl('div', 'tp-gal-info');
-    info.append(galEl('span', 'mono', s.previewClock || '—'),
-      galEl('span', 'tp-gal-label', s.previewLabel || 'no cue'));
-    card.appendChild(info);
-    const bar = galEl('div', 'tp-gal-pct');
-    const fill = document.createElement('i');
-    fill.style.width = `${s.previewPct || 0}%`;
-    bar.appendChild(fill);
-    card.appendChild(bar);
-
-    const ctr = galEl('div', 'tp-gal-ctr cluster is-gap-2xs');
-    const themeSel = document.createElement('select');
-    themeSel.className = 'select input-sm';
-    themeSel.dataset.field = 'theme';
-    themeSel.setAttribute('aria-label', `Theme for ${s.name}`);
-    themeSel.appendChild(new Option('Default theme', ''));
-    for (const t of gal.themes) themeSel.appendChild(new Option(t, t));
-    if (s.theme && !gal.themes.includes(s.theme)) themeSel.appendChild(new Option(`${s.theme} (not installed)`, s.theme));
-    themeSel.value = s.theme || '';
-    themeSel.dataset.stored = themeSel.value;
-    const boardSel = document.createElement('select');
-    boardSel.className = 'select input-sm';
-    boardSel.dataset.field = 'board';
-    boardSel.setAttribute('aria-label', `Board for ${s.name}`);
-    boardSel.appendChild(new Option('Show board', ''));
-    for (const b of gal.boards) boardSel.appendChild(new Option(b.name, String(b.id)));
-    if (s.boardId > 0 && !gal.boards.some((b) => String(b.id) === String(s.boardId))) {
-      boardSel.appendChild(new Option(`board ${s.boardId} (deleted?)`, String(s.boardId)));
-    }
-    boardSel.value = s.boardId ? String(s.boardId) : '';
-    boardSel.dataset.stored = boardSel.value;
-    const mkBtn = (act, label, cls, title) => {
-      const b = galEl('button', cls, label);
-      b.type = 'button';
-      b.dataset.act = act;
-      if (title) b.title = title;
-      return b;
-    };
-    ctr.append(themeSel, boardSel,
-      mkBtn('apply', 'Apply', 'btn btn-sm btn-primary', 'Save theme/board for this screen'),
-      mkBtn('edit', 'Edit layout', 'btn btn-sm', 'Open the maximised layout editor'));
-    for (const pr of (s.peers || [])) {
-      const kick = mkBtn('kick', '⏻', 'btn btn-sm btn-icon btn-ghost',
-        `Disconnect ${pr.role} session ${pr.peerId} (stays down until reloaded)`);
-      delete kick.dataset.act;
-      kick.dataset.kick = pr.peerId;
-      ctr.appendChild(kick);
-    }
-    ctr.appendChild(mkBtn('forget', '✕', 'btn btn-sm btn-icon btn-ghost', 'Forget this screen'));
-    card.appendChild(ctr);
-    host.appendChild(card);
-  });
-}
-
-function renderWaiting() {
-  const host = document.getElementById('tp-waiting-list');
-  if (!host) return;
-  const count = document.getElementById('tp-waiting-count');
-  if (count) count.textContent = String(gal.waiting.length);
-  host.textContent = '';
-  if (!gal.waiting.length) {
-    host.appendChild(galEl('p', 'text-muted', 'None — when a show is deleted its displays land here, then you can capture them into a live show.'));
-    return;
-  }
-  for (const w of gal.waiting) {
-    const row = galEl('div', 'tp-wait-row');
-    row.append(galEl('strong', null, w.name),
-      galEl('span', 'mono text-muted', w.host),
-      galEl('span', 'badge', `seen ${w.seenAgo}`));
-    const cap = galEl('button', 'btn btn-sm btn-primary', 'Capture to this show');
-    cap.type = 'button';
-    cap.dataset.wact = 'capture';
-    cap.dataset.wid = String(w.id);
-    const dis = galEl('button', 'btn btn-sm btn-ghost', 'Dismiss');
-    dis.type = 'button';
-    dis.dataset.wact = 'dismiss';
-    dis.dataset.wid = String(w.id);
-    row.append(cap, dis);
-    host.appendChild(row);
-  }
-}
-
-async function galPost(path, opts) {
-  try {
-    const res = await fetch(path, opts);
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) toast(j.error || `request failed (${res.status})`, 'danger');
-    return j;
-  } catch {
-    toast('network error', 'danger');
-    return {};
-  }
-}
-
-function initGallery() {
-  if (initGallery.bound) return;
-  initGallery.bound = true;
-  const code = document.body.dataset.show || '';
-  const dlg = document.getElementById('tp-screen-edit');
-  const frame = document.getElementById('tp-screen-edit-frame');
-  document.getElementById('tp-screen-edit-close')?.addEventListener('click', () => dlg?.close());
-  dlg?.addEventListener('close', () => { if (frame) frame.src = 'about:blank'; });
-
-  const pull = async () => {
-    const [s, w, b, t] = await Promise.all([
-      fetch(`/api/shows/${code}/screens`).then((r) => r.json()).catch(() => null),
-      fetch('/api/waiting').then((r) => r.json()).catch(() => null),
-      fetch(`/api/shows/${code}/boards`).then((r) => r.json()).catch(() => null),
-      fetch('/api/theme').then((r) => r.json()).catch(() => null),
-    ]);
-    if (s) gal.screens = s.screens || [];
-    if (w) gal.waiting = w.waiting || [];
-    if (b) gal.boards = Array.isArray(b) ? b : (b.boards || []);
-    if (t) gal.themes = t.themes || [];
-    renderGallery();
-    renderWaiting();
-  };
-  pull();
-  setInterval(pull, 4000);
-
-  document.getElementById('tp-gal')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.tp-gal-card');
-    if (!card) return;
-    const s = gal.screens[Number(card.dataset.idx)];
-    if (!s) return;
-    const kick = e.target.closest('[data-kick]');
-    if (kick) {
-      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kick.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
-      await galPost(`/api/shows/${code}/sessions/${encodeURIComponent(kick.dataset.kick)}`, { method: 'DELETE' });
-      pull();
-      return;
-    }
-    const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'apply') {
-      const theme = card.querySelector('[data-field="theme"]');
-      const board = card.querySelector('[data-field="board"]');
-      const r = await galPost(`/api/shows/${code}/screens/config`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: s.name,
-          theme: theme?.value || theme?.dataset.stored || '',
-          boardId: Number(board?.value || board?.dataset.stored || 0),
-        }),
-      });
-      if (r.ok) toast('Applied to screen', 'success');
-    } else if (act === 'edit') {
-      // The editor must look like THE DISPLAY, not like the operator's
-      // browser: adopt the screen's assigned theme (?theme= preview) so
-      // the compose view matches what the screen actually renders.
-      if (frame) frame.src = `/d/${code}?view=board&edit=1&preview=1${s.boardId ? `&board=${s.boardId}` : ''}${s.theme ? `&theme=${encodeURIComponent(s.theme)}` : ''}`;
-      const title = document.getElementById('tp-screen-edit-title');
-      if (title) title.textContent = `Layout editor — ${s.name}`;
-      if (typeof dlg?.showModal === 'function') dlg.showModal();
-      else dlg?.setAttribute('open', '');
-    } else if (act === 'forget') {
-      if (!(await tpConfirm('An open display re-registers on its next join.', { title: `Forget screen "${s.name}"?`, ok: 'Forget', danger: true }))) return;
-      await galPost(`/api/shows/${code}/screens/forget`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: s.name }),
-      });
-      pull();
-    }
-  });
-
-  // PLAN §11.2: Capture opens a modal — Name / Theme / Location / Layout —
-  // and the captured display leaves the waiting list immediately.
-  const capDlg = document.getElementById('tp-capture');
-  let capWid = 0;
-  const capNextName = () => {
-    const used = new Set(gal.screens.map((s) => s.name));
-    let n = 1;
-    while (used.has(`Screen ${n}`)) n++;
-    return `Screen ${n}`;
-  };
-  const capFill = async (w) => {
-    document.getElementById('tp-capture-host').textContent = w ? w.host : '';
-    document.getElementById('tp-capture-name').value = capNextName();
-    const themeSel = document.getElementById('tp-capture-theme');
-    themeSel.textContent = '';
-    themeSel.appendChild(galEl('option', null, 'Operator default')).value = '';
-    for (const t of gal.themes) {
-      const o = themeSel.appendChild(galEl('option', null, t.label + (t.scheme === 'light' ? ' light' : '')));
-      o.value = t.dataTheme;
-    }
-    themeSel.value = '';
-    document.getElementById('tp-capture-room').value = '';
-    const boardSel = document.getElementById('tp-capture-board');
-    // §Layout round: the modal picks a TEMPLATE (10 named layouts from
-    // /api/board-templates); the server builds/replaces that screen's own
-    // board from it. Blank = keep riding the show's default board.
-    boardSel.textContent = '';
-    if (!(gal.templates || []).length) {
-      try {
-        const tj = await (await fetch('/api/board-templates')).json();
-        gal.templates = Object.keys(tj.templates || {}).map((k) => ({ name: k }));
-      } catch { /* falls back to the board picker */ }
-    }
-    if ((gal.templates || []).length) {
-      boardSel.appendChild(galEl('option', null, 'Template…')).value = '';
-      for (const t of gal.templates) {
-        const o = boardSel.appendChild(galEl('option', null, t.name))
-          ; o.value = 'tpl:' + t.name;
-      }
-      boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
-      boardSel.value = '';
-    } else {
-      boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
-      for (const b of gal.boards) {
-        const o = boardSel.appendChild(galEl('option', null, b.name || `Board ${b.id}`));
-        o.value = String(b.id);
-      }
-      boardSel.value = '0';
-    }
-  };
-  document.getElementById('tp-capture-cancel')?.addEventListener('click', () => capDlg?.close());
-  document.getElementById('tp-capture-go')?.addEventListener('click', async () => {
-    const boardVal = document.getElementById('tp-capture-board').value || '';
-    const body = JSON.stringify({
-      code,
-      name: document.getElementById('tp-capture-name').value,
-      theme: document.getElementById('tp-capture-theme').value,
-      room: document.getElementById('tp-capture-room').value,
-      boardId: boardVal.startsWith('tpl:') ? 0 : Number(boardVal || 0),
-      template: boardVal.startsWith('tpl:') ? boardVal.slice(4) : '',
-    });
-    const r = await galPost(`/api/waiting/${capWid}/capture`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body,
-    });
-    if (r.ok) {
-      toast(`Captured as "${r.name}" — it joins within seconds`, 'success');
-      capDlg?.close();
-      pull();
-      // The display polls every 2 s and then joins; front-load refreshes so
-      // the new screen shows up here the moment it lands.
-      for (const delay of [1000, 2000, 3500, 5000]) setTimeout(pull, delay);
-    }
-  });
-
-  document.getElementById('tp-waiting-list')?.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-wact]');
-    if (!btn) return;
-    if (btn.dataset.wact === 'capture') {
-      capWid = Number(btn.dataset.wid);
-      await capFill(gal.waiting.find((w) => w.id === capWid));
-      if (typeof capDlg?.showModal === 'function') capDlg.showModal();
-      else capDlg?.setAttribute('open', '');
-      return; // the modal drives the rest
-    } else if (btn.dataset.wact === 'dismiss') {
-      await galPost(`/api/waiting/${btn.dataset.wid}`, { method: 'DELETE' });
-    }
-    pull();
-  });
-}
-
 /* -------------------------------------------------- inline rate editor -- */
 
 function resetRate() {
@@ -2686,7 +2391,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initImportDrop();
 
   if (page === 'home') { initHome(); renderRecent(); }
-  if (page === 'screens') initGallery();
+  if (page === 'screens') initScreensPage();
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting
   // timerpi.js's mesh too meant TWO WS sessions per screen (double join,

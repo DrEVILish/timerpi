@@ -20,6 +20,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -64,6 +65,11 @@ type screenView struct {
 	PreviewLabel string              `json:"previewLabel,omitempty"`
 	PreviewClock string              `json:"previewClock,omitempty"`
 	PreviewPct   int                 `json:"previewPct,omitempty"`
+
+	Kind        string `json:"kind"`        // audience | walkin | presenter | ""
+	Rotation    int    `json:"rotation"`    // 0/90/180/270
+	Rows        int    `json:"rows"`        // layout canvas rows (preview geometry)
+	Orientation string `json:"orientation"` // layout orientation
 }
 
 // registerScreens mounts the F1/F2 endpoints into the /api/shows group.
@@ -74,6 +80,7 @@ func registerScreens(g *gin.RouterGroup, d *Deps) {
 	g.POST("/shows/:ident/screens/match", d.apiScreenMatch)
 	g.POST("/shows/:ident/screens/rename", d.apiScreenRename)
 	g.POST("/shows/:ident/screens/forget", d.apiScreenForget)
+	g.POST("/shows/:ident/screens/template", d.apiScreenTemplate)
 
 	g.GET("/shows/:ident/presets", d.apiPresetsList)
 	g.POST("/shows/:ident/presets", d.apiPresetsSave)
@@ -141,26 +148,27 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 	seen := map[string]bool{}
 	for _, r := range rows {
 		seen[r.Name] = true
-		out = append(out, d.screenCard(r.Name, r.Theme, r.BoardID, r.LastSeen, r.Room, live, peers,
+		out = append(out, d.screenCard(r, live, peers,
 			boardNames, defaultBoardID, id, activeLabel, activeClock, activePct))
 	}
 	for name := range live { // tabs that joined before their registry row was read
 		if seen[name] {
 			continue
 		}
-		out = append(out, d.screenCard(name, "", 0, 0, "", live, peers, boardNames, defaultBoardID,
+		out = append(out, d.screenCard(timerpi.Screen{Name: name}, live, peers, boardNames, defaultBoardID,
 			id, activeLabel, activeClock, activePct))
 	}
 	return out, nil
 }
 
 // screenCard assembles one panel/gallery entry with its preview boxes.
-func (d *Deps) screenCard(name, theme string, boardID, lastSeen int64, room string,
+func (d *Deps) screenCard(r timerpi.Screen,
 	live map[string]int, peers map[string][][2]string,
 	boardNames map[int64]string, defaultBoardID, showID int64,
 	activeLabel, activeClock string, activePct int) screenView {
-	v := screenView{Name: name, Theme: theme, BoardID: boardID, Room: room, LastSeen: lastSeen,
-		Sessions: live[name], Connected: live[name] > 0,
+	name, boardID := r.Name, r.BoardID
+	v := screenView{Name: name, Theme: r.Theme, BoardID: boardID, Room: r.Room, LastSeen: r.LastSeen,
+		Sessions: live[name], Connected: live[name] > 0, Kind: r.Kind, Rotation: r.Rotation,
 		PreviewLabel: activeLabel, PreviewClock: activeClock, PreviewPct: activePct}
 	for _, pr := range peers[name] {
 		v.Peers = append(v.Peers, screenSessionView{PeerID: pr[0], Role: pr[1]})
@@ -174,7 +182,9 @@ func (d *Deps) screenCard(name, theme string, boardID, lastSeen int64, room stri
 	}
 	if d.Store != nil && bid != 0 {
 		if b, err := boards.GetBoard(d.Store.DB, showID, bid); err == nil {
-			for _, w := range b.Parsed().Widgets {
+			l := b.Parsed()
+			v.Rows, v.Orientation = l.Rows, l.Orientation
+			for _, w := range l.Widgets {
 				v.Widgets = append(v.Widgets, screenBoxView{X: w.X, Y: w.Y, W: w.W, H: w.H, Type: w.Type})
 			}
 		}
@@ -202,6 +212,9 @@ func (d *Deps) pushScreen(id int64, name string) {
 		if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID}); jerr == nil {
 			frames = append(frames, b)
 		}
+	}
+	if b, jerr := json.Marshal(map[string]any{"t": "screen-look", "kind": s.Kind, "rotation": s.Rotation}); jerr == nil {
+		frames = append(frames, b)
 	}
 	if len(frames) > 0 {
 		d.Hub.SendToScreen(id, name, frames...)
@@ -263,7 +276,7 @@ func (d *Deps) apiScreenSelf(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "known": false})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "known": true, "theme": s.Theme, "boardId": s.BoardID})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "known": true, "theme": s.Theme, "boardId": s.BoardID, "kind": s.Kind, "rotation": s.Rotation})
 }
 
 // POST /api/shows/:ident/screens/config {name,theme,boardId} — assign one
@@ -274,13 +287,15 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Name    string `json:"name"`
-		Theme   string `json:"theme"`
-		BoardID int64  `json:"boardId"`
-		Room    string `json:"room"`
+		Name     string  `json:"name"`
+		Theme    string  `json:"theme"`
+		BoardID  int64   `json:"boardId"`
+		Room     string  `json:"room"`
+		Kind     *string `json:"kind"`
+		Rotation *int    `json:"rotation"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, theme?, boardId?}"})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, theme?, boardId?, kind?, rotation?}"})
 		return
 	}
 	name := timerpi.SanitizeScreenName(body.Name)
@@ -299,6 +314,20 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID, body.Room); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
+	}
+	if body.Kind != nil || body.Rotation != nil {
+		cur, _ := d.Store.GetScreenByName(id, name)
+		kind, rot := cur.Kind, cur.Rotation
+		if body.Kind != nil {
+			kind = *body.Kind
+		}
+		if body.Rotation != nil {
+			rot = *body.Rotation
+		}
+		if err := d.Store.SetScreenLook(id, name, kind, rot); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
+			return
+		}
 	}
 	d.pushScreen(id, name)
 	d.notifyControls(id)
@@ -639,4 +668,60 @@ func (d *Deps) apiPresetImport(c *gin.Context) {
 	}
 	d.logAction(id, "presetImport", p.Name)
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "id": p.ID, "name": p.Name})
+}
+
+// screenTemplateBoard builds (or replaces) a screen's own board from a
+// built-in template and returns its id. One board per screen keeps each
+// screen's customisations isolated.
+func (d *Deps) screenTemplateBoard(showID int64, screen, template string) (int64, error) {
+	tl, ok := boards.TemplateLayouts()[strings.ToLower(strings.TrimSpace(template))]
+	if !ok {
+		return 0, fmt.Errorf("unknown template")
+	}
+	raw, _ := json.Marshal(tl)
+	b, err := boards.UpsertLayoutByName(d.Store.DB, showID, strings.TrimSpace(screen)+" layout", string(raw))
+	if err != nil {
+		return 0, err
+	}
+	return b.ID, nil
+}
+
+// POST /api/shows/:ident/screens/template {name, template} — give a screen
+// its own copy of a built-in layout (and its display type), pushed live.
+func (d *Deps) apiScreenTemplate(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name     string `json:"name"`
+		Template string `json:"template"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, template}"})
+		return
+	}
+	name := timerpi.SanitizeScreenName(body.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+		return
+	}
+	bid, err := d.screenTemplateBoard(id, name, body.Template)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	cur, _ := d.Store.GetScreenByName(id, name)
+	if err := d.Store.SetScreenConfig(id, name, cur.Theme, bid, cur.Room); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	for _, t := range boards.Templates() {
+		if t.Key == strings.ToLower(strings.TrimSpace(body.Template)) && cur.Kind == "" {
+			_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
+		}
+	}
+	d.pushScreen(id, name)
+	d.notifyControls(id)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "boardId": bid})
 }

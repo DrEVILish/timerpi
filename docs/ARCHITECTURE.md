@@ -115,23 +115,22 @@ replaces it.
 
 ## 6. Screens, layouts and templates
 
-- **Screen identity.** Precedence: the `?screen=<name>` URL parameter, then per-window `sessionStorage`, then a generated `Screen-XXXX`. The name rides the WS join, which upserts the `screens` row. The hub pushes the stored theme/board assignment back immediately.
-- **Waiting room.** `/d/` (no code) shows a READY card and registers in `waiting_screens`. An operator **captures** it from `/screens/<code>`, choosing name, theme, location and template. The screen then hops to its room. The claim is atomic and consumed once.
-- **Layouts ("boards")** live in `boards/`. A 12-column grid holds at most 48 tiles. **17 widget types**: countdown, cuelabel, speaker, nextup, wallclock, progress, dayprogress, messages, showtitle, rate, schedule, notice, poll, qa, wordcloud, map, joinqr.
-- **Templates** (`boards.TemplateLayouts`, the single source; served at `GET /api/board-templates`):
+- **Screen identity.** Precedence: the `?screen=<name>` URL parameter, then per-window `sessionStorage`, then a generated `Screen-XXXX`. The name rides the WS join, which upserts the `screens` row; the hub then pushes the stored look (`display` theme, `screen-board`, `screen-look` type + rotation).
+- **Per screen:** name (inline rename), **display type** (`audience` | `walkin` | `presenter`), theme (else the event default, else the box default), layout (board), **rotation** (0/90/180/270, CSS-rotated page).
+- **Waiting room.** `/d/` shows a READY card and registers in `waiting_screens`. A moderator captures it from `/screens/<room>` (name, type, template, rotation, theme); the claim is atomic and consumed once.
+- **Layouts ("boards", `boards/`).** A layout is a canvas of 12 columns × `rows` rows, `landscape` or `portrait`, stretched to fill the screen (no scrolling). Tile text sizes follow the tile (CSS container query units). 19 tile types: countdown, cuelabel, speaker, nextup, wallclock, progress, dayprogress, messages, showtitle, rate, schedule, notice, poll ("Audience item"), qa, wordcloud, map, joinqr, rooms ("All rooms now"), eventschedule.
+- **Templates** (`boards.Templates()`, served at `GET /api/board-templates` as `catalog`), grouped by display type:
 
-| Template | Tiles | Serves PRODUCT surface |
-|---|---|---|
-| stage | countdown, messages, cuelabel, nextup, progress, dayprogress, wallclock, rate, showtitle | default timer |
-| lobby | showtitle, wallclock, messages, schedule | — |
-| event | showtitle, map, schedule, wallclock, notice | #1 (single-room only; see STATUS N7) |
-| room | showtitle, wallclock, cuelabel, speaker, nextup, schedule, joinqr, notice | #2/#3 |
-| main | showtitle, poll, qa, wordcloud, joinqr, notice | #4/#5 |
-| dsm | countdown, poll, progress, cuelabel, speaker, nextup, wallclock, joinqr, dayprogress | #6/#7 |
-| speaker, qawall, clockroom, break | fillers | — |
+| Type | Templates |
+|---|---|
+| Audience | `main` (Audience main), `qawall`, `holding`, `break` |
+| Walk-in | `event`, `event-portrait`, `room`, `room-portrait`, `lobby`, `clockroom` |
+| Presenter | `dsm`, `stage` (Full timer), `speaker` |
 
+  Applying a template to a screen (capture or `POST /screens/template`) builds that screen's own board, so edits never leak to other screens.
+- **Event walk-in data.** `rooms`, `eventschedule` and the default `map` tile poll `GET /api/shows/:room/walkin` (every room of the event from the live engines; open).
 - **Steering.** A named screen with an assigned board that loads the bare stage URL is redirected (302) to its board. Live reassignment arrives as a `screen-board` frame.
-- **Editing.** The layout editor runs only inside the operator's `/screens/` preview iframe (`?edit=1&preview=1`, auth-gated). Real screens never render chrome.
+- **Editing.** The layout editor runs only inside the moderator's Screens page (`?edit=1&preview=1`), framed at the layout's aspect. Real screens never render chrome.
 - **Display page variants.** `/d/<code>?view=stage|next|daysheet|clock|board`.
 
 ## 7. Audience interactions

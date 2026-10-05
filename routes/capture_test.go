@@ -220,7 +220,7 @@ func TestCaptureWithTemplate(t *testing.T) {
 		if b.Name == "TV-1 layout" {
 			mine++
 			mineID = b.ID
-			if !strings.Contains(b.LayoutJSON(), `"type":"joinqr"`) {
+			if !strings.Contains(b.LayoutJSON(), `"type":"schedule"`) {
 				t.Errorf("template widgets missing: %.200s", b.LayoutJSON())
 			}
 		}

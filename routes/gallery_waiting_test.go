@@ -223,8 +223,13 @@ func TestSessionKickFlow(t *testing.T) {
 	// The kicked client receives the goodbye frame, then the close.
 	conn.SetReadDeadline(kickDeadline())
 	var m map[string]any
-	if err := conn.ReadJSON(&m); err != nil {
-		t.Fatalf("kicked client got nothing: %v", err)
+	for {
+		if err := conn.ReadJSON(&m); err != nil {
+			t.Fatalf("kicked client got nothing: %v", err)
+		}
+		if m["t"] == "err" {
+			break
+		}
 	}
 	if m["t"] != "err" || !strings.Contains(fmt.Sprint(m["message"]), "session deleted") {
 		t.Fatalf("kicked client frame = %v", m)

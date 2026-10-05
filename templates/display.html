@@ -6,7 +6,7 @@
 */ -}}
 {{define "display"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}}>
 <head>
 {{template "head" .}}
 <style>

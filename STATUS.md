@@ -33,8 +33,8 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | # | Surface | Status | Gap |
 |---|---|---|---|
-| 1 | Event walk-in | ⚠️ | `/zone/<name>` page reloads every 30 s with a frozen clock. "Now" comes from the plan, not the live timer. Not a layout, no rotation → **N7**, **N4** |
-| 2/3 | Room walk-in | 🟡 | `room` template works. Needs portrait form and rotation → **N4** |
+| 1 | Event walk-in | ✅ | `event` / `event-portrait` templates: "All rooms now" (live now/next per room), event schedule (one column per room), event map, clock. Fed by `/api/shows/:room/walkin` (5 s). The old `/zone/` page remains until C10 |
+| 2/3 | Room walk-in | ✅ | `room` / `room-portrait` templates; rotation per screen |
 | 4/5 | Room audience display | ✅ | `main` template: one large Audience-item tile (poll/quiz bars, Q&A wall + spotlight, word cloud, ideas) + join QR. Text scaling for big screens comes in the UI pass |
 | 6/7 | Room presenter display | ✅ | `dsm` template; its Audience-item tile follows the Presenter target. Display types (N4) still to do |
 | 8/9 | Room moderator | 🟡 | ✅ Event code → pick room → optional room password. Room-isolated (tested). Dashboard is complete for timing/audience. Tablet pass still to do (**N11**) |
@@ -50,15 +50,15 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | T1–T5 timing | ✅ | Mature |
 | T6 import | ✅ | |
 | T7 blackout room / event | ✅ | Room, and event-wide from the SuperOperator dashboard |
-| S1 capture | 🟡 | Works. Must also set display type + rotation (N4) |
-| S2 layout editor | 🟡 | Works (17 tile types). Needs rotation/portrait preview (N4) |
-| S3 templates per display type | 🟡 | 10 templates, not grouped by type, no portrait variants (N4) |
+| S1 capture | ✅ | Capture asks name, display type (Audience/Walk-in/Presenter), layout (templates for that type), mounting (rotation) and theme; only into rooms you moderate |
+| S2 layout editor | ✅ | Editor shows the screen's real canvas (rows × 12, landscape or portrait) in its theme |
+| S3 templates per display type | ✅ | 13 templates in a catalog grouped by type, incl. portrait walk-ins (`boards.Templates`) |
 | S4 remote screen management | 🟡 | Per room ✅. No event-wide screens view for the SuperOperator (N3) |
 | S5 offline resilience | 🟡 | Code + tests. Two-machine drill pending (H4) |
 | S6 no chrome on screens | ⚠️ | B5 |
-| S7 rotation | ❌ | N4 |
-| S8 live event walk-in | ❌ | N7 |
-| S9 per-screen theme + layout, inline rename | 🟡 | Theme + layout per screen ✅. Rename is a button/prompt, not inline double-click (N4) |
+| S7 rotation | ✅ | Per screen 0/90/180/270, CSS rotation, server-rendered + pushed live (`screen-look` frame) |
+| S8 live event walk-in | ✅ | |
+| S9 per-screen theme + layout, inline rename | ✅ | Screens page: type, layout, theme, mounting apply instantly; double-click/tap renames |
 | A1 kinds | ✅ | Poll, quiz, Q&A, word cloud, ideas (survey removed) |
 | A2 room-scoped | ✅ | |
 | A3 hidden until pushed | ✅ | Absent from the payload |
@@ -72,7 +72,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | L1 ftl-themes, default `blue-future` | ✅ | Default already `blue-future`. ftl-themes fetch not reproducible (C2) |
 | L2–L3 animation everywhere, operator-set | ⚠️ | Only poll/qa/wordcloud tiles (N9) |
 | L4 reduced motion on phones only | ✅ | |
-| L5 viewport sizing | ✅ | Portrait still to verify (N4) |
+| L5 viewport sizing | ✅ | Layouts are canvases that fill the screen; tile text scales with the tile (container query units), so 720p/4K/portrait all work |
 | L6 device-class UX (tablet moderator) | 🟡 | N11 |
 | H1–H3 appliance, offline LAN, mesh | 🟡 | Hardware drills pending (H1–H4). UI files not embedded (C9) |
 | H4 CuTePi OSC | ✅ | |
@@ -100,11 +100,11 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 |---|---|---|---|
 | **N1** | ✅ Done 2026-10-05: `events` table; shows are rooms (`event_id`, `room_pos`, `room_pw` hash); PBKDF2 passwords; HMAC session cookies; orphan shows adopted at startup (zones → one event). Left: one whole-event export file | E1, E3, E4 | |
 | **N2** | ✅ Done 2026-10-05: new home page (join by code / create event / open a screen / recent), event lobby with room sign-in and SuperOperator sign-in. The old setup wizard and connect sheet are retired | E1, E2 | |
-| **N3** | 🟡 SuperOperator dashboard done (see surface 10). The appliance password is removed; box settings need any protected event's supervisor session. Left: an event-wide screens view | E3, S4, T7 | |
-| **N4** | **Display types + rotation.** Screens registry gets `type` (audience/walkin/presenter) and `rotation` (0/90/180/270). Capture modal sets both. Rotation is a CSS transform of the whole layout. Templates are grouped by type, with portrait walk-in variants. The editor previews rotation. Screen names rename inline by double-click/double-tap (S9) | S1–S3, S7, §3.2 | |
+| **N3** | ✅ Done 2026-10-05: SuperOperator dashboard with per-room live cards linking to each room's Run and Screens pages (screens online per room) | E3, S4, T7 | |
+| **N4** | ✅ Done 2026-10-05: screens `kind` + `rotation`; capture and Screens page (`screens.js`) rebuilt; layouts have `rows` + `orientation`; template catalog by type | S1–S3, S7, S9 | |
 | **N5** | ✅ Done 2026-10-05: `to_audience` / `to_presenter`, results follow the targets, phones receive the audience target only, tiles follow `opts.target` | A4, A5 | |
 | **N6** | ✅ Done 2026-10-05: entries with pending/approved/answered/dismissed, upvotes, spotlight, auto-approve; moderator panel rebuilt (`moderate.js`) | A7 | |
-| **N7** | **Live event walk-in.** Event-aware tiles (`rooms-now`, `event-schedule`, event map) on the normal board renderer, with live WS updates. The `event` template uses them. Retire `/zone/` (redirect) | S8 | |
+| **N7** | ✅ Done 2026-10-05: `rooms` + `eventschedule` tiles, event map default on the map tile, `/api/shows/:room/walkin` feed | S8 | |
 | **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
 | **N9** | **Animation everywhere.** One `anim`/`animMS` option on every tile, stage messages, spotlight and result reveals. A per-layout default plus a per-tile override, set from the editor UI | L2, L3 | |
 | **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
@@ -118,7 +118,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **C2** | ✅ Done: ftl-themes is a submodule pinned to an upstream commit. The local `timerpi` theme is shelved (branch `timerpi-theme-local` in the old clone), so it is no longer in the picker. |
 | **C3** | ✅ Done: dead `displayPage`, the stale registration guard, `htmx-ext-ws.js` and the `/frag/shows` comments are removed. (`screen` is a valid join role, so the `mesh.js` check stays.) |
 | **C4** | ✅ Done: one scheme, the `asset` template func with a content-hash path segment (ARCHITECTURE §12). The versioned copies and `bump-assets.sh` are deleted. |
-| **C5** | `board.js` hard-codes a copy of `DefaultLayout()`. Read it from `/api/board-templates`. |
+| **C5** | 🟡 Template presets now come from the server catalog. `board.js` still carries a `FACTORY_DEFAULT` copy for "Reset". |
 | **C6** | Code comments cite archived or never-existing docs (`PLAN §11`, `NOTES-board`, `reviews/UX1-…`). Repoint them. |
 | **C7** | Stale comments: `audience.html` calls itself a "stub", and the `/health` comment claims per-role counts. |
 | **C8** | Write `docs/UI-CONTRACT.md` (element ids, `data-state`, oob targets, ftl vocabulary) to replace the archived CONTRACT-UI. |

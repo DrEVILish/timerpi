@@ -231,6 +231,8 @@ func (d *DB) migrate() error {
 		// screen name a captured waiting display adopts on its hop.
 		"screens": {
 			{"room", "TEXT NOT NULL DEFAULT ''"},
+			{"kind", "TEXT NOT NULL DEFAULT ''"},
+			{"rotation", "INTEGER NOT NULL DEFAULT 0"},
 		},
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
@@ -1118,6 +1120,42 @@ type Screen struct {
 	BoardID  int64  `db:"board_id"  json:"boardId"`
 	Room     string `db:"room"      json:"room"`
 	LastSeen int64  `db:"last_seen" json:"lastSeen"`
+	// Kind is the display type: audience | walkin | presenter ("" = not
+	// set yet). Rotation is 0/90/180/270 degrees (portrait poster screens).
+	Kind     string `db:"kind"      json:"kind"`
+	Rotation int    `db:"rotation"  json:"rotation"`
+}
+
+// Display types (PRODUCT §3.2).
+const (
+	ScreenAudience  = "audience"
+	ScreenWalkin    = "walkin"
+	ScreenPresenter = "presenter"
+)
+
+// ValidScreenKind / ValidRotation guard the screen look settings.
+func ValidScreenKind(k string) bool {
+	return k == "" || k == ScreenAudience || k == ScreenWalkin || k == ScreenPresenter
+}
+func ValidRotation(r int) bool { return r == 0 || r == 90 || r == 180 || r == 270 }
+
+// SetScreenLook sets a screen's display type and rotation (creating the
+// registry row if needed).
+func (d *DB) SetScreenLook(showID int64, name, kind string, rotation int) error {
+	name = SanitizeScreenName(name)
+	if name == "" {
+		return fmt.Errorf("timerpi: empty screen name")
+	}
+	if !ValidScreenKind(kind) {
+		return fmt.Errorf("timerpi: unknown display type %q", kind)
+	}
+	if !ValidRotation(rotation) {
+		return fmt.Errorf("timerpi: rotation must be 0, 90, 180 or 270")
+	}
+	now := nowMS()
+	_, err := d.Exec(`INSERT INTO screens (show_id, name, kind, rotation, last_seen) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (show_id, name) DO UPDATE SET kind = ?, rotation = ?`, showID, name, kind, rotation, now, kind, rotation)
+	return err
 }
 
 // SanitizeScreenName trims and bounds a screen name ("Stage Left" style:
@@ -1184,7 +1222,7 @@ func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64, ro
 // ListScreens returns the registered screens, most-recently-seen first.
 func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 	var out []Screen
-	err := d.Select(&out, `SELECT show_id, name, theme, board_id, room, last_seen FROM screens
+	err := d.Select(&out, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation FROM screens
 		WHERE show_id = ? ORDER BY last_seen DESC`, showID)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list screens: %w", err)
@@ -1198,7 +1236,7 @@ func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 // GetScreenByName fetches one registered screen ("" name → no rows error).
 func (d *DB) GetScreenByName(showID int64, name string) (Screen, error) {
 	var s Screen
-	err := d.Get(&s, `SELECT show_id, name, theme, board_id, room, last_seen FROM screens
+	err := d.Get(&s, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation FROM screens
 		WHERE show_id = ? AND name = ?`, showID, name)
 	if err != nil {
 		return Screen{}, fmt.Errorf("timerpi: get screen: %w", err)

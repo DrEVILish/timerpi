@@ -71,10 +71,13 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | Method & path | Notes |
 |---|---|
 | `GET …/screens` · `GET …/screens/self?name=` | Registry ∪ live sessions (with preview data) · a screen's own config |
-| `POST …/screens/config\|match\|rename\|forget` | Assign theme/board · match all · rename · forget |
+| `POST …/screens/config {name, theme?, boardId?, room?, kind?, rotation?}` | mod. Theme, layout, display type (`audience\|walkin\|presenter`), rotation (0/90/180/270) |
+| `POST …/screens/template {name, template}` | mod. Give the screen its own copy of a built-in template |
+| `POST …/screens/match\|rename\|forget` | mod. Copy one screen's look to all · rename `{from,to}` · forget |
 | `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles |
-| `GET /api/board-templates` | Built-in templates (single source: `boards.TemplateLayouts`) |
-| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | Layouts. `PUT {name?, layout?}` is validated (types, overlap, limits) |
+| `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}` |
+| `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
+| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | Layouts `{v, rows, orientation, widgets[]}`. `PUT {name?, layout?}` is validated (types, overlap, limits) |
 | `POST /api/waiting/register {name,host}` · `GET /api/waiting/mine?name&host` | Screen side (open) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session |
 
@@ -132,6 +135,7 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `display` | `{theme}` | targeted screen |
 | `screen-board` | `{boardId}` (0 = back to stage) | targeted screen |
 | `screen-rename` | `{name}` | targeted screen |
+| `screen-look` | `{kind, rotation}` | targeted screen (also on join) |
 | `screens` | (refresh hint) | controls |
 | `signal` | `{from, data}` (WebRTC relay) | target peer |
 | `pong` | `{serverTime}` | sender |

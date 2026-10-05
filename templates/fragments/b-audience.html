@@ -56,3 +56,19 @@
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
+
+{{define "frag-b-rooms"}}
+<section class="b-widget b-w-rooms" id="b-w-{{.W.ID}}" data-widget="rooms" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">All rooms now</span><button class="b-w-gear" type="button" data-gear aria-label="All rooms settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove all rooms">×</button></div>{{end}}
+  <div class="b-w-body"><div class="b-js-rooms b-rooms" aria-live="polite"></div></div>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
+</section>
+{{end}}
+
+{{define "frag-b-eventschedule"}}
+<section class="b-widget b-w-eventschedule" id="b-w-{{.W.ID}}" data-widget="eventschedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Event schedule</span><button class="b-w-gear" type="button" data-gear aria-label="Event schedule settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove event schedule">×</button></div>{{end}}
+  <div class="b-w-body"><div class="b-js-evsched b-evsched"></div></div>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
+</section>
+{{end}}

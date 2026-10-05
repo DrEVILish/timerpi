@@ -30,7 +30,7 @@
 */ -}}
 {{define "display_variants"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}}>
 <head>
 {{template "head" .}}
 {{if .Accent}}<style id="tp-accent-ovr">/* ?accent= — route-validated hex only */:root{--tp-accent:{{.Accent}};}</style>{{end}}

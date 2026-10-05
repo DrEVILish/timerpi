@@ -89,30 +89,6 @@ const FACTORY_DEFAULT = {
   ],
 };
 
-// Role presets (supervisor scope): one-click starting layouts for the two
-// most common venue screens. Server-validated geometry (12 cols, no overlap)
-// so PUT accepts them verbatim; ids are the type names (unique per preset).
-const PRESETS = {
-  stage: {
-    v: 1,
-    widgets: [
-      { id: 'countdown', type: 'countdown', x: 0, y: 0, w: 8, h: 3, opts: { tenths: '1' } },
-      { id: 'messages', type: 'messages', x: 8, y: 0, w: 4, h: 3 },
-      { id: 'cuelabel', type: 'cuelabel', x: 0, y: 3, w: 8, h: 1, opts: { source: 'label' } },
-      { id: 'nextup', type: 'nextup', x: 8, y: 3, w: 4, h: 2 },
-      { id: 'progress', type: 'progress', x: 0, y: 4, w: 8, h: 1 },
-    ],
-  },
-  lobby: {
-    v: 1,
-    widgets: [
-      { id: 'showtitle', type: 'showtitle', x: 0, y: 0, w: 12, h: 1 },
-      { id: 'wallclock', type: 'wallclock', x: 0, y: 1, w: 5, h: 2, opts: { tenths: '0' } },
-      { id: 'messages', type: 'messages', x: 5, y: 1, w: 7, h: 2 },
-      { id: 'schedule', type: 'schedule', x: 0, y: 3, w: 12, h: 4, opts: { count: '5' } },
-    ],
-  },
-};
 
 // Palette defaults for newly added tiles (mirror of the Go registry).
 const TILE_DEFAULTS = {
@@ -178,6 +154,13 @@ function initMesh() {
           if (m.rows) {
             sched = { rows: m.rows, totalMS: m.totalMS || 0, dayStartTS: m.dayStartTS || 0 };
             renderStatic();
+          }
+          break;
+        case 'screen-look':
+          if (!editable) {
+            if (m.rotation) document.documentElement.dataset.rotate = String(m.rotation);
+            else delete document.documentElement.dataset.rotate;
+            if (m.kind) body.dataset.kind = m.kind;
           }
           break;
         case 'poll':
@@ -404,6 +387,64 @@ function paintCloud(box, p) {
   box.appendChild(cloud);
 }
 
+// ------------------------------------------------- event walk-in tiles --
+// "All rooms now", "Event schedule" and the event map read the walk-in
+// feed (every room of the event, from the live timers). Polled: sessions
+// change on GO, not per second; remaining time ticks locally.
+const walkin = { data: null, at: 0, timer: 0 };
+function needsWalkin() {
+  return (layout.widgets || []).some((w) => w.type === 'rooms' || w.type === 'eventschedule' || (w.type === 'map' && !w.opts?.assetId));
+}
+async function pullWalkin() {
+  if (!code) return;
+  try {
+    const j = await (await fetch(`/api/shows/${encodeURIComponent(code)}/walkin`)).json();
+    if (j.ok) { walkin.data = j; walkin.at = Date.now(); renderStatic(); }
+  } catch { /* keep the last data; the next pull retries */ }
+}
+function startWalkin() {
+  if (!needsWalkin() || walkin.timer) return;
+  pullWalkin();
+  walkin.timer = setInterval(pullWalkin, 5000);
+}
+function hhmm(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function renderRooms(tile) {
+  const box = $('.b-js-rooms', tile);
+  const rooms = walkin.data?.rooms;
+  if (!box || !rooms) return;
+  box.textContent = '';
+  for (const r of rooms) {
+    const card = mk('div', 'b-room' + (r.now ? ' is-live' : '') + (r.here ? ' is-here' : ''));
+    card.append(mk('div', 'b-room-name', r.name));
+    card.append(mk('div', 'b-room-now', r.now ? r.now.label : (r.next ? 'Next session soon' : 'No more sessions today')));
+    if (r.now?.speaker) card.append(mk('div', 'b-room-meta', r.now.speaker));
+    if (r.next) card.append(mk('div', 'b-room-meta', `Next${r.next.startTS ? ' ' + hhmm(r.next.startTS) : ''}: ${r.next.label}`));
+    box.appendChild(card);
+  }
+}
+function renderEventSchedule(tile) {
+  const box = $('.b-js-evsched', tile);
+  const rooms = walkin.data?.rooms;
+  if (!box || !rooms) return;
+  box.textContent = '';
+  for (const r of rooms) {
+    const col = mk('div', 'b-evsched-col');
+    col.append(mk('h3', '', r.name));
+    // Done sessions drop off the top so the column shows what is left.
+    const rows = r.schedule.filter((x) => x.state !== 'done');
+    for (const s of (rows.length ? rows : r.schedule)) {
+      const row = mk('div', `b-evsched-row is-${s.state}`);
+      row.append(mk('span', 'b-evsched-time', hhmm(s.startTS)), mk('span', '', s.label));
+      col.appendChild(row);
+    }
+    box.appendChild(col);
+  }
+}
+
 function playAnim(box, mode, ms, dir, done) {
   box.style.setProperty('--b-anim-ms', `${ms}ms`);
   const cls = `b-anim-${dir}-${mode}`;
@@ -481,8 +522,9 @@ function renderStatic() {
         const img = $('.b-js-map', tile);
         const empty = $('.b-map-empty', tile);
         const aid = String(w?.opts?.assetId || '').replace(/[^0-9]/g, '');
-        if (aid) {
-          const url = `/assets/${aid}`;
+        const evMap = walkin.data?.event?.map || '';
+        if (aid || evMap) {
+          const url = aid ? `/assets/${aid}` : evMap;
           if (!img.getAttribute('src')?.endsWith(url)) img.src = url;
           img.hidden = false;
           if (empty) empty.hidden = true;
@@ -493,6 +535,12 @@ function renderStatic() {
         }
         break;
       }
+      case 'rooms':
+        renderRooms(tile);
+        break;
+      case 'eventschedule':
+        renderEventSchedule(tile);
+        break;
       case 'joinqr': {
         const lbl = $('.b-js-joinlabel', tile);
         if (lbl) lbl.textContent = w?.opts?.label || 'Scan to take part';
@@ -636,7 +684,7 @@ async function saveNow() {
     const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ layout: { v: 1, widgets: layout.widgets } }),
+      body: JSON.stringify({ layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', widgets: layout.widgets } }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -650,12 +698,20 @@ async function saveNow() {
 }
 
 // Client-side mirror of the server clamp (server re-validates on PUT).
+// The canvas: 12 columns × rows (layout.rows; never fewer than the tiles
+// need). Tiles stay inside it.
+function canvasRows() {
+  const ext = (layout.widgets || []).reduce((n, w) => Math.max(n, (w.y | 0) + (w.h | 0)), 0);
+  return Math.max(1, Math.min(48, Math.max(layout.rows | 0 || (layout.orientation === 'portrait' ? 16 : 8), ext)));
+}
+
 function clampTile(t) {
+  const rows = Math.max(1, layout.rows | 0 || canvasRows());
   t.x = Math.max(0, Math.min(11, t.x | 0));
   t.w = Math.max(1, Math.min(12, t.w | 0));
   if (t.x + t.w > 12) t.w = 12 - t.x;
-  t.y = Math.max(0, Math.min(99, t.y | 0));
-  t.h = Math.max(1, Math.min(12, t.h | 0));
+  t.h = Math.max(1, Math.min(rows, t.h | 0));
+  t.y = Math.max(0, Math.min(rows - t.h, t.y | 0));
   return t;
 }
 
@@ -688,9 +744,19 @@ function addAlignButtons(tile) {
   }
 }
 
+// Cell pitch of the stretched canvas (column/row size + gap), measured.
 function gridMetrics() {
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  return { colW: grid.getBoundingClientRect().width / 12, rowPitch: rem * 4.5 + rem * 0.6 };
+  const cs = getComputedStyle(grid);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const gapX = parseFloat(cs.columnGap) || 0;
+  const gapY = parseFloat(cs.rowGap) || 0;
+  const rows = canvasRows();
+  return {
+    colW: (grid.clientWidth - padX + gapX) / 12,
+    rowPitch: (grid.clientHeight - padY + gapY) / rows,
+    padTop: parseFloat(cs.paddingTop),
+  };
 }
 
 // Drag ghost (owner "feels bad" round): a translucent outline marks the
@@ -711,9 +777,9 @@ function showGhost(w) {
   g.style.height = grid.getBoundingClientRect().height + 'px';
   g.dataset.row = String(w.y);
   g.style.transform = '';
-  const rowPitch = parseFloat(getComputedStyle(document.documentElement).fontSize) * 5.1;
-  g.style.top = (w.y * rowPitch) + 'px';
-  g.style.height = (w.h * rowPitch) + 'px';
+  const m = gridMetrics();
+  g.style.top = (m.padTop + w.y * m.rowPitch) + 'px';
+  g.style.height = (w.h * m.rowPitch) + 'px';
 }
 function hideGhost() {
   document.getElementById('b-drag-ghost')?.remove();
@@ -1196,23 +1262,55 @@ document.addEventListener('keydown', (e) => {
     await reloadEditing();
   });
 
-  $('#b-preset-list')?.addEventListener('click', async (e) => {
+  // Templates: Go's catalog, grouped by display type.
+  const presetList = $('#b-preset-list');
+  let catalog = [];
+  if (presetList) {
+    fetch('/api/board-templates').then((r) => r.json()).then((j) => {
+      catalog = j.catalog || [];
+      const groups = { audience: 'Audience', walkin: 'Walk-in', presenter: 'Presenter' };
+      for (const [kind, label] of Object.entries(groups)) {
+        const items = catalog.filter((t) => t.kind === kind);
+        if (!items.length) continue;
+        presetList.appendChild(Object.assign(document.createElement('span'), { className: 'b-preset-group', textContent: label }));
+        for (const t of items) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.preset = t.key;
+          b.title = t.desc;
+          b.textContent = t.name;
+          presetList.appendChild(b);
+        }
+      }
+    }).catch(() => { /* offline: no templates */ });
+  }
+  presetList?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-preset]');
     if (!btn) return;
-    // Built-ins (stage/lobby) live here; the PLAN §11.2 Rooms templates
-    // (event/room/main/dsm) are served by /api/board-templates — Go is
-    // their single source of truth and is overlap-tested.
-    let preset = PRESETS[btn.dataset.preset];
-    if (!preset) {
-      try {
-        const j = await (await fetch('/api/board-templates')).json();
-        preset = j.templates?.[btn.dataset.preset];
-      } catch { /* offline */ }
-    }
-    if (!preset) return;
-    if (!(await tpConfirm(`Replace this board with the ${btn.dataset.preset} layout? Unsaved tile moves are lost.`, { ok: 'Replace', danger: true }))) return;
-    layout = JSON.parse(JSON.stringify(preset));
+    const t = catalog.find((x) => x.key === btn.dataset.preset);
+    if (!t) return;
+    if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
+    layout = JSON.parse(JSON.stringify(t.layout));
     await reloadEditing(); // server re-renders tiles, then we relock into edit
+  });
+
+  // Canvas: orientation + row count.
+  const orient = $('#b-orient');
+  const rowsIn = $('#b-rows');
+  if (orient) orient.value = layout.orientation === 'portrait' ? 'portrait' : 'landscape';
+  if (rowsIn) rowsIn.value = String(canvasRows());
+  orient?.addEventListener('change', async () => {
+    layout.orientation = orient.value;
+    layout.rows = Math.max(canvasRows(), orient.value === 'portrait' ? 16 : 8);
+    await reloadEditing();
+  });
+  rowsIn?.addEventListener('change', () => {
+    const ext = (layout.widgets || []).reduce((n, w) => Math.max(n, w.y + w.h), 1);
+    const v = Math.max(ext, Math.min(48, Number(rowsIn.value) || 8));
+    rowsIn.value = String(v);
+    layout.rows = v;
+    body.style.setProperty('--b-rows', String(v));
+    scheduleSave();
   });
 
   $('#b-reset')?.addEventListener('click', async () => {
@@ -1269,6 +1367,7 @@ function lockJoinCard() {
 }
 
 initMesh();
+startWalkin();
 lockJoinCard();
 initClientLog();
 wireCompose();

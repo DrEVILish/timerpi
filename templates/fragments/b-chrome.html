@@ -57,26 +57,25 @@
     <button type="button" data-add="rate" role="listitem">Rate chip</button>
     <button type="button" data-add="schedule" role="listitem">Schedule</button>
     <button type="button" data-add="notice" role="listitem">Notice</button>
-    <button type="button" data-add="poll" role="listitem">Poll</button>
-    <button type="button" data-add="qa" role="listitem">Q&amp;A</button>
+    <button type="button" data-add="poll" role="listitem">Audience item</button>
+    <button type="button" data-add="qa" role="listitem">Q&amp;A wall</button>
     <button type="button" data-add="wordcloud" role="listitem">Word cloud</button>
     <button type="button" data-add="map" role="listitem">Map</button>
     <button type="button" data-add="joinqr" role="listitem">Join QR</button>
+    <button type="button" data-add="rooms" role="listitem">All rooms now</button>
+    <button type="button" data-add="eventschedule" role="listitem">Event schedule</button>
+  </div>
+  <span class="b-palette-title">Canvas</span>
+  <div class="cluster is-gap-2xs">
+    <select class="select input-sm" id="b-orient" aria-label="Orientation">
+      <option value="landscape">Landscape 16:9</option>
+      <option value="portrait">Portrait 9:16</option>
+    </select>
+    <label class="cluster is-gap-2xs">Rows <input class="input input-sm" id="b-rows" type="number" min="1" max="48" style="width:4.5rem" aria-label="Canvas rows"></label>
   </div>
   <span class="b-palette-title">Layout</span>
-  <div class="b-palette-list" id="b-preset-list">
-    <!-- The 10 Go templates (boards.TemplateLayouts keys); applied via
-         /api/board-templates. -->
-    <button type="button" data-preset="stage" title="1 · Classic cue wall: giant timer + messages + next-up">Show</button>
-    <button type="button" data-preset="lobby" title="2 · Clock + messages + the running order">Lobby</button>
-    <button type="button" data-preset="event" title="3 · Space map + the full-day spine">Event</button>
-    <button type="button" data-preset="room" title="4 · What's on + next + schedule + join QR">Room</button>
-    <button type="button" data-preset="main" title="5 · Polls, Q&A and the word cloud">Audience</button>
-    <button type="button" data-preset="dsm" title="6 · Progress timer + poll wedge">DSM</button>
-    <button type="button" data-preset="speaker" title="7 · Speaker tag: who + what + the clock">Speaker</button>
-    <button type="button" data-preset="qawall" title="8 · Q&A wall + join QR">Q&A</button>
-    <button type="button" data-preset="clockroom" title="9 · Big clock + shallow schedule">Clock</button>
-    <button type="button" data-preset="break" title="10 · Between-sessions filler: clock + messages">Break</button>
+  <div class="b-palette-list" id="b-preset-list" aria-label="Start from a template">
+    <!-- Filled from GET /api/board-templates (catalog, grouped by display type). -->
   </div>
   <button class="btn btn-sm" id="b-reset" type="button" title="Restore the factory layout">Reset layout</button>
 </div>

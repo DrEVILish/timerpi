@@ -13,12 +13,12 @@
 */ -}}
 {{define "display_board"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}}>
 <head>
 {{template "head" .}}
 </head>
 <body class="tp-display b-board" data-page="display" data-view="board" data-role="display"
-      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-blanked="{{.Show.Blanked}}">
+      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-blanked="{{.Show.Blanked}}" data-orientation="{{.Board.Orientation}}"{{if .ScreenKind}} data-kind="{{.ScreenKind}}"{{end}} style="--b-rows: {{.Board.Rows}}">
 <div class="b-topbar">
   <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
   <span class="b-topbar-show">{{if .Show}}{{.Show.Title}}{{end}}</span>
@@ -48,6 +48,8 @@
 {{else if eq .Type "wordcloud"}}{{template "frag-b-wordcloud" ($.WidgetDot .)}}
 {{else if eq .Type "map"}}{{template "frag-b-map" ($.WidgetDot .)}}
 {{else if eq .Type "joinqr"}}{{template "frag-b-joinqr" ($.WidgetDot .)}}
+{{else if eq .Type "rooms"}}{{template "frag-b-rooms" ($.WidgetDot .)}}
+{{else if eq .Type "eventschedule"}}{{template "frag-b-eventschedule" ($.WidgetDot .)}}
 {{else}}{{template "frag-b-schedule" ($.WidgetDot .)}}
 {{end}}
 {{- end}}

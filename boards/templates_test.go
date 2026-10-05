@@ -61,3 +61,44 @@ func TestAudienceWidgetTypes(t *testing.T) {
 		t.Error("garbage type accepted")
 	}
 }
+
+// Every template sits inside its canvas and the catalog covers all three
+// display types, portrait walk-ins included.
+func TestTemplateCatalogCanvas(t *testing.T) {
+	kinds := map[string]int{}
+	portrait := 0
+	for _, tpl := range boards.Templates() {
+		kinds[tpl.Kind]++
+		l := boards.NormalizeLayout(tpl.Layout)
+		if l.Rows < l.Extent() {
+			t.Errorf("%s: rows %d < extent %d", tpl.Key, l.Rows, l.Extent())
+		}
+		if tpl.Layout.Rows != 0 && tpl.Layout.Rows < tpl.Layout.Extent() {
+			t.Errorf("%s: declared rows %d too small", tpl.Key, tpl.Layout.Rows)
+		}
+		if l.Orientation == "portrait" {
+			portrait++
+		}
+		for _, w := range l.Widgets {
+			if !boards.ValidType(w.Type) {
+				t.Errorf("%s: unknown tile %q", tpl.Key, w.Type)
+			}
+		}
+	}
+	for _, k := range []string{"audience", "walkin", "presenter"} {
+		if kinds[k] == 0 {
+			t.Errorf("no %s templates", k)
+		}
+	}
+	if portrait < 2 {
+		t.Errorf("want portrait walk-in templates, got %d", portrait)
+	}
+	// Rows default by orientation and never undercut the tiles.
+	l := boards.NormalizeLayout(boards.Layout{Orientation: "portrait", Widgets: []boards.Widget{{ID: "a", Type: "notice", X: 0, Y: 30, W: 12, H: 2}}})
+	if l.Rows != 32 {
+		t.Errorf("rows should grow to the extent: %d", l.Rows)
+	}
+	if boards.NormalizeLayout(boards.Layout{}).Rows != boards.DefaultRowsLandscape {
+		t.Error("landscape default rows")
+	}
+}

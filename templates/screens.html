@@ -1,67 +1,79 @@
-{{- /* page-screens — the operator screens gallery (route GET /screens/:ident).
+{{- /* page-screens — the room's Screens page (GET /screens/:ident).
 
-  A live preview card per registered screen (layout boxes + current values,
-  polled from /api/shows/:code/screens every 4 s), the waiting room (shows
-  orphaned by a deleted show, with Capture/Dismiss), and a maximised layout
-  editor modal — an iframe of the board compose view in PREVIEW mode (it
-  joins the mesh but does NOT self-register as a screen, so editing never
-  pollutes presence). All content is textContent-only (CONTRACT-UI XSS
-  rule); every element uses the ftl-themes component vocabulary. */ -}}
+  Every screen of this room as a card: live status, display type, layout
+  (with a scaled preview), theme and rotation, all applied immediately; the
+  layout editor opens in a dialog showing the screen's exact canvas. Above
+  them, browsers waiting to be set up (opened on /d/) can be captured into
+  this room. Rendered by /src/screens.js (textContent only). */ -}}
 {{define "page-screens"}}
-<div class="stack is-gap-s">
-  <section class="panel">
-    <div class="panel-header">Screens gallery
-      <span class="badge push" id="tp-gal-count"></span>
+<div class="tp-page stack is-gap-l" id="tp-screens-page" data-room="{{.Show.Code}}" data-room-name="{{.Show.Title}}">
+  <section class="stack is-gap-2xs">
+    <div class="row is-items-center is-gap-s is-wrap">
+      <h1 class="tp-section-title">Screens · {{.Show.Title}}</h1>
+      <a class="btn btn-sm push" href="/d/" target="_blank" rel="opener" data-kiosk title="Turn a browser into a screen">Open a new screen</a>
     </div>
-    <div id="tp-gal" class="tp-gal">
-      <p class="text-muted">Loading…</p>
-    </div>
+    <p class="text-muted">To add a screen: open <code>/d/</code> on the TV, projector PC or kiosk. It appears under <strong>Waiting to be set up</strong>.</p>
   </section>
 
-  <section class="panel" id="tp-waiting-panel">
-    <div class="panel-header">Displays waiting for a show
-      <span class="badge push" id="tp-waiting-count">0</span>
-    </div>
-    <div id="tp-waiting-list" class="stack is-gap-2xs">
-      <p class="text-muted">None — when a show is deleted its displays land here, then any control room can capture them into a live show.</p>
-    </div>
+  <section class="panel" id="tp-waiting-panel" hidden>
+    <div class="panel-header">Waiting to be set up <span class="badge" id="tp-waiting-count">0</span></div>
+    <div id="tp-waiting-list" class="tp-wait-grid"></div>
+  </section>
+
+  <section>
+    <div class="row is-items-center is-gap-s"><h2 class="tp-section-title">This room's screens</h2><span class="badge" id="tp-gal-count"></span></div>
+    <div id="tp-gal" class="tp-gal mt-m"><p class="text-muted">Loading…</p></div>
   </section>
 </div>
 
-<!-- PLAN §11.2 capture modal: name the screen, set Theme / Location /
-     Layout in one step; the display leaves the waiting list on capture. -->
-<dialog id="tp-capture" class="tp-capture">
-  <div class="tp-modal-bar"><strong>Capture display</strong>
-    <span class="field-hint" id="tp-capture-host"></span></div>
-  <div class="stack is-gap-s">
+<dialog id="tp-capture" class="tp-inspector tp-capture" aria-labelledby="tp-capture-title">
+  <h2 id="tp-capture-title" class="panel-header">Set up screen <span class="text-muted" id="tp-capture-host"></span></h2>
+  <form class="stack is-gap-s" method="dialog">
     <div class="field">
       <label class="label" for="tp-capture-name">Screen name</label>
-      <input class="input" id="tp-capture-name" autocomplete="off" maxlength="40">
-      <span class="field-hint">Make it unique — this is how the operator knows the screen.</span>
+      <input class="input" id="tp-capture-name" autocomplete="off" maxlength="40" required>
     </div>
     <div class="field">
-      <label class="label" for="tp-capture-theme">Theme</label>
-      <select class="select" id="tp-capture-theme"></select>
+      <span class="label">What is this screen?</span>
+      <div class="tp-kind-pick" id="tp-capture-kind" role="radiogroup" aria-label="Display type">
+        <button type="button" class="tp-kind" data-kind="audience" role="radio"><strong>Audience</strong><span>Projector / main screen the room looks at</span></button>
+        <button type="button" class="tp-kind" data-kind="walkin" role="radio"><strong>Walk-in</strong><span>Poster outside the room or in the foyer</span></button>
+        <button type="button" class="tp-kind" data-kind="presenter" role="radio"><strong>Presenter</strong><span>Faces the speaker: time left, what's next</span></button>
+      </div>
     </div>
     <div class="field">
-      <label class="label" for="tp-capture-room">Location / room</label>
-      <input class="input" id="tp-capture-room" autocomplete="off" maxlength="40" placeholder="Hall A · Lobby · Stage left">
+      <label class="label" for="tp-capture-template">Layout</label>
+      <select class="select" id="tp-capture-template"></select>
+      <span class="field-hint" id="tp-capture-template-hint"></span>
     </div>
-    <div class="field">
-      <label class="label" for="tp-capture-board">Layout</label>
-      <select class="select" id="tp-capture-board"></select>
+    <div class="row is-gap-s is-wrap">
+      <div class="field">
+        <label class="label" for="tp-capture-rotation">Mounted</label>
+        <select class="select" id="tp-capture-rotation">
+          <option value="0">Normal (landscape)</option>
+          <option value="90">Portrait — rotated right</option>
+          <option value="270">Portrait — rotated left</option>
+          <option value="180">Upside down</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="tp-capture-theme">Theme</label>
+        <select class="select" id="tp-capture-theme"></select>
+      </div>
     </div>
-    <div class="cluster">
-      <button type="button" class="btn btn-primary" id="tp-capture-go">Capture</button>
-      <button type="button" class="btn" id="tp-capture-cancel">Cancel</button>
+    <p class="field-error" role="alert" hidden></p>
+    <div class="cluster is-gap-s">
+      <button type="submit" class="btn btn-primary" id="tp-capture-go">Set up screen</button>
+      <button type="button" class="btn" data-cancel>Cancel</button>
     </div>
-  </div>
+  </form>
 </dialog>
+
 <dialog id="tp-screen-edit" class="tp-screen-edit">
   <div class="tp-modal-bar">
     <strong id="tp-screen-edit-title">Layout editor</strong>
-    <span class="field-hint">Add / remove / move / align tiles — saved live to the screen.</span>
-    <button type="button" class="btn btn-sm" id="tp-screen-edit-close">Close editor</button>
+    <span class="field-hint">Drag tiles to move, the corner to resize. Changes reach the screen as you save.</span>
+    <button type="button" class="btn btn-sm btn-primary" id="tp-screen-edit-close">Done</button>
   </div>
   <iframe id="tp-screen-edit-frame" title="Screen layout editor"></iframe>
 </dialog>

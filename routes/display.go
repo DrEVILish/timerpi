@@ -141,6 +141,7 @@ func (d *Deps) displayVariants(c *gin.Context) {
 		data.Role = "display" // lands on <body data-role>
 		data.Nav = "display"
 		data.Peers = d.peerCount()
+		d.screenLook(c, showID, data)
 		d.render(c, "display", data)
 		return
 	}
@@ -153,7 +154,25 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	}
 
 	data := d.variantData(c, snap, showID, view, accent, bg)
+	d.screenLook(c, showID, data.PageData)
 	d.render(c, "display_variants", data)
+}
+
+// screenLook applies the named screen's theme and rotation (else the
+// event's default theme) to a screen page's first paint.
+func (d *Deps) screenLook(c *gin.Context, showID int64, pd *views.PageData) {
+	if pd == nil || d.Store == nil {
+		return
+	}
+	pd.DefaultTheme = d.roomTheme(showID)
+	if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
+		if scr, err := d.Store.GetScreenByName(showID, name); err == nil {
+			pd.Rotation = scr.Rotation
+			if scr.Theme != "" {
+				pd.DefaultTheme = scr.Theme
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

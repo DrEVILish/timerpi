@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"timerpi/boards"
+	"timerpi/config"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -294,9 +295,24 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 	}
 
 	countdownFmt, countdownState := boardCountdown(snap, now)
+	rotation, kind := 0, ""
+	pd.DefaultTheme = d.roomTheme(showID)
+	if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
+		if scr, err := d.Store.GetScreenByName(showID, name); err == nil {
+			rotation, kind = scr.Rotation, scr.Kind
+			if scr.Theme != "" {
+				pd.DefaultTheme = scr.Theme // first paint already in the screen's own theme
+			}
+		}
+	}
+	if r, err := strconv.Atoi(c.Query("rotate")); err == nil && timerpi.ValidRotation(r) {
+		rotation = r // editor preview / manual override
+	}
 	return &views.BoardPage{
+		Rotation:       rotation,
+		ScreenKind:     kind,
 		PageData:       pd,
-		Board:          views.BoardVM{ID: board.ID, Name: board.Name, Widgets: widgets},
+		Board:          views.BoardVM{ID: board.ID, Name: board.Name, Rows: layout.Rows, Orientation: layout.Orientation, Widgets: widgets},
 		Boards:         infos,
 		Join:           boardJoinOf(c, snap, board.ID),
 		BoardID:        board.ID,
@@ -446,7 +462,19 @@ func boardRuntimeOf(snap timerpi.Snapshot) timerpi.Runtime {
 	}
 }
 
-// GET /api/board-templates — the named Rooms layouts (event/room/main/dsm).
+// GET /api/board-templates — the built-in layouts: catalog (grouped by
+// display type) + the key → layout map.
 func (d *Deps) apiBoardTemplates(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "templates": boards.TemplateLayouts()})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "catalog": boards.Templates(), "templates": boards.TemplateLayouts()})
+}
+
+// roomTheme is the theme a room's screens fall back to: the event's
+// default screen theme, else the box default.
+func (d *Deps) roomTheme(showID int64) string {
+	if sh, err := d.Store.GetShow(showID); err == nil {
+		if ev, err := d.Store.GetEvent(sh.EventID); err == nil && ev.Theme != "" {
+			return ev.Theme
+		}
+	}
+	return config.DefaultTheme()
 }

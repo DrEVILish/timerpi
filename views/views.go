@@ -190,6 +190,9 @@ type PageData struct {
 
 	// Event context for room pages (the room's parent event).
 	Event EventRef
+
+	// Screen pages: this screen's rotation (0/90/180/270).
+	Rotation int
 }
 
 // EventRef is the parent-event context on room pages (app bar, nav).
@@ -691,9 +694,11 @@ func BoardWidgetStyle(x, y, w, h int) template.CSS {
 
 // BoardVM is the rendered board (geometry only; live digits are JS-owned).
 type BoardVM struct {
-	ID      int64
-	Name    string
-	Widgets []BoardWidgetVM
+	ID          int64
+	Name        string
+	Rows        int    // canvas rows (the grid stretches them to fill the screen)
+	Orientation string // landscape | portrait
+	Widgets     []BoardWidgetVM
 }
 
 // BoardInfo is one entry of the board switcher.
@@ -726,6 +731,8 @@ type BoardPage struct {
 	DayPct         string      // whole-day progress "12.00%"
 	RateFmt        string      // "×1.00"
 	Editable       bool        // ?edit=1 — operator may compose (Edit/Lock chrome)
+	Rotation       int         // this screen's rotation (0/90/180/270)
+	ScreenKind     string      // this screen's display type (audience/walkin/presenter)
 	LayoutJSON     template.JS // current layout document (editor pristine copy; validated JSON)
 }
 

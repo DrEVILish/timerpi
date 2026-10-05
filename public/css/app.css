@@ -125,3 +125,113 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
 .tp-aud-editor .segmented { flex-wrap: wrap; }
 .tp-opt-row { display: flex; align-items: center; gap: .4rem; }
 .tp-opt-row .input { flex: 1; min-width: 0; }
+
+/* =====================================================================
+   Screens (layout boards): the layout is a fixed canvas — 12 columns ×
+   --b-rows rows — stretched to fill the display, no scrolling. Tile text
+   sizes follow the TILE (container query units), so a big tile reads from
+   the back of the room and the same layout works at 720p, 4K and portrait.
+   ===================================================================== */
+body.b-board { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.b-board .b-grid {
+  flex: 1 1 auto; min-height: 0;
+  grid-auto-rows: unset;
+  grid-template-rows: repeat(var(--b-rows, 8), minmax(0, 1fr));
+  gap: 1.1vmin; padding: 1.1vmin;
+}
+body.b-board[data-editing] .b-grid { padding-block-end: 1.1vmin; }
+/* Real screens carry no top bar; the editor keeps it. */
+body.b-board:not([data-editable]) .b-topbar { display: none; }
+.b-widget { container-type: size; padding: 1.2vmin 1.6vmin; }
+
+/* Rotation (PRODUCT S7): the whole page turns in software, so a landscape
+   TV hung portrait needs no OS settings. Logical width/height swap. */
+html[data-rotate="90"], html[data-rotate="270"] { overflow: hidden; }
+html[data-rotate="90"] body, html[data-rotate="270"] body {
+  position: fixed; top: 0; left: 0; width: 100vh; height: 100vw !important;
+  transform-origin: top left;
+}
+html[data-rotate="90"] body { transform: rotate(90deg) translateY(-100%); }
+html[data-rotate="270"] body { transform: rotate(-90deg) translateX(-100%); }
+html[data-rotate="180"] body { transform: rotate(180deg); }
+html[data-rotate="90"]:has(body.tp-display), html[data-rotate="270"]:has(body.tp-display) { font-size: 1.5vw; }
+html[data-rotate="90"] body.b-board .b-grid, html[data-rotate="270"] body.b-board .b-grid { gap: 1.1vmin; padding: 1.1vmin; }
+
+/* Tile typography, relative to the tile. */
+body.b-board .b-clock { font-size: min(62cqh, 15cqw); white-space: nowrap; }
+body.b-board .b-w-countdown .b-clock { font-size: min(64cqh, 21cqw); }
+body.b-board .b-wall { font-size: min(62cqh, 15cqw); white-space: nowrap; }
+body.b-board .b-cue-label, body.b-board .b-next-label { font-size: clamp(1rem, min(34cqh, 7.5cqw), 14rem); }
+body.b-board .b-speaker { font-size: clamp(.9rem, min(26cqh, 5.5cqw), 9rem); }
+body.b-board .b-show-title { font-size: clamp(1rem, min(56cqh, 6cqw), 9rem); }
+body.b-board .b-notice { font-size: clamp(1rem, min(24cqh, 6cqw), 9rem); }
+body.b-board .b-rate { font-size: min(50cqh, 16cqw); }
+body.b-board .b-eyebrow { font-size: clamp(.7rem, min(9cqh, 2.4cqw), 2rem); }
+body.b-board .b-next-meta, body.b-board .b-cd-label { font-size: clamp(.8rem, min(12cqh, 3cqw), 3rem); }
+body.b-board .b-msg { font-size: clamp(1rem, min(20cqh, 6cqw), 8rem); }
+body.b-board .b-sched { font-size: clamp(.85rem, min(7cqh, 3.2cqw), 3rem); }
+body.b-board .b-bar { height: max(.6rem, 28cqh); max-height: 3rem; }
+body.b-board .b-poll-q { font-size: clamp(1.1rem, min(9cqh, 4.4cqw), 7rem); }
+body.b-board .b-poll-meta { font-size: clamp(.8rem, min(4.5cqh, 2.2cqw), 2.5rem); }
+body.b-board .b-poll-opt-head { font-size: clamp(1rem, min(6.5cqh, 3.2cqw), 4.5rem); }
+body.b-board .b-poll-opt { margin-bottom: 2.2cqh; }
+body.b-board .b-poll-bar { height: max(.55rem, 3cqh); }
+body.b-board .b-qa-spot-text { font-size: clamp(1.2rem, min(11cqh, 5.4cqw), 8rem); }
+body.b-board .b-qa-item { font-size: clamp(1rem, min(6cqh, 3cqw), 4rem); }
+body.b-board .b-cloud { font-size: clamp(1rem, min(6.5cqh, 3.2cqw), 4.5rem); gap: 1.5cqh 2cqw; }
+body.b-board .b-js-joinqr { width: min(100%, 78cqh); }
+body.b-board .b-join-label { font-size: clamp(.8rem, min(8cqh, 6cqw), 2.5rem); }
+
+/* All rooms now (event walk-in). */
+.b-rooms { display: grid; gap: 1.6cqh; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-content: start; height: 100%; overflow: hidden; }
+.b-room { border-left: .35rem solid var(--border); padding: .2em .8em; display: grid; gap: .15em; min-width: 0; align-content: start;
+  font-size: clamp(1rem, min(7cqh, 3cqw), 3.4rem); }
+.b-room.is-live { border-left-color: var(--accent); }
+.b-room-name { font-weight: 800; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-room-now { font-size: 1.3em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-room-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.b-room.is-here .b-room-name::after { content: " · you are here"; color: var(--muted); font-weight: 600; }
+
+/* Event schedule: one column per room. */
+.b-evsched { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2cqw; height: 100%; overflow: hidden;
+  font-size: clamp(.8rem, min(6cqh, 1.9cqw), 2.4rem); }
+.b-evsched-col { min-width: 0; display: flex; flex-direction: column; gap: .2em; overflow: hidden; }
+.b-evsched-col h3 { margin: 0 0 .2em; font-size: 1.1em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-evsched-row { display: flex; gap: .6em; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.b-evsched-row > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.b-evsched-row.is-done { opacity: .45; }
+.b-evsched-row.is-now { font-weight: 800; color: var(--accent); }
+.b-evsched-row.is-next { font-weight: 700; }
+.b-evsched-time { color: var(--muted); min-width: 3.2em; }
+.b-preset-group { font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); align-self: center; margin-inline-start: .4rem; }
+
+/* ------------------------------------------------------- Screens page */
+.tp-gal { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); align-items: start; }
+.tp-scr { display: grid; gap: .6rem; padding: .75rem; }
+.tp-scr.is-live { border-color: var(--accent); }
+.tp-scr-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.tp-scr-name { font-weight: 800; font-size: 1.05rem; }
+.tp-scr-prev { position: relative; aspect-ratio: 16 / 9; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius, 4px); overflow: hidden; }
+.tp-scr-prev.is-portrait { aspect-ratio: 9 / 16; height: 15rem; width: auto; margin-inline: auto; }
+.tp-scr-tile { position: absolute; display: grid; place-items: center; font-size: .55rem; color: var(--text); opacity: .9;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 2px; overflow: hidden; box-sizing: border-box; }
+.tp-scr-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .8rem; }
+.tp-scr-now { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-scr-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem .6rem; }
+.tp-scr-field { display: grid; gap: .15rem; min-width: 0; }
+.tp-scr-field .select { width: 100%; min-width: 0; }
+.tp-wait-grid { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); padding: .5rem .75rem .75rem; }
+.tp-wait-card { display: grid; gap: .4rem; padding: .6rem; border: 1px dashed var(--accent); border-radius: var(--radius, 4px); }
+.tp-wait-name { display: flex; flex-direction: column; }
+.tp-capture { width: min(36rem, 94vw); }
+.tp-kind-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+.tp-kind { display: grid; gap: .2rem; text-align: left; padding: .55rem .6rem; border: 2px solid var(--border); border-radius: var(--radius, 4px);
+  background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; min-height: 4.5rem; }
+.tp-kind span { font-size: .78rem; color: var(--muted); }
+.tp-kind.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+@media (max-width: 34rem) { .tp-kind-pick { grid-template-columns: 1fr; } .tp-scr-fields { grid-template-columns: 1fr; } }
+/* Layout editor dialog: the iframe shows the screen's own canvas shape. */
+.tp-screen-edit iframe { aspect-ratio: auto; height: min(84vh, calc(min(96vw, 1600px) * 9 / 16 + 7rem)); }
+.tp-screen-edit.is-portrait { width: min(96vw, 46rem); }
+.tp-screen-edit.is-portrait iframe { height: 86vh; }

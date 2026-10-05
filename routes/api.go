@@ -32,6 +32,7 @@ func registerAPI(r *gin.Engine, d *Deps) {
 	g.POST("/shows/:ident/client-log", d.apiClientLog)
 	g.GET("/shows/:ident/client-log", d.apiClientLogTail)
 	g.GET("/shows/:ident/qr", d.apiShowQR)
+	g.GET("/shows/:ident/walkin", d.apiWalkin) // event walk-in feed (open)
 
 	// Screens + presets (F1/F2; screens.go).
 	registerScreens(g, d)

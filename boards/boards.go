@@ -48,10 +48,33 @@ type Widget struct {
 	Opts map[string]string `json:"opts,omitempty"`
 }
 
-// Layout is the persisted board geometry (layout_json shape).
+// Layout is the persisted board geometry (layout_json shape). A layout is
+// a fixed canvas: GridCols columns × Rows rows that stretch to fill the
+// screen. Orientation says which way up the canvas is designed
+// (landscape 16:9 or portrait 9:16 poster screens).
 type Layout struct {
-	V       int      `json:"v"`
-	Widgets []Widget `json:"widgets"`
+	V           int      `json:"v"`
+	Rows        int      `json:"rows,omitempty"`
+	Orientation string   `json:"orientation,omitempty"`
+	Widgets     []Widget `json:"widgets"`
+}
+
+// Canvas defaults and limits.
+const (
+	DefaultRowsLandscape = 8
+	DefaultRowsPortrait  = 16
+	MaxRows              = 48
+)
+
+// Extent is the lowest occupied row + 1.
+func (l Layout) Extent() int {
+	n := 0
+	for _, w := range l.Widgets {
+		if w.Y+w.H > n {
+			n = w.Y + w.H
+		}
+	}
+	return n
 }
 
 // WidgetDef describes one registered widget type (palette entry).
@@ -82,104 +105,138 @@ var WidgetTypes = []WidgetDef{
 	{Type: "poll", Title: "Audience item", Desc: "Whatever is shown to its target: poll/quiz results bars, Q&A wall + spotlight, word cloud, ideas", DefaultW: 6, DefaultH: 4},
 	{Type: "qa", Title: "Q&A wall", Desc: "Approved questions by upvotes, plus the spotlight (Q&A and ideas only)", DefaultW: 6, DefaultH: 4},
 	{Type: "wordcloud", Title: "Word cloud", Desc: "Approved words sized by how many people sent them", DefaultW: 6, DefaultH: 4},
-	{Type: "map", Title: "Map", Desc: "Venue map image (upload under /api/assets)", DefaultW: 6, DefaultH: 4},
+	{Type: "map", Title: "Map", Desc: "Venue map (the event map unless another image is picked)", DefaultW: 6, DefaultH: 4},
+	{Type: "rooms", Title: "All rooms now", Desc: "Every room of the event: what is on now and what is next", DefaultW: 8, DefaultH: 4},
+	{Type: "eventschedule", Title: "Event schedule", Desc: "Every room's full-day schedule", DefaultW: 8, DefaultH: 4},
 	{Type: "joinqr", Title: "Join QR", Desc: "Audience join QR for this room", DefaultW: 3, DefaultH: 4},
 }
 
-// TemplateLayouts are the Rooms display templates (PLAN §11.2): named
-// starting layouts for the walk-in / main / DSM surfaces, applied to a
-// board in one click from the board chrome (fetched from
-// GET /api/board-templates — Go is the single source of truth so the
-// overlap test in boards_test.go covers every shape).
-func TemplateLayouts() map[string]Layout {
+// TemplateInfo is one built-in starting layout, grouped by display type
+// (PRODUCT §3.2): audience | walkin | presenter. Go is the single source of
+// truth (served at GET /api/board-templates; boards_test checks overlap).
+type TemplateInfo struct {
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Desc   string `json:"desc"`
+	Layout Layout `json:"layout"`
+}
+
+// Templates returns the catalog in display order.
+func Templates() []TemplateInfo {
 	w := func(id, typ string, x, y, hw, hh int, opts map[string]string) Widget {
 		return Widget{ID: id, Type: typ, X: x, Y: y, W: hw, H: hh, Opts: opts}
 	}
-	return map[string]Layout{
-		// 1. SHOW — the classic cue wall: giant timer + messages + next.
-		"stage": {V: 1, Widgets: []Widget{
-			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
-			w("messages", "messages", 8, 0, 4, 3, nil),
-			w("cuelabel", "cuelabel", 0, 3, 8, 1, map[string]string{"source": "label"}),
-			w("nextup", "nextup", 8, 3, 4, 2, nil),
-			w("progress", "progress", 0, 4, 8, 1, nil),
-			w("dayprogress", "dayprogress", 0, 5, 8, 1, nil),
-			w("wallclock", "wallclock", 8, 5, 4, 1, map[string]string{"tenths": "0"}),
-			w("rate", "rate", 0, 6, 2, 1, nil),
-			w("showtitle", "showtitle", 2, 6, 6, 1, nil),
-		}},
-		// 2. LOBBY — clock + messages + the running order.
-		"lobby": {V: 1, Widgets: []Widget{
-			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
-			w("wallclock", "wallclock", 0, 1, 5, 2, map[string]string{"tenths": "0"}),
-			w("messages", "messages", 5, 1, 7, 2, nil),
-			w("schedule", "schedule", 0, 3, 12, 4, map[string]string{"count": "6"}),
-		}},
-		// 3. EVENT LOBBY — space map + full-day spine (walkthrough #1).
-		"event": {V: 1, Widgets: []Widget{
-			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
-			w("map", "map", 0, 1, 5, 5, nil),
-			w("schedule", "schedule", 5, 1, 7, 5, map[string]string{"count": "all"}),
-			w("wallclock", "wallclock", 0, 6, 4, 1, map[string]string{"tenths": "0"}),
-			w("notice", "notice", 4, 6, 8, 1, map[string]string{"text": "Welcome"}),
-		}},
-		// 4. ROOM WALK-IN — what's on + next-in-room + schedule + join QR (#2/#3).
-		"room": {V: 1, Widgets: []Widget{
-			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
-			w("wallclock", "wallclock", 0, 1, 4, 2, map[string]string{"tenths": "0"}),
-			w("cuelabel", "cuelabel", 4, 1, 8, 1, map[string]string{"source": "label"}),
-			w("speaker", "speaker", 4, 2, 8, 1, nil),
-			w("nextup", "nextup", 0, 3, 4, 2, nil),
-			w("schedule", "schedule", 4, 3, 8, 4, map[string]string{"count": "8"}),
-			w("joinqr", "joinqr", 0, 6, 4, 3, nil),
-			w("notice", "notice", 4, 7, 8, 2, map[string]string{"text": "Scan to take part"}),
-		}},
-		// 5. ROOM MAIN — the audience interaction surface (#4/#5).
-		"main": {V: 1, Widgets: []Widget{
-			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
-			w("poll", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
-			w("joinqr", "joinqr", 9, 1, 3, 4, nil),
-			w("notice", "notice", 9, 5, 3, 3, map[string]string{"text": "Scan to take part"}),
-		}},
-		// 6. DSM — the room's progress timer + its poll wedge (#6/#7).
-		"dsm": {V: 1, Widgets: []Widget{
-			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
-			w("poll", "poll", 8, 0, 4, 3, map[string]string{"target": "presenter"}),
-			w("progress", "progress", 0, 3, 8, 1, nil),
-			w("cuelabel", "cuelabel", 0, 4, 8, 1, map[string]string{"source": "label"}),
-			w("speaker", "speaker", 0, 5, 8, 1, nil),
-			w("nextup", "nextup", 8, 3, 4, 2, nil),
-			w("wallclock", "wallclock", 0, 6, 4, 1, map[string]string{"tenths": "0"}),
-			w("joinqr", "joinqr", 8, 5, 4, 2, nil),
-			w("dayprogress", "dayprogress", 4, 6, 4, 1, nil),
-		}},
-		// 7. SPEAKER TAG — presenter support shot: who + what + the clock.
-		"speaker": {V: 1, Widgets: []Widget{
-			w("speaker", "speaker", 0, 0, 12, 2, nil),
-			w("cuelabel", "cuelabel", 0, 2, 12, 2, map[string]string{"source": "label"}),
-			w("progress", "progress", 0, 4, 12, 1, nil),
-			w("nextup", "nextup", 0, 5, 8, 2, nil),
-			w("wallclock", "wallclock", 8, 5, 4, 2, map[string]string{"tenths": "0"}),
-		}},
-		// 8. Q&A WALL — questions front-and-center + join.
-		"qawall": {V: 1, Widgets: []Widget{
-			w("qa", "qa", 0, 0, 8, 5, nil),
-			w("joinqr", "joinqr", 8, 0, 4, 3, nil),
-			w("wordcloud", "wordcloud", 8, 3, 4, 2, nil),
-			w("notice", "notice", 0, 5, 12, 2, map[string]string{"text": "Questions? Scan and ask."}),
-		}},
-		// 9. CLOCK ROOM — near-idle room filler: big clock + shallow schedule.
-		"clockroom": {V: 1, Widgets: []Widget{
-			w("wallclock", "wallclock", 0, 0, 12, 2, map[string]string{"tenths": "0"}),
-			w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"}),
-		}},
-		// 10. BREAK — between-sessions filler: clock + stage messages.
-		"break": {V: 1, Widgets: []Widget{
-			w("wallclock", "wallclock", 0, 0, 12, 3, map[string]string{"tenths": "0"}),
-			w("messages", "messages", 0, 3, 12, 3, nil),
-			w("notice", "notice", 0, 6, 12, 2, map[string]string{"text": "Back shortly — enjoy the break"}),
-		}},
+	land := func(rows int, ws ...Widget) Layout {
+		return Layout{V: 1, Rows: rows, Orientation: "landscape", Widgets: ws}
 	}
+	port := func(rows int, ws ...Widget) Layout {
+		return Layout{V: 1, Rows: rows, Orientation: "portrait", Widgets: ws}
+	}
+	clock := map[string]string{"tenths": "0"}
+	return []TemplateInfo{
+		// --- Audience displays (what the room looks at) ---
+		{Key: "main", Name: "Audience main", Kind: "audience", Desc: "Polls, results, Q&A and word clouds when shown to the audience; join QR alongside",
+			Layout: land(8,
+				w("title", "showtitle", 0, 0, 12, 1, nil),
+				w("item", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
+				w("join", "joinqr", 9, 1, 3, 4, nil),
+				w("note", "notice", 9, 5, 3, 3, map[string]string{"text": "Scan to take part"}))},
+		{Key: "qawall", Name: "Q&A wall", Kind: "audience", Desc: "The approved questions and the spotlight, full screen",
+			Layout: land(8,
+				w("wall", "qa", 0, 0, 9, 8, map[string]string{"target": "audience"}),
+				w("join", "joinqr", 9, 0, 3, 4, nil),
+				w("note", "notice", 9, 4, 3, 4, map[string]string{"text": "Questions? Scan and ask."}))},
+		{Key: "holding", Name: "Holding slide", Kind: "audience", Desc: "Session title, speaker, what's next and the join QR between items",
+			Layout: land(8,
+				w("title", "showtitle", 0, 0, 12, 1, nil),
+				w("label", "cuelabel", 0, 1, 9, 2, map[string]string{"source": "label"}),
+				w("speaker", "speaker", 0, 3, 9, 1, nil),
+				w("next", "nextup", 0, 4, 9, 2, nil),
+				w("clock", "wallclock", 0, 6, 9, 2, clock),
+				w("join", "joinqr", 9, 1, 3, 7, nil))},
+		// --- Walk-in displays (posters outside rooms, foyer) ---
+		{Key: "event", Name: "Event walk-in", Kind: "walkin", Desc: "Every room now and next, the venue map and the full-day schedule",
+			Layout: land(8,
+				w("rooms", "rooms", 0, 0, 9, 5, nil),
+				w("clock", "wallclock", 9, 0, 3, 2, clock),
+				w("map", "map", 9, 2, 3, 6, nil),
+				w("sched", "eventschedule", 0, 5, 9, 3, nil))},
+		{Key: "event-portrait", Name: "Event walk-in (portrait)", Kind: "walkin", Desc: "Poster version of the event walk-in",
+			Layout: port(16,
+				w("clock", "wallclock", 0, 0, 12, 2, clock),
+				w("rooms", "rooms", 0, 2, 12, 7, nil),
+				w("map", "map", 0, 9, 12, 5, nil),
+				w("note", "notice", 0, 14, 12, 2, map[string]string{"text": "Welcome"}))},
+		{Key: "room", Name: "Room walk-in", Kind: "walkin", Desc: "This room: clock, what's on now, next session time, full-day schedule",
+			Layout: land(8,
+				w("title", "showtitle", 0, 0, 8, 1, nil),
+				w("clock", "wallclock", 8, 0, 4, 1, clock),
+				w("label", "cuelabel", 0, 1, 12, 2, map[string]string{"source": "label"}),
+				w("speaker", "speaker", 0, 3, 12, 1, nil),
+				w("next", "nextup", 0, 4, 5, 4, nil),
+				w("sched", "schedule", 5, 4, 7, 4, map[string]string{"count": "all"}))},
+		{Key: "room-portrait", Name: "Room walk-in (portrait)", Kind: "walkin", Desc: "Poster version of the room walk-in",
+			Layout: port(16,
+				w("title", "showtitle", 0, 0, 12, 2, nil),
+				w("clock", "wallclock", 0, 2, 12, 2, clock),
+				w("label", "cuelabel", 0, 4, 12, 2, map[string]string{"source": "label"}),
+				w("speaker", "speaker", 0, 6, 12, 1, nil),
+				w("next", "nextup", 0, 7, 12, 2, nil),
+				w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "all"}))},
+		{Key: "lobby", Name: "Room lobby", Kind: "walkin", Desc: "Room title, clock, stage messages and the next sessions",
+			Layout: land(8,
+				w("title", "showtitle", 0, 0, 12, 1, nil),
+				w("clock", "wallclock", 0, 1, 5, 3, clock),
+				w("msgs", "messages", 5, 1, 7, 3, nil),
+				w("sched", "schedule", 0, 4, 12, 4, map[string]string{"count": "6"}))},
+		// --- Presenter displays (face the speaker) ---
+		{Key: "dsm", Name: "Presenter (DSM)", Kind: "presenter", Desc: "Big countdown, stage messages, next session and items shown to the presenter",
+			Layout: land(8,
+				w("countdown", "countdown", 0, 0, 8, 4, map[string]string{"tenths": "1"}),
+				w("item", "poll", 8, 0, 4, 4, map[string]string{"target": "presenter"}),
+				w("label", "cuelabel", 0, 4, 8, 1, map[string]string{"source": "label"}),
+				w("msgs", "messages", 8, 4, 4, 2, nil),
+				w("progress", "progress", 0, 5, 8, 1, nil),
+				w("next", "nextup", 0, 6, 8, 2, nil),
+				w("clock", "wallclock", 8, 6, 4, 2, clock))},
+		{Key: "stage", Name: "Full timer", Kind: "presenter", Desc: "The classic timer wall: giant countdown, messages, next, progress",
+			Layout: land(7,
+				w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
+				w("messages", "messages", 8, 0, 4, 3, nil),
+				w("cuelabel", "cuelabel", 0, 3, 8, 1, map[string]string{"source": "label"}),
+				w("nextup", "nextup", 8, 3, 4, 2, nil),
+				w("progress", "progress", 0, 4, 8, 1, nil),
+				w("dayprogress", "dayprogress", 0, 5, 8, 1, nil),
+				w("wallclock", "wallclock", 8, 5, 4, 2, clock),
+				w("showtitle", "showtitle", 0, 6, 8, 1, nil))},
+		{Key: "speaker", Name: "Speaker support", Kind: "presenter", Desc: "Who is on, the session, progress and what comes next",
+			Layout: land(7,
+				w("speaker", "speaker", 0, 0, 12, 2, nil),
+				w("cuelabel", "cuelabel", 0, 2, 12, 2, map[string]string{"source": "label"}),
+				w("progress", "progress", 0, 4, 12, 1, nil),
+				w("nextup", "nextup", 0, 5, 8, 2, nil),
+				w("wallclock", "wallclock", 8, 5, 4, 2, clock))},
+		// --- Fillers (any display) ---
+		{Key: "clockroom", Name: "Clock", Kind: "walkin", Desc: "Big clock with the next few sessions",
+			Layout: land(6,
+				w("wallclock", "wallclock", 0, 0, 12, 2, clock),
+				w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"}))},
+		{Key: "break", Name: "Break", Kind: "audience", Desc: "Between sessions: clock, stage messages and a notice",
+			Layout: land(8,
+				w("wallclock", "wallclock", 0, 0, 12, 3, clock),
+				w("messages", "messages", 0, 3, 12, 3, nil),
+				w("notice", "notice", 0, 6, 12, 2, map[string]string{"text": "Back shortly — enjoy the break"}))},
+	}
+}
+
+// TemplateLayouts maps template key → layout (capture + apply paths).
+func TemplateLayouts() map[string]Layout {
+	out := map[string]Layout{}
+	for _, t := range Templates() {
+		out[t.Key] = t.Layout
+	}
+	return out
 }
 
 // widgetDefOf looks a type up in the registry (nil when unknown).
@@ -234,7 +291,10 @@ func DefaultLayoutJSON() string {
 // filled (w1…), opts maps sanitized (length caps). Unknown types and
 // overlaps are NOT fixed here — ValidateLayout rejects those.
 func NormalizeLayout(in Layout) Layout {
-	out := Layout{V: 1, Widgets: make([]Widget, 0, len(in.Widgets))}
+	out := Layout{V: 1, Rows: in.Rows, Orientation: in.Orientation, Widgets: make([]Widget, 0, len(in.Widgets))}
+	if out.Orientation != "portrait" {
+		out.Orientation = "landscape"
+	}
 	seen := map[string]bool{}
 	for i, w := range in.Widgets {
 		w.ID = strings.TrimSpace(w.ID)
@@ -289,6 +349,19 @@ func NormalizeLayout(in Layout) Layout {
 		}
 		return out.Widgets[a].X < out.Widgets[b].X
 	})
+	// The canvas always holds every tile.
+	if out.Rows <= 0 {
+		out.Rows = DefaultRowsLandscape
+		if out.Orientation == "portrait" {
+			out.Rows = DefaultRowsPortrait
+		}
+	}
+	if ext := out.Extent(); out.Rows < ext {
+		out.Rows = ext
+	}
+	if out.Rows > MaxRows {
+		out.Rows = MaxRows
+	}
 	return out
 }
 
@@ -417,9 +490,9 @@ func (b Board) LayoutJSON() string { return b.Layout }
 // valid; a corrupt row degrades to the factory layout, never an error page).
 func (b Board) Parsed() Layout {
 	if l, err := ParseLayout(b.Layout); err == nil && len(l.Widgets) > 0 {
-		return l
+		return NormalizeLayout(l)
 	}
-	return DefaultLayout()
+	return NormalizeLayout(DefaultLayout())
 }
 
 // Migrate creates the additive display_boards table (+index). Safe to run
