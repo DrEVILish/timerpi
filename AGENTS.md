@@ -3,6 +3,9 @@
 Environment notes for agents working on this repo. Modeled on CuTePi's
 AGENTS.md; keep it current as machines/services change.
 
+**ALWAYS IN ENGLISH** — all agent output is English: replies, commit
+messages, docs, code comments, reviews — no exceptions.
+
 ## Dev container
 
 - Everything is built and tested in `/opt/timerpi` (Go 1.25 at
