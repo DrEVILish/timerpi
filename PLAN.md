@@ -1,5 +1,9 @@
 # TimerPi — Plan (living document, source of truth in this repo)
 
+> **PLAN MAJOR v2** (`2026-10-05`): the Rooms build — multi-room event
+> platform (§11 below). Product major version goes **1 → 2** with it; the
+> Go-side `appVersion` const ships with Phase 7.
+>
 > Last rolled up 2026-10-03. Service live on 0.0.0.0:80 via `timerpi.service`.
 > Status key: ✅ shipped · 🟡 code-complete, hardware-unproven · ⏳ next.
 
@@ -141,3 +145,212 @@ Operators may rewrite the running order while dark. Offline master executes cue 
 > TV-legibility redraws of pause/stop/skip/microphone/warning). Submodule
 > commits: `f605048` (theme + dist), `ae648e4` (index row). The outer repo
 > must bump the submodule pointer once its own git history exists.
+
+---
+
+## 11. PLAN MAJOR v2 — Rooms: multi-room event platform
+
+Owner brief (paraphrased): one appliance runs a whole event — walk-in lobby,
+per-room walk-in + main + DSM displays, per-room operators, a SuperOperator,
+and a moderated Slido-style audience surface (polls, Q&A, word clouds) joined
+by QR, scaled for 1000+ phones pushing at once. Everything ftl-themes styled,
+with operator-customizable appear/disappear animations. CuTePi evaluated as a
+destination display. No. 3 (zones) + No. 8 (OSC only) from the 10-proposal
+round are in scope.
+
+### 11.0 What already exists in this repo (discovered 2026-10-05)
+
+Committed / long-shipped:
+
+| Facility | Where | Notes |
+|---|---|---|
+| Show-level cue engine + WS hub, per-show fanout | `timerpi/engine.go`, `ws/hub.go` (`byShow`) | the room model rides this |
+| Widget-layout engine (drag, geometry, 49/0-widget layouts) | `boards/` package | display templates extend it |
+| Waiting room: register/capture (consume-once), orphan overlay | `routes/waiting.go`, `public/src/waiting.js`, mesh badshow state | `/d/` no-code reuses this |
+| Show auth + device operator password | `config.AuthPassword`, `routes/auth.go` | role ladder below |
+| Device mesh (mDNS, roles, offline mirror) | `routes/network.go`, `public/src/mesh.js` | CuTePi pairing extends it |
+| ComputeSchedule + runtime variant (day plan) | `timerpi/engine.go` (tested) | walk-in schedule slot source |
+| QR generator | `skip2/go-qrcode` | audience join reuses it |
+| `display_presets` (F2 named screen presets) | `timerpi/db.go` | layout templates reuse this table |
+
+**In-flight WIP, uncommitted** (parallel session; currently does NOT
+compile — treat as raw material, stitch before building on it):
+
+| Facility | State |
+|---|---|
+| `timerpi/polls.go` — one-table interaction engine: 6 kinds (`poll`, `qa`, `wordcloud`, `ideas`, `quiz`, +1), state machine `hidden → open → results`, `Vote` upsert per (poll,peer,choice), moderated `Submit` (questions/words are rows), `PollCounts` → `PollView` (counts + %), `ActivePoll`, `AudienceRead`, `ListOpenSurvey` | solid; tests exist? **suite status unknown** — write missing unit tests in Phase 0 |
+| `routes/audience.go` — REST surface (`/api/audience/read|ask|vote|qr`, poll CRUD) + `/a/:code` audience page | page renders `audience.html` which **does not exist yet** → 500; ask rate-limit exists (`askAllowed`) |
+| `routes/zone.go` + `shows.zone` label + `/zone/<name>` walk-in event page (wall clock, one card per room: current session + next time + full day schedule; server-rendered soft refresh, no WS) | works for labels; lacks per-room walk-in variants, map asset, layout control |
+| `oscbridge/` — pure-Go OSC codec (parse + build, no deps), UDP inbound listener → engine verbs, outward `FireOut` hooks ("go"/"panic" per oscapi) | codec compact; **build broken**: (a) `routes/api.go:463,465` references `oscbridge` without import, (b) `routes/oscapi.go:47` passes `log.Printf` where the `SetInbound` error callback signature is expected, (c) `routes/oscapi.go:60` `undefined: timerpi` (missing import) |
+| `ws/hub.go` `pollsFn` — active poll merged into EVERY fanout frame | works; capacity problem at audience scale (§11.5) |
+| Board/inspector poll client rendering | thin: 1 grep hit in `board.js`, missing template hooks — Phase 5 |
+
+### 11.1 Surface map (the owner's 11 items → mechanism)
+
+| # | Surface | Mechanism | Status |
+|---|---|---|---|
+| 1 | Event walk-in (wall clock, sessions + rooms, space map, day schedule) | `/zone/<name>` aggregate, slot layout §11.2, map slot | 🟡 labels exist; page needs template slot system |
+| 2/3 | Room A/B walk-in (clock, current + next-in-room, schedule) | own show per room + walk-in template | ⏳ |
+| 4/5 | Room main display (polls/questions/results on demand) | board page + `pollsFn` frame + results renderer | 🟡 data layer there; display layer Phase 5 |
+| 6/7 | Room DSM/timer display (progress + polls wedge) | standard timer board + poll slot | 🟡 |
+| 8/9 | Room operators | show-scoped operator (code + optional show passphrase) | ✅ exists; panel polish Phase 3 |
+| 10 | SuperOperator (all rooms) | device `AuthPassword` role + cross-room panel: engine registry keys every show; SuperOps may fire every room's verbs; zero-UI "all rooms" list | 🟡 |
+| 11 | Audience phones via QR, hidden until pushed | `/a/:code` + QR + moderation states incl. `AudienceRead` visibility contract | 🟡 REST there; capacity lane §11.5, page §11.4 |
+
+Role ladder (fixed v2): `screen | display` (no auth) → `audience` (QR, read
++ one vote/ask per peer, peer = device token) → `operator` (per-show; one
+password per show, off = open like today) → `super` (device password;
+cross-room verbs + settings). Room operators never see other rooms' pages —
+enforced at route layer (`showGateByShowID` already gates, extend to zones).
+
+### 11.2 Display templates (slot system)
+
+One slot schema, rendered by the same board renderer that already does
+widget layouts — no second layout engine:
+
+- Template = named preset in `display_presets`, kind `layout`, payload:
+  `{template: "event"|"room"|"main"|"dsm"|"timer", slots: [{slot, enabled, size, animation}], zone, mapAsset}`.
+- Slots: `clock` (server wall clock), `session` (current session card),
+  `next` (next-in-room), `schedule` (day plan via ComputeSchedule; event page
+  aggregates all shows in the zone), `timer` (cue countdown, DSM), `poll`
+  (question/results showcase), `qa` (moderated question wall), `wordcloud`,
+  `map` (operator-uploaded image asset per zone), `logo`, `blank`.
+- Templates: `event` (1, event lobby), `room` (2/3 walk-in), `main` (4/5),
+  `dsm` (6/7, timer + poll wedge), `timer` (today's board, unchanged default).
+- Animation enum per slot + per push: `none | fade | slide | pop` (+ fade-ms
+  knob) — implemented with the ftl-themes live/data-state component classes
+  (upstream live.css vocabulary); verify tokens against CONTRACT-UI appendix
+  as in the audit. Operator sets the enum in the inspector like any widget
+  field. All new elements: ftl component vocabulary only (rules theming the
+  build, no ad-hoc CSS outside app layout).
+- Zone `mapAsset` upload joins the existing asset pipeline (screens gallery
+  preview pattern); render `object-fit: contain`.
+
+### 11.3 Phases (each lands with tests; asset rev bumps as UI ships)
+
+0. **Stitch the in-flight WIP** — fix the 3 build breaks, complete
+   `audience.html` (stub page permitted), add the missing `timerpi/polls.go`
+   unit tests (Vote dedupe, state machine, PollCounts math, moderation
+   visibility), full suite green, commit.
+1. **`/d/` no-code display + home button** — `GET /d/` (no code) renders a
+   READY splash, takes identity from sessionStorage (`tp.screen`, generated
+   `Screen-XXXX` otherwise), walks `POST /api/waiting/register` immediately,
+   heartbeats, honors capture → hops like orphaned displays already do.
+   Home page header button "Open as display" (`window.open('/d/')`) with the
+   per-window identity rules (URL `?screen=` > sessionStorage > generated).
+2. **Display templates** — slot schema + renderer slots (clock/schedule/
+   session/next/map/poll/qa/wordcloud/logo), template presets, zone map
+   upload, animations enum. New pages: `/zone/<name>` gains its template;
+   board page accepts `?layout=`; `/d` capture assigns template identity.
+3. **Role ladder + SuperOperator** — show-passphrase API already exists;
+   add `super` framing (device password → cross-room panel listing zones,
+   bulk verbs), page-level zone gating, waiting-room/gallery filter by zone.
+4. **Audience capacity lane (1000+)** — §11.5. Audience WS endpoint,
+   scope-filtered frames, vote storms, load harness.
+5. **Interaction UX on displays** — results bar graphs (`ProgressBar`
+   ftl component rows: label, filled bar, `% of total`, total-votes line),
+   question wall (moderated list, show/hide), word cloud (DOM tiles sized by
+   votes, themeable badge/tag vocabulary), operator transport: PER-CARD
+   `Ask | Show | Results | Hide` buttons wired to the existing state machine;
+   audience page sections appear/hide with the slot animation; quiz flow
+   kept as last kind (right/wrong reveal = results state reuse).
+6. **CuTePi destination bridge** — §11.6 (finish the otrientation the WIP
+   started; outbound fire on GO/BLANK; pairing UI in Settings).
+7. **Hardening + version const** — `appVersion = "2.0"` in Go (health +
+   footer), README/PROJECT bump, load-harness numbers recorded, review pass,
+   `-race` suite, deploy to the Pi.
+
+Build order is deliberate: 0/1 are small and ship value alone; 5 depends on
+4's lane; 6 is independent of 2–5 (reorder safe).
+
+### 11.4 Audience page (`/a/:code`)
+
+Pages stay zero-login: QR → join (device token minted client-side,
+persisted localStorage; server stores no PII, only the token hash for vote
+dedupe + rate keys). Sections render **only** what the room operator has
+pushed (`AudienceRead` visibility contract): an open poll shows the question
++ options (tap to vote, one vote per peer, switchable until results), an open
+qa shows the ask form + (optionally) own submitted question ("you asked ·
+pending"), wordcloud/ideas show the input chip. Hide = section collapses
+with the slot animation, NOT bare removal, so phones can't infer an operator
+action by a layout pop if animation is `none` — §11.5 payload drops the
+section entirely instead (hidden by absence, the load-bearing design rule).
+
+### 11.5 Capacity budget (the 1000-phone problem)
+
+Constraints measured/planned, not vibes: hub currently merges the active
+poll into EVERY full-show frame (`pollsFn` in the fanout loop) and caps
+sessions at `maxShowSessions = 512`/show.
+
+- **Lane separation.** Audience peers join a dedicated WS endpoint and a
+  dedicated session class (`audByShow[showID]`), leaving the 512 cap for
+  boards/operators untouched (its purpose was runaway openers, not phones).
+  Audience default cap 4,000/show (config knob), one readLoop each —
+  ~2,000 goroutines ≈ fine on the Pi; memory ≈ frames × sizes below.
+- **Payload scoping.** Audience frames never carry cue state. Body is the
+  visible-interaction object only (§11.4): open poll + question counts +
+  word top list — ≲ 1 KB, vs the full Snapshot (KBs). Frame format: the
+  existing `{v:1,t:"poll"|...}` envelope, additive.
+- **Hot-path math.** A vote must NOT trigger a full-snapshot mutation
+  fanout to boards: `Vote` writes via the existing SQLite upsert (prepared,
+  WAL, single writer ≈ tens of µs each — 1,000-burst comfortable) and
+  broadcasts a small poll-only delta frame (~KB) to (a) that show's
+  audience lane and (b) the room's boards (results view). Rate guards:
+  per-peer 1 vote / 300 ms + per-show soak limiter (default ~600
+  requests/s accepted; beyond it HTTP 429 w/ Retry-After on REST and a
+  server-side drop acknowledgment on WS — phones retry with jitter).
+- **Boards stay sparse.** Boards receive at most {state change, count
+  deltas, word list top-N}; the full re-tally ships only in `results`.
+- **Load harness (test, not claim).** `ws/load_test.go`: 1,000 synthetic
+  clients join, 50 votes/s for 10 s, assert p95 fanout frame latency < 100
+  ms on this box and zero missed frames ≥ 99%. Runs marker-gated
+  (`-run TestLoad`) so the normal suite stays fast; numbers recorded in
+  PROJECT.md at Phase 4/7.
+- **Non-goals.** No sharding, no Redis, no audience prediction
+  infrastructure — SQLite single-writer + scoped frames covers 1,000 at
+  this weight; re-evaluate only if the harness disagrees.
+
+### 11.6 CuTePi as destination display — verdict + wiring
+
+**Verdict: yes, as a controlled media destination — not as a webpage
+display.** CuTePi is the sibling appliance: Go + GStreamer directly on KMS/HDMI
+(it holds DRM master; no browser runs on it), with its own WS hub, media pool,
+cue sheet and — decisive for us — **remote protocol listeners: QLab-style OSC
+UDP :53000, OSC TCP/SLIP, HyperDeck server mode** (DrEVILish/CuTePi DESIGN
+§12.8). It cannot serve TimerPi pages itself, and the two services cannot own
+one HDMI connector; so the build:
+
+- **Different Pis / outputs.** A room pairs one CuTePi box (media wall /
+  walk-in video loop) with the room's TimerPi surfaces (its own browser
+  display pages; TimerPi's Pi renders its own framebuffer/DRM timer).
+  Pi 5's second HDMI may also host them separately on one box — hardware
+  untested, documented as the 🟡 path.
+- **Control path: OSC (ship v1).** Finish the WIP: TimerPi → CuTePi over
+  its QLab channel — `GO`/cue start on TimerPi fires the paired CuTePi cue
+  (engine `onFire` hook, outbound OSC to `osc.out.host:port`),
+  `BLANK on → panic` (CuTePi panic holding image), `BLANK off → go`
+  (resume). One paired CuTePi per show (settings kv: `osc.out.host/port`),
+  pairing UI in Settings (a host picker that pings and shows CuTePi's
+  current QLab channel), off by default.
+- **Capability records, not a new protocol.** The CuTePi partner is a
+  device-mesh entry with `role=cutepi` + OSC host (network.go identity
+  vocabulary) so panels can show "Room A media: <host>.local alive".
+- **What we do NOT build:** HTTP/WS API coupling into CuTePi internals, a
+  native CuTePi client, vendoring, and **any push to the CuTePi or
+  ftl-themes repos** (AGENTS rule). Problems found there are filed as .md
+  under `reviews/upstream-issues/` or GitHub issues at the project —
+  never pushed.
+- **Upstream candidates to note (do not implement):** TimerPi OSC verb
+  set is new-on-the-market even for CuTePi; if CuTePi later wants a native
+  "TimerPi mode", that is an issue-on-their-repo conversation, not our code.
+
+### 11.7 Decisions John should veto/confirm (defaults ship otherwise)
+
+1. Audience lane = WebSocket (default) with REST fallback — REST-only
+   would be simpler but triples phone battery at 1,000 clients.
+2. Word cloud = DOM tiles scaled by votes (themeable/animatable) over a
+   canvas cloud (pretty, unthemable).
+3. One operator password per room-show (off = open) — super-operator is
+   the device password. (No per-person accounts: not this release.)
+4. Zone map = operator-uploaded image asset per zone.
+5. Product version string **2.0 "Rooms"**; plan section §11 in PLAN.md.
