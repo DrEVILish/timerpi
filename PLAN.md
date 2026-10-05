@@ -271,9 +271,20 @@ widget layouts — no second layout engine:
    en route: word approval ACCUMULATES (single-focus stays top-level
    only — the flat rule made clouds impossible) and ActivePoll focus is
    top-level only (an approved word must not steal the screen).
-3. **Role ladder + SuperOperator** — show-passphrase API already exists;
-   add `super` framing (device password → cross-room panel listing zones,
-   bulk verbs), page-level zone gating, waiting-room/gallery filter by zone.
+3. **Role ladder + SuperOperator** — ✅ 2026-10-05: the ladder stands as
+   §11.1 (display → audience → room operator (show passphrase, shipped) →
+   super = device-password session past AuthGate). New: `GET /super`
+   cross-room panel (live per-room cards: state, active label, remaining,
+   blanked, connected count) polling `GET /api/super/rooms?zone=`;
+   `POST /api/super/verb` (transport + blackout verbs only — content stays
+   room-owned) and `POST /api/super/bulk` (blank/unblank/go/next/pause/
+   resume across all rooms or one zone, per-room outcomes). Zone filter
+   landed where it is operationally meaningful: the panel's room list and
+   bulk scope. Waiting rows are ORPHANED (no show → no zone), so a zone
+   filter there would be fiction; capture stays show-scoped in the
+   gallery. Note: on an open appliance (no device password) the panel is
+   reachable — the same documented LAN-trust model as every operator
+   surface.
 4. **Audience capacity lane (1000+)** — §11.5. Audience WS endpoint,
    scope-filtered frames, vote storms, load harness.
 5. **Interaction UX on displays** — results bar graphs (`ProgressBar`

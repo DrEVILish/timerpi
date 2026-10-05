@@ -624,6 +624,17 @@ func (h *Hub) ScreenPeers(showID int64) map[string][][2]string {
 	return out
 }
 
+// ShowSessions counts every live session (any role) on one show — the
+// super panel's per-room presence number (PLAN §11.1).
+func (h *Hub) ShowSessions(showID int64) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if sh, ok := h.byShow[showID]; ok {
+		return len(sh.sessions)
+	}
+	return 0
+}
+
 // ScreenSessions counts live sessions per screen name for one show
 // (F1 presence for the screens panel; "" anonymous sessions excluded).
 func (h *Hub) ScreenSessions(showID int64) map[string]int {

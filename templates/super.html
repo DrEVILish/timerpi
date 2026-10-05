@@ -1,0 +1,138 @@
+{{- /*
+  super.html — GET /super: the SuperOperator cross-room panel (PLAN §11.1,
+  phase 3). Operator-password gated at the middleware (room operators with
+  only a show passphrase never reach it). Standalone document, ftl tokens;
+  JS polls /api/super/rooms every 2 s and fires verbs over /api/super/*.
+  Data: .DefaultTheme.
+*/ -}}
+{{define "super"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<style>
+  body.tp-super { margin:0; min-height:100dvh; background:var(--bg,#0b0b10); color:var(--text,#eee);
+    padding:1.2rem clamp(1rem,3vw,2.5rem); box-sizing:border-box; }
+  .tp-super-head { display:flex; align-items:center; gap:1rem; margin-bottom:1rem;
+    border-bottom:1px solid var(--border,#333); padding-bottom:.6rem; flex-wrap:wrap; }
+  .tp-super-head h1 { font-size:1.4rem; margin:0; letter-spacing:.1em; }
+  .tp-super-bulk { margin-left:auto; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+  .tp-super-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:1rem; }
+  .tp-room { background:var(--surface,#15151d); border:1px solid var(--border,#333);
+    border-radius:10px; padding:1rem; display:flex; flex-direction:column; gap:.5rem; }
+  .tp-room h2 { margin:0; font-size:1.05rem; overflow-wrap:anywhere; }
+  .tp-room .code { color:var(--muted,#8a8a99); font-size:.78rem; letter-spacing:.12em; }
+  .tp-room .zone { margin-left:auto; }
+  .tp-state { font-size:.95rem; }
+  .tp-state .st { font-weight:700; letter-spacing:.08em; }
+  .tp-state .st.run { color:var(--success,#22C55E); }
+  .tp-state .st.hold { color:var(--warning,#ffaa00); }
+  .tp-state .st.idle { color:var(--muted,#9a9aa8); }
+  .tp-state .st.blank { color:var(--danger,#ef4444); }
+  .tp-remaining { font-variant-numeric:tabular-nums; font-size:1.5rem; margin:.2rem 0; }
+  .tp-verbs { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.3rem; }
+  .tp-sessions { color:var(--muted,#9a9aa8); font-size:.85rem; }
+  .tp-super-empty { color:var(--muted,#9a9aa8); padding:2rem 0; text-align:center; }
+</style>
+</head>
+<body class="tp-super" data-page="super">
+  <header class="tp-super-head">
+    <h1>SUPER OPERATOR</h1>
+    <label class="label" for="tp-super-zone" style="margin:0">Zone</label>
+    <input class="input input-sm" id="tp-super-zone" placeholder="all zones" autocomplete="off">
+    <div class="tp-super-bulk">
+      <button class="btn btn-sm" data-bulk="go">GO all</button>
+      <button class="btn btn-sm" data-bulk="next">Next all</button>
+      <button class="btn btn-sm btn-danger" data-bulk="blank">Blank all</button>
+      <button class="btn btn-sm" data-bulk="unblank">Unblank all</button>
+    </div>
+  </header>
+  <main class="tp-super-grid" id="tp-super-grid" aria-live="polite"></main>
+  <p class="tp-super-empty" id="tp-super-empty" hidden>No rooms yet — create shows and set their zone.</p>
+<script>
+(function () { "use strict";
+  var grid = document.getElementById("tp-super-grid");
+  var emptyEl = document.getElementById("tp-super-empty");
+  var zoneInput = document.getElementById("tp-super-zone");
+  var rooms = [];
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fmt(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var s = Math.round(ms / 1000);
+    return String(Math.floor(s / 60)) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function stateOf(r) {
+    if (r.blanked) return ["BLANKED", "blank"];
+    if (r.running && !r.paused) return ["RUNNING", "run"];
+    if (r.paused) return ["HELD", "hold"];
+    return ["IDLE", "idle"];
+  }
+  function verb(code, verbName) {
+    fetch("/api/super/verb", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code, verb: verbName })
+    }).then(tick).catch(function () {});
+  }
+  function bulk(verbName) {
+    fetch("/api/super/bulk", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verb: verbName, zone: zoneInput.value.trim() })
+    }).then(tick).catch(function () {});
+  }
+
+  function render() {
+    grid.textContent = "";
+    emptyEl.hidden = rooms.length > 0;
+    rooms.forEach(function (r) {
+      var card = el("section", "tp-room");
+      var head = el("div");
+      head.style.display = "flex"; head.style.alignItems = "baseline"; head.style.gap = ".5rem";
+      head.appendChild(el("h2", "", r.title));
+      head.appendChild(el("span", "code", r.code));
+      if (r.zone) head.appendChild(el("span", "badge zone", r.zone));
+      card.appendChild(head);
+      var st = stateOf(r);
+      var state = el("div", "tp-state");
+      var badge = el("span", "st " + st[1], st[0]);
+      state.appendChild(badge);
+      if (r.activeLabel) state.appendChild(el("span", "", " — " + r.activeLabel));
+      card.appendChild(state);
+      card.appendChild(el("div", "tp-remaining", fmt(r.remainingMS)));
+      var verbs = el("div", "tp-verbs");
+      ["go", "next", "pause", "resume", "blank", "unblank"].forEach(function (v) {
+        var b = el("button", "btn btn-sm", v === "blank" ? "Blank" : v.charAt(0).toUpperCase() + v.slice(1));
+        b.onclick = function () { verb(r.code, v); };
+        verbs.appendChild(b);
+      });
+      card.appendChild(verbs);
+      card.appendChild(el("div", "tp-sessions", r.sessions + " connected"));
+      grid.appendChild(card);
+    });
+  }
+
+  function tick() {
+    var q = zoneInput.value.trim() ? "?zone=" + encodeURIComponent(zoneInput.value.trim()) : "";
+    fetch("/api/super/rooms" + q)
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) { rooms = j.rooms || []; render(); }
+      })
+      .catch(function () {});
+  }
+  zoneInput.addEventListener("change", tick);
+  document.querySelectorAll("[data-bulk]").forEach(function (b) {
+    b.onclick = function () { bulk(b.dataset.bulk); };
+  });
+  setInterval(tick, 2000);
+  tick();
+})();
+</script>
+</body>
+</html>
+{{end}}

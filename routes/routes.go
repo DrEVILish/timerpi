@@ -40,6 +40,8 @@ type HubMount interface {
 	SendToRole(showID int64, role string, frame []byte) int
 	KickSession(showID int64, peerID string) int
 	ScreenPeers(showID int64) map[string][][2]string
+	// Super panel: total live sessions per show (PLAN §11.1).
+	ShowSessions(showID int64) int
 }
 
 // Deps carries the wired services; nil fields degrade to skeleton behavior
@@ -104,6 +106,7 @@ func New(d *Deps) *gin.Engine {
 	registerZoneRoutes(r, d)
 	registerOscRoutes(r, d)
 	registerAssetRoutes(r, d)
+	registerSuperRoutes(r, d)
 	if d.Store != nil {
 		if oserr := d.oscSync(); oserr != nil {
 			log.Printf("routes: osc listener boot: %v", oserr)
