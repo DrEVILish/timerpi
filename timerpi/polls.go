@@ -65,16 +65,17 @@ func (p Poll) PollOptions() []string {
 
 // PollView is the audience/board wire shape (counts included when visible).
 type PollView struct {
-	ID       int64    `json:"id"`
-	Kind     string   `json:"kind"`
-	Question string   `json:"question"`
-	Options  []string `json:"options"`
-	Correct  int64    `json:"correct,omitempty"`
-	State    string   `json:"state"`
-	Counts   []int64  `json:"counts,omitempty"` // per option (poll/quiz)
-	Total    int64    `json:"total,omitempty"`  // distinct voters
-	Upvotes  int64    `json:"upvotes,omitempty"`
-	Parent   int64    `json:"parent,omitempty"`
+	ID       int64      `json:"id"`
+	Kind     string     `json:"kind"`
+	Question string     `json:"question"`
+	Options  []string   `json:"options"`
+	Correct  int64      `json:"correct,omitempty"`
+	State    string     `json:"state"`
+	Counts   []int64    `json:"counts,omitempty"` // per option (poll/quiz)
+	Total    int64      `json:"total,omitempty"`  // distinct voters
+	Upvotes  int64      `json:"upvotes,omitempty"`
+	Parent   int64      `json:"parent,omitempty"`
+	Children []PollView `json:"children,omitempty"` // wordcloud/ideas: approved words (PLAN §11.2)
 }
 
 func (d *DB) normalizePoll(p *Poll) error {
@@ -151,19 +152,24 @@ func (d *DB) ListPolls(showID int64) ([]Poll, error) {
 	return out, nil
 }
 
-// SetPollState moves one row (and closes its siblings: one open/results
-// per show at a time — board + audience stay single-focus), fanning state.
+// SetPollState moves one row, fanning state. Single-focus applies to
+// TOP-LEVEL items only (one open/results per show — board + audience keep
+// one focus). Child rows (wordcloud/ideas submissions) accumulate: the
+// operator approves words one by one while their cloud stays on air
+// (PLAN §11.2 — found by the children test, the flat rule made clouds
+// impossible).
 func (d *DB) SetPollState(showID, id int64, state string) error {
 	switch state {
 	case StateHidden, StateOpen, StateResults:
 	default:
 		return fmt.Errorf("timerpi: poll state %q invalid", state)
 	}
-	if _, err := d.GetPoll(showID, id); err != nil {
+	p, err := d.GetPoll(showID, id)
+	if err != nil {
 		return err
 	}
-	if state != StateHidden {
-		if _, err := d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE show_id = ? AND state IN (?, ?)`,
+	if state != StateHidden && p.Parent == 0 {
+		if _, err := d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE show_id = ? AND state IN (?, ?) AND parent = 0`,
 			StateHidden, nowMS(), showID, StateOpen, StateResults); err != nil {
 			return fmt.Errorf("timerpi: close polls: %w", err)
 		}
@@ -269,8 +275,10 @@ func (d *DB) PollCounts(p Poll) PollView {
 // counts — the board/Audience reads this out of the snapshot.
 func (d *DB) ActivePoll(showID int64) (*PollView, error) {
 	var p Poll
+	// Top-level items only: a just-approved word must not steal the on-air
+	// focus from its cloud (children surface through the parent's payload).
 	err := d.Get(&p, `SELECT id, show_id, kind, question, options, correct, state, parent, author, ts, updated
-		FROM polls WHERE show_id = ? AND state IN (?, ?) ORDER BY updated DESC LIMIT 1`,
+		FROM polls WHERE show_id = ? AND state IN (?, ?) AND parent = 0 ORDER BY updated DESC LIMIT 1`,
 		showID, StateOpen, StateResults)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -279,7 +287,34 @@ func (d *DB) ActivePoll(showID int64) (*PollView, error) {
 		return nil, err
 	}
 	v := d.PollCounts(p)
+	// Word clouds / idea walls carry their approved words as children
+	// (PLAN §11.2): rows parented to this item that the operator opened.
+	if p.Kind == KindWordCloud || p.Kind == KindIdeas {
+		v.Children, _ = d.visibleChildren(showID, p.ID)
+	}
 	return &v, nil
+}
+
+// visibleChildren returns the open child rows of one item with their
+// upvote counts, loudest first (word tiles / idea cards).
+func (d *DB) visibleChildren(showID, parent int64) ([]PollView, error) {
+	var rows []struct {
+		ID       int64  `db:"id"`
+		Question string `db:"question"`
+		Upvotes  int64  `db:"n"`
+	}
+	err := d.Select(&rows, `SELECT p.id, p.question, COUNT(v.id) n
+		FROM polls p LEFT JOIN votes v ON v.poll_id = p.id AND v.choice = '1'
+		WHERE p.show_id = ? AND p.parent = ? AND p.state = ?
+		GROUP BY p.id, p.question ORDER BY n DESC, p.id`, showID, parent, StateOpen)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PollView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PollView{ID: r.ID, Kind: "word", Question: r.Question, Upvotes: r.Upvotes})
+	}
+	return out, nil
 }
 
 // ListOpenSurvey returns the survey members in author order when their

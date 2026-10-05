@@ -78,6 +78,64 @@ var WidgetTypes = []WidgetDef{
 	{Type: "rate", Title: "Rate chip", Desc: "Countdown rate multiplier", DefaultW: 2, DefaultH: 1},
 	{Type: "schedule", Title: "Schedule", Desc: "Mini running-order list", DefaultW: 4, DefaultH: 4},
 	{Type: "notice", Title: "Notice", Desc: "Static free text (welcome, sponsors, Wi-Fi…)", DefaultW: 6, DefaultH: 2},
+	// PLAN §11.2 (Rooms v2, phase 2): the audience/venue slots.
+	{Type: "poll", Title: "Poll", Desc: "On-air poll: question, live counts, results bars", DefaultW: 6, DefaultH: 4},
+	{Type: "qa", Title: "Q&A", Desc: "Open audience question + likes", DefaultW: 6, DefaultH: 2},
+	{Type: "wordcloud", Title: "Word cloud", Desc: "Approved audience words as tiles", DefaultW: 6, DefaultH: 4},
+	{Type: "map", Title: "Map", Desc: "Venue map image (upload under /api/assets)", DefaultW: 6, DefaultH: 4},
+	{Type: "joinqr", Title: "Join QR", Desc: "Audience join QR for this room", DefaultW: 3, DefaultH: 4},
+}
+
+// TemplateLayouts are the Rooms display templates (PLAN §11.2): named
+// starting layouts for the walk-in / main / DSM surfaces, applied to a
+// board in one click from the board chrome (fetched from
+// GET /api/board-templates — Go is the single source of truth so the
+// overlap test in boards_test.go covers every shape).
+func TemplateLayouts() map[string]Layout {
+	w := func(id, typ string, x, y, hw, hh int, opts map[string]string) Widget {
+		return Widget{ID: id, Type: typ, X: x, Y: y, W: hw, H: hh, Opts: opts}
+	}
+	return map[string]Layout{
+		// Event lobby: map + full-day spine.
+		"event": {V: 1, Widgets: []Widget{
+			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
+			w("map", "map", 0, 1, 5, 5, nil),
+			w("schedule", "schedule", 5, 1, 7, 5, map[string]string{"count": "all"}),
+			w("wallclock", "wallclock", 0, 6, 4, 1, nil),
+			w("notice", "notice", 4, 6, 8, 1, map[string]string{"text": "Welcome"}),
+		}},
+		// Room walk-in: what's on + next + day schedule + join QR.
+		"room": {V: 1, Widgets: []Widget{
+			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
+			w("wallclock", "wallclock", 0, 1, 4, 2, map[string]string{"tenths": "0"}),
+			w("cuelabel", "cuelabel", 4, 1, 8, 1, map[string]string{"source": "label"}),
+			w("speaker", "speaker", 4, 2, 8, 1, nil),
+			w("schedule", "schedule", 0, 3, 8, 4, map[string]string{"count": "8"}),
+			w("joinqr", "joinqr", 8, 3, 4, 4, nil),
+			w("notice", "notice", 0, 7, 12, 2, map[string]string{"text": "Wi-Fi: event-guest"}),
+		}},
+		// Room main display: the audience-interaction surface.
+		"main": {V: 1, Widgets: []Widget{
+			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
+			w("poll", "poll", 0, 1, 7, 5, nil),
+			w("qa", "qa", 7, 1, 5, 2, nil),
+			w("wordcloud", "wordcloud", 7, 3, 5, 3, nil),
+			w("joinqr", "joinqr", 0, 6, 3, 3, nil),
+			w("notice", "notice", 3, 6, 9, 2, map[string]string{"text": "Scan to take part"}),
+		}},
+		// DSM/timer display: the timer with a poll wedge.
+		"dsm": {V: 1, Widgets: []Widget{
+			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
+			w("poll", "poll", 8, 0, 4, 3, nil),
+			w("progress", "progress", 0, 3, 8, 1, nil),
+			w("cuelabel", "cuelabel", 0, 4, 8, 1, map[string]string{"source": "label"}),
+			w("speaker", "speaker", 0, 5, 8, 1, nil),
+			w("nextup", "nextup", 8, 3, 4, 2, nil),
+			w("wallclock", "wallclock", 0, 6, 4, 1, map[string]string{"tenths": "0"}),
+			w("joinqr", "joinqr", 8, 5, 4, 2, nil),
+			w("dayprogress", "dayprogress", 4, 6, 4, 1, nil),
+		}},
+	}
 }
 
 // widgetDefOf looks a type up in the registry (nil when unknown).
@@ -92,6 +150,10 @@ func widgetDefOf(t string) *WidgetDef {
 
 // ValidType reports whether t is a registered widget type.
 func ValidType(t string) bool { return widgetDefOf(t) != nil }
+
+// DefOf exposes one registry entry (nil when unknown) — tests and the
+// palette renderer read defaults from here.
+func DefOf(t string) *WidgetDef { return widgetDefOf(t) }
 
 // DefaultLayout is the factory board: countdown + messages on top, cue
 // meta + next-up below, progress bars, wall clock, rate, title, schedule.

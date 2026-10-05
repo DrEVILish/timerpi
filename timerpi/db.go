@@ -174,7 +174,14 @@ func (d *DB) migrate() error {
 		ts      INTEGER NOT NULL DEFAULT 0,
 		UNIQUE (poll_id, peer)
 	);`,
-		`CREATE TABLE IF NOT EXISTS display_presets (
+		`CREATE TABLE IF NOT EXISTS assets (
+		id    INTEGER PRIMARY KEY AUTOINCREMENT,
+		name  TEXT NOT NULL DEFAULT '',
+		mime  TEXT NOT NULL DEFAULT 'application/octet-stream',
+		bytes BLOB NOT NULL,
+		ts    INTEGER NOT NULL DEFAULT 0
+	);`,
+	`CREATE TABLE IF NOT EXISTS display_presets (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			show_id    INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
 			name       TEXT NOT NULL,

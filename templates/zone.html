@@ -35,6 +35,9 @@
   table.tp-sched tr.now td { color:var(--accent,#7C3AED); font-weight:600; }
   table.tp-sched tr.done td { opacity:.45; }
   .tp-empty { color:var(--muted,#9a9aa8); padding:2rem 0; text-align:center; }
+  .tp-zone-map { display:block; width:min(42rem,100%); max-height:38dvh; object-fit:contain;
+    margin:0 auto 1rem; border:1px solid var(--border,#333); border-radius:10px;
+    background:var(--surface,#15151d); }
 </style>
 </head>
 <body class="tp-zone" data-page="zone">
@@ -42,6 +45,7 @@
     <h1>{{$z := .Data.Zone}}{{if $z}}{{$z}}{{else}}Event{{end}}</h1>
     <span class="tp-zone-clock">{{.Data.NowHM}}</span>
   </header>
+  {{if .Data.MapURL}}<img class="tp-zone-map" src="{{.Data.MapURL}}" alt="Venue map">{{end}}
   {{if .Data.Rooms}}
   <div class="tp-zone-grid">
     {{range .Data.Rooms}}

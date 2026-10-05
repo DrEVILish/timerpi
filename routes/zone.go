@@ -88,6 +88,7 @@ type zoneRowVM struct {
 type zoneVM struct {
 	Zone    string     `json:"zone"`
 	NowHM   string     `json:"nowHM"`
+	MapURL  string     `json:"mapUrl,omitempty"`
 	Rooms   []zoneRoom `json:"rooms"`
 	Updated string     `json:"updated"`
 }
@@ -115,6 +116,9 @@ func (d *Deps) zonePage(c *gin.Context) {
 	}
 	vm := zoneVM{Zone: name, NowHM: time.Now().Format("15:04:05"),
 		Updated: time.Now().Format("15:04:05")}
+	if mid := d.Store.ZoneMap(name); mid > 0 {
+		vm.MapURL = assetURL(mid)
+	}
 	now := d.now()
 	for _, s := range zsh {
 		room := zoneRoom{Code: s.Code, Title: s.Title, Sched: []zoneRowVM{}}

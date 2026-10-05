@@ -39,8 +39,11 @@ func TestDefaultLayoutValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("factory layout invalid: %v", err)
 	}
-	if len(l.Widgets) != len(boards.WidgetTypes) {
-		t.Errorf("factory covers %d widgets, registry has %d types", len(l.Widgets), len(boards.WidgetTypes))
+	// The factory board is the TIMER surface; the Rooms types (poll, qa,
+	// wordcloud, map, joinqr — PLAN §11.2) are opt-in via templates, so
+	// the factory must COVER its types from the registry, not equal it.
+	if len(l.Widgets) > len(boards.WidgetTypes) {
+		t.Errorf("factory has %d widgets, registry only %d types", len(l.Widgets), len(boards.WidgetTypes))
 	}
 	seen := map[string]bool{}
 	for _, w := range l.Widgets {

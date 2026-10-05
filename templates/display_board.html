@@ -43,6 +43,11 @@
 {{else if eq .Type "showtitle"}}{{template "frag-b-showtitle" ($.WidgetDot .)}}
 {{else if eq .Type "rate"}}{{template "frag-b-rate" ($.WidgetDot .)}}
 {{else if eq .Type "notice"}}{{template "frag-b-notice" ($.WidgetDot .)}}
+{{else if eq .Type "poll"}}{{template "frag-b-poll" ($.WidgetDot .)}}
+{{else if eq .Type "qa"}}{{template "frag-b-qa" ($.WidgetDot .)}}
+{{else if eq .Type "wordcloud"}}{{template "frag-b-wordcloud" ($.WidgetDot .)}}
+{{else if eq .Type "map"}}{{template "frag-b-map" ($.WidgetDot .)}}
+{{else if eq .Type "joinqr"}}{{template "frag-b-joinqr" ($.WidgetDot .)}}
 {{else}}{{template "frag-b-schedule" ($.WidgetDot .)}}
 {{end}}
 {{- end}}
@@ -63,8 +68,8 @@
   <p>STANDBY</p>
 </div>
 <script src="/src/htmx.min.js" defer></script>
-<script type="module" src="/src/timerpi.v52.js"></script>
-<script type="module" src="/src/board.v52.js"></script>
+<script type="module" src="/src/timerpi.v53.js"></script>
+<script type="module" src="/src/board.v53.js"></script>
 </body>
 </html>
 {{end}}

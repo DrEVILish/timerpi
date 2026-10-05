@@ -252,10 +252,25 @@ widget layouts — no second layout engine:
    the "Open as display" panel (a plain `target="_blank"` anchor — no JS).
    Tests: `routes/dready_test.go` (page, redirect, home button, capture
    loop register→capture→mine consume-once); rev v52.
-2. **Display templates** — slot schema + renderer slots (clock/schedule/
-   session/next/map/poll/qa/wordcloud/logo), template presets, zone map
-   upload, animations enum. New pages: `/zone/<name>` gains its template;
-   board page accepts `?layout=`; `/d` capture assigns template identity.
+2. **Display templates** — ✅ 2026-10-05: implemented AS the plan intended
+   — slots are board widgets, no second renderer. New widget types
+   `poll | qa | wordcloud | map | joinqr` join the registry (palette +
+   PUT validation + fragments + board.js renderers); the existing
+   countdown/cuelabel/speaker/nextup/wallclock/schedule/notice types
+   already covered the timer/clock/session/next/schedule/logo slots.
+   Rooms templates `event | room | main | dsm` live in Go
+   (`boards.TemplateLayouts`, overlap-tested, single source of truth)
+   served at GET /api/board-templates and applied from the board chrome.
+   Venue maps: `assets` blob table + POST/DELETE /api/assets (sniffed
+   mime, 4 MiB cap) + public GET /assets/:id (AuthGate-exempt — a floor
+   plan is not a credential) + zone pointer (POST /api/zone-map) rendered
+   on the walk-in page. Word clouds: approved child words ride
+   `PollView.children` (loudest first). Animation enum per tile
+   (none|fade|slide|pop + animMS) with entrance AND exit keyframes —
+   displays always animate per the owner's scoping. Two semantics fixed
+   en route: word approval ACCUMULATES (single-focus stays top-level
+   only — the flat rule made clouds impossible) and ActivePoll focus is
+   top-level only (an approved word must not steal the screen).
 3. **Role ladder + SuperOperator** — show-passphrase API already exists;
    add `super` framing (device password → cross-room panel listing zones,
    bulk verbs), page-level zone gating, waiting-room/gallery filter by zone.

@@ -27,10 +27,10 @@
 import {
   activeCue, cueAfter, elapsedMS, remainingMS, isOvertime, alertState,
   clockView, computeSchedule, fmtDuration, fmtRemaining, fmtTimeOfDay,
-} from './engine.v50.js';
-import { Mesh, screenName } from './mesh.v50.js';
-import { applyTheme, setThemeVersion, initClientLog } from './theme.v50.js';
-import { applyWaiting } from './waiting.v50.js';
+} from './engine.v53.js';
+import { Mesh, screenName } from './mesh.v53.js';
+import { applyTheme, setThemeVersion, initClientLog } from './theme.v53.js';
+import { applyWaiting } from './waiting.v53.js';
 
 async function loadThemeVersion() {
   try {
@@ -269,6 +269,117 @@ function planStart(row) {
   return (snap.runtime.dayStartTS || serverNow()) + row.startMS;
 }
 
+// PLAN §11.2 phase 2: the audience interaction tiles. One renderer for
+// poll/qa/wordcloud — all three read snap.poll (the on-air item rides
+// every WS frame). Content appears/disappears with the tile's `anim`
+// option (none|fade|slide|pop + animMS): displays always animate — the
+// owner explicitly scoped prefers-reduced-motion to AUDIENCE devices only.
+function renderAudience(tile, type, w) {
+  const box = $('.b-js-poll', tile) || $('.b-js-qa', tile) || $('.b-js-cloud', tile);
+  if (!box) return;
+  const p = snap.poll;
+  const vis = audienceVisible(type, p);
+  const was = tile.dataset.bVis === '1';
+  const mode = w?.opts?.anim || 'fade';
+  const ms = Number(w?.opts?.animMS) || 400;
+  tile.dataset.bVis = vis ? '1' : '0';
+  if (vis) {
+    paintAudience(box, type, p);
+    if (!was && mode !== 'none') playAnim(box, mode, ms, 'in');
+    return;
+  }
+  if (was && mode !== 'none' && box.childElementCount) {
+    // Exit: fade/slide the painted content out, THEN clear it.
+    playAnim(box, mode, ms, 'out', () => { box.textContent = ''; });
+    return;
+  }
+  box.textContent = '';
+}
+
+function audienceVisible(type, p) {
+  if (!p) return false;
+  if (type === 'poll') return (p.kind === 'poll' || p.kind === 'quiz') && (p.state === 'open' || p.state === 'results');
+  if (type === 'qa') return p.kind === 'qa' && p.state === 'open';
+  if (type === 'wordcloud') return p.kind === 'wordcloud' && (p.children?.length || 0) > 0;
+  return false;
+}
+
+function paintAudience(box, type, p) {
+  box.textContent = '';
+  if (type === 'qa') {
+    const q = document.createElement('div');
+    q.className = 'b-poll-q';
+    q.textContent = p.question;
+    const likes = document.createElement('div');
+    likes.className = 'b-poll-meta';
+    likes.textContent = `${p.upvotes || 0} likes`;
+    box.append(q, likes);
+    return;
+  }
+  if (type === 'wordcloud') {
+    const cloud = document.createElement('div');
+    cloud.className = 'b-cloud';
+    const max = Math.max(1, ...(p.children || []).map((c) => c.upvotes || 0));
+    for (const c of p.children || []) {
+      const tile = document.createElement('span');
+      tile.className = 'b-cloud-tile';
+      tile.textContent = c.question;
+      const rel = (c.upvotes || 0) / max; // 0..1 — size by loudness
+      tile.style.fontSize = `${(0.9 + rel * 1.4).toFixed(2)}rem`;
+      if (rel >= 0.999) tile.classList.add('is-top');
+      cloud.appendChild(tile);
+    }
+    box.appendChild(cloud);
+    return;
+  }
+  // poll / quiz
+  const q = document.createElement('div');
+  q.className = 'b-poll-q';
+  q.textContent = p.question;
+  box.appendChild(q);
+  const opts = p.options || [];
+  const counts = p.counts || [];
+  const total = Math.max(1, p.total || 0);
+  const results = p.state === 'results';
+  if (results) {
+    const meta = document.createElement('div');
+    meta.className = 'b-poll-meta';
+    meta.textContent = `${p.total || 0} vote${(p.total || 0) === 1 ? '' : 's'}`;
+    box.appendChild(meta);
+  }
+  opts.forEach((label, i) => {
+    const row = document.createElement('div');
+    row.className = 'b-poll-opt' + (results && p.kind === 'quiz' && i === p.correct ? ' is-correct' : '');
+    const head = document.createElement('div');
+    head.className = 'b-poll-opt-head';
+    const lbl = document.createElement('span');
+    lbl.textContent = label;
+    const num = document.createElement('span');
+    num.className = 'mono';
+    num.textContent = results ? `${counts[i] || 0} · ${Math.round(((counts[i] || 0) / total) * 100)}%` : String(counts[i] || 0);
+    head.append(lbl, num);
+    const bar = document.createElement('div');
+    bar.className = 'b-poll-bar';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.round(((counts[i] || 0) / total) * 100)}%`;
+    bar.appendChild(fill);
+    row.append(head, bar);
+    box.appendChild(row);
+  });
+}
+
+function playAnim(box, mode, ms, dir, done) {
+  box.style.setProperty('--b-anim-ms', `${ms}ms`);
+  const cls = `b-anim-${dir}-${mode}`;
+  box.classList.add(cls);
+  const cleanup = () => {
+    box.classList.remove(cls);
+    if (done) done();
+  };
+  box.addEventListener('animationend', cleanup, { once: true });
+  setTimeout(cleanup, ms + 120); // animationend can be swallowed mid-repaint
+}
+
 // Structural repaint (adopt/schedule/opts change): labels, lists, messages.
 function renderStatic() {
   if (!snap || !grid) return;
@@ -325,6 +436,32 @@ function renderStatic() {
       case 'rate':
         setText($('.b-js-rate', tile), `×${Number(snap.runtime.rate || 1).toFixed(2)}`);
         break;
+      case 'poll':
+      case 'qa':
+      case 'wordcloud':
+        renderAudience(tile, type, w);
+        break;
+      case 'map': {
+        const img = $('.b-js-map', tile);
+        const empty = $('.b-map-empty', tile);
+        const aid = String(w?.opts?.assetId || '').replace(/[^0-9]/g, '');
+        if (aid) {
+          const url = `/assets/${aid}`;
+          if (!img.getAttribute('src')?.endsWith(url)) img.src = url;
+          img.hidden = false;
+          if (empty) empty.hidden = true;
+        } else {
+          img.removeAttribute('src');
+          img.hidden = true;
+          if (empty) empty.hidden = false;
+        }
+        break;
+      }
+      case 'joinqr': {
+        const lbl = $('.b-js-joinlabel', tile);
+        if (lbl) lbl.textContent = w?.opts?.label || 'Scan to take part';
+        break;
+      }
       case 'progress':
         setText($('.b-js-progresslabel', tile), cue?.label || '');
         break;
@@ -744,6 +881,65 @@ function openSettings(wid) {  const w = widgetOf(wid);
     });
     mk('Rows', sel);
   }
+  if (w.type === 'poll' || w.type === 'qa' || w.type === 'wordcloud') {
+    // PLAN §11.2: operator-customizable appear/disappear animation.
+    const sel = document.createElement('select');
+    sel.className = 'input input-sm';
+    for (const m of ['fade', 'slide', 'pop', 'none']) {
+      const o = document.createElement('option');
+      o.value = m;
+      o.textContent = m;
+      sel.appendChild(o);
+    }
+    sel.value = w.opts?.anim || 'fade';
+    sel.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), anim: sel.value };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Animation', sel);
+    const num = document.createElement('input');
+    num.className = 'input input-sm';
+    num.type = 'number';
+    num.min = '120';
+    num.max = '3000';
+    num.step = '20';
+    num.value = w.opts?.animMS || '400';
+    num.setAttribute('aria-label', 'Animation duration (ms)');
+    num.addEventListener('change', () => {
+      const v = String(Math.min(3000, Math.max(120, Number(num.value) || 400)));
+      num.value = v;
+      w.opts = { ...(w.opts || {}), animMS: v };
+      scheduleSave();
+    });
+    mk('Duration (ms)', num);
+  }
+  if (w.type === 'map') {
+    const inp = document.createElement('input');
+    inp.className = 'input input-sm';
+    inp.value = w.opts?.assetId || '';
+    inp.placeholder = 'asset id from /api/assets';
+    inp.setAttribute('aria-label', 'Asset id');
+    inp.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), assetId: inp.value.replace(/[^0-9]/g, '') };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Asset id', inp);
+  }
+  if (w.type === 'joinqr') {
+    const inp = document.createElement('input');
+    inp.className = 'input input-sm';
+    inp.value = w.opts?.label || '';
+    inp.placeholder = 'Scan to take part';
+    inp.setAttribute('aria-label', 'QR caption');
+    inp.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), label: clipBytes(inp.value, 120) };
+      scheduleSave();
+      renderStatic();
+    });
+    mk('Caption', inp);
+  }
   if (w.type === 'notice') {
     const ta = document.createElement('textarea');
     ta.className = 'input input-sm';
@@ -873,7 +1069,16 @@ function wireCompose() {
   $('#b-preset-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-preset]');
     if (!btn) return;
-    const preset = PRESETS[btn.dataset.preset];
+    // Built-ins (stage/lobby) live here; the PLAN §11.2 Rooms templates
+    // (event/room/main/dsm) are served by /api/board-templates — Go is
+    // their single source of truth and is overlap-tested.
+    let preset = PRESETS[btn.dataset.preset];
+    if (!preset) {
+      try {
+        const j = await (await fetch('/api/board-templates')).json();
+        preset = j.templates?.[btn.dataset.preset];
+      } catch { /* offline */ }
+    }
     if (!preset) return;
     if (!window.confirm(`Replace this board with the ${btn.dataset.preset} layout? Unsaved tile moves are lost.`)) return;
     layout = JSON.parse(JSON.stringify(preset));

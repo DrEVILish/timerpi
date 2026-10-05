@@ -37,6 +37,10 @@ func RegisterBoards(r *gin.Engine, d *Deps) {
 	if d == nil {
 		return
 	}
+	// PLAN §11.2: the Rooms display templates (Go is the single source of
+	// truth; the board chrome's Event/Room/Main/DSM buttons fetch these).
+	r.GET("/api/board-templates", d.apiBoardTemplates)
+
 	g := r.Group("/api/shows/:ident")
 	g.GET("/boards", d.apiBoardsList)
 	g.POST("/boards", d.apiBoardsCreate)
@@ -438,4 +442,9 @@ func boardRuntimeOf(snap timerpi.Snapshot) timerpi.Runtime {
 		EndAction: rtv.EndAction, AnchorTS: rtv.AnchorTS, Rate: rtv.Rate,
 		PausedElapsedMS: rtv.PausedElapsedMS, DayStartTS: rtv.DayStartTS,
 	}
+}
+
+// GET /api/board-templates — the named Rooms layouts (event/room/main/dsm).
+func (d *Deps) apiBoardTemplates(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"ok": true, "templates": boards.TemplateLayouts()})
 }

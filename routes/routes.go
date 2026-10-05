@@ -103,6 +103,7 @@ func New(d *Deps) *gin.Engine {
 	registerAudienceRoutes(r, d)
 	registerZoneRoutes(r, d)
 	registerOscRoutes(r, d)
+	registerAssetRoutes(r, d)
 	if d.Store != nil {
 		if oserr := d.oscSync(); oserr != nil {
 			log.Printf("routes: osc listener boot: %v", oserr)

@@ -40,7 +40,9 @@ func authExempt(path string) bool {
 		// and a stage TV never logs in (registry holds only screen names).
 		return true
 	}
-	for _, pre := range []string{"/d/", "/ftl/", "/css/", "/src/", "/img/", "/ws"} {
+	// /assets/ GETs are public too: display pages render map/QR images
+	// without logging in (a floor plan is not a credential).
+	for _, pre := range []string{"/d/", "/ftl/", "/css/", "/src/", "/img/", "/assets/", "/ws"} {
 		if strings.HasPrefix(path, pre) {
 			return true
 		}
@@ -104,7 +106,7 @@ func requestAuthed(c *gin.Context) bool {
 // /css/<rev>/…, /src/<rev>/… and the NoRoute rewriter maps it back to the
 // public/ tree. Bump on every CSS/JS change (one string + the template sed);
 // older rev paths keep resolving so cached pages never 404.
-const assetsRev = "v52"
+const assetsRev = "v53"
 
 // registerAuth mounts the login round-trip and the password setter.// Routes registered here are intentionally NOT in any tests' page lists —
 // they are the first lines of defense, not page furniture.
@@ -238,7 +240,7 @@ func loginPageHTML(next string) string {
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>TimerPi — operator login</title>` +
 		`<link rel="stylesheet" href="/ftl/dist/blue-future.css">` +
-		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v52.css"></head>` +
+		`<link rel="stylesheet" href="/css/` + assetsRev + `/timerpi.v53.css"></head>` +
 		`<body class="app"><main class="main" style="max-width:26rem;margin:8vh auto;padding:0 4vw">` +
 		`<h1>OPERATOR LOGIN</h1>` +
 		`<p class="text-muted">This appliance has an operator password. The stage display (` +
