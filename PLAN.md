@@ -311,7 +311,15 @@ Animation enum per tile
    fd-limit aware): **1000 phones joined, 1000/1000 join storm, p95
    broadcast latency 24 ms** (target <100 ms), ≥99% delivery — numbers
    from this container, race-clean.
-5. **Interaction UX on displays** — ✅ 2026-10-05: board widgets (bars,
+   **Owner-driven demo round (10/05)**: click-only walkthrough of the live
+   deployment deployed 2 displays from one browser (unique Open Display
+   windows), trimmed each board in the editor (DSM = countdown+poll, Main =
+   poll only after the QR came down), ran a full poll lifecycle — the
+   results bars proved invisible on board RELOAD (join reply carried no
+   poll frame; a results-state poll blocks new votes so the delta never
+   fired) — every joining session now receives the on-air item. Share
+   QR 403 through openresty fixed (absolute URL payloads).
+   5. **Interaction UX on displays** — ✅ 2026-10-05: board widgets (bars,
    word tiles, upvotes) shipped in phase 2; this round added the OPERATOR
    transport: an "Audience" dashboard panel — create form (kind, question,
    options) and per-item **Show / Results / Hide / Delete** wired to the
