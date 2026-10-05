@@ -1,0 +1,35 @@
+{{- /*
+  dready.html — GET /d/ (no code): the no-code walk-in display (PLAN
+  §11.3 phase 1). Standalone document like display.html. The page IS the
+  waiting-room overlay: body[data-waiting] is set server-side, waiting.js's
+  runWaiting() registers this screen and polls for a capture — when an
+  operator claims it from the Screens gallery, the display hops to
+  /d/<code>?screen=<name> keeping its identity. Identity rules are the
+  mesh's own (?screen= > sessionStorage > generated Screen-XXXX), so
+  several /d/ tabs on one host stay separate rows.
+  Data: .DefaultTheme.
+*/ -}}
+{{define "dready"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="tp-display" data-page="dready" data-waiting="1">
+<!-- PLAN §11.3: the READY surface IS the waiting overlay (visibility is
+     purely body[data-waiting], same pattern as the blackout). -->
+<div class="tp-waiting" id="tp-waiting">
+  <img src="/img/timerpi.svg" alt="">
+  <h2>READY FOR SHOW OPERATOR</h2>
+  <p class="text-muted">This screen is unassigned. Any operator on this
+    network can capture it into a show from the Screens gallery<span id="tp-waiting-name"></span>.</p>
+</div>
+<!-- Unversioned on purpose: the appliance serves everything no-cache, and
+     the reference must survive rev bumps without touching this template. -->
+<script type="module">
+  import { runWaiting } from '/src/waiting.js';
+  runWaiting();
+</script>
+</body>
+</html>
+{{end}}

@@ -44,6 +44,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/config"
+
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -75,6 +77,20 @@ func RegisterDisplay(r gin.IRouter, d *Deps) {
 		}
 	}
 	r.GET("/d/:ident", d.displayVariants)
+	// PLAN §11.3 phase 1: /d/ with NO code — a walk-in display in ready
+	// mode: registers into the waiting room immediately and hops to the
+	// captured show when an operator claims it. Gin serves static +
+	// param siblings fine; /d without the slash 301s here (default).
+	r.GET("/d/", d.displayReady)
+}
+
+// displayReady is GET /d/ — the no-code walk-in surface. The template IS
+// the waiting overlay (body[data-waiting] server-side); waiting.js's
+// runWaiting() starts the register/poll loop. Identity rules are the
+// mesh's own: URL ?screen= wins, then sessionStorage, else generated
+// Screen-XXXX — so several /d/ tabs on one host stay separate rows.
+func (d *Deps) displayReady(c *gin.Context) {
+	d.render(c, "dready", gin.H{"DefaultTheme": config.DefaultTheme()})
 }
 
 // displayVariants is GET /d/:ident — view dispatch + quirk validation.

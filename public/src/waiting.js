@@ -32,14 +32,28 @@ export function applyWaiting(status) {
     body.setAttribute('data-waiting', '1');
     const nameEl = document.getElementById('tp-waiting-name');
     if (nameEl) nameEl.textContent = ` — ${screenName()}`;
-    register();
-    clearInterval(pollTimer);
-    pollTimer = setInterval(pollMine, 4000);
+    startPolling();
   } else {
     body.removeAttribute('data-waiting');
     clearInterval(pollTimer);
     pollTimer = 0;
   }
+}
+
+// runWaiting is the no-code /d/ entry (PLAN §11.3 phase 1): the READY
+// page has no mesh and no join — body[data-waiting] is set server-side,
+// so this only starts the same register/poll loop the orphaned-display
+// flow runs after badshow.
+export function runWaiting() {
+  if (active) return;
+  active = true;
+  startPolling();
+}
+
+function startPolling() {
+  register();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(pollMine, 4000);
 }
 
 async function register() {

@@ -241,12 +241,17 @@ widget layouts — no second layout engine:
    `routes/audience_test.go` (page + gate + flow). Suite: 12 pkgs green,
    `-race` clean (took two pre-existing flakes with it: mdns
    `collectEntries` data race, drm test window).
-1. **`/d/` no-code display + home button** — `GET /d/` (no code) renders a
-   READY splash, takes identity from sessionStorage (`tp.screen`, generated
-   `Screen-XXXX` otherwise), walks `POST /api/waiting/register` immediately,
-   heartbeats, honors capture → hops like orphaned displays already do.
-   Home page header button "Open as display" (`window.open('/d/')`) with the
-   per-window identity rules (URL `?screen=` > sessionStorage > generated).
+1. **`/d/` no-code display + home button** — ✅ 2026-10-05: `GET /d/`
+   (gin static sibling of `/d/:ident`; bare `/d` 301s) renders the READY
+   overlay — the page IS the waiting overlay (`body[data-waiting]`
+   server-side, same CSS gate as the blackout) — and `waiting.js` gained
+   `runWaiting()`: the same register/poll/hop loop orphaned displays run
+   after badshow, started without a mesh. Identity rules are the mesh's
+   own (`?screen=` > sessionStorage `tp.screen` > generated `Screen-XXXX`)
+   — several `/d/` tabs on one host stay separate rows. Home page gained
+   the "Open as display" panel (a plain `target="_blank"` anchor — no JS).
+   Tests: `routes/dready_test.go` (page, redirect, home button, capture
+   loop register→capture→mine consume-once); rev v52.
 2. **Display templates** — slot schema + renderer slots (clock/schedule/
    session/next/map/poll/qa/wordcloud/logo), template presets, zone map
    upload, animations enum. New pages: `/zone/<name>` gains its template;

@@ -12,14 +12,14 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v49.js';
+import { Mesh, screenName } from './mesh.v52.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v49.js';
-import { createUndo } from './undo.v49.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v49.js';
-import { applyWaiting } from './waiting.v49.js';
+} from './engine.v52.js';
+import { createUndo } from './undo.v52.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v52.js';
+import { applyWaiting } from './waiting.v52.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -2614,8 +2614,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting
   // timerpi.js's mesh too meant TWO WS sessions per screen (double join,
-  // second election, peer-count inflation). The paint loop still starts:
-  // the board's own module owns its tiles; our selectors are nulled there.
+  // second election, peer-count inflation).
   const isBoard = page === 'display' && body.dataset.view === 'board';
   if (page === 'dashboard' || page === 'display') {
     try { window.__tpmesh = mesh; } catch { /* */ }
