@@ -265,7 +265,19 @@ widget layouts — no second layout engine:
    mime, 4 MiB cap) + public GET /assets/:id (AuthGate-exempt — a floor
    plan is not a credential) + zone pointer (POST /api/zone-map) rendered
    on the walk-in page. Word clouds: approved child words ride
-   `PollView.children` (loudest first). Animation enum per tile
+   `PollView.children` (loudest first). **Capture modal (owner round)**:
+   "Capture to this show" opens a modal — Name (prefilled with the next
+   free sequential `Screen N`), Theme (operator default = the appliance
+   theme), Location/room, Layout (board) — the config lands on the
+   screens registry BEFORE the display hops, the poll reply carries the
+   adopted name, and the claimed display leaves the waiting list
+   immediately (consume-on-claim deletes the row; a later poll
+   re-registers fresh, which is the display re-appearing — correct).
+   Poll cadence 4 s → 2 s plus front-loaded gallery refreshes make
+   capture→visible ~2-3 s. The waiting-list flow also gained the ftl
+   dialog helpers (tpConfirm/tpPrompt) replacing browser confirm/prompt
+   everywhere, and `/d/` shows "This screen is <name>" bold + highlighted.
+Animation enum per tile
    (none|fade|slide|pop + animMS) with entrance AND exit keyframes —
    displays always animate per the owner's scoping. Two semantics fixed
    en route: word approval ACCUMULATES (single-focus stays top-level

@@ -53,6 +53,7 @@ type screenView struct {
 	Name      string `json:"name"`
 	Theme     string `json:"theme"`
 	BoardID   int64  `json:"boardId"`
+	Room      string `json:"room"`
 	LastSeen  int64  `json:"lastSeen"`
 	Sessions  int    `json:"sessions"` // live tabs under this name
 	Connected bool   `json:"connected"`
@@ -140,25 +141,25 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 	seen := map[string]bool{}
 	for _, r := range rows {
 		seen[r.Name] = true
-		out = append(out, d.screenCard(r.Name, r.Theme, r.BoardID, r.LastSeen, live, peers,
+		out = append(out, d.screenCard(r.Name, r.Theme, r.BoardID, r.LastSeen, r.Room, live, peers,
 			boardNames, defaultBoardID, id, activeLabel, activeClock, activePct))
 	}
 	for name := range live { // tabs that joined before their registry row was read
 		if seen[name] {
 			continue
 		}
-		out = append(out, d.screenCard(name, "", 0, 0, live, peers, boardNames, defaultBoardID,
+		out = append(out, d.screenCard(name, "", 0, 0, "", live, peers, boardNames, defaultBoardID,
 			id, activeLabel, activeClock, activePct))
 	}
 	return out, nil
 }
 
 // screenCard assembles one panel/gallery entry with its preview boxes.
-func (d *Deps) screenCard(name, theme string, boardID, lastSeen int64,
+func (d *Deps) screenCard(name, theme string, boardID, lastSeen int64, room string,
 	live map[string]int, peers map[string][][2]string,
 	boardNames map[int64]string, defaultBoardID, showID int64,
 	activeLabel, activeClock string, activePct int) screenView {
-	v := screenView{Name: name, Theme: theme, BoardID: boardID, LastSeen: lastSeen,
+	v := screenView{Name: name, Theme: theme, BoardID: boardID, Room: room, LastSeen: lastSeen,
 		Sessions: live[name], Connected: live[name] > 0,
 		PreviewLabel: activeLabel, PreviewClock: activeClock, PreviewPct: activePct}
 	for _, pr := range peers[name] {
@@ -276,6 +277,7 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		Name    string `json:"name"`
 		Theme   string `json:"theme"`
 		BoardID int64  `json:"boardId"`
+		Room    string `json:"room"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, theme?, boardId?}"})
@@ -294,7 +296,7 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
 		return
 	}
-	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID); err != nil {
+	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID, body.Room); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
@@ -334,7 +336,7 @@ func (d *Deps) apiScreenMatch(c *gin.Context) {
 		if r.Name == from {
 			continue
 		}
-		if err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID); err != nil {
+		if err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID, src.Room); err != nil {
 			failed++
 			continue
 		}
@@ -523,7 +525,7 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 			sc.BoardID < 0 || !d.boardKnown(id, sc.BoardID) {
 			continue // entries from another show's file never land here
 		}
-		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID); err != nil {
+		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID, ""); err != nil {
 			continue
 		}
 		d.pushScreen(id, name)

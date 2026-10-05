@@ -31,6 +31,7 @@ import {
 import { Mesh, screenName } from './mesh.js';
 import { applyTheme, setThemeVersion, initClientLog } from './theme.js';
 import { applyWaiting } from './waiting.js';
+import { tpConfirm, tpPrompt } from './dialog.js';
 
 async function loadThemeVersion() {
   try {
@@ -1080,13 +1081,13 @@ function wireCompose() {
       } catch { /* offline */ }
     }
     if (!preset) return;
-    if (!window.confirm(`Replace this board with the ${btn.dataset.preset} layout? Unsaved tile moves are lost.`)) return;
+    if (!(await tpConfirm(`Replace this board with the ${btn.dataset.preset} layout? Unsaved tile moves are lost.`, { ok: 'Replace', danger: true }))) return;
     layout = JSON.parse(JSON.stringify(preset));
     await reloadEditing(); // server re-renders tiles, then we relock into edit
   });
 
   $('#b-reset')?.addEventListener('click', async () => {
-    if (!window.confirm('Reset this board to the factory layout?')) return;
+    if (!(await tpConfirm('Reset this board to the factory layout?', { ok: 'Reset', danger: true }))) return;
     layout = JSON.parse(JSON.stringify(FACTORY_DEFAULT));
     await reloadEditing();
   });
@@ -1099,7 +1100,8 @@ function wireCompose() {
   });
 
   $('#b-new')?.addEventListener('click', async () => {
-    const name = window.prompt('New board name:', 'Lobby');
+    const res = await tpPrompt(null, 'Lobby', { title: 'New board name', ok: 'Create', fields: [{ id: 'name', label: 'Name', value: 'Lobby' }] });
+    const name = res?.name;
     if (!name || !name.trim()) return;
     try {
       const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards`, {

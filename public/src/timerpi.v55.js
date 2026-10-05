@@ -12,14 +12,15 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.v52.js';
+import { Mesh, screenName } from './mesh.v55.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
-} from './engine.v52.js';
-import { createUndo } from './undo.v52.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v52.js';
-import { applyWaiting } from './waiting.v52.js';
+} from './engine.v55.js';
+import { createUndo } from './undo.v55.js';
+import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.v55.js';
+import { applyWaiting } from './waiting.v55.js';
+import { tpConfirm, tpPrompt } from './dialog.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -93,6 +94,12 @@ async function initTheme() {
   // sprite's name as data — applyIconTheme rewrites <use> hrefs per theme),
   // and oob swaps add new <use> nodes; the swap handler re-runs this.
   applyIconTheme(current);
+  // Change Theme dropdown closes when the user clicks/taps anywhere else.
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.tp-theme-menu[open]').forEach((d) => {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
   const select = $('#theme-select');
   if (!select) return;
   try {
@@ -114,6 +121,8 @@ async function initTheme() {
     applyTheme(slug);
     try { localStorage.setItem(THEME_KEY, slug); } catch { /* */ }
     toast(`Theme: ${select.selectedOptions[0]?.textContent || slug}`);
+    // The picker lives in the Change Theme dropdown — close it on pick.
+    select.closest('details')?.removeAttribute('open');
   });
 }
 
@@ -1678,13 +1687,14 @@ function initScreens() {
     if (!row) return;
     const name = row.dataset.name;
     if (e.target.closest('.tp-screen-name')) {
-      const to = window.prompt(`Rename screen "${name}" to:`, name);
+      const res = await tpPrompt(null, name, { title: `Rename screen "${name}"`, ok: 'Rename', fields: [{ id: 'to', label: 'New name', value: name }] });
+      const to = res?.to;
       if (to && to.trim() && to !== name) await screensPost('rename', { from: name, to: to.trim() });
       return;
     }
     const kickBtn = e.target.closest('[data-kick]');
     if (kickBtn) {
-      if (!window.confirm(`Disconnect session ${kickBtn.dataset.kick}? That display stays down until its page is reloaded.`)) return;
+      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kickBtn.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
       try {
         const res = await fetch(`/api/shows/${screensCode()}/sessions/${encodeURIComponent(kickBtn.dataset.kick)}`, { method: 'DELETE' });
         const j = await res.json().catch(() => ({}));
@@ -1702,7 +1712,7 @@ function initScreens() {
       const ok = await screensPost('config', screenRowConfig(row));
       if (ok) await screensPost('match', { from: name });
     } else if (act === 'forget') {
-      if (window.confirm(`Forget screen "${name}"? An open display tab re-registers on its next join.`)) {
+      if (await tpConfirm('An open display tab re-registers on its next join.', { title: `Forget screen "${name}"?`, ok: 'Forget', danger: true })) {
         await screensPost('forget', { name });
       }
     }
@@ -1722,7 +1732,7 @@ function initScreens() {
     } else if (pact === 'export') {
       location.href = `/api/shows/${screensCode()}/presets/${pid}/export`;
     } else if (pact === 'del') {
-      if (!window.confirm('Delete this preset?')) return;
+      if (!(await tpConfirm('The preset is removed for every operator of this show.', { title: 'Delete this preset?', ok: 'Delete', danger: true }))) return;
       try {
         await fetch(`/api/shows/${screensCode()}/presets/${pid}`, { method: 'DELETE' });
         presetsRefresh();
@@ -1944,7 +1954,7 @@ function initGallery() {
     if (!s) return;
     const kick = e.target.closest('[data-kick]');
     if (kick) {
-      if (!window.confirm(`Disconnect session ${kick.dataset.kick}? That display stays down until its page is reloaded.`)) return;
+      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kick.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
       await galPost(`/api/shows/${code}/sessions/${encodeURIComponent(kick.dataset.kick)}`, { method: 'DELETE' });
       pull();
       return;
@@ -1970,7 +1980,7 @@ function initGallery() {
       if (typeof dlg?.showModal === 'function') dlg.showModal();
       else dlg?.setAttribute('open', '');
     } else if (act === 'forget') {
-      if (!window.confirm(`Forget screen "${s.name}"? An open display re-registers on its next join.`)) return;
+      if (!(await tpConfirm('An open display re-registers on its next join.', { title: `Forget screen "${s.name}"?`, ok: 'Forget', danger: true }))) return;
       await galPost(`/api/shows/${code}/screens/forget`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1980,16 +1990,68 @@ function initGallery() {
     }
   });
 
+  // PLAN §11.2: Capture opens a modal — Name / Theme / Location / Layout —
+  // and the captured display leaves the waiting list immediately.
+  const capDlg = document.getElementById('tp-capture');
+  let capWid = 0;
+  const capNextName = () => {
+    const used = new Set(gal.screens.map((s) => s.name));
+    let n = 1;
+    while (used.has(`Screen ${n}`)) n++;
+    return `Screen ${n}`;
+  };
+  const capFill = (w) => {
+    document.getElementById('tp-capture-host').textContent = w ? w.host : '';
+    document.getElementById('tp-capture-name').value = capNextName();
+    const themeSel = document.getElementById('tp-capture-theme');
+    themeSel.textContent = '';
+    themeSel.appendChild(galEl('option', null, 'Operator default')).value = '';
+    for (const t of gal.themes) {
+      const o = themeSel.appendChild(galEl('option', null, t.label + (t.scheme === 'light' ? ' light' : '')));
+      o.value = t.dataTheme;
+    }
+    themeSel.value = '';
+    document.getElementById('tp-capture-room').value = '';
+    const boardSel = document.getElementById('tp-capture-board');
+    boardSel.textContent = '';
+    boardSel.appendChild(galEl('option', null, 'Show default')).value = '0';
+    for (const b of gal.boards) {
+      const o = boardSel.appendChild(galEl('option', null, b.name || `Board ${b.id}`));
+      o.value = String(b.id);
+    }
+    boardSel.value = '0';
+  };
+  document.getElementById('tp-capture-cancel')?.addEventListener('click', () => capDlg?.close());
+  document.getElementById('tp-capture-go')?.addEventListener('click', async () => {
+    const body = JSON.stringify({
+      code,
+      name: document.getElementById('tp-capture-name').value,
+      theme: document.getElementById('tp-capture-theme').value,
+      room: document.getElementById('tp-capture-room').value,
+      boardId: Number(document.getElementById('tp-capture-board').value || 0),
+    });
+    const r = await galPost(`/api/waiting/${capWid}/capture`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+    });
+    if (r.ok) {
+      toast(`Captured as "${r.name}" — it joins within seconds`, 'success');
+      capDlg?.close();
+      pull();
+      // The display polls every 2 s and then joins; front-load refreshes so
+      // the new screen shows up here the moment it lands.
+      for (const delay of [1000, 2000, 3500, 5000]) setTimeout(pull, delay);
+    }
+  });
+
   document.getElementById('tp-waiting-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-wact]');
     if (!btn) return;
     if (btn.dataset.wact === 'capture') {
-      const r = await galPost(`/api/waiting/${btn.dataset.wid}/capture`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      if (r.ok) toast('Captured — the display navigates here within seconds', 'success');
+      capWid = Number(btn.dataset.wid);
+      capFill(gal.waiting.find((w) => w.id === capWid));
+      if (typeof capDlg?.showModal === 'function') capDlg.showModal();
+      else capDlg?.setAttribute('open', '');
+      return; // the modal drives the rest
     } else if (btn.dataset.wact === 'dismiss') {
       await galPost(`/api/waiting/${btn.dataset.wid}`, { method: 'DELETE' });
     }

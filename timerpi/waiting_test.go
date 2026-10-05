@@ -47,21 +47,33 @@ func TestClaimWaitingConsumesOnce(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	ws, _ := d.ListWaiting()
-	if err := d.AssignWaiting(ws[0].ID, "SH12"); err != nil {
+	if err := d.AssignWaiting(ws[0].ID, "SH12", ""); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
 	// Same identity under a different host must NOT receive the code.
-	if code, _ := d.ClaimWaiting("tv-a", "host2"); code != "" {
+	if code, _, _ := d.ClaimWaiting("tv-a", "host2"); code != "" {
 		t.Errorf("other host claimed %+q", code)
 	}
-	code, err := d.ClaimWaiting("tv-a", "host1")
+	code, screen, err := d.ClaimWaiting("tv-a", "host1")
 	if err != nil || code != "SH12" {
 		t.Fatalf("first claim: got %q err %v", code, err)
 	}
-	if code, _ := d.ClaimWaiting("tv-a", "host1"); code != "" {
+	if screen != "" {
+		t.Errorf("un-configured capture leaked a screen name: %q", screen)
+	}
+	// Consume-on-claim: the row is GONE — the waiting list no longer shows
+	// the captured display. (Any LATER poll re-registers a fresh row — that
+	// is the display re-appearing, which is correct; prune handles ghosts.)
+	ws2, _ := d.ListWaiting()
+	for _, w := range ws2 {
+		if w.Host == "host1" {
+			t.Errorf("claimed display still listed: %+v", w)
+		}
+	}
+	if code, _, _ := d.ClaimWaiting("tv-a", "host1"); code != "" {
 		t.Errorf("re-poll re-served code %q", code)
 	}
-	if code, _ := d.ClaimWaiting("nobody", "nowhere"); code != "" {
+	if code, _, _ := d.ClaimWaiting("nobody", "nowhere"); code != "" {
 		t.Errorf("unknown pair claimed %q", code)
 	}
 }

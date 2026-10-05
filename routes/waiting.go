@@ -10,6 +10,7 @@ package routes
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -67,12 +68,12 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "name required"})
 		return
 	}
-	code, err := d.Store.ClaimWaiting(c.Query("name"), c.Query("host"))
+	code, screen, err := d.Store.ClaimWaiting(c.Query("name"), c.Query("host"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "assigned": code})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "assigned": code, "screen": screen})
 }
 
 // waitingJSON is the operator list shape.
@@ -110,8 +111,16 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad waiting id"})
 		return
 	}
+	// PLAN §11.2 capture modal: the operator names the screen and sets its
+	// Theme / Room(location) / Layout in one step; the config lands on the
+	// screens registry BEFORE the display hops, so its first join already
+	// carries theme + board assignment.
 	var body struct {
-		Code string `json:"code"`
+		Code    string `json:"code"`
+		Name    string `json:"name"`
+		Theme   string `json:"theme"`
+		Room    string `json:"room"`
+		BoardID int64  `json:"boardId"`
 	}
 	_ = c.ShouldBindJSON(&body)
 	sid, ok := timerpi.ResolveShowID(d.Store, body.Code)
@@ -124,15 +133,42 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown show code"})
 		return
 	}
-	if err := d.Store.AssignWaiting(id, sh.Code); err != nil {
+	w, err := d.Store.GetWaiting(id)
+	if err != nil {
 		status := http.StatusInternalServerError
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"ok": false, "error": "waiting display gone"})
+		return
+	}
+	// The operator names the screen; blank = keep the display's own name.
+	name := timerpi.SanitizeScreenName(body.Name)
+	if name == "" {
+		name = w.Name
+	}
+	if !screenThemeRe.MatchString(body.Theme) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
+		return
+	}
+	if body.BoardID < 0 || !d.boardKnown(sid, body.BoardID) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
+		return
+	}
+	if err := d.Store.SetScreenConfig(sid, name, body.Theme, body.BoardID, body.Room); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if err := d.Store.AssignWaiting(id, sh.Code, name); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "code": sh.Code})
+	d.notifyControls(sid)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "code": sh.Code, "name": name})
 }
 
 // DELETE /api/waiting/:id — dismiss a waiting row (the display keeps

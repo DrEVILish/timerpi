@@ -21,14 +21,18 @@
 <div class="tp-waiting" id="tp-waiting">
   <img src="/img/timerpi.svg" alt="">
   <h2>READY FOR SHOW OPERATOR</h2>
+  <p class="tp-ready-id">This screen is <strong id="tp-ready-name" class="tp-ready-name">…</strong></p>
   <p class="text-muted">This screen is unassigned. Any operator on this
-    network can capture it into a show from the Screens gallery<span id="tp-waiting-name"></span>.</p>
+    network can capture it into a show from the Screens gallery.</p>
 </div>
 <!-- Unversioned on purpose: the appliance serves everything no-cache, and
      the reference must survive rev bumps without touching this template. -->
 <script type="module">
   import { runWaiting } from '/src/waiting.js';
+  import { screenName } from '/src/mesh.js';
   runWaiting();
+  // The operator identifies THIS screen in the waiting list by name.
+  document.getElementById('tp-ready-name').textContent = screenName();
 </script>
 <!-- Same tap-to-fullscreen contract as every display page: stray taps
      ENTER fullscreen, never leave it (leave via F/Esc/UA). -->

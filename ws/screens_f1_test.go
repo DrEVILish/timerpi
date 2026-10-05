@@ -36,7 +36,7 @@ func TestScreenJoinAndPushF1(t *testing.T) {
 	ctrl.readUntil(t, "joined")
 
 	// Operator assignment exists BEFORE the display (re)joins.
-	if err := ts.db.SetScreenConfig(ts.showID, "Stage Left", "blue-future", 7); err != nil {
+	if err := ts.db.SetScreenConfig(ts.showID, "Stage Left", "blue-future", 7, ""); err != nil {
 		t.Fatalf("SetScreenConfig: %v", err)
 	}
 

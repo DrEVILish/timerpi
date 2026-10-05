@@ -38,7 +38,7 @@ func TestClipUTF8RuneSafe(t *testing.T) {
 func TestRenameScreenIdentityKeepsConfig(t *testing.T) {
 	d := openTestDB(t)
 	show := mustCreateShow(t, d, "RenameId")
-	if err := d.SetScreenConfig(show.ID, "Stage Left", "blue-future", 3); err != nil {
+	if err := d.SetScreenConfig(show.ID, "Stage Left", "blue-future", 3, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.RenameScreen(show.ID, "Stage Left", "Stage Left"); err != nil {

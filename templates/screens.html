@@ -28,6 +28,35 @@
   </section>
 </div>
 
+<!-- PLAN §11.2 capture modal: name the screen, set Theme / Location /
+     Layout in one step; the display leaves the waiting list on capture. -->
+<dialog id="tp-capture" class="tp-capture">
+  <div class="tp-modal-bar"><strong>Capture display</strong>
+    <span class="field-hint" id="tp-capture-host"></span></div>
+  <div class="stack is-gap-s">
+    <div class="field">
+      <label class="label" for="tp-capture-name">Screen name</label>
+      <input class="input" id="tp-capture-name" autocomplete="off" maxlength="40">
+      <span class="field-hint">Make it unique — this is how the operator knows the screen.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="tp-capture-theme">Theme</label>
+      <select class="select" id="tp-capture-theme"></select>
+    </div>
+    <div class="field">
+      <label class="label" for="tp-capture-room">Location / room</label>
+      <input class="input" id="tp-capture-room" autocomplete="off" maxlength="40" placeholder="Hall A · Lobby · Stage left">
+    </div>
+    <div class="field">
+      <label class="label" for="tp-capture-board">Layout</label>
+      <select class="select" id="tp-capture-board"></select>
+    </div>
+    <div class="cluster">
+      <button type="button" class="btn btn-primary" id="tp-capture-go">Capture</button>
+      <button type="button" class="btn" id="tp-capture-cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
 <dialog id="tp-screen-edit" class="tp-screen-edit">
   <div class="tp-modal-bar">
     <strong id="tp-screen-edit-title">Layout editor</strong>

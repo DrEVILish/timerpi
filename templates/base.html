@@ -22,9 +22,9 @@
 <meta name="tp-default-theme" content="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <link rel="icon" href="/img/timerpi.svg" type="image/svg+xml">
 <link rel="stylesheet" id="theme-css-default" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
-<link rel="stylesheet" href="/css/timerpi.v54.css">
+<link rel="stylesheet" href="/css/timerpi.v55.css">
 <!-- ASSET REV policy — PATH revision, not a query string: /css and /src
-     assets load from the CURRENT rev directory (/css/timerpi.v54.css …,
+     assets load from the CURRENT rev directory (/css/timerpi.v55.css …,
      swapped routes-side back to the real file by routes.registerStatic).
      On a CSS/JS change bump EVERY occurrence of the rev segment here,
      in display.html, display_board.html, settings.html, the Go lock pages
@@ -58,9 +58,10 @@
 
 {{define "appbar"}}
 <header class="app-bar">
-  <a class="nav-brand tp-brand" href="/" title="Shows">
-    <img src="/img/timerpi.svg" alt="TimerPi" width="28" height="28" style="vertical-align:-6px">
-  </a>
+  {{if ne .Page "home"}}<a class="nav-brand tp-brand" href="/" title="Shows">
+    <!-- Logo height matches the appbar buttons (btn-sm ≈ 30px). -->
+    <img src="/img/timerpi.svg" alt="TimerPi" width="30" height="30" style="vertical-align:middle">
+  </a>{{end}}
   <nav class="nav">
     {{if ne .Nav "home"}}
     <a class="nav-item{{if eq .Nav "cues"}} is-active{{end}}" href="/c/{{.Show.Code}}">Run</a>
@@ -141,7 +142,7 @@
 </div>
 <div class="toast-region" popover="manual" id="toast-region"></div>
 <script src="/src/htmx.min.js" defer></script>
-<script type="module" src="/src/timerpi.v54.js"></script>
+<script type="module" src="/src/timerpi.v55.js"></script>
 </body>
 </html>
 {{end}}

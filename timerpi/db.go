@@ -133,6 +133,7 @@ func (d *DB) migrate() error {
 			host        TEXT NOT NULL DEFAULT '',
 			last_seen   INTEGER NOT NULL DEFAULT 0,
 			assigned    TEXT NOT NULL DEFAULT '',
+			screen      TEXT NOT NULL DEFAULT '',
 			UNIQUE (name, host)
 		);`,
 		`CREATE TABLE IF NOT EXISTS client_errors (
@@ -149,6 +150,7 @@ func (d *DB) migrate() error {
 			name       TEXT NOT NULL,
 			theme      TEXT NOT NULL DEFAULT '',
 			board_id   INTEGER NOT NULL DEFAULT 0,
+			room       TEXT NOT NULL DEFAULT '',
 			last_seen  INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (show_id, name)
 		);`,
@@ -220,6 +222,14 @@ func (d *DB) migrate() error {
 			{"day_start", "TEXT NOT NULL DEFAULT ''"},
 			{"blanked", "INTEGER NOT NULL DEFAULT 0"},
 			{"zone", "TEXT NOT NULL DEFAULT ''"},
+		},
+		// PLAN §11.2 capture modal: per-screen Room/Location, and the
+		// screen name a captured waiting display adopts on its hop.
+		"screens": {
+			{"room", "TEXT NOT NULL DEFAULT ''"},
+		},
+		"waiting_screens": {
+			{"screen", "TEXT NOT NULL DEFAULT ''"},
 		},
 	}
 	for table, cols := range extra {
@@ -1059,6 +1069,7 @@ type Screen struct {
 	Name     string `db:"name"      json:"name"`
 	Theme    string `db:"theme"     json:"theme"`
 	BoardID  int64  `db:"board_id"  json:"boardId"`
+	Room     string `db:"room"      json:"room"`
 	LastSeen int64  `db:"last_seen" json:"lastSeen"`
 }
 
@@ -1096,15 +1107,16 @@ func (d *DB) UpsertScreen(showID int64, name string) error {
 
 // SetScreenConfig writes the operator's per-screen overrides (empty theme
 // clears to the default; board 0 clears to the show board).
-func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64) error {
+func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64, room string) error {
 	name = SanitizeScreenName(name)
 	if name == "" {
 		return fmt.Errorf("timerpi: empty screen name")
 	}
+	room = SanitizeScreenName(room)
 	now := nowMS()
-	if _, err := d.Exec(`INSERT INTO screens (show_id, name, theme, board_id, last_seen) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (show_id, name) DO UPDATE SET theme = ?, board_id = ?, last_seen = ?`,
-		showID, name, theme, boardID, now, theme, boardID, now); err != nil {
+	if _, err := d.Exec(`INSERT INTO screens (show_id, name, theme, board_id, room, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (show_id, name) DO UPDATE SET theme = ?, board_id = ?, room = ?, last_seen = ?`,
+		showID, name, theme, boardID, room, now, theme, boardID, room, now); err != nil {
 		return fmt.Errorf("timerpi: set screen config: %w", err)
 	}
 	return nil
@@ -1113,7 +1125,7 @@ func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64) er
 // ListScreens returns the registered screens, most-recently-seen first.
 func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 	var out []Screen
-	err := d.Select(&out, `SELECT show_id, name, theme, board_id, last_seen FROM screens
+	err := d.Select(&out, `SELECT show_id, name, theme, board_id, room, last_seen FROM screens
 		WHERE show_id = ? ORDER BY last_seen DESC`, showID)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list screens: %w", err)
@@ -1127,7 +1139,7 @@ func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 // GetScreenByName fetches one registered screen ("" name → no rows error).
 func (d *DB) GetScreenByName(showID int64, name string) (Screen, error) {
 	var s Screen
-	err := d.Get(&s, `SELECT show_id, name, theme, board_id, last_seen FROM screens
+	err := d.Get(&s, `SELECT show_id, name, theme, board_id, room, last_seen FROM screens
 		WHERE show_id = ? AND name = ?`, showID, name)
 	if err != nil {
 		return Screen{}, fmt.Errorf("timerpi: get screen: %w", err)
@@ -1193,6 +1205,7 @@ type WaitingScreen struct {
 	Host     string `db:"host"       json:"host"`
 	LastSeen int64  `db:"last_seen"  json:"lastSeen"`
 	Assigned string `db:"assigned"   json:"-"`
+	Screen   string `db:"screen"     json:"-"`
 }
 
 const waitingStaleAfterMS = 10 * 60 * 1000
@@ -1223,7 +1236,8 @@ func (d *DB) PruneWaiting() {
 func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 	d.PruneWaiting()
 	var out []WaitingScreen
-	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned FROM waiting_screens ORDER BY id`)
+	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens
+		WHERE assigned = '' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list waiting: %w", err)
 	}
@@ -1233,28 +1247,43 @@ func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 	return out, nil
 }
 
-// ClaimWaiting consumes an assignment for (name, host): returns the captured
-// show code once, clearing it so re-polls don't re-navigate.
-func (d *DB) ClaimWaiting(name, host string) (string, error) {
+// ClaimWaiting consumes an assignment for (name, host): returns the
+// captured show code + the screen name to adopt, ONCE. The row is removed
+// on claim — the display leaves the waiting room for good (PLAN §11.2).
+func (d *DB) ClaimWaiting(name, host string) (string, string, error) {
 	name = SanitizeScreenName(name)
 	host = ClipUTF8(strings.TrimSpace(host), 80)
 	now := nowMS()
 	_, _ = d.Exec(`INSERT INTO waiting_screens (name, host, last_seen) VALUES (?, ?, ?)
 		ON CONFLICT (name, host) DO UPDATE SET last_seen = ?`, name, host, now, now)
-	var code string
-	err := d.Get(&code, `SELECT assigned FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
-	if err != nil || code == "" {
-		return "", nil
+	var row struct {
+		Assigned string `db:"assigned"`
+		Screen   string `db:"screen"`
 	}
-	if _, err := d.Exec(`UPDATE waiting_screens SET assigned = '' WHERE name = ? AND host = ?`, name, host); err != nil {
-		return "", fmt.Errorf("timerpi: claim waiting: %w", err)
+	err := d.Get(&row, `SELECT assigned, screen FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
+	if err != nil || row.Assigned == "" {
+		return "", "", nil
 	}
-	return code, nil
+	if _, err := d.Exec(`DELETE FROM waiting_screens WHERE name = ? AND host = ?`, name, host); err != nil {
+		return "", "", fmt.Errorf("timerpi: claim waiting: %w", err)
+	}
+	return row.Assigned, row.Screen, nil
 }
 
-// AssignWaiting marks a waiting row captured into a show code.
-func (d *DB) AssignWaiting(id int64, code string) error {
-	res, err := d.Exec(`UPDATE waiting_screens SET assigned = ? WHERE id = ?`, code, id)
+// GetWaiting fetches one waiting row (sql.ErrNoRows when missing).
+func (d *DB) GetWaiting(id int64) (WaitingScreen, error) {
+	var w WaitingScreen
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens WHERE id = ?`, id)
+	if err != nil {
+		return WaitingScreen{}, err
+	}
+	return w, nil
+}
+
+// AssignWaiting marks a waiting row captured into a show code, carrying
+// the screen name the display adopts on its hop (PLAN §11.2 capture modal).
+func (d *DB) AssignWaiting(id int64, code, screen string) error {
+	res, err := d.Exec(`UPDATE waiting_screens SET assigned = ?, screen = ? WHERE id = ?`, code, SanitizeScreenName(screen), id)
 	if err != nil {
 		return fmt.Errorf("timerpi: assign waiting: %w", err)
 	}

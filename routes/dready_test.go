@@ -70,15 +70,20 @@ func TestNavDisplayEntity(t *testing.T) {
 	if strings.Contains(s, "Back to Shows") {
 		t.Error("dashboard still says Back to Shows (replaced by Logout)")
 	}
-	// Home: brand links back to the shows list; no logout-only dead end.
-	if !strings.Contains(s, `href="/"`) {
-		t.Error("home brand does not link to /")
-	}
+	// Home: the appbar brand is HIDDEN there (the hero carries the logo,
+	// centred and 3x the appbar size); other pages keep the linked brand.
 	code, body = ts.call("GET", "/", nil, "")
 	if code != 200 {
 		t.Fatalf("home: %d", code)
 	}
-	if strings.Contains(string(body), "Back to Shows") {
+	s = string(body)
+	if strings.Contains(s, `nav-brand`) {
+		t.Error("home still renders the appbar brand (hero owns the logo now)")
+	}
+	if !strings.Contains(s, `tp-home-logo`) {
+		t.Error("home hero missing the big centred logo")
+	}
+	if strings.Contains(s, "Back to Shows") {
 		t.Error("home nav says Back to Shows")
 	}
 	// /d/ keeps the fullscreen contract.

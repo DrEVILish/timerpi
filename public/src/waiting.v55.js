@@ -53,7 +53,7 @@ export function runWaiting() {
 function startPolling() {
   register();
   clearInterval(pollTimer);
-  pollTimer = setInterval(pollMine, 4000);
+  pollTimer = setInterval(pollMine, 2000);
 }
 
 async function register() {
@@ -73,7 +73,10 @@ async function pollMine() {
     if (j && j.assigned) {
       clearInterval(pollTimer);
       pollTimer = 0;
-      location.href = `/d/${encodeURIComponent(j.assigned)}?screen=${encodeURIComponent(screenName())}`;
+      // The capture modal may have (re)named this screen — adopt it.
+      const name = j.screen || screenName();
+      try { sessionStorage.setItem('tp.screen', name); } catch { /* */ }
+      location.href = `/d/${encodeURIComponent(j.assigned)}?screen=${encodeURIComponent(name)}`;
     }
   } catch { /* keep waiting */ }
 }
