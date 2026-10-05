@@ -1126,10 +1126,13 @@ body.tp-drag-body, body.tp-drag-body * { cursor: grabbing !important; }
 .tp-wait-row { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 
 /* Maximised layout-editor modal (iframe of /d/?view=board&edit=1&preview=1) */
-.tp-screen-edit { width: min(96vw, 1600px); height: 92vh; padding: 0; border-radius: var(--radius, .5rem); }
+.tp-screen-edit { width: min(96vw, 1600px); padding: 0; border-radius: var(--radius, .5rem); }
+/* The editor previews what the DISPLAY shows: a 16:9 surface, letterboxed —
+   not an arbitrary tall panel that looks nothing like the room. */
+.tp-screen-edit iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; display: block; background: #000; }
 .tp-screen-edit .tp-modal-bar { display: flex; align-items: center; gap: .7rem; padding: .45rem .8rem; border-block-end: 1px solid var(--border, transparent); }
 .tp-screen-edit .tp-modal-bar .field-hint { flex: 1 1 auto; }
-.tp-screen-edit iframe { width: 100%; height: calc(100% - 3rem); border: 0; display: block; background: #000; }
+
 
 /* Tile align affordances in compose mode (board editor) */
 .b-w-align { background: none; border: none; color: inherit; cursor: pointer; font-size: .8rem; padding: 0 .15rem; }
@@ -1231,6 +1234,10 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 /* ---------------------------------------------------------------------------
    PLAN nav pass — Change Theme dropdown + brand link + appbar cluster. */
 a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
+/* Logo sizing lives here (owner: no duplicated width/height attrs) —
+   the appbar logo matches the bar buttons' height; the home hero's is 3x. */
+a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
+.tp-home-logo img { width: 84px; height: 84px; }
 .tp-theme-menu { position: relative; }
 .tp-theme-menu summary { list-style: none; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
 .tp-theme-menu summary::-webkit-details-marker { display: none; }
@@ -1258,3 +1265,11 @@ a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align
   border: 1px solid var(--border, #333); border-radius: 10px; padding: 1rem 1.1rem; }
 .tp-dlg p { margin: 0; overflow-wrap: anywhere; }
 .tp-dlg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .3rem; }
+
+/* ---------------------------------------------------------------------------
+   Layout-editor feel round (owner): drag ghost + template row. */
+.b-ghost { position: absolute; z-index: 5; border: 2px dashed var(--accent, #7C3AED);
+  background: color-mix(in srgb, var(--accent, #7C3AED) 14%, transparent);
+  border-radius: 6px; pointer-events: none; }
+.b-palette-list { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 60rem; }
+.b-palette-list button { flex: 0 0 auto; }

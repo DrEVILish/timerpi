@@ -30,6 +30,24 @@ func (d *DB) CreateAsset(name, mime string, data []byte) (Asset, error) {
 	return Asset{ID: id, Name: ClipUTF8(name, 120), Mime: mime, Bytes: data, Ts: nowMS()}, nil
 }
 
+// ListAssets returns {id, name, mime} for pickers (bytes excluded).
+func (d *DB) ListAssets() ([]struct {
+	ID   int64  `db:"id"   json:"id"`
+	Name string `db:"name" json:"name"`
+	Mime string `db:"mime" json:"mime"`
+}, error) {
+	var out []struct {
+		ID   int64  `db:"id"   json:"id"`
+		Name string `db:"name" json:"name"`
+		Mime string `db:"mime" json:"mime"`
+	}
+	err := d.Select(&out, `SELECT id, name, mime FROM assets ORDER BY ts DESC, id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("timerpi: list assets: %w", err)
+	}
+	return out, nil
+}
+
 // GetAsset fetches one asset by id (sql.ErrNoRows when missing).
 func (d *DB) GetAsset(id int64) (Asset, error) {
 	var a Asset

@@ -324,7 +324,19 @@ Animation enum per tile
    on results (board ✔ + phone). Tests: `routes/moderation_test.go`
    (cloud → submit → approve → upvote → hide → delete) + create
    validation; rev v57.
-6. **CuTePi destination bridge** — ✅ 2026-10-05: the bridge is complete.
+5b. **10 default layouts + editor feel (owner round).** Ten named
+   templates in Go (single source, overlap-tested): Show, Lobby, Event,
+   Room, Audience-main, DSM, Speaker tag, Q&A wall, Clock room, Break —
+   one per event surface in the walkthrough plus fillers. The Capture
+   modal's Layout field became a **Template picker** (capture builds a
+   per-screen board from the named layout — recapture replaces it, never
+   duplicates; cards/isolated edits). Editor feel: drag/resize shows a
+   translucent **destination ghost**; the last-touched tile **nudges with
+   arrow keys** (Shift resizes) with the same overlap-revert contract;
+   the Map tile config became a **named asset picker** (new
+   GET /api/assets list) instead of a raw id field; the board chrome
+   carries all 10 template buttons. Rev v60.
+   6. **CuTePi destination bridge** — ✅ 2026-10-05: the bridge is complete.
    Outbound: every cue start fires `/cue/<pos>/start` to the paired
    QLab/CuTePi peer — hand GO (engine onFire), auto-advance (AutoContinue)
    and E5 wall-clock auto-start now ALL fire (Tick Recording found the

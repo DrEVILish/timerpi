@@ -96,25 +96,45 @@ func TemplateLayouts() map[string]Layout {
 		return Widget{ID: id, Type: typ, X: x, Y: y, W: hw, H: hh, Opts: opts}
 	}
 	return map[string]Layout{
-		// Event lobby: map + full-day spine.
+		// 1. SHOW — the classic cue wall: giant timer + messages + next.
+		"stage": {V: 1, Widgets: []Widget{
+			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
+			w("messages", "messages", 8, 0, 4, 3, nil),
+			w("cuelabel", "cuelabel", 0, 3, 8, 1, map[string]string{"source": "label"}),
+			w("nextup", "nextup", 8, 3, 4, 2, nil),
+			w("progress", "progress", 0, 4, 8, 1, nil),
+			w("dayprogress", "dayprogress", 0, 5, 8, 1, nil),
+			w("wallclock", "wallclock", 8, 5, 4, 1, map[string]string{"tenths": "0"}),
+			w("rate", "rate", 0, 6, 2, 1, nil),
+			w("showtitle", "showtitle", 2, 6, 6, 1, nil),
+		}},
+		// 2. LOBBY — clock + messages + the running order.
+		"lobby": {V: 1, Widgets: []Widget{
+			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
+			w("wallclock", "wallclock", 0, 1, 5, 2, map[string]string{"tenths": "0"}),
+			w("messages", "messages", 5, 1, 7, 2, nil),
+			w("schedule", "schedule", 0, 3, 12, 4, map[string]string{"count": "6"}),
+		}},
+		// 3. EVENT LOBBY — space map + full-day spine (walkthrough #1).
 		"event": {V: 1, Widgets: []Widget{
 			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
 			w("map", "map", 0, 1, 5, 5, nil),
 			w("schedule", "schedule", 5, 1, 7, 5, map[string]string{"count": "all"}),
-			w("wallclock", "wallclock", 0, 6, 4, 1, nil),
+			w("wallclock", "wallclock", 0, 6, 4, 1, map[string]string{"tenths": "0"}),
 			w("notice", "notice", 4, 6, 8, 1, map[string]string{"text": "Welcome"}),
 		}},
-		// Room walk-in: what's on + next + day schedule + join QR.
+		// 4. ROOM WALK-IN — what's on + next-in-room + schedule + join QR (#2/#3).
 		"room": {V: 1, Widgets: []Widget{
 			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
 			w("wallclock", "wallclock", 0, 1, 4, 2, map[string]string{"tenths": "0"}),
 			w("cuelabel", "cuelabel", 4, 1, 8, 1, map[string]string{"source": "label"}),
 			w("speaker", "speaker", 4, 2, 8, 1, nil),
-			w("schedule", "schedule", 0, 3, 8, 4, map[string]string{"count": "8"}),
-			w("joinqr", "joinqr", 8, 3, 4, 4, nil),
-			w("notice", "notice", 0, 7, 12, 2, map[string]string{"text": "Wi-Fi: event-guest"}),
+			w("nextup", "nextup", 0, 3, 4, 2, nil),
+			w("schedule", "schedule", 4, 3, 8, 4, map[string]string{"count": "8"}),
+			w("joinqr", "joinqr", 0, 6, 4, 3, nil),
+			w("notice", "notice", 4, 7, 8, 2, map[string]string{"text": "Scan to take part"}),
 		}},
-		// Room main display: the audience-interaction surface.
+		// 5. ROOM MAIN — the audience interaction surface (#4/#5).
 		"main": {V: 1, Widgets: []Widget{
 			w("showtitle", "showtitle", 0, 0, 12, 1, nil),
 			w("poll", "poll", 0, 1, 7, 5, nil),
@@ -123,7 +143,7 @@ func TemplateLayouts() map[string]Layout {
 			w("joinqr", "joinqr", 0, 6, 3, 3, nil),
 			w("notice", "notice", 3, 6, 9, 2, map[string]string{"text": "Scan to take part"}),
 		}},
-		// DSM/timer display: the timer with a poll wedge.
+		// 6. DSM — the room's progress timer + its poll wedge (#6/#7).
 		"dsm": {V: 1, Widgets: []Widget{
 			w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
 			w("poll", "poll", 8, 0, 4, 3, nil),
@@ -134,6 +154,32 @@ func TemplateLayouts() map[string]Layout {
 			w("wallclock", "wallclock", 0, 6, 4, 1, map[string]string{"tenths": "0"}),
 			w("joinqr", "joinqr", 8, 5, 4, 2, nil),
 			w("dayprogress", "dayprogress", 4, 6, 4, 1, nil),
+		}},
+		// 7. SPEAKER TAG — presenter support shot: who + what + the clock.
+		"speaker": {V: 1, Widgets: []Widget{
+			w("speaker", "speaker", 0, 0, 12, 2, nil),
+			w("cuelabel", "cuelabel", 0, 2, 12, 2, map[string]string{"source": "label"}),
+			w("progress", "progress", 0, 4, 12, 1, nil),
+			w("nextup", "nextup", 0, 5, 8, 2, nil),
+			w("wallclock", "wallclock", 8, 5, 4, 2, map[string]string{"tenths": "0"}),
+		}},
+		// 8. Q&A WALL — questions front-and-center + join.
+		"qawall": {V: 1, Widgets: []Widget{
+			w("qa", "qa", 0, 0, 8, 5, nil),
+			w("joinqr", "joinqr", 8, 0, 4, 3, nil),
+			w("wordcloud", "wordcloud", 8, 3, 4, 2, nil),
+			w("notice", "notice", 0, 5, 12, 2, map[string]string{"text": "Questions? Scan and ask."}),
+		}},
+		// 9. CLOCK ROOM — near-idle room filler: big clock + shallow schedule.
+		"clockroom": {V: 1, Widgets: []Widget{
+			w("wallclock", "wallclock", 0, 0, 12, 2, map[string]string{"tenths": "0"}),
+			w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"}),
+		}},
+		// 10. BREAK — between-sessions filler: clock + stage messages.
+		"break": {V: 1, Widgets: []Widget{
+			w("wallclock", "wallclock", 0, 0, 12, 3, map[string]string{"tenths": "0"}),
+			w("messages", "messages", 0, 3, 12, 3, nil),
+			w("notice", "notice", 0, 6, 12, 2, map[string]string{"text": "Back shortly — enjoy the break"}),
 		}},
 	}
 }
@@ -494,6 +540,21 @@ func StoreLayout(db *sqlx.DB, showID, bid int64, layoutRaw string) (Board, error
 
 // DeleteBoard removes a board (a show with none left re-seeds on next view
 // via EnsureDefaultBoard).
+// UpsertLayoutByName creates or replaces the show board with this name —
+// the capture round's template picker (one board per captured screen keeps
+// its customizations isolated from every other screen on the template).
+func UpsertLayoutByName(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, error) {
+	if list, err := ListBoards(db, showID); err == nil {
+		for _, b := range list {
+			if b.Name != name {
+				continue
+			}
+			return StoreLayout(db, showID, b.ID, layoutRaw)
+		}
+	}
+	return CreateBoard(db, showID, name, layoutRaw)
+}
+
 func DeleteBoard(db *sqlx.DB, showID, bid int64) error {
 	_, err := db.Exec(`DELETE FROM display_boards WHERE show_id = ? AND id = ?`, showID, bid)
 	return err

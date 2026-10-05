@@ -23,10 +23,26 @@ const maxAssetBytes = 4 << 20
 func registerAssetRoutes(r gin.IRouter, d *Deps) {
 	g := r.Group("/api")
 	g.POST("/assets", d.apiAssetUpload)
+	g.GET("/assets", d.apiAssetList)
 	g.DELETE("/assets/:id", d.apiAssetDelete)
 	g.POST("/zone-map", d.apiZoneMap)
 	// Public read (AuthGate exempts the /assets/ GET prefix).
 	r.GET("/assets/:id", d.apiAssetGet)
+}
+
+// GET /api/assets — {id,name} pairs for the picker (map config selects an
+// asset instead of typing an id).
+func (d *Deps) apiAssetList(c *gin.Context) {
+	if d.Store == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
+		return
+	}
+	list, err := d.Store.ListAssets()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "assets": list})
 }
 
 // POST /api/assets — multipart image (field "file"). Mime is SNIFFED from

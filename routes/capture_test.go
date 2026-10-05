@@ -5,6 +5,7 @@
 package routes_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -190,4 +191,84 @@ func TestLayoutAssignmentSteersStage(t *testing.T) {
 	if code != 200 || strings.Contains(string(b), `data-widget=`) {
 		t.Fatalf("unassigned screen should stay on the stage: %d %.200s", code, b)
 	}
+}
+
+// The capture modal's Template pick (layout round): capturing with a
+// template builds that screen's OWN board from the named layout
+// (re-capture replaces it, never duplicates) and assigns it.
+func TestCaptureWithTemplate(t *testing.T) {
+	ts := newAPITest(t)
+	if err := boards.Migrate(ts.db.DB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for _, pair := range []struct{ id, name string }{{"1", "TV-1"}} {
+		_ = pair
+	}
+	if code, _ := ts.call("POST", "/api/waiting/register",
+		[]byte(`{"name":"TV-1","host":"tv.local"}`), ""); code != 200 {
+		t.Fatal("register")
+	}
+	if code, _ := ts.call("POST", "/api/waiting/1/capture",
+		[]byte(fmt.Sprintf(`{"code":%q,"name":"TV-1","template":"room"}`, ts.showCode)), ""); code != 200 {
+		t.Fatal("capture with template")
+	}
+	// The screen's own board exists, holds the room widgets, and is assigned.
+	list, _ := boards.ListBoards(ts.db.DB, ts.showID)
+	mine := 0
+	var mineID int64
+	for _, b := range list {
+		if b.Name == "TV-1 layout" {
+			mine++
+			mineID = b.ID
+			if !strings.Contains(b.LayoutJSON(), `"type":"joinqr"`) {
+				t.Errorf("template widgets missing: %.200s", b.LayoutJSON())
+			}
+		}
+	}
+	if mine != 1 {
+		t.Fatalf("want exactly 1 built board, got %d", mine)
+	}
+	if scr, err := ts.db.GetScreenByName(ts.showID, "TV-1"); err != nil || scr.BoardID != mineID {
+		t.Fatalf("board not assigned to the screen: %+v err %v", scr, err)
+	}
+	// Recapture with a DIFFERENT template → replaced, not duplicated.
+	if code, _ := ts.call("POST", "/api/waiting/register",
+		[]byte(`{"name":"TV-1","host":"tv.local"}`), ""); code != 200 {
+		t.Fatal("re-register")
+	}
+	if code, _ := ts.call("POST", "/api/waiting/1/capture",
+		[]byte(fmt.Sprintf(`{"code":%q,"name":"TV-1","template":"break"}`, ts.showCode)), ""); code != 200 {
+		t.Fatal("recapture")
+	}
+	list2, _ := boards.ListBoards(ts.db.DB, ts.showID)
+	n := 0
+	for _, b := range list2 {
+		if b.Name == "TV-1 layout" {
+			n++
+			if !strings.Contains(b.LayoutJSON(), `"type":"wallclock"`) {
+				t.Errorf("replaced board kept the old template: %.200s", b.LayoutJSON())
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("re-capture duplicated the board: %d", n)
+	}
+	// Unknown template refused.
+	if code, _ := ts.call("POST", "/api/waiting/1/capture",
+		[]byte(fmt.Sprintf(`{"code":%q,"template":"spaceship"}`, ts.showCode)), ""); code != 400 {
+		t.Errorf("unknown template accepted: %d", code)
+	}
+}
+
+// Assets picker: two uploads list with names (map config rides this).
+func TestAssetList(t *testing.T) {
+	ts := newAPITest(t)
+	img := append([]byte(pngHeader), bytes.Repeat([]byte{9}, 16)...)
+	if code, _ := uploadAsset(t, ts, "map-north.png", img); code != 200 {
+		t.Fatalf("upload: %d", code)
+	}
+	if code, b := ts.call("GET", "/api/assets", nil, ""); code != 200 || !strings.Contains(string(b), "map-north.png") {
+		t.Fatalf("list: %d %s", code, b)
+	}
+
 }

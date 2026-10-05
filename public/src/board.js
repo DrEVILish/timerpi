@@ -666,6 +666,32 @@ function gridMetrics() {
   return { colW: grid.getBoundingClientRect().width / 12, rowPitch: rem * 4.5 + rem * 0.6 };
 }
 
+// Drag ghost (owner "feels bad" round): a translucent outline marks the
+// destination cells while dragging, so the drop target is visible before
+// the pointer releases — with the tile itself held semi-transparent.
+function showGhost(w) {
+  let g = document.getElementById('b-drag-ghost');
+  if (!g) {
+    g = document.createElement('div');
+    g.id = 'b-drag-ghost';
+    grid.appendChild(g);
+  }
+  g.className = 'b-ghost';
+  const { colW } = gridMetrics();
+  g.style.left = `calc(${(w.x * 100) / 12}% + 2px)`;
+  g.style.width = `calc(${(w.w * 100) / 12}% - 4px)`;
+  g.style.top = '0';
+  g.style.height = grid.getBoundingClientRect().height + 'px';
+  g.dataset.row = String(w.y);
+  g.style.transform = '';
+  const rowPitch = parseFloat(getComputedStyle(document.documentElement).fontSize) * 5.1;
+  g.style.top = (w.y * rowPitch) + 'px';
+  g.style.height = (w.h * rowPitch) + 'px';
+}
+function hideGhost() {
+  document.getElementById('b-drag-ghost')?.remove();
+}
+
 function dragTile(tile, wid, startEvent, mode) {
   startEvent.preventDefault();
   const w = widgetOf(wid);
@@ -675,6 +701,7 @@ function dragTile(tile, wid, startEvent, mode) {
   const startY = startEvent.clientY;
   const orig = { ...w };
   tile.classList.add('b-dragging');
+  showGhost(w);
   const move = (e) => {
     const dc = Math.round((e.clientX - startX) / colW);
     const dr = Math.round((e.clientY - startY) / rowPitch);
@@ -687,13 +714,16 @@ function dragTile(tile, wid, startEvent, mode) {
     }
     clampTile(w);
     applyGeometry(w);
+    showGhost(w);
   };
   const up = () => {
     tile.classList.remove('b-dragging');
+    hideGhost();
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
     window.removeEventListener('pointercancel', up);
     clampTile(w);
+    lastTouched = { id: wid, w: { ...w } }; // arrow keys nudge from here
     // Overlap (against every OTHER tile) reverts the gesture, flashes a brief
     // purple nudge on the offending tile (UX2 — visible at the pointer, not
     // only in the far toolbar) and stays revert-only: never silently accept.
@@ -924,17 +954,35 @@ function openSettings(wid) {  const w = widgetOf(wid);
     mk('Duration (ms)', num);
   }
   if (w.type === 'map') {
-    const inp = document.createElement('input');
-    inp.className = 'input input-sm';
-    inp.value = w.opts?.assetId || '';
-    inp.placeholder = 'asset id from /api/assets';
-    inp.setAttribute('aria-label', 'Asset id');
-    inp.addEventListener('change', () => {
-      w.opts = { ...(w.opts || {}), assetId: inp.value.replace(/[^0-9]/g, '') };
+    // Asset PICKER (owner "fiddly" round): select a named upload instead
+    // of typing a raw id.
+    const sel = document.createElement('select');
+    sel.className = 'input input-sm';
+    const fill = (assets) => {
+      sel.textContent = '';
+      const none = document.createElement('option');
+      none.value = '0';
+      none.textContent = 'No map';
+      sel.appendChild(none);
+      for (const a of assets || []) {
+        const o = document.createElement('option');
+        o.value = String(a.id);
+        o.textContent = a.name || `Asset ${a.id}`;
+        sel.appendChild(o);
+      }
+      sel.value = w.opts?.assetId || '0';
+      if (!sel.value || sel.selectedIndex < 0) sel.value = '0';
+    };
+    sel.value = w.opts?.assetId || '0';
+    fill([]);
+    fetch('/api/assets').then((r) => r.json()).then((j) => fill(j?.assets || [])).catch(() => {});
+    sel.setAttribute('aria-label', 'Map asset');
+    sel.addEventListener('change', () => {
+      w.opts = { ...(w.opts || {}), assetId: sel.value.replace(/[^0-9]/g, '') };
       scheduleSave();
       renderStatic();
     });
-    mk('Asset id', inp);
+    mk('Map image', sel);
   }
   if (w.type === 'joinqr') {
     const inp = document.createElement('input');
@@ -1021,6 +1069,37 @@ function wireCompose() {
       setEditing(true);
     }
   } catch { /* private mode */ }
+// Keyboard nudge (owner "feels bad" round): with editing on, the
+// last-touched tile moves by one cell on the arrow keys (Shift resizes),
+// drop-style confirm on every nudge — overlap reverts exactly like a drag.
+let lastTouched = null;
+document.addEventListener('keydown', (e) => {
+  if (!editing || !lastTouched) return;
+  const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const d = deltas[e.key];
+  if (!d) return;
+  e.preventDefault();
+  const w = widgetOf(lastTouched.id);
+  if (!w) { lastTouched = null; return; }
+  const orig = { ...w };
+  if (e.shiftKey) { w.w = Math.max(1, w.w + d[0]); w.h = Math.max(1, w.h + d[1]); }
+  else { w.x += d[0]; w.y += d[1]; }
+  clampTile(w);
+  applyGeometry(w);
+  const tile = document.getElementById('b-w-' + lastTouched.id);
+  const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
+  if (hit) {
+    Object.assign(w, orig);
+    applyGeometry(w);
+    if (tile) tile.classList.add('b-overlap');
+    setTimeout(() => tile?.classList.remove('b-overlap'), 600);
+    saveState('Blocked: tiles overlap');
+    return;
+  }
+  lastTouched.w = { ...w };
+  scheduleSave();
+});
+
   grid.addEventListener('pointerdown', (e) => {
     if (!editing) return;
     const tile = e.target.closest('.b-widget');

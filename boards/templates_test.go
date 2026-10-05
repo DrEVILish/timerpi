@@ -23,7 +23,7 @@ func mustJSON(t *testing.T, l boards.Layout) string {
 // Every Rooms template must pass the same validation a client PUT would —
 // a template that the REST layer would reject is a broken product.
 func TestTemplateLayoutsValid(t *testing.T) {
-	names := []string{"event", "room", "main", "dsm"}
+	names := []string{"stage", "lobby", "event", "room", "main", "dsm", "speaker", "qawall", "clockroom", "break"}
 	tl := boards.TemplateLayouts()
 	for _, name := range names {
 		l, ok := tl[name]

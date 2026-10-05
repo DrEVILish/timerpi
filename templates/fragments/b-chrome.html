@@ -73,12 +73,18 @@
   </div>
   <span class="b-palette-title">Layout</span>
   <div class="b-palette-list" id="b-preset-list">
-    <button type="button" data-preset="stage" title="Countdown, next-up and messages for stage-side monitors">Stage</button>
-    <button type="button" data-preset="lobby" title="Wall clock, show title and schedule for lobby screens">Lobby</button>
-    <button type="button" data-preset="event" title="PLAN §11.2 event lobby: map + full-day spine">Event</button>
-    <button type="button" data-preset="room" title="PLAN §11.2 room walk-in: now/next + schedule + join QR">Room</button>
-    <button type="button" data-preset="main" title="PLAN §11.2 room main: polls, Q&A, word cloud">Main</button>
-    <button type="button" data-preset="dsm" title="PLAN §11.2 DSM: timer with a poll wedge">DSM</button>
+    <!-- The 10 Go templates (boards.TemplateLayouts keys); applied via
+         /api/board-templates. -->
+    <button type="button" data-preset="stage" title="1 · Classic cue wall: giant timer + messages + next-up">Show</button>
+    <button type="button" data-preset="lobby" title="2 · Clock + messages + the running order">Lobby</button>
+    <button type="button" data-preset="event" title="3 · Space map + the full-day spine">Event</button>
+    <button type="button" data-preset="room" title="4 · What's on + next + schedule + join QR">Room</button>
+    <button type="button" data-preset="main" title="5 · Polls, Q&A and the word cloud">Audience</button>
+    <button type="button" data-preset="dsm" title="6 · Progress timer + poll wedge">DSM</button>
+    <button type="button" data-preset="speaker" title="7 · Speaker tag: who + what + the clock">Speaker</button>
+    <button type="button" data-preset="qawall" title="8 · Q&A wall + join QR">Q&A</button>
+    <button type="button" data-preset="clockroom" title="9 · Big clock + shallow schedule">Clock</button>
+    <button type="button" data-preset="break" title="10 · Between-sessions filler: clock + messages">Break</button>
   </div>
   <button class="btn btn-sm" id="b-reset" type="button" title="Restore the factory layout">Reset layout</button>
 </div>

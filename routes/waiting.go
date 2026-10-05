@@ -10,9 +10,12 @@ package routes
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"timerpi/boards"
 
 	"github.com/gin-gonic/gin"
 
@@ -116,11 +119,12 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 	// screens registry BEFORE the display hops, so its first join already
 	// carries theme + board assignment.
 	var body struct {
-		Code    string `json:"code"`
-		Name    string `json:"name"`
-		Theme   string `json:"theme"`
-		Room    string `json:"room"`
-		BoardID int64  `json:"boardId"`
+		Code     string `json:"code"`
+		Name     string `json:"name"`
+		Theme    string `json:"theme"`
+		Room     string `json:"room"`
+		BoardID  int64  `json:"boardId"`
+		Template string `json:"template"` // §Layout round: template drives the board
 	}
 	_ = c.ShouldBindJSON(&body)
 	sid, ok := timerpi.ResolveShowID(d.Store, body.Code)
@@ -151,11 +155,29 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
 		return
 	}
-	if body.BoardID < 0 || !d.boardKnown(sid, body.BoardID) {
+	boardID := body.BoardID
+	if tpl := strings.TrimSpace(body.Template); tpl != "" {
+		tl, ok := boards.TemplateLayouts()[strings.ToLower(tpl)]
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
+			return
+		}
+		raw, _ := json.Marshal(tl)
+		// One board per captured screen keeps its customizations isolated
+		// from every other screen riding the same template.
+		bname := strings.TrimSpace(name) + " layout"
+		b, berr := boards.UpsertLayoutByName(d.Store.DB, sid, bname, string(raw))
+		if berr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": berr.Error()})
+			return
+		}
+		boardID = b.ID
+	}
+	if boardID < 0 || !d.boardKnown(sid, boardID) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
 		return
 	}
-	if err := d.Store.SetScreenConfig(sid, name, body.Theme, body.BoardID, body.Room); err != nil {
+	if err := d.Store.SetScreenConfig(sid, name, body.Theme, boardID, body.Room); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
