@@ -171,9 +171,15 @@ func TestBoardView(t *testing.T) {
 	if code, _ := ts.call("GET", "/d/"+ts.showCode+"?view=board&board="+bid, nil, ""); code != http.StatusOK {
 		t.Errorf("board select: %d (want 200)", code)
 	}
+	// A stale/deleted board id must NOT blank a room with a raw error
+	// (owner review round): it falls back to the show's default board.
+	if code, b := ts.call("GET", "/d/"+ts.showCode+"?view=board&board=424242", nil, ""); code != http.StatusOK ||
+		!strings.Contains(string(b), "data-widget=") {
+		t.Errorf("stale board id: %d (want default-board fallback)", code)
+	}
+	// Unknown SHOW stays a friendly 404; junk board ids soft-land on the
+	// default board (owner round: TVs must not break mid-event).
 	for _, path := range []string{
-		"/d/" + ts.showCode + "?view=board&board=424242",
-		"/d/" + ts.showCode + "?view=board&board=nope",
 		"/d/424242?view=board",
 		"/d/notanumber?view=board",
 	} {

@@ -223,34 +223,44 @@ func (d *Deps) apiBoardsDelete(c *gin.Context) {
 // Board page: GET /d/:ident?view=board&board=<bid>.
 // ---------------------------------------------------------------------------
 
+// stripParam drops one query parameter from an encoded query string.
+func stripParam(raw, key string) string {
+	vals := strings.FieldsFunc(raw, func(r rune) bool { return r == '&' })
+	keep := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if !strings.HasPrefix(v, key+"=") && v != key {
+			keep = append(keep, v)
+		}
+	}
+	return strings.Join(keep, "&")
+}
+
 // boardView renders display_board.html for the requested (or default) board.
 func (d *Deps) boardView(c *gin.Context, showID int64, snap timerpi.Snapshot) {
 	if !d.boardStore() {
 		c.String(http.StatusServiceUnavailable, "board wiring missing")
 		return
 	}
-	var (
-		board boards.Board
-		err   error
-	)
+	var board boards.Board
 	if raw := strings.TrimSpace(c.Query("board")); raw != "" {
 		bid, perr := strconv.ParseInt(raw, 10, 64)
-		if perr != nil || bid <= 0 {
-			c.String(http.StatusNotFound, "no such board")
-			return
-		}
-		board, err = boards.GetBoard(d.Store.DB, showID, bid)
-		if err != nil {
-			c.String(http.StatusNotFound, "no such board")
-			return
-		}
-	} else {
-		board, err = boards.EnsureDefaultBoard(d.Store.DB, showID)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "board seeding failed")
+		// Operator review round: a stale/deleted board id on a TV URL must
+		// NEVER render a raw error page mid-event — fall back to the show's
+		// default board so the room keeps showing something (the URL the
+		// gallery serves always carries the resolved id).
+		if board, gerr := boards.GetBoard(d.Store.DB, showID, bid); perr == nil && bid > 0 && gerr == nil {
+			d.render(c, "display_board", d.boardData(c, snap, showID, board))
 			return
 		}
 	}
+	board, berr := boards.EnsureDefaultBoard(d.Store.DB, showID)
+	if berr != nil {
+		c.String(http.StatusInternalServerError, "board seeding failed")
+		return
+	}
+	// The stale ?board= param must not win again: strip it from the URL the
+	// page carries (join re-navigation reads location.search).
+	c.Request.URL.RawQuery = stripParam(c.Request.URL.RawQuery, "board")
 	d.render(c, "display_board", d.boardData(c, snap, showID, board))
 }
 
