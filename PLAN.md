@@ -297,8 +297,20 @@ Animation enum per tile
    gallery. Note: on an open appliance (no device password) the panel is
    reachable — the same documented LAN-trust model as every operator
    surface.
-4. **Audience capacity lane (1000+)** — §11.5. Audience WS endpoint,
-   scope-filtered frames, vote storms, load harness.
+4. **Audience capacity lane (1000+)** — ✅ 2026-10-05: audience joins ride
+   the same `/ws` endpoint into a dedicated per-show bucket (`sh.aud`)
+   with its own 4000 cap — the boards' 512 budget untouched. The join
+   reply is the visible-interaction state ONLY (no cue snapshot, ever);
+   `Hub.BroadcastPoll` ships poll-only delta frames (~150 B) to the lane
+   AND the boards on every vote/state change — votes never trigger the
+   full-snapshot fanout. The lane is strictly read-only (commands AND
+   signal relay refused); votes go over REST with per-peer 300 ms
+   throttle + per-show soak limiter (600 req/s → 429/Retry-After) behind
+   the existing DB UNIQUE dedupe. `/a/` pages: WS primary, REST fallback
+   with jittered reconnect. Harness (`ws/load_test.go`, TP_LOAD=1 gated,
+   fd-limit aware): **1000 phones joined, 1000/1000 join storm, p95
+   broadcast latency 24 ms** (target <100 ms), ≥99% delivery — numbers
+   from this container, race-clean.
 5. **Interaction UX on displays** — results bar graphs (`ProgressBar`
    ftl component rows: label, filled bar, `% of total`, total-votes line),
    question wall (moderated list, show/hide), word cloud (DOM tiles sized by

@@ -49,6 +49,10 @@ func (h *Hub) handle(s *session, raw []byte) {
 	case "cmd":
 		h.command(s, frame.Action, frame.Args, errOf)
 	case "signal":
+		if s.role == "audience" {
+			s.sendErr("audience is read-only")
+			return
+		}
 		h.signal(s, frame.To, frame.Data)
 	default:
 		s.sendErr(fmt.Sprintf("unknown frame type %q", frame.T))
@@ -98,6 +102,12 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 	// operator login — the possibly-unauthenticated display/mesh roles are
 	// strictly read-side (fans out state; signals P2P) and must not mutate
 	// even by spoofing their join role.
+	// PLAN §11.5: the audience lane is read-only by design — votes/asks go
+	// over REST with their own guards, never over this socket.
+	if s.role == "audience" {
+		s.sendErr("audience is read-only (vote on the room's web page)")
+		return
+	}
 	if config.HasAuth() && s.role != "controls" {
 		s.sendErr("operator password required (role " + s.role + " is read-only while auth is on)")
 		return

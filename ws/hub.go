@@ -37,6 +37,9 @@ const (
 	joinGrace       = 10 * time.Second
 	maxSendBuffer   = 256 // frames per session; overflow drops the conn
 	maxShowSessions = 512 // per-show cap against runaway openers
+	// PLAN §11.5: the audience lane is its own budget — 1000+ phones must
+	// never contend with the boards' 512.
+	maxAudSessions = 4000
 )
 
 // Hub owns every live WS session and the per-show fanout + tickers.
@@ -74,6 +77,7 @@ type showHub struct {
 	eng      *timerpi.Engine
 	cancel   func()                // engine subscription (one per show)
 	sessions map[*session]struct{} // live conns of this show
+	aud      map[*session]struct{} // PLAN §11.5: audience lane (phones), outside the 512 cap
 	sigs     showSignatures        // last rendered structures (oob diff)
 
 	// bmu serializes broadcast for THIS show. engine.notify runs subscriber
@@ -119,8 +123,21 @@ func (h *Hub) SetStore(db *timerpi.DB) { h.store = db }
 // SetMessagesFunc wires the full-message DB reader.
 func (h *Hub) SetMessagesFunc(fn func(int64) ([]timerpi.Message, error)) { h.msgsFn = fn }
 
-// SetPollsFunc wires the on-air audience-interaction reader.
-func (h *Hub) SetPollsFunc(fn func(int64) (*timerpi.PollView, error)) { h.pollsFn = fn }
+// SetPollsFunc wires the on-air audience-interaction reader. Synchronized:
+// audience sessions read it from freshly spawned server goroutines (the
+// race detector rightly flags the bare field).
+func (h *Hub) SetPollsFunc(fn func(int64) (*timerpi.PollView, error)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.pollsFn = fn
+}
+
+// pollsFnFor snapshots the reader under the hub lock.
+func (h *Hub) pollsFnFor() func(int64) (*timerpi.PollView, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.pollsFn
+}
 
 // SetSeeder wires the show-id lister (for the ticker's engine discovery).
 func (h *Hub) SetSeeder(fn func() []int64) { h.seeder = fn }
@@ -269,6 +286,9 @@ func (h *Hub) pingSessions() {
 		for s := range sh.sessions {
 			all = append(all, s)
 		}
+		for s := range sh.aud {
+			all = append(all, s)
+		}
 	}
 	h.mu.Unlock()
 	for _, s := range all {
@@ -322,7 +342,7 @@ func (h *Hub) seedEngines() {
 		if eng, err := h.engines.Get(id); err == nil {
 			h.mu.Lock()
 			if _, ok := h.byShow[id]; !ok {
-				h.byShow[id] = &showHub{eng: eng, sessions: map[*session]struct{}{}}
+				h.byShow[id] = &showHub{eng: eng, sessions: map[*session]struct{}{}, aud: map[*session]struct{}{}}
 			}
 			h.mu.Unlock()
 		}
@@ -336,7 +356,7 @@ func (h *Hub) seedEngines() {
 func (h *Hub) showHubLocked(showID int64, eng *timerpi.Engine) *showHub {
 	sh, ok := h.byShow[showID]
 	if !ok {
-		sh = &showHub{eng: eng, sessions: map[*session]struct{}{}}
+		sh = &showHub{eng: eng, sessions: map[*session]struct{}{}, aud: map[*session]struct{}{}}
 		h.byShow[showID] = sh
 	}
 	if sh.cancel == nil {
@@ -682,6 +702,49 @@ func (h *Hub) Sessions() int {
 	return n
 }
 
+// AudSessions counts live audience-lane sessions across shows (§11.5).
+func (h *Hub) AudSessions() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, sh := range h.byShow {
+		n += len(sh.aud)
+	}
+	return n
+}
+
+// BroadcastPoll pushes the on-air interaction as a SMALL delta frame to
+// the audience lane and the board/control sessions (PLAN §11.5: a vote
+// must never trigger a full-snapshot fanout). A nil poll ships as null —
+// the section disappears by absence (§11.4).
+func (h *Hub) BroadcastPoll(showID int64) {
+	var pv *timerpi.PollView
+	if fn := h.pollsFnFor(); fn != nil {
+		if v, err := fn(showID); err == nil {
+			pv = v
+		}
+	}
+	frame := marshalFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+	h.mu.Lock()
+	sh, ok := h.byShow[showID]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	targets := make([]*session, 0, len(sh.sessions)+len(sh.aud))
+	for s2 := range sh.sessions {
+		targets = append(targets, s2)
+	}
+	for s2 := range sh.aud {
+		targets = append(targets, s2)
+	}
+	h.mu.Unlock()
+	h.logf("DBG BroadcastPoll: frame=%d bytes targets=%d", len(frame), len(targets))
+	for _, s2 := range targets {
+		s2.offer(frame)
+	}
+}
+
 // SessionsByRole counts live connections per role (health detail).
 func (h *Hub) SessionsByRole() map[string]int {
 	h.mu.Lock()
@@ -689,6 +752,9 @@ func (h *Hub) SessionsByRole() map[string]int {
 	out := map[string]int{}
 	for _, sh := range h.byShow {
 		for s := range sh.sessions {
+			out[s.role]++
+		}
+		for s := range sh.aud {
 			out[s.role]++
 		}
 	}

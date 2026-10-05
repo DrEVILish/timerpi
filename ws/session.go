@@ -189,6 +189,29 @@ func (h *Hub) register(s *session) bool {
 			h.logf("ws: upsert screen %q: %v", s.screen, uerr)
 		}
 	}
+	// PLAN §11.5: the audience lane — phones join their own bucket with
+	// their own cap, skip the full snapshot entirely, and receive the
+	// visible-interaction state only (never cue state).
+	if s.role == "audience" {
+		pollsFn := h.pollsFnFor() // before the lock — Mutex is not reentrant
+		h.mu.Lock()
+		sh := h.showHubLocked(s.showID, eng)
+		if len(sh.aud) >= maxAudSessions {
+			h.mu.Unlock()
+			s.sendErr("audience capacity reached for this show")
+			return false
+		}
+		sh.aud[s] = struct{}{}
+		h.mu.Unlock()
+		var pv *timerpi.PollView
+		if pollsFn != nil {
+			pv, _ = pollsFn(s.showID)
+		}
+		s.sendFrame("v", 1, "t", "poll", "poll", pv, "ts", h.nowFn())
+		h.logf("ws: audience joined show %d (%d on the lane)", s.showID, h.AudSessions())
+		return true
+	}
+
 	snap, err := eng.Snapshot()
 	if err != nil {
 		// Only a missing show row errors here; phrase for the client's
@@ -248,7 +271,10 @@ func (h *Hub) unregister(s *session) {
 		if _, wasPresent = sh.sessions[s]; wasPresent {
 			delete(sh.sessions, s)
 		}
-		if sh.cancel != nil && len(sh.sessions) == 0 {
+		if _, wasAud := sh.aud[s]; wasAud {
+			delete(sh.aud, s)
+		}
+		if sh.cancel != nil && len(sh.sessions) == 0 && len(sh.aud) == 0 {
 			sh.cancel()
 			sh.cancel = nil
 		}

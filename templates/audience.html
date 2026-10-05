@@ -178,7 +178,30 @@
       .then(function (j) { inFlight = false; if (j && j.ok) render(j.data); })
       .catch(function () { inFlight = false; note.textContent = "Reconnecting…"; });
   }
-  setInterval(tick, 2500);
+
+  // PLAN §11.5: the audience WS lane is the primary feed (poll-only
+  // frames, never cue state); REST polling remains the fallback while
+  // the socket is down — a phone on flaky venue Wi-Fi still works.
+  var ws = null, wsUp = false, wsDelay = 1000;
+  function connect() {
+    try {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    } catch (e) { return; }
+    ws.onopen = function () {
+      wsUp = true; wsDelay = 1000;
+      ws.send(JSON.stringify({ v: 1, t: "join", role: "audience", show: code, peerId: peer, joinedAt: Date.now() }));
+    };
+    ws.onmessage = function (e) {
+      try {
+        var f = JSON.parse(e.data);
+        if (f.t === "poll") { render({ poll: f.poll || null }); }
+      } catch (o) { /* malformed frame — ignore */ }
+    };
+    ws.onclose = function () { wsUp = false; setTimeout(connect, wsDelay); wsDelay = Math.min(wsDelay * 2, 10000); };
+    ws.onerror = function () { try { ws.close(); } catch (o) { /* */ } };
+  }
+  connect();
+  setInterval(function () { if (!wsUp) tick(); }, 2500);
   document.addEventListener("visibilitychange", tick);
   tick();
 })();

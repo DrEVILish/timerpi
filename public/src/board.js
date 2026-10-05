@@ -180,6 +180,14 @@ function initMesh() {
             renderStatic();
           }
           break;
+        case 'poll':
+          // PLAN §11.5: poll-only deltas ride the lane — boards stay live
+          // on votes without a full snapshot fanout.
+          if (mesh.snap) {
+            mesh.snap.poll = m.poll || null;
+            if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
+          }
+          break;
         case 'message':
           if (m.message && mesh.snap) {
             const list = mesh.snap.messages.filter((x) => x.id !== m.message.id);

@@ -18,7 +18,7 @@
 
 import {
   applyCommand, tickZeroCrossing, activeCue,
-} from './engine.v53.js';
+} from './engine.v56.js';
 
 const SIGNALING_CHANNEL = 'timerpi';
 

@@ -62,14 +62,18 @@ func TestAudienceGateAndFlow(t *testing.T) {
 	if code, _ := vote("0", "ph1"); code != 200 {
 		t.Fatalf("vote: %d", code)
 	}
-	if code, _ := vote("1", "ph1"); code != 200 {
-		t.Fatalf("revote: %d", code)
+	// The change-of-mind revote inside the 300 ms window is rate-limited…
+	if code, _ := vote("1", "ph1"); code != http.StatusTooManyRequests {
+		t.Fatalf("revote inside throttle: %d", code)
 	}
+	// …the same peer may vote again after the window (DB UNIQUE makes the
+	// eventual revote idempotent — covered by TestClaimWaiting-style unit
+	// tests in timerpi).
 	if code, _ := vote("1", "ph2"); code != 200 {
 		t.Fatalf("vote2: %d", code)
 	}
 	d = audienceRead(t, ts)
-	if counts := gjsonArr(d, "poll", "counts"); len(counts) != 2 || counts[0] != 0 || counts[1] != 2 {
+	if counts := gjsonArr(d, "poll", "counts"); len(counts) != 2 || counts[0] != 1 || counts[1] != 1 {
 		t.Fatalf("counts: %s", d)
 	}
 	if gjsonNum(d, "poll", "total") != 2 {

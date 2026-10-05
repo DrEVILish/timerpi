@@ -53,6 +53,60 @@ var askGuard struct {
 	last map[string]int64
 }
 
+// voteGuard: one vote per peer per 300 ms (PLAN §11.5 rate guards).
+var voteGuard struct {
+	sync.Mutex
+	last map[string]int64
+}
+
+// voteRecent/voteMark split the throttle so a vote that fails validation
+// never burns the peer's window.
+func voteRecent(peer string, now int64) bool {
+	voteGuard.Lock()
+	defer voteGuard.Unlock()
+	if voteGuard.last == nil {
+		voteGuard.last = map[string]int64{}
+	}
+	return now-voteGuard.last[peer] < 300
+}
+
+func voteMark(peer string, now int64) {
+	voteGuard.Lock()
+	defer voteGuard.Unlock()
+	if voteGuard.last == nil {
+		voteGuard.last = map[string]int64{}
+	}
+	voteGuard.last[peer] = now
+	if len(voteGuard.last) > 20000 { // bounded (1000+ phones × restarts)
+		voteGuard.last = map[string]int64{}
+	}
+}
+
+// soak: per-show accept budget (requests/s) — beyond it the lane answers
+// 429 and phones back off with jitter (PLAN §11.5). Overridable in tests.
+var audSoakPerSec = 600
+
+var soak struct {
+	sync.Mutex
+	cur map[int64]int
+	sec int64
+}
+
+func soakAllowed(showID int64, now int64) bool {
+	sec := now / 1000
+	soak.Lock()
+	defer soak.Unlock()
+	if soak.cur == nil {
+		soak.cur = map[int64]int{}
+	}
+	if soak.sec != sec {
+		soak.sec = sec
+		soak.cur = map[int64]int{}
+	}
+	soak.cur[showID]++
+	return soak.cur[showID] <= audSoakPerSec
+}
+
 func askAllowed(peer string, now int64) bool {
 	askGuard.Lock()
 	defer askGuard.Unlock()
@@ -157,15 +211,25 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "pollId required"})
 		return
 	}
-	if err := d.Store.Vote(id, body.PollID, body.Peer, body.Choice); err != nil {
-		status := http.StatusBadRequest
-		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
+	now := time.Now().UnixMilli()
+	if voteRecent(body.Peer, now) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "voting too fast"})
 		return
 	}
-	// Live counts on the board: one fanout per vote burst member; SQLite
-	// absorbs the write, shows stay live.
-	if eng, err := d.engineFor(id); err == nil {
-		_ = eng.Notify()
+	if !soakAllowed(id, now) {
+		c.Header("Retry-After", "1")
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "room is busy — try again in a moment"})
+		return
+	}
+	if err := d.Store.Vote(id, body.PollID, body.Peer, body.Choice); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	voteMark(body.Peer, now)
+	// PLAN §11.5: poll-only delta to the audience lane + boards — a vote
+	// never triggers the full-snapshot mutation fanout.
+	if d.Hub != nil {
+		d.Hub.BroadcastPoll(id)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -255,8 +319,8 @@ func (d *Deps) apiPollCreate(c *gin.Context) {
 		return
 	}
 	d.logAction(id, "pollCreate", fmt.Sprintf("%s %q", created.Kind, created.Question))
-	if eng, gerr := d.engineFor(id); gerr == nil {
-		_ = eng.Notify()
+	if d.Hub != nil {
+		d.Hub.BroadcastPoll(id)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "id": created.ID})
 }
@@ -284,8 +348,8 @@ func (d *Deps) apiPollSetState(c *gin.Context) {
 		return
 	}
 	d.logAction(id, "pollState", fmt.Sprintf("%d → %s", pid, body.State))
-	if eng, gerr := d.engineFor(id); gerr == nil {
-		_ = eng.Notify()
+	if d.Hub != nil {
+		d.Hub.BroadcastPoll(id)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "state": body.State})
 }
@@ -309,8 +373,8 @@ func (d *Deps) apiPollDelete(c *gin.Context) {
 		return
 	}
 	d.logAction(id, "pollDelete", fmt.Sprintf("%d", pid))
-	if eng, gerr := d.engineFor(id); gerr == nil {
-		_ = eng.Notify()
+	if d.Hub != nil {
+		d.Hub.BroadcastPoll(id)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

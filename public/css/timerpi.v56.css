@@ -1227,3 +1227,34 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 @keyframes b-anim-slide-out { from { opacity: 1; } to { opacity: 0; transform: translateY(1.2rem); } }
 @keyframes b-anim-pop-in { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
 @keyframes b-anim-pop-out { from { opacity: 1; } to { opacity: 0; transform: scale(.86); } }
+
+/* ---------------------------------------------------------------------------
+   PLAN nav pass — Change Theme dropdown + brand link + appbar cluster. */
+a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
+.tp-theme-menu { position: relative; }
+.tp-theme-menu summary { list-style: none; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.tp-theme-menu summary::-webkit-details-marker { display: none; }
+.tp-theme-menu[open] summary { color: var(--accent, #7C3AED); }
+.tp-theme-pop { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 60;
+  display: flex; flex-direction: column; gap: .35rem; padding: .7rem .8rem;
+  background: var(--surface, #15151d); border: 1px solid var(--border, #333);
+  border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); min-width: 13rem; }
+.app-bar .nav-item { display: inline-flex; align-items: center; gap: .35rem; }
+
+/* ---------------------------------------------------------------------------
+   PLAN §11.2 capture modal + nav polish (owner feedback round). */
+.tp-home-logo { display: inline-block; text-align: center; }
+.tp-home-hero { text-align: center; }
+.tp-home-hero .tp-brand { display: inline-block; margin: 0 auto; }
+.tp-ready-id { font-size: 1.1rem; margin: .6rem 0 .2rem; }
+.tp-ready-name { background: var(--accent, #7C3AED); color: #fff;
+  padding: .15rem .6rem; border-radius: 6px; letter-spacing: .06em; }
+.tp-capture { min-width: min(26rem, 92vw); }
+.tp-capture .tp-modal-bar { display: flex; align-items: baseline; gap: .8rem; margin-bottom: .6rem; }
+.tp-dlg-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: rgb(0 0 0 / .55); }
+.tp-dlg { width: min(24rem, 92vw); display: flex; flex-direction: column; gap: .6rem;
+  background: var(--surface, #15151d); color: var(--text, #eee);
+  border: 1px solid var(--border, #333); border-radius: 10px; padding: 1rem 1.1rem; }
+.tp-dlg p { margin: 0; overflow-wrap: anywhere; }
+.tp-dlg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .3rem; }

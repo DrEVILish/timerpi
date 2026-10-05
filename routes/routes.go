@@ -42,6 +42,9 @@ type HubMount interface {
 	ScreenPeers(showID int64) map[string][][2]string
 	// Super panel: total live sessions per show (PLAN §11.1).
 	ShowSessions(showID int64) int
+	// PLAN §11.5 audience lane: poll-only delta broadcast + lane count.
+	BroadcastPoll(showID int64)
+	AudSessions() int
 }
 
 // Deps carries the wired services; nil fields degrade to skeleton behavior
