@@ -164,11 +164,11 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U19** | Home: remove "On the TV, projector PC or kiosk, open /d/ on this box." and "It shows Ready and its name."; use "Open a screen here" with an **Open a screen** button. |
-| **U20** | Home: show "Recent on this device" above "Run your event", only when a recent event exists (else hide the whole pane), with a **Resume** button. |
-| **U21** | Home: the TimerPi logo sits inline before "Run your event". |
-| **U22** | Home: each room input in event creation gets an X button on its right to remove it; "Add a room" becomes a button. |
-| **U23** | Home: remove the word "an" from all home page wording. |
+| **U19** | ✅ Done 2026-10-06: the screen door is "Open a screen here" with an **Open a screen** button and one hint line. |
+| **U20** | ✅ Done 2026-10-06: "Recent on this device" sits above the title, only when this browser has one (hidden again when the last is forgotten), each row with **Resume**. |
+| **U21** | ✅ Done 2026-10-06. |
+| **U22** | ✅ Done 2026-10-06. |
+| **U23** | ✅ Done 2026-10-06 ("Join event", "Create event", error text). Browser test `home-page` covers U19–U23. |
 | **U24** | Event page (`/e/<code>`): "Sign out" becomes **Leave event**; label the event ID shown at the top as **Event ID**. |
 
 **Roles and the room page**

@@ -31,7 +31,7 @@ function initHome() {
     e.preventDefault();
     const err = document.getElementById('join-error');
     const code = normalizeCode(codeIn.value);
-    if (code.length !== 8) return showError(err, 'An event code has 8 characters, like K7QP-M3XB.');
+    if (code.length !== 8) return showError(err, 'Event codes have 8 characters, like K7QP-M3XB.');
     try {
       await api('GET', `/api/events/${code}`);
       location.href = `/e/${code}`;
@@ -40,13 +40,23 @@ function initHome() {
     }
   });
 
+  // Room rows: a name input with an X to remove it (STATUS U22).
   const rooms = document.getElementById('ev-rooms');
+  const addRoom = (value, focus) => {
+    const input = el('input', { class: 'input input-sm', name: 'room', maxlength: 60, 'aria-label': 'Room name', value });
+    const row = el('div', { class: 'row is-gap-2xs tp-room-row' }, input,
+      el('button', {
+        class: 'btn btn-sm btn-icon btn-ghost', type: 'button', title: 'Remove this room', 'aria-label': 'Remove room',
+        onclick: () => { row.remove(); },
+      }, '✕'));
+    rooms?.appendChild(row);
+    if (focus) { input.focus(); input.select(); }
+  };
+  addRoom('Room A');
+  addRoom('Room B');
   document.getElementById('ev-add-room')?.addEventListener('click', () => {
     const n = rooms.querySelectorAll('input').length;
-    const input = el('input', { class: 'input input-sm', name: 'room', maxlength: 60, 'aria-label': 'Room name', value: `Room ${String.fromCharCode(65 + Math.min(n, 25))}` });
-    rooms.appendChild(input);
-    input.focus();
-    input.select();
+    addRoom(`Room ${String.fromCharCode(65 + Math.min(n, 25))}`, true);
   });
   document.getElementById('create-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -65,14 +75,26 @@ function initHome() {
     }
   });
 
+  // Recent events (this browser only), shown above everything with a
+  // Resume button; the whole panel stays hidden when there are none
+  // (STATUS U20).
   const list = document.getElementById('recent-list');
+  const panel = document.getElementById('recent-panel');
   const recent = recentEvents();
   if (list && recent.length) {
-    document.getElementById('recent-panel').hidden = false;
+    panel.hidden = false;
     for (const ev of recent) {
       list.appendChild(el('li', { class: 'tp-recent-item' },
-        el('a', { href: `/e/${ev.code}`, class: 'tp-recent-link' }, el('strong', { text: ev.name }), ' ', el('span', { class: 'mono text-muted', text: fmtCode(ev.code) })),
-        el('button', { class: 'btn btn-sm btn-ghost', type: 'button', title: 'Forget on this device', 'aria-label': `Forget ${ev.name}`, onclick: (e) => { forgetEvent(ev.code); e.currentTarget.closest('li').remove(); } }, '✕'),
+        el('span', { class: 'tp-recent-link' }, el('strong', { text: ev.name }), ' ', el('span', { class: 'mono text-muted', text: fmtCode(ev.code) })),
+        el('a', { class: 'btn btn-sm btn-primary', href: `/e/${ev.code}` }, 'Resume'),
+        el('button', {
+          class: 'btn btn-sm btn-ghost', type: 'button', title: 'Forget on this device', 'aria-label': `Forget ${ev.name}`,
+          onclick: (e) => {
+            forgetEvent(ev.code);
+            e.currentTarget.closest('li').remove();
+            if (!list.children.length) panel.hidden = true;
+          },
+        }, '✕'),
       ));
     }
   }

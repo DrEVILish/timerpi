@@ -1,10 +1,12 @@
 {{- /*
   home.html — GET / (no session needed).
 
-  Three doors, in the order people use them:
-    1. Join an event   — type the event code → /e/<code> (pick your room)
-    2. Create an event — name, supervisor password, rooms → SuperOperator
-    3. Set up a screen — open /d/ on the TV; capture it from a room
+  "Recent on this device" (only when this browser has one) with Resume,
+  then three doors:
+    1. Join event   — type the event code → /e/<code> (pick your room)
+    2. Create event — name, supervisor password, rooms → SuperOperator
+    3. Open a screen here — opens /d/; capture it from a room's Screens page
+  Owner wording rules (STATUS U19–U23): no "an" on this page.
 
   Nothing here lists events or rooms: codes are credentials. "Recent" is
   this browser's own localStorage.
@@ -28,14 +30,19 @@
 <aside class="app-rail" aria-hidden="true"></aside>
 <main class="app-main">
   <div class="tp-page stack is-gap-l">
+    <section class="panel" id="recent-panel" hidden>
+      <div class="panel-header">Recent on this device</div>
+      <ul class="tp-recent" id="recent-list"></ul>
+    </section>
+
     <section class="tp-hero stack is-gap-s">
-      <h1 class="tp-hero-title">Run your event</h1>
+      <h1 class="tp-hero-title tp-hero-brand"><img src="/img/timerpi.svg" alt="" class="tp-hero-logo">Run your event</h1>
       <p class="text-muted">Session timers, walk-in signage and live audience polls for every room — from one box on your network.</p>
     </section>
 
     <div class="tp-doors">
       <section class="panel tp-door" id="door-join">
-        <div class="panel-header">Join an event</div>
+        <div class="panel-header">Join event</div>
         <form id="join-form" class="stack is-gap-s" autocomplete="off">
           <div class="field">
             <label class="label" for="join-code">Event code</label>
@@ -49,7 +56,7 @@
       </section>
 
       <section class="panel tp-door" id="door-create">
-        <div class="panel-header">Create an event</div>
+        <div class="panel-header">Create event</div>
         <form id="create-form" class="stack is-gap-s" autocomplete="off">
           <div class="field">
             <label class="label" for="ev-name">Event name</label>
@@ -66,11 +73,8 @@
           </div>
           <div class="field">
             <span class="label">Rooms</span>
-            <div id="ev-rooms" class="stack is-gap-2xs">
-              <input class="input input-sm" name="room" value="Room A" maxlength="60" aria-label="Room name">
-              <input class="input input-sm" name="room" value="Room B" maxlength="60" aria-label="Room name">
-            </div>
-            <button class="btn btn-sm btn-ghost" type="button" id="ev-add-room">+ Add a room</button>
+            <div id="ev-rooms" class="stack is-gap-2xs"></div>
+            <button class="btn btn-sm" type="button" id="ev-add-room">+ Add a room</button>
           </div>
           <button class="btn btn-primary tp-btn-lg" type="submit">Create event</button>
           <p class="field-error" id="create-error" role="alert" hidden></p>
@@ -78,22 +82,13 @@
       </section>
 
       <section class="panel tp-door" id="door-screen">
-        <div class="panel-header">Set up a screen</div>
+        <div class="panel-header">Open a screen here</div>
         <div class="stack is-gap-s">
-          <ol class="tp-steps">
-            <li>On the TV, projector PC or kiosk, open <code>/d/</code> on this box.</li>
-            <li>It shows <strong>Ready</strong> and its name.</li>
-            <li>In your room's <strong>Screens</strong> page, capture it and pick what it shows.</li>
-          </ol>
-          <a class="btn tp-btn-lg" href="/d/" target="_blank" rel="opener" data-kiosk>Open a screen here</a>
+          <p class="text-muted">Then set it up from your room's <strong>Screens</strong> page.</p>
+          <a class="btn btn-primary tp-btn-lg" href="/d/" target="_blank" rel="opener" data-kiosk>Open a screen</a>
         </div>
       </section>
     </div>
-
-    <section class="panel" id="recent-panel" hidden>
-      <div class="panel-header">Recent on this device</div>
-      <ul class="tp-recent" id="recent-list"></ul>
-    </section>
   </div>
 </main>
 <footer class="app-status"><span class="text-muted">TimerPi</span></footer>

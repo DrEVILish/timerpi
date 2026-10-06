@@ -7,6 +7,9 @@
 .tp-narrow { max-width: 32rem; }
 
 .tp-hero-title { font-size: clamp(1.6rem, 3vw + 1rem, 2.6rem); line-height: 1.1; margin: 0; }
+.tp-hero-brand { display: flex; align-items: center; gap: .5em; }
+.tp-hero-logo { height: 1.1em; width: auto; flex: none; }
+.tp-room-row > .input { flex: 1; min-width: 0; }
 .tp-section-title { font-size: 1.25rem; margin: 0; }
 .tp-bar-title { font-weight: 700; }
 
@@ -14,7 +17,6 @@
 .tp-door .panel-header { font-size: 1.1rem; }
 .tp-code-input { text-transform: uppercase; letter-spacing: .12em; font-size: 1.4rem; }
 .tp-btn-lg { min-height: 2.9rem; padding-inline: 1.25rem; font-size: 1.05rem; justify-content: center; }
-.tp-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: .4rem; }
 
 .tp-recent { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
 .tp-recent-item { display: flex; align-items: center; gap: .5rem; padding: .35rem .25rem; border-bottom: 1px solid var(--hairline, var(--border)); }
