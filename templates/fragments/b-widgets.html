@@ -53,6 +53,26 @@
 </section>
 {{end}}
 
+{{- /* nownext — the walk-in "Current & next" tile (STATUS U4):
+  Current Session: <title>  Start Time · Duration · Speaker, then the same for
+  the next session. board.js fills it from the live room state. */ -}}
+{{define "frag-b-nownext"}}
+<section class="b-widget b-w-nownext" id="b-w-{{.W.ID}}" data-widget="nownext" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Current &amp; next</span><button class="b-w-del" type="button" data-del aria-label="Remove current and next">×</button></div>{{end}}
+  <div class="b-w-body b-nownext">
+    <div class="b-nn-block b-js-nn-now">
+      <div class="b-nn-head"><span class="b-nn-kind">Current Session:</span> <span class="b-nn-title b-js-nn-title">{{if .P.Current}}{{.P.Current.Label}}{{else}}—{{end}}</span></div>
+      <div class="b-nn-facts b-js-nn-facts"></div>
+    </div>
+    <div class="b-nn-block b-js-nn-next">
+      <div class="b-nn-head"><span class="b-nn-kind">Next Session:</span> <span class="b-nn-title b-js-nn-title">{{if .P.Next}}{{.P.Next.Label}}{{else}}—{{end}}</span></div>
+      <div class="b-nn-facts b-js-nn-facts"></div>
+    </div>
+  </div>
+  {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
+</section>
+{{end}}
+
 {{define "frag-b-wallclock"}}
 <section class="b-widget b-w-wallclock" id="b-w-{{.W.ID}}" data-widget="wallclock" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Wall clock</span><button class="b-w-gear" type="button" data-gear aria-label="Wall clock settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove wall clock">×</button></div>{{end}}
@@ -127,7 +147,7 @@
   <div class="b-w-body">
     <ul class="b-sched b-js-sched">
 {{- range .P.Cues}}
-      <li data-pos="{{.Pos}}"><span class="mono b-js-rowstart">{{.StartFmt}}</span> <span class="b-js-rowlabel">{{.Label}}</span> <span class="mono">{{.DurFmt}}</span></li>
+      <li data-pos="{{.Pos}}"><span class="mono b-js-rowstart">{{.StartHM}}</span>&#8194;<span class="b-js-rowlabel">{{.Label}}{{if .Speaker}} - {{.Speaker}}{{end}}</span></li>
 {{- else}}
       <li>No cues yet — build the running order in the control room.</li>
 {{- end}}

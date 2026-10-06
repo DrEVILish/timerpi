@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/boards"
 	"timerpi/config"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -117,6 +118,12 @@ func New(d *Deps) *gin.Engine {
 	registerZoneRoutes(r, d)
 	registerOscRoutes(r, d)
 	registerAssetRoutes(r, d)
+	if d.Store != nil {
+		// The layouts table lives beside the timerpi schema (boards owns it).
+		if err := boards.Migrate(d.Store.DB); err != nil {
+			log.Printf("routes: layouts table: %v", err)
+		}
+	}
 	registerEvents(r, d) // /e/:code lobby + admin, /api/events/*
 	registerBox(r, d)    // /box + /api/box/* — the box password (settings)
 	if d.Store != nil {

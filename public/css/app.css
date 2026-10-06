@@ -191,6 +191,19 @@ body.b-board .b-join-label { font-size: clamp(.8rem, min(8cqh, 6cqw), 2.5rem); }
 .b-room-now { font-size: 1.3em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-room-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .b-room.is-here .b-room-name::after { content: " · you are here"; color: var(--muted); font-weight: 600; }
+/* Walk-in "Current & next" tile (STATUS U4). */
+.b-nownext { display: grid; gap: 1.6em; height: 100%; min-height: 0;
+  font-size: clamp(.9rem, min(8cqh, 3.6cqw), 3.4rem); align-content: center; }
+.b-nn-block { display: grid; gap: .3em; min-width: 0; align-content: center; border-left: .35rem solid var(--border); padding-left: .8em; }
+.b-js-nn-now { border-left-color: var(--accent); }
+.b-nn-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-nn-kind { color: var(--muted); font-weight: 700; }
+.b-nn-title { font-weight: 800; font-size: 1.25em; }
+.b-nn-facts { display: flex; flex-wrap: wrap; gap: .2em 1.4em; font-variant-numeric: tabular-nums; }
+.b-nn-k { color: var(--muted); }
+.b-nn-v { font-weight: 700; }
+/* Walk-in schedule lines "hh:mm  Title - Speaker" (STATUS U3). */
+body.b-board .b-sched li > .mono:first-child { min-width: 3.2em; display: inline-block; }
 
 /* Event schedule: one column per room. */
 .b-evsched { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2cqw; height: 100%; overflow: hidden;

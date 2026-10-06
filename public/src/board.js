@@ -104,6 +104,16 @@ const TILE_DEFAULTS = {
   rate: { w: 2, h: 1, opts: {} },
   schedule: { w: 4, h: 4, opts: { count: '5' } },
   notice: { w: 6, h: 2, opts: { text: 'Welcome' } },
+  // Every palette button needs an entry, or clicking it silently does
+  // nothing (BUGLOG RW34).
+  nownext: { w: 6, h: 4, opts: {} },
+  poll: { w: 6, h: 4, opts: { target: 'audience' } },
+  qa: { w: 6, h: 4, opts: { target: 'audience' } },
+  wordcloud: { w: 6, h: 4, opts: { target: 'audience' } },
+  map: { w: 6, h: 4, opts: {} },
+  joinqr: { w: 3, h: 4, opts: {} },
+  rooms: { w: 8, h: 4, opts: {} },
+  eventschedule: { w: 8, h: 4, opts: {} },
 };
 
 const widgetOf = (wid) => (layout.widgets || []).find((w) => w.id === wid) || null;
@@ -414,6 +424,38 @@ function hhmm(ts) {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+// "Current & next" walk-in tile (STATUS U4): for each session its title,
+// then Start Time (planned, 24 h), Duration and Speaker; empty facts are
+// left out. Current = the running/paused cue, else "—".
+function nnDur(ms) {
+  const m = Math.round((ms || 0) / 60000);
+  if (m < 60) return `${m} min`;
+  return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+}
+function renderNowNext(tile, cue, plan) {
+  const r = snap.runtime;
+  const rows = sched?.rows || computeSchedule(snap).rows;
+  const fill = (box, c) => {
+    if (!box) return;
+    setText($('.b-js-nn-title', box), c ? c.label : '—');
+    const facts = $('.b-js-nn-facts', box);
+    if (!facts) return;
+    facts.textContent = '';
+    if (!c) return;
+    const row = rows.find((x) => x.pos === c.pos);
+    const start = row && r.dayStartTS ? hhmm(r.dayStartTS + row.startMS) : '';
+    for (const [k, v] of [['Start Time', start], ['Duration', nnDur(c.durationMS)], ['Speaker', c.speaker || '']]) {
+      if (!v) continue;
+      const f = mk('span', 'b-nn-fact');
+      f.append(mk('span', 'b-nn-k', `${k}: `), mk('span', 'b-nn-v', v));
+      if (facts.childNodes.length) facts.append(' ');
+      facts.appendChild(f);
+    }
+  };
+  const live = (r.running || r.paused) ? cue : null;
+  fill($('.b-js-nn-now', tile), live);
+  fill($('.b-js-nn-next', tile), plan.cue && plan.cue !== live ? plan.cue : null);
+}
 function renderRooms(tile) {
   const box = $('.b-js-rooms', tile);
   const rooms = walkin.data?.rooms;
@@ -511,6 +553,9 @@ function renderStaticBody() {
       case 'speaker':
         setText($('.b-js-speaker', tile), cue?.speaker ? `🎙 ${cue.speaker}` : '');
         break;
+      case 'nownext':
+        renderNowNext(tile, cue, plan);
+        break;
       case 'nextup':
         setText($('.b-js-nextlabel', tile), plan.cue?.label || '');
         setText($('.b-js-nextdur', tile), plan.cue ? fmtDuration(plan.cue.durationMS) : '');
@@ -584,6 +629,8 @@ function renderStaticBody() {
         setText($('.b-js-progresslabel', tile), cue?.label || '');
         break;
       case 'schedule': {
+        // Walk-in style (STATUS U3): "hh:mm  Title - Speaker", 24 h, no
+        // duration; no time until the day has a start.
         const ul = $('.b-js-sched', tile);
         if (ul) {
           ul.textContent = '';
@@ -605,13 +652,10 @@ function renderStaticBody() {
             else if (snap.runtime.activePos && c.pos < snap.runtime.activePos) li.className = 'is-past';
             const st = document.createElement('span');
             st.className = 'mono';
-            st.textContent = planRow ? (snap.runtime.dayStartTS ? fmtTimeOfDay(base + planRow.startMS) : '+' + fmtDuration(planRow.startMS)) : '';
+            st.textContent = planRow && snap.runtime.dayStartTS ? hhmm(base + planRow.startMS) : '';
             const lb = document.createElement('span');
-            lb.textContent = c.label;
-            const du = document.createElement('span');
-            du.className = 'mono';
-            du.textContent = fmtDuration(c.durationMS);
-            li.append(st, lb, du);
+            lb.textContent = c.speaker ? `${c.label} - ${c.speaker}` : c.label;
+            li.append(st, document.createTextNode('\u2002'), lb);
             ul.appendChild(li);
           }
         }

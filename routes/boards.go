@@ -48,13 +48,12 @@ func RegisterBoards(r *gin.Engine, d *Deps) {
 	g.DELETE("/boards/:bid", d.apiBoardsDelete)
 }
 
-// boardStore runs boards.Migrate against the SAME sqlite handle the timerpi
-// package owns (additive table only; timerpi/db.go untouched).
+// boardStore reports whether the board table is available. It is created
+// once at startup (routes.New → boards.Migrate); creating it lazily here
+// left every other path (screen templates, bundle import) failing with
+// "no such table" on a fresh box until a board request ran (BUGLOG RS31).
 func (d *Deps) boardStore() bool {
-	if d.Store == nil {
-		return false
-	}
-	return boards.Migrate(d.Store.DB) == nil
+	return d.Store != nil
 }
 
 // boardBid parses the :bid path param (board row ids are internal ints).
