@@ -14,10 +14,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 )
 
@@ -26,10 +24,13 @@ var (
 	rev     string
 )
 
-// SetPublicDir computes the revision from the public/ tree. Called by New
-// (templates/ and public/ are siblings in the checkout); safe to call again.
-func SetPublicDir(dir string) {
-	revOnce.Do(func() { rev = computeRev(dir) })
+// SetPublicDir computes the revision from the public/ tree on disk.
+func SetPublicDir(dir string) { SetPublicFS(os.DirFS(dir)) }
+
+// SetPublicFS computes the revision from a public/ tree (disk or the
+// embedded copy). The first call wins; safe to call again.
+func SetPublicFS(pub fs.FS) {
+	revOnce.Do(func() { rev = computeRev(pub) })
 }
 
 // AssetRev is the current revision segment ("v1234567890").
@@ -52,11 +53,11 @@ func Asset(p string) string {
 	return "/" + m[1] + "/" + AssetRev() + "/" + m[2]
 }
 
-func computeRev(dir string) string {
+func computeRev(pub fs.FS) string {
 	h := fnv.New64a()
 	var files []string
 	for _, sub := range []string{"src", "css"} {
-		_ = filepath.WalkDir(filepath.Join(dir, sub), func(p string, d fs.DirEntry, err error) error {
+		_ = fs.WalkDir(pub, sub, func(p string, d fs.DirEntry, err error) error {
 			if err == nil && !d.IsDir() {
 				files = append(files, p)
 			}
@@ -65,11 +66,11 @@ func computeRev(dir string) string {
 	}
 	sort.Strings(files)
 	for _, p := range files {
-		f, err := os.Open(p)
+		f, err := pub.Open(p)
 		if err != nil {
 			continue
 		}
-		_, _ = io.WriteString(h, strings.TrimPrefix(p, dir))
+		_, _ = io.WriteString(h, "/"+p)
 		_, _ = io.Copy(h, f)
 		f.Close()
 	}

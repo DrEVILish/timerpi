@@ -7,9 +7,11 @@ package main
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -31,6 +33,13 @@ import (
 )
 
 const readyDir = "/run/timerpi" // EPHEMERAL (tmpfs) — splash handshake dir
+
+// webFiles holds the pages (templates/) and browser files (public/) this
+// binary was built with (STATUS C9). ftl-themes stay on disk: a pinned
+// submodule, large, and independent of TimerPi's code.
+//
+//go:embed templates public
+var webFiles embed.FS
 
 func main() {
 	debug := flag.Bool("debug", false, "gin debug mode (launcher defaults to release)")
@@ -72,8 +81,17 @@ func main() {
 		return host + ":" + port
 	}
 
-	// Template registry: parse once (hot reload is -dev only).
-	tmplSet, err := views.New(findTemplates())
+	// Template registry: parse once (hot reload is -dev only). Production
+	// uses the pages and scripts embedded at build time, so the binary can
+	// never serve another build's files (STATUS C9, B8); -dev reads disk.
+	var tmplSet *views.Set
+	var public fs.FS
+	if *devTmpl {
+		tmplSet, err = views.New(findTemplates())
+	} else {
+		tmplSet, err = views.NewFS(webFiles)
+		public, _ = fs.Sub(webFiles, "public")
+	}
 	if err != nil {
 		log.Fatalf("timerpi: parsing templates: %v", err)
 	}
@@ -144,6 +162,7 @@ func main() {
 		Hub:        hub,
 		Tmpl:       tmplSet,
 		ReloadTmpl: *devTmpl,
+		Public:     public,
 	})
 
 	addr := fmt.Sprintf(":%d", config.HTTPPort())

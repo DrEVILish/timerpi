@@ -37,9 +37,8 @@ scp bin/splash-draw-arm64 root@<pi>:/opt/timerpi/bin/splash-draw-arm64
 scp timerpi.service timerpi-splash.service root@<pi>:/opt/timerpi/
 scp public/img/timerpi-512.png root@<pi>:/opt/timerpi/public/img/
 scp -r scripts root@<pi>:/opt/timerpi/
-# Web UI trees: NOT embedded in the binary — the service resolves them from
-# WorkingDirectory=/opt/timerpi. Without these the Pi serves no pages.
-scp -r templates public root@<pi>:/opt/timerpi/
+# Pages and browser files (templates/, public/) are embedded in the binary
+# (STATUS C9). Only the ftl-themes tree is read from disk:
 ssh root@<pi> mkdir -p /opt/timerpi/third_party
 scp -r third_party/ftl-themes root@<pi>:/opt/timerpi/third_party/
 

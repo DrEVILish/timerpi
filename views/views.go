@@ -646,16 +646,32 @@ type Set struct {
 // one level down (CONTRACT-UI §1). Dev workflows may parse a fresh set per
 // request via a delegate Set; hot reload is not otherwise supported.
 func New(dir string) (*Set, error) {
-	s := &Set{}
-	root := os.DirFS(dir)
-	SetPublicDir(filepath.Join(filepath.Dir(dir), "public"))
+	SetPublicFS(os.DirFS(filepath.Join(filepath.Dir(dir), "public")))
+	return parse(os.DirFS(dir), dir)
+}
+
+// NewFS parses templates from the embedded web tree (STATUS C9): web holds
+// templates/ and public/, so the binary always serves the pages and
+// scripts it was built with.
+func NewFS(web fs.FS) (*Set, error) {
+	tmpl, err := fs.Sub(web, "templates")
+	if err != nil {
+		return nil, err
+	}
+	pub, err := fs.Sub(web, "public")
+	if err != nil {
+		return nil, err
+	}
+	SetPublicFS(pub)
+	return parse(tmpl, "embedded templates")
+}
+
+func parse(root fs.FS, label string) (*Set, error) {
 	t, err := template.New("").Funcs(template.FuncMap{"asset": Asset}).ParseFS(root, "*.html", "fragments/*.html")
 	if err != nil {
-		return nil, fmt.Errorf("views: parsing templates in %s: %w", dir, err)
+		return nil, fmt.Errorf("views: parsing templates in %s: %w", label, err)
 	}
-	s.fs = root
-	s.tmpl = t
-	return s, nil
+	return &Set{tmpl: t, fs: root}, nil
 }
 
 // SubDir is unused by production code; kept for diagnostics.

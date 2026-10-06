@@ -5,9 +5,11 @@
 package routes
 
 import (
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -58,6 +60,9 @@ type Deps struct {
 	// ReloadTmpl reparses the template set per request (-dev flag);
 	// production stays parsed-once.
 	ReloadTmpl bool
+	// Public is the public/ tree to serve (STATUS C9: the binary's embedded
+	// copy in production). Nil = public/ on disk (tests, -dev).
+	Public fs.FS
 }
 
 // bodyCeiling bounds every request body: 8 MiB for plain JSON/form posts,
@@ -123,7 +128,7 @@ func New(d *Deps) *gin.Engine {
 	if d.Hub != nil {    // WS upgrade — same port, same origin rules
 		d.Hub.Register(r)
 	}
-	registerStatic(r) // public/ assets as catch-all (NoRoute)
+	registerStatic(r, d.Public) // public/ assets as catch-all (NoRoute)
 
 	return r
 }
@@ -212,9 +217,11 @@ func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
 // middleboxes that ignore the no-cache policy and cache-busting queries
 // only see fresh bytes when the URL PATH changes per revision; legacy
 // rev-less paths keep resolving (old bookmarks/templates keep working).
-func registerStatic(r *gin.Engine) {
-	dir := findDir("public")
-	fs := http.FileServer(http.Dir(dir))
+func registerStatic(r *gin.Engine, pub fs.FS) {
+	if pub == nil {
+		pub = os.DirFS(findDir("public"))
+	}
+	files := http.FileServer(http.FS(pub))
 	rev := regexp.MustCompile(`^/(css|src|img)/v[0-9]+(/.*)$`)
 	r.NoRoute(func(c *gin.Context) {
 		// Only serve real files; directories (no index.html in most) and
@@ -227,14 +234,14 @@ func registerStatic(r *gin.Engine) {
 			c.Request.URL.Path = "/" + m[1] + m[2]
 			p = c.Request.URL.Path
 		}
-		p = filepath.Clean(p)
+		p = path.Clean(p)
 		if p == "." || p == "/" {
 			c.String(http.StatusNotFound, "not found")
 			return
 		}
-		if st, err := os.Stat(filepath.Join(dir, p)); err == nil && st.Mode().IsRegular() {
+		if st, err := fs.Stat(pub, strings.TrimPrefix(p, "/")); err == nil && st.Mode().IsRegular() {
 			c.Header("Cache-Control", "no-cache") // same freshness policy as /ftl
-			fs.ServeHTTP(c.Writer, c.Request)
+			files.ServeHTTP(c.Writer, c.Request)
 			return
 		}
 		c.String(http.StatusNotFound, "not found")

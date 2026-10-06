@@ -193,7 +193,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **C6** | ✅ References to files that never existed are removed. Citations of `PLAN §…`, `CONTRACT-UI`, `NOTES-board` resolve via `docs/archive/README.md`. |
 | **C7** | ✅ Done. |
 | **C8** | ✅ `docs/UI-CONTRACT.md`. |
-| **C9** | **Urgent (caused B8).** `templates/`, `public/` and ftl-themes are read from disk, not embedded, so a deployed binary serves whatever the working tree holds. Embed them in the binary (or deploy from a `make dist` tarball), so code and pages always match. |
+| **C9** | ✅ Done 2026-10-06: `templates/` and `public/` are embedded in the binary (`-dev` still reads disk). ftl-themes stay on disk (pinned submodule, 48 MB, independent of TimerPi's code). |
 | **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; `/api/shows/:ident/zone` and `/api/zone-map` are gone; zone maps were migrated to event maps at adoption. Left: the unused `shows.zone` column and the bundle's legacy zone/map fields. |
 
 ### 4.4 Hardware / field proof

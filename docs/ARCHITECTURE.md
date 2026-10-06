@@ -194,7 +194,15 @@ hash of `public/src` + `public/css`, computed at startup. `registerStatic`
 strips the `/v<rev>/` segment. The revision is a path segment, so relative
 ES-module imports (`./mesh.js`) inherit it, and query-ignoring caches still
 see new URLs after an update. There are no versioned file copies and no bump
-script. Restart the server after JS/CSS edits.
+script.
+
+**Embedded web files (STATUS C9).** `main.go` embeds `templates/` and
+`public/` (`//go:embed`), and production serves only that copy, so a binary
+always serves the pages and scripts it was built with (a binary reading the
+working tree once served new scripts to an old server: STATUS B8). `-dev`
+reads both from disk and reparses templates per request. ftl-themes stay on
+disk (`third_party/ftl-themes`, pinned submodule). Rebuild after any
+template, JS or CSS change.
 
 ## 13. Deployment shape
 
