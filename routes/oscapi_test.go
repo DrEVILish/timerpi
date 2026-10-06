@@ -154,9 +154,8 @@ func TestAudienceAskGuard(t *testing.T) {
 	if code := ask(); code != 429 {
 		t.Fatalf("burst ask: want 429, got %d", code)
 	}
-	// A DIFFERENT peer is not throttled by the first one's burst.
-	code, _ := ts.call("POST", "/api/audience/"+ts.showCode+"/ask",
-		[]byte(`{"kind":"qa","text":"from me","peer":"burst-2"}`), "")
+	// A DIFFERENT phone is not throttled by the first one's burst.
+	code, _ := newPersona(ts).do("POST", "/api/audience/"+ts.showCode+"/ask", `{"kind":"qa","text":"from me"}`)
 	if code != 200 {
 		t.Fatalf("second peer throttled: %d", code)
 	}

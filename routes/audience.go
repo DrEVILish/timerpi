@@ -1,10 +1,10 @@
 // audience.go — the audience interaction REST surface (Slido-style).
 //
 // AUDIENCE (unauthenticated, join by show code / QR): GET current item,
-// vote, submit. Burst-safe by design: one HTTP round-trip per vote (HTTP
-// scales horizontally; WS is for the ~10 boards), a per-peer guard on
-// submissions, and the vote table's UNIQUE(poll_id,peer) makes double-tap
-// a no-op replace.
+// vote, submit. Burst-safe by design: one HTTP round-trip per vote, a
+// per-device guard on submissions, and the vote table's
+// UNIQUE(poll_id,peer) makes double-tap a no-op replace. The device id is
+// server-issued (audience_device.go); a body "peer" is ignored.
 //
 // OPERATOR (show-gated like every show mutation): create items, open
 // voting, show results, delete, survey grouping.
@@ -89,43 +89,13 @@ func (d *Deps) pollResult(c *gin.Context, showID int64, action string, err error
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// askGuard: a peer may submit one contribution every 3 s (double-tap /
-// double-tap churn). Votes rely on the DB UNIQUE instead — they're idempotent
-// by key. ponytail: per-process map, resets on boot; per-IP LRU if abuse
-// ever shows up at a real event.
-var askGuard struct {
-	sync.Mutex
-	last map[string]int64
-}
-
-// voteGuard: one vote per peer per 300 ms (PLAN §11.5 rate guards).
-var voteGuard struct {
-	sync.Mutex
-	last map[string]int64
-}
-
-// voteRecent/voteMark split the throttle so a vote that fails validation
-// never burns the peer's window.
-func voteRecent(peer string, now int64) bool {
-	voteGuard.Lock()
-	defer voteGuard.Unlock()
-	if voteGuard.last == nil {
-		voteGuard.last = map[string]int64{}
-	}
-	return now-voteGuard.last[peer] < 300
-}
-
-func voteMark(peer string, now int64) {
-	voteGuard.Lock()
-	defer voteGuard.Unlock()
-	if voteGuard.last == nil {
-		voteGuard.last = map[string]int64{}
-	}
-	voteGuard.last[peer] = now
-	if len(voteGuard.last) > 20000 { // bounded (1000+ phones × restarts)
-		voteGuard.last = map[string]int64{}
-	}
-}
+// askGuard: a device may submit one contribution every 3 s; voteGuard:
+// one vote per device per 300 ms (PLAN §11.5 rate guards). Votes are also
+// idempotent by key (DB UNIQUE(poll_id, peer)).
+var (
+	askGuard  = &throttle{window: 3000, max: 20_000}
+	voteGuard = &throttle{window: 300, max: 20_000}
+)
 
 // soak: per-show accept budget (requests/s) — beyond it the lane answers
 // 429 and phones back off with jitter (PLAN §11.5). Overridable in tests.
@@ -150,23 +120,6 @@ func soakAllowed(showID int64, now int64) bool {
 	}
 	soak.cur[showID]++
 	return soak.cur[showID] <= audSoakPerSec
-}
-
-// askRecent / askMark split the submission throttle so a refused
-// submission (nothing on air, empty text) never burns the device's window.
-func askRecent(peer string, now int64) bool {
-	askGuard.Lock()
-	defer askGuard.Unlock()
-	return askGuard.last != nil && now-askGuard.last[peer] < 3000
-}
-
-func askMark(peer string, now int64) {
-	askGuard.Lock()
-	defer askGuard.Unlock()
-	if askGuard.last == nil || len(askGuard.last) > 5000 { // bounded
-		askGuard.last = map[string]int64{}
-	}
-	askGuard.last[peer] = now
 }
 
 func (d *Deps) resolveAudienceCode(c *gin.Context) (int64, bool) {
@@ -208,7 +161,6 @@ func (d *Deps) apiAudienceAsk(c *gin.Context) {
 		Item   int64  `json:"item"`
 		Parent int64  `json:"parent"` // older clients
 		Text   string `json:"text"`
-		Peer   string `json:"peer"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Text) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "text required"})
@@ -222,17 +174,27 @@ func (d *Deps) apiAudienceAsk(c *gin.Context) {
 			body.Item = on.ID
 		}
 	}
+	peer, ok := d.audiencePeer(c)
+	if !ok {
+		return
+	}
 	now := time.Now().UnixMilli()
-	if askRecent(body.Peer, now) {
+	if !askGuard.take(peer, now) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Sending too fast — wait a moment"})
 		return
 	}
-	p, err := d.Store.Submit(id, body.Item, body.Text, body.Peer)
+	if !soakAllowed(id, now) { // per-room budget covers submissions too (RW4)
+		askGuard.release(peer, now)
+		c.Header("Retry-After", "1")
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "room is busy — try again in a moment"})
+		return
+	}
+	p, err := d.Store.Submit(id, body.Item, body.Text, peer)
 	if err != nil {
+		askGuard.release(peer, now) // a refused submission never burns the window
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 		return
 	}
-	askMark(body.Peer, now)
 	d.pollsChanged(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "id": p.ID, "approved": p.State == timerpi.StateOpen})
 }
@@ -246,7 +208,6 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 	var body struct {
 		PollID int64  `json:"pollId"`
 		Choice string `json:"choice"`
-		Peer   string `json:"peer"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
@@ -256,21 +217,26 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "pollId required"})
 		return
 	}
+	peer, ok := d.audiencePeer(c)
+	if !ok {
+		return
+	}
 	now := time.Now().UnixMilli()
-	if voteRecent(body.Peer, now) {
+	if !voteGuard.take(peer, now) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "voting too fast"})
 		return
 	}
 	if !soakAllowed(id, now) {
+		voteGuard.release(peer, now)
 		c.Header("Retry-After", "1")
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "room is busy — try again in a moment"})
 		return
 	}
-	if err := d.Store.Vote(id, body.PollID, body.Peer, body.Choice); err != nil {
+	if err := d.Store.Vote(id, body.PollID, peer, body.Choice); err != nil {
+		voteGuard.release(peer, now) // a vote that fails validation never burns the window
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 		return
 	}
-	voteMark(body.Peer, now)
 	// PLAN §11.5: poll-only delta to the audience lane + boards — a vote
 	// never triggers the full-snapshot mutation fanout.
 	if d.Hub != nil {
@@ -532,6 +498,9 @@ func (d *Deps) audiencePage(c *gin.Context) {
 	sh, err := d.Store.GetShow(id)
 	if err != nil {
 		pageError(c, err)
+		return
+	}
+	if _, ok := d.audiencePeer(c); !ok { // issue the device cookie up front
 		return
 	}
 	d.render(c, "audience", gin.H{

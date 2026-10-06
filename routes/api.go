@@ -309,9 +309,27 @@ func (d *Deps) apiShowSnapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, snap)
 }
 
-// DELETE /api/shows/:id — drop the show + its engine (operator cleanup).
+// requireSuperOfShow resolves :ident and demands a SuperOperator session
+// for the room's event: creating and deleting rooms is the SuperOperator's
+// job (PRODUCT §3), never a moderator's (BUGLOG RW5).
+func (d *Deps) requireSuperOfShow(c *gin.Context) (int64, bool) {
+	id, ok := d.requireShow(c)
+	if !ok {
+		return 0, false
+	}
+	room, err := d.Store.GetShow(id)
+	if err == nil {
+		if ev, eerr := d.Store.GetEvent(room.EventID); eerr == nil && d.isSuper(c, ev) {
+			return id, true
+		}
+	}
+	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "SuperOperator sign-in required"})
+	return 0, false
+}
+
+// DELETE /api/shows/:id — drop the room + its engine (SuperOperator).
 func (d *Deps) apiDeleteShow(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -330,10 +348,9 @@ func (d *Deps) apiDeleteShow(c *gin.Context) {
 
 // POST /api/shows/:ident/clone {"title"?} — duplicate the day (E1):
 // fresh code, same cues/notes/day-start, no passphrase, fresh runtime.
-// Show-gated like content; the operator password gate rides the
-// middleware like every mutating surface.
+// SuperOperator only: a clone is a new room of the event (BUGLOG RW5).
 func (d *Deps) apiCloneShow(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}

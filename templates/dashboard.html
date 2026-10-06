@@ -106,6 +106,7 @@
   </div>
 
   <div class="tp-setup-grid" data-panel="setup" hidden>
+      {{if .Event.IsSuper}}
       <section class="panel">
         <div class="panel-header">Duplicate this room</div>
     <div class="stack is-gap-2xs">
@@ -117,6 +118,7 @@
       <span class="field-hint">Same sessions, notes and day start — a new room, stopped, without a password.</span>
     </div>
       </section>
+      {{end}}
       <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
            on drop); the hint names the gesture so the affordance is obvious
            before anything is dragged. -->

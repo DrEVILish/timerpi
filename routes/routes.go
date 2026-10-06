@@ -86,6 +86,10 @@ func New(d *Deps) *gin.Engine {
 		d = &Deps{}
 	}
 	r := gin.New()
+	// Only a reverse proxy on this box may set the client IP (audience
+	// device minting is budgeted per IP; X-Forwarded-For from anyone else
+	// would let a script pick its own address).
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 	// Cache policy (wholesale): HTML, API and WS-upgrade responses always
 	// revalidate — an appliance on a LAN cannot do cache-busting deploys, so
 	// a stale <main> document would pin old template markup AND old ?v=

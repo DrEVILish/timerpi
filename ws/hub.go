@@ -29,13 +29,17 @@ import (
 )
 
 const (
-	writeTimeout    = 5 * time.Second  // data write deadline
-	readDeadline    = 75 * time.Second // silent after this → drop (PROTOCOL keepalive)
-	pingInterval    = 30 * time.Second // server control pings (client pings app-level every 20 s)
-	tickInterval    = 250 * time.Millisecond
-	seedInterval    = 5 * time.Second // discover shows created outside a hub join
-	joinGrace       = 10 * time.Second
-	maxSendBuffer   = 256 // frames per session; overflow drops the conn
+	writeTimeout  = 5 * time.Second  // data write deadline
+	readDeadline  = 75 * time.Second // silent after this → drop (PROTOCOL keepalive)
+	pingInterval  = 30 * time.Second // server control pings (client pings app-level every 20 s)
+	tickInterval  = 250 * time.Millisecond
+	seedInterval  = 5 * time.Second // discover shows created outside a hub join
+	joinGrace     = 10 * time.Second
+	maxSendBuffer = 256 // frames per session; overflow drops the conn
+	// maxFrameBytes caps one inbound frame (BUGLOG RW1). The biggest real
+	// frames are WebRTC signals (SDP, a few KB) and cue edits; anything
+	// larger closes the connection before it is buffered.
+	maxFrameBytes   = 64 << 10
 	maxShowSessions = 512 // per-show cap against runaway openers
 	// PLAN §11.5: the audience lane is its own budget — 1000+ phones must
 	// never contend with the boards' 512.

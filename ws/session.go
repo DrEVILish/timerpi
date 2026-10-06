@@ -51,6 +51,7 @@ func (h *Hub) runSession(conn *websocket.Conn, httpCookies map[string]string) {
 		active:      h.nowFn(),
 		httpCookies: httpCookies,
 	}
+	conn.SetReadLimit(maxFrameBytes)
 	conn.SetPongHandler(func(string) error {
 		atomic.StoreInt64(&s.active, h.nowFn())
 		return s.conn.SetReadDeadline(time.Now().Add(readDeadline))

@@ -69,7 +69,9 @@ func TestAudienceGateAndFlow(t *testing.T) {
 	// …the same peer may vote again after the window (DB UNIQUE makes the
 	// eventual revote idempotent — covered by TestClaimWaiting-style unit
 	// tests in timerpi).
-	if code, _ := vote("1", "ph2"); code != 200 {
+	// A second phone (its own device cookie) votes too.
+	phone2 := newPersona(ts)
+	if code, _ := phone2.do("POST", "/api/audience/"+ts.showCode+"/vote", fmt.Sprintf(`{"pollId":%d,"choice":"1"}`, pid)); code != 200 {
 		t.Fatalf("vote2: %d", code)
 	}
 	d = audienceRead(t, ts)

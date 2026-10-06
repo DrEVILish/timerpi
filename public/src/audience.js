@@ -38,7 +38,7 @@ function setNote(text, ok = true) {
 
 async function post(path, body) {
   const res = await fetch(`/api/audience/${code}${path}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, peer }),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), // the device id is the server's tp_aud cookie
   });
   let data = {};
   try { data = await res.json(); } catch { /* */ }
