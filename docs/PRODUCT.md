@@ -85,12 +85,12 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 ### 4.2 Rooms and timing (the cue timer)
 
 - **T1** Each room has one running order per day. A session has:
-  - title, speaker, duration, optional wall-clock start time;
-  - break flag, tags, notes, colour;
-  - two alert thresholds with colours;
-  - an end action (hold, overtime, blank) and an optional auto-continue.
-- **T2** Transport: GO, next, previous, pause/resume, reset, jump, ±30 s/±1 min, rate ×0.5–×2.0.
-- **T3** The schedule (planned start, end, over/under) is computed live from day start, durations and holds.
+  - type (session or break), title, speaker (a break has a place instead), duration;
+  - a timer (countdown, count up, clock) and what happens at zero (hold, overtime, blank);
+  - two alert thresholds with colours, tags, notes, a row colour.
+  - Every cue starts by hand: there is no auto-continue, wall-clock auto-start or hold after (owner, 2026-10-06).
+- **T2** Transport: GO, next, previous, pause/resume, jump (cue up), ±30 s/±1 min, rate ×0.5–×2.0. There is no reset: GO on a row restarts that cue.
+- **T3** The schedule (planned start, end, over/under) is computed live from the day start and durations. With no day start set, the first GO starts the day so that cue is on plan.
 - **T4** Countdown digits render from the local clock, so they are smooth on every screen. The server never ticks digits.
 - **T5** Stage messages ("PLEASE WRAP UP") go to that room's presenter displays.
 - **T6** Running orders import from XLSX, CSV or JSON.

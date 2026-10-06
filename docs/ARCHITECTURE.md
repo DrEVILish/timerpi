@@ -64,7 +64,7 @@ SQLite tables (in `timerpi/db.go` unless noted):
 |---|---|
 | `events` (`timerpi/events.go`) | code, name, supervisor password hash, default screen theme, map asset, day count |
 | `shows` (= rooms) | `event_id`, `room_pos`, title (room name), code, `room_pw` (moderator password hash), notes, `day_start` (HH:MM), `blanked`. Legacy: `zone`, `passphrase` (migrated, unused) |
-| `cues` | sessions: `day` (1 in v2), pos, label, duration, kind/break, tags, speaker, hold, timer kind (COUNTDOWN/COUNTSTOP/CLOCK), alerts 1/2 + colours, end action (HOLD/OVERTIME/BLANK), autocontinue, `start_at`, notes, colour, `updated_at` |
+| `cues` | sessions: `day` (1 in v2), pos, label, duration, kind/break, tags, speaker, hold, timer kind (COUNTDOWN/COUNTSTOP/CLOCK), alerts 1/2 + colours, end action (HOLD/OVERTIME/BLANK), notes, colour, `updated_at`. `hold`, `autocontinue` and `start_at` stay as columns but are unused since 2026-10-06 (STATUS U42; `Cue.Normalize` clears them on every write) |
 | `messages` | stage messages per show (`shown_at` 0 = hidden) |
 | `runtime_state` | engine state per show: active/prev/next pos, anchor, rate, paused elapsed, day start |
 | `settings` | key/value appliance settings |
@@ -91,11 +91,11 @@ go to the home page.
 `timerpi/engine.go` is one `*Engine` per show, created lazily by the `Engines` registry.
 
 - It is a pure state machine: start, pause, resume, reset, go, next, prev, jump, rate, daystart, blank.
-- A server-wide ticker (250 ms) handles zero crossings, alert edges, auto-continue and wall-clock auto-start. It emits **only on state change**.
+- A server-wide ticker (250 ms) handles zero crossings, alert edges and the day rollover. It emits **only on state change**. No cue starts by itself (STATUS U42).
 - **Digits are never server-ticked.** Snapshots carry `anchorTS`, `rate`, `pausedElapsedMS` and `serverTime`. Every client computes `remaining = duration − ((now − anchor) × rate + pausedElapsed)` from its own clock, corrected by the server offset. `engine.js` mirrors `timerpi.DisplayedRemaining`.
 - A rate change re-anchors the countdown and never alters the planned schedule.
 - `ComputeSchedule` / `ComputeScheduleRuntime` give planned and actual start/end and over/under for every row.
-- The `OnStart` hook fires on every cue start (hand GO, auto-continue, scheduled start). The OSC bridge uses it.
+- The `OnStart` hook fires on every successful hand start (GO, Start). The OSC bridge uses it.
 
 ## 5. Realtime: the WS hub
 
