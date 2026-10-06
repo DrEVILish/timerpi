@@ -127,10 +127,10 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | ID | To do |
 |---|---|
 | **U1** | Handle device rotation on phones/tablets used as displays (e.g. an iPhone as a timer display): rotating the device re-lays the screen automatically. |
-| **U2** | Remove the "F / tap for full screen" behaviour from displays. |
+| **U2** | ✅ Done 2026-10-06: no tap/F fullscreen and no hint chip on any screen (ready card included). Browser test `display-no-fullscreen`. |
 | **U3** | Walk-in schedule: one line per session, `hh:mm  Session Title - Speaker Name` (start time only, 24-hour clock). |
 | **U4** | Walk-in current and next session read: `Current Session: Start Time · Duration · Speaker` and `Next Session: Start Time · Duration · Speaker`. |
-| **U5** | Walk-in, Audience and Presenter displays never show the event code. |
+| **U5** | ✅ Done 2026-10-06: screens no longer print the room code ("Session XXXX-XXXX" lines, the title tile's code) or the corner join card with the control-room link. The audience join QR tile stays (that is how phones join). Test `TestScreensShowNoCode`. |
 | **U6** | Wherever a display shows the room name, prefix it `Room: <name>` (e.g. "Room: Stark"), only when the event has more than one room. |
 | **U7** | Turning an audience interaction on or off must not flash or re-render Walk-in screens (it doesn't concern them). |
 

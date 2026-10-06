@@ -3,8 +3,8 @@
   INTERNAL sub-template: call it as {{template "frag-dv-chrome" .Join}} from
   any d-* fragment — its DOT is the variant join data (NOT views.PageData;
   it is never a fragment route or an oob target). Carried by all three
-  variants so the offline strip, message banner and join card stay
-  byte-identical across boards:
+  variants so the offline strip and message banner stay byte-identical
+  across boards:
     #tp-offline  CONTRACT offline strip — server renders it hidden; flipped
                  for the pre-snapshot hole by the variant module, and by
                  timerpi.js's mesh-aware poll once a snapshot exists (both
@@ -13,9 +13,6 @@
                  tree (Fix-3 display.html convention).
     #tp-live-msg CONTRACT message banner — timerpi.js hides/shows + paints
                  it on every page (renderMessage runs for all pages).
-    .tp-join-card screen-side JOIN affordance: mini QR of THIS URL (via
-                 /api/shows/:id/qr, server-rendered src), the control-room
-                 link, and the <hostname>.local hint.
 */ -}}
 {{define "frag-dv-chrome"}}
 <div class="tp-offline" id="tp-offline">
@@ -28,10 +25,6 @@
 
 <div class="tp-stage-message" id="tp-live-msg" hidden><div></div></div>
 
-<a class="tp-join-card" href="{{.Control}}" data-kiosk>
-  <img id="d-join-qr" src="{{.QR}}" alt="Display QR code" width="132" height="132">
-  {{if .Host}}<span class="mono">{{.Host}}.local</span>{{end}}
-  <span class="mono text-truncate">{{.Self}}</span>
-  <span>Control room: {{.Control}}</span>
-</a>
+{{- /* No join card: screens never show the room code or the control-room
+     link (STATUS U5). Operators add screens from the Screens page. */ -}}
 {{end}}

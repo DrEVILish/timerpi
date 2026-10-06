@@ -739,8 +739,7 @@ class ClockUI {
       const st = this.el.dStatus;
       if (st) {
         // State word first so HELD/overtime read at TV distance, then the
-        // show identity, link state, next cue. (P8's "F fullscreen" moved to
-        // its own corner chip — #tp-fs-chip, see initFullscreenHint.)
+        // show identity, link state, next cue.
         const bits = [
           view.state.toUpperCase(),
           snap.show?.title || '',
@@ -1324,18 +1323,12 @@ function initKeyboard() {
           $('#tp-cue-filter')?.focus();
         }
         break;
-      case 'f': case 'F': if (clockUI?.page === 'display') toggleFullscreen(); break;
       default: return;
     }
   });
 }
 
 /* --------------------------------------------------------- display page -- */
-
-function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen?.().catch(() => {});
-}
 
 // Display links (data-kiosk) open in a NEW browser WINDOW, not a tab: the
 // features string forces a window in all major browsers. The window name
@@ -1359,13 +1352,8 @@ function initKioskLinks() {
 }
 
 function initDisplayExtras() {
-  // Stray tap → fullscreen, but ONLY enter: a stagehand poking the TV must
-  // not pop it back to windowed mid-show (REVIEW-2 O10; leave via F/Esc/UA).
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('button, a, input, select, label, summary') && !document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().catch(() => {});
-    }
-  });
+  // No tap/F to fullscreen on displays (STATUS U2): kiosks run fullscreen
+  // already, and in the layout editor it kept popping in and out (U8).
   // auto-hide cursor
   let hideT;
   const wake = () => {
@@ -1375,30 +1363,6 @@ function initDisplayExtras() {
   };
   ['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, wake, { passive: true }));
   wake();
-}
-
-/* Fullscreen hint chip (UX2): a small corner chip on any fresh browser load —
-   "F / tap — fullscreen" — that hides once fullscreen is entered and never
-   flickers: its visibility is driven ONLY by fullscreenchange (one source of
-   truth, no timers), so it cannot ping-pong. It lives under <body>, outside
-   every oob-swapped subtree and outside the theme bundle swap (applyTheme only
-   re-points the <link>), so both a stage oob swap and a {"t":"display"} theme
-   push leave it intact; CSS positions it per display surface (timerpi.css). */
-function initFullscreenHint() {
-  let chip = $('#tp-fs-chip');
-  if (!chip) {
-    chip = document.createElement('span');
-    chip.id = 'tp-fs-chip';
-    chip.className = 'tp-fs-chip';
-    chip.dataset.fs = 'window';
-    chip.textContent = 'F / tap — fullscreen';
-    document.body.appendChild(chip);
-  }
-  const sync = () => {
-    chip.dataset.fs = document.fullscreenElement ? 'full' : 'window';
-  };
-  document.addEventListener('fullscreenchange', sync);
-  sync();
 }
 
 /* ------------------------------------------------------------- homepage -- */
@@ -2448,7 +2412,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
-  if (page === 'display') initFullscreenHint();
 
   // Offline indicator toggling (display + dashboard)
   setInterval(() => {

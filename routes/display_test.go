@@ -127,7 +127,7 @@ func TestDisplayVariantViews(t *testing.T) {
 		`id="d-next"`, `data-view="next"`, `id="d-next-label"`,
 		`Opening keynote`, `id="d-next-until"`, `id="d-next-start"`,
 		`NEXT`, `id="d-label"`, `id="d-speaker"`,
-		`id="d-join-qr"`, `id="tp-live-msg"`, `id="tp-offline"`)
+		`id="tp-live-msg"`, `id="tp-offline"`)
 
 	// DAYSHEET (all 8 cues, computed starts as offsets while unanchored).
 	code, body = ts.get("/d/" + ts.showCode + "?view=daysheet&print=1")

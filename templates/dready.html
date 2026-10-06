@@ -34,15 +34,6 @@
   // The operator identifies THIS screen in the waiting list by name.
   document.getElementById('tp-ready-name').textContent = screenName();
 </script>
-<!-- Same tap-to-fullscreen contract as every display page: stray taps
-     ENTER fullscreen, never leave it (leave via F/Esc/UA). -->
-<script>
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('button, a, input, select, label, summary') && !document.fullscreenElement) {
-      document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(function () {});
-    }
-  });
-</script>
 </body>
 </html>
 {{end}}

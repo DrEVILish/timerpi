@@ -785,10 +785,6 @@ body[data-editable="1"] .b-topbar-board::after {
    U2-2. Alarm clock scale: overtime/alert2 digits 36vh (spec floor ≥30vh,
          base rest clock already 34vh ≥26vh) + heavy weight so URGENT reads
          both bigger and bolder without leaving its grid band.
-   U2-3. Fullscreen hint chip (.tp-fs-chip): small corner chip on any fresh
-         load; visibility keyed on [data-fs] set by fullscreenchange only —
-         no timers, so it cannot flicker in/out. JS-owned (#tp-fs-chip), so
-         it survives oob stage swaps and the theme bundle swap.
    U2-4. Message overlay band (stage + variants): message colour rides the
          4px LEFT edge only (default accent — amber was defaulting every
          card); ink body ≥6vh so a red/amber WRAP UP reads in one sweep;
@@ -846,42 +842,6 @@ body[data-editable="1"] .b-topbar-board::after {
 .tp-display-center .tp-clock[data-state="alert2"] {
   font-size: clamp(9rem, 36vh, 27rem);
   font-weight: 800;
-}
-
-/* --- U2-3: fullscreen hint chip (corner, per surface) ---------------------- */
-.tp-fs-chip {
-  position: fixed;
-  z-index: 20;
-  font-size: clamp(.8rem, 1.6vh, 1rem);
-  font-weight: 600;
-  color: var(--muted, currentColor);
-  background: color-mix(in srgb, var(--surface, transparent) 82%, transparent);
-  border: 1px solid var(--border, currentColor);
-  border-radius: 999px;
-  padding: .3em .9em;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.tp-fs-chip[data-fs="full"] { display: none; }
-/* Stage: the status line is left-aligned prose — the chip takes the free
-   bottom-right corner inside the same safe-area frame. */
-body.tp-display:not(.tp-dv):not(.b-board) .tp-fs-chip {
-  inset-block-end: max(4vh, env(safe-area-inset-bottom, 0px));
-  inset-inline-end: max(4vw, env(safe-area-inset-right, 0px));
-}
-/* Variant boards: the join card owns bottom-right — stack the chip ABOVE it
-   (the top band here is LINK chip + daysheet meta: both occupied). */
-body.tp-dv .tp-fs-chip {
-  inset-block-end: calc(max(2vh, env(safe-area-inset-bottom, 0px)) + 15vh);
-  inset-inline-end: max(1.6vw, env(safe-area-inset-right, 0px));
-}
-/* On-screen preview of the paper sheet (?print=1): pure document, no chrome. */
-body.tp-dv[data-print="true"] .tp-fs-chip { display: none; }
-/* Custom board: join card owns bottom-right; the grid reserves a bottom
-   gutter — chip sits at the panel's bottom-left. */
-body.b-board .tp-fs-chip {
-  inset-block-end: max(.6rem, env(safe-area-inset-bottom, 0px));
-  inset-inline-start: max(1rem, env(safe-area-inset-left, 0px));
 }
 
 /* --- U2-4: message overlay band (overrides the always-amber default edge) -- */
@@ -948,7 +908,7 @@ body[data-editing] .b-overlap {
 /* Touch floors on compose chrome already applied (supervisor C7); the hint
    chip and the state chip never print. */
 @media print {
-  .tp-fs-chip, .tp-state-chip { display: none !important; }
+  .tp-state-chip { display: none !important; }
 }
 
 /* Reduced-motion partners for every animation added in this block. */

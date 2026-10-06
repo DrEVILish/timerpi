@@ -70,10 +70,10 @@ func TestNavDisplayEntity(t *testing.T) {
 	if strings.Contains(s, "Back to Shows") {
 		t.Error("dashboard still says Back to Shows (replaced by Logout)")
 	}
-	// /d/ keeps the fullscreen contract.
+	// STATUS U2: no tap-to-fullscreen on screens, the ready card included.
 	code, body = ts.call("GET", "/d/", nil, "")
-	if code != 200 || !strings.Contains(string(body), "requestFullscreen") {
-		t.Fatalf("/d/ fullscreen contract missing: %d", code)
+	if code != 200 || strings.Contains(string(body), "requestFullscreen") {
+		t.Fatalf("/d/ still forces fullscreen on tap: %d", code)
 	}
 }
 
