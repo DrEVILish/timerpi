@@ -162,16 +162,27 @@ function card(s) {
         pull();
       },
     }, 'Disconnect') : null,
-    el('button', {
-      class: 'btn btn-sm btn-ghost', type: 'button', title: 'Remove from this list',
-      onclick: async () => {
-        if (!(await tpConfirm(`"${s.name}" is removed from this list. If it is still open it reappears when it reconnects.`, { title: 'Forget screen?', ok: 'Forget', danger: true }))) return;
-        apply(() => post('/screens/forget', { name: s.name }));
-      },
-    }, 'Forget'));
+    null);
 
   const now = el('div', { class: 'tp-scr-now text-muted' }, el('span', { class: 'mono', text: s.previewClock || '—' }), ' ', s.previewLabel || 'No session running');
-  return el('article', { class: `panel tp-scr${s.connected ? ' is-live' : ''}` }, head, preview(s), now, fields, actions);
+  // Forget = a red X in the card's top-right corner (STATUS U12). It
+  // releases the screen: its settings and key are dropped.
+  const forget = el('button', {
+    class: 'btn btn-sm btn-icon btn-danger tp-scr-forget', type: 'button',
+    title: `Forget ${s.name}`, 'aria-label': `Forget screen ${s.name}`,
+    onclick: async () => {
+      if (!(await tpConfirm(`"${s.name}" is removed from this list and released: its settings and screen link stop working. If it is still open it comes back as a new screen showing the public timer.`, { title: 'Forget screen?', ok: 'Forget', danger: true }))) return;
+      apply(() => post('/screens/forget', { name: s.name }), 'Screen forgotten');
+    },
+  });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '/ftl/dist/icons/xbmc.svg#icon-close');
+  svg.appendChild(use);
+  forget.appendChild(svg);
+  return el('article', { class: `panel tp-scr${s.connected ? ' is-live' : ''}` }, forget, head, preview(s), now, fields, actions);
 }
 
 function renderScreens() {
