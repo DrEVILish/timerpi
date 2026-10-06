@@ -6,7 +6,6 @@
 //	New()           — parse templates/ once (or -dev per-request reparse)
 //	Render          — ExecuteTemplate on the registry
 //	ShowData(snap)  — map an engine snapshot to the dashboard shape
-//	HomeData(...)   — homepage list shape
 package views
 
 import (
@@ -590,58 +589,6 @@ func offset(ms int64) string {
 func tagsOf(s string) []string {
 	return strings.Fields(s)
 }
-
-// ---------------------------------------------------------------------------
-// Homepage data.
-
-// HomeData builds the homepage dot from the show rows.
-func HomeData(shows []ShowVM) *PageData {
-	return &PageData{
-		Page:         "home",
-		Nav:          "home",
-		Role:         "controls",
-		Shows:        shows,
-		Title:        "",
-		DefaultTheme: config.DefaultTheme(),
-	}
-}
-
-// BuildShowRows converts shows + their cue lists to homepage rows
-// (cue counts / totals / humanized stamps per CONTRACT-UI §2). Public
-// paths are CODE-ONLY (Agent L): a row without a code (impossible after
-// the backfill migration) yields empty paths rather than a dead numeric
-// link.
-func BuildShowRows(metas ShowMetas) []ShowVM {
-	rows := make([]ShowVM, 0, len(metas))
-	for _, s := range metas {
-		code := timerpi.NormalizeCode(s.Show.Code)
-		var control, display string
-		if code != "" {
-			control, display = "/c/"+code, "/d/"+code
-		}
-		rows = append(rows, ShowVM{
-			ID:          s.Show.ID,
-			Code:        code,
-			Title:       s.Show.Title,
-			CueCount:    s.CueCount,
-			TotalFmt:    FmtDur(s.TotalMS),
-			UpdatedFmt:  FmtAgo(s.Show.UpdatedAt),
-			ControlPath: control,
-			DisplayPath: display,
-		})
-	}
-	return rows
-}
-
-// ShowMeta is the per-show metadata the homepage needs (DB reader output).
-type ShowMeta struct {
-	Show     timerpi.Show
-	CueCount int
-	TotalMS  int64 // whole day incl. holds/breaks
-}
-
-// ShowMetas is the full homepage listing.
-type ShowMetas []ShowMeta
 
 // ---------------------------------------------------------------------------
 // Template registry.

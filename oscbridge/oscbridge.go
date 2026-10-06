@@ -238,6 +238,89 @@ func numberArg(a any) (int64, bool) {
 type Inbound struct {
 	mu   sync.Mutex
 	conn *net.UDPConn
+	// allow, when non-empty, lists the sources (IPs or CIDRs) whose packets
+	// are handled; others are dropped silently (BUGLOG RS40).
+	allow []*net.IPNet
+}
+
+// SetAllow sets the source allowlist from a comma-separated list of IPs and
+// CIDRs ("" = anyone). Bad entries are an error and change nothing.
+func (in *Inbound) SetAllow(list string) error {
+	var nets []*net.IPNet
+	for _, item := range strings.Split(list, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !strings.Contains(item, "/") {
+			ip := net.ParseIP(item)
+			if ip == nil {
+				return fmt.Errorf("oscbridge: %q is not an IP address or CIDR", item)
+			}
+			bits := 128
+			if ip.To4() != nil {
+				ip, bits = ip.To4(), 32
+			}
+			nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		_, n, err := net.ParseCIDR(item)
+		if err != nil {
+			return fmt.Errorf("oscbridge: %q is not an IP address or CIDR", item)
+		}
+		nets = append(nets, n)
+	}
+	in.mu.Lock()
+	in.allow = nets
+	in.mu.Unlock()
+	return nil
+}
+
+func (in *Inbound) allowed(ip net.IP) bool {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if len(in.allow) == 0 {
+		return true
+	}
+	for _, n := range in.allow {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// limitReport passes at most perMinute reports a minute to report, then
+// one summary of how many were dropped: a flood of bad packets used to
+// write one journal line each (BUGLOG RS40).
+func limitReport(report func(error), perMinute int) func(error) {
+	if report == nil {
+		return nil
+	}
+	var mu sync.Mutex
+	var start time.Time
+	n, dropped := 0, 0
+	return func(err error) {
+		mu.Lock()
+		now := time.Now()
+		if now.Sub(start) >= time.Minute {
+			if dropped > 0 {
+				d := dropped
+				mu.Unlock()
+				report(fmt.Errorf("oscbridge: %d more bad packets in the last minute were not logged", d))
+				mu.Lock()
+			}
+			start, n, dropped = now, 0, 0
+		}
+		if n >= perMinute {
+			dropped++
+			mu.Unlock()
+			return
+		}
+		n++
+		mu.Unlock()
+		report(err)
+	}
 }
 
 // SetInbound (re)starts the listener on addr ("" stops it). Every parsed
@@ -261,12 +344,16 @@ func (in *Inbound) SetInbound(addr string, dispatch func(m Message), report func
 		return fmt.Errorf("oscbridge: listen %s: %w", addr, err)
 	}
 	in.conn = conn
+	report = limitReport(report, 10)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, _, err := conn.ReadFromUDP(buf)
+			n, from, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				return // replaced/closed
+			}
+			if from != nil && !in.allowed(from.IP) {
+				continue
 			}
 			handlePacket(buf[:n], dispatch, report)
 		}

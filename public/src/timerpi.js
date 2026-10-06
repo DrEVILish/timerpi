@@ -2,7 +2,7 @@
  * TimerPi client (vanilla ES module, no build step)
  *
  * Per-page bootstrap via <body data-page="…">:
- *   home      — no WS; theme picker + create-show + list refresh helpers
+ *   (the home and event pages run /src/event.js)
  *   dashboard — operator surface: WS mesh, local clock render, commands
  *   display   — fullscreen TV output: local clock render, message overlay
  *
@@ -161,12 +161,14 @@ class ClockUI {
       daybar: $('#tp-daybar'), needle: $('#tp-daybar-needle'),
       rows: () => $$('#cuelist tbody tr[data-pos]'),
       lampRun: $('#tp-lamp-run'),
+      rateSlider: $('#tp-rate'), rateOut: $('#tp-rate-out'),
       // display
       stage: $('#d-stage'), dClock: $('#d-clock'), dLabel: $('#d-label'),
       dSpeaker: $('#d-speaker'), dNextLabel: $('#d-next-label'),
       dNextDur: $('#d-next-dur'), dMessage: $('#d-message'),
       dStatus: $('#d-status'), dChip: $('#d-chip'),
     };
+    this._slowKey = ''; // fresh nodes: the next frame repaints everything
     // Digit regions announce politely; digits are JS-painted, the server's
     // placeholder must not be announced (CONTRACT-UI §9d).
     for (const c of [this.el.clock, this.el.dClock]) {
@@ -186,9 +188,6 @@ class ClockUI {
         this._cueSig = sig;
         this.schedule = computeSchedule(snap);
       }
-      // Privacy: keep this browser's recent ledger current (server never
-      // serves the code list, so the operator's own device remembers).
-      recordRecent(snap.show?.code || '', snap.show?.title || '');
       // B3: resolve a queued add-inverse once the appended row lands.
       undo.observe(snap);
     }
@@ -584,6 +583,16 @@ class ClockUI {
 
     if (this.page === 'dashboard') {
       paintClock(this.el.clock);
+      if (this.el.meter && cue) {
+        const pct = Math.min(100, Math.max(0, (cue.durationMS ? elapsedMS(snap, this.serverNow()) / cue.durationMS : 0) * 100));
+        this.el.meter.style.setProperty('--meter-level', pct.toFixed(1) + '%');
+      }
+      // Everything below changes at most once a second (or with the state
+      // or rate): skip it on the other ~59 frames, and find nodes from the
+      // _collect cache instead of querying the DOM each frame (BUGLOG RS33).
+      const slowKey = `${text}|${view.state}|${Math.floor(this.serverNow() / 1000)}|${snap.runtime.rate}|${snap.runtime.activePos}|${this._rateEditing ? 1 : 0}`;
+      if (slowKey === this._slowKey) return;
+      this._slowKey = slowKey;
       setState(this.el.nowPanel, view.state);
       setText(this.el.stateChip, {
         idle: 'READY', armed: 'ARMED', running: 'RUNNING', overtime: 'OVERTIME',
@@ -596,15 +605,11 @@ class ClockUI {
         lamp.classList.toggle('is-warn', view.state === 'paused' || view.state === 'held' || view.state === 'alert1');
         lamp.classList.toggle('is-error', view.state === 'overtime' || view.state === 'alert2');
       }
-      if (this.el.meter && cue) {
-        const pct = Math.min(100, Math.max(0, (cue.durationMS ? elapsedMS(snap, this.serverNow()) / cue.durationMS : 0) * 100));
-        this.el.meter.style.setProperty('--meter-level', pct.toFixed(1) + '%');
-      }
       this.paintDelta(view);
       setText(this.el.tod, fmtTimeOfDay(this.serverNow()));
       // keep rate control in step with the (possibly server/mesh-applied) rate
       // — paused while the inline editor owns the readout (double-click).
-      const slider = $('#tp-rate'), rateOut = $('#tp-rate-out');
+      const slider = this.el.rateSlider, rateOut = this.el.rateOut;
       if (!this._rateEditing) {
         if (slider && document.activeElement !== slider) {
           slider.value = String(Math.round((snap.runtime.rate || 1) * 100));
@@ -1225,79 +1230,6 @@ function initDisplayExtras() {
 }
 
 /* ------------------------------------------------------------- homepage -- */
-
-/* ------------------------------------------------------ recent (local) -- */
-
-const RECENT_KEY = 'tp.recent.shows';
-
-function readRecent() {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
-}
-
-function writeRecent(list) {
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8))); } catch { /* private mode */ }
-}
-
-/** Privacy (2026-10-03): the server never serves a code/title list, so the
-    "Recent" panel is THIS browser's ledger only. Every dashboard/display
-    snapshot recording here is idempotent (dedup by code, newest first). */
-function recordRecent(code, title) {
-  if (!code) return;
-  const list = readRecent().filter((e) => e.code !== code);
-  list.unshift({ code, title: (title || '').slice(0, 60), ts: Date.now() });
-  writeRecent(list);
-}
-
-function renderRecent() {
-  const ul = $('#tp-recent-list');
-  if (!ul) return;
-  const empty = $('#tp-recent-empty');
-  const list = readRecent();
-  if (empty) empty.hidden = list.length > 0;
-  ul.textContent = '';
-  list.forEach((e, i) => {
-    // textContent-only build (this file's own rule): show titles are
-    // server content — an innerHTML template here is XSS from any show
-    // whose title contains markup. Codes are filtered to alphanumerics.
-    const code = String(e.code || '').replace(/[^A-Za-z0-9]/g, '');
-    const li = document.createElement('li');
-    const item = document.createElement('div');
-    item.className = 'list-item';
-    item.style.alignItems = 'center';
-    const title = document.createElement('span');
-    title.className = 'list-item-title';
-    title.textContent = e.title || '(untitled)';
-    const meta = document.createElement('span');
-    meta.className = 'list-item-meta';
-    const codeWrap = document.createElement('span');
-    const codeBadge = document.createElement('span');
-    codeBadge.className = 'badge mono';
-    codeBadge.textContent = code ? fmtCode(code) : '';
-    codeWrap.appendChild(codeBadge);
-    const cluster = document.createElement('span');
-    cluster.className = 'cluster is-gap-xs';
-    const open = document.createElement('a');
-    open.className = 'badge'; open.href = '/c/' + code; open.textContent = 'Open';
-    const disp = document.createElement('a');
-    disp.className = 'badge badge-accent'; disp.href = '/d/' + code;
-    disp.setAttribute('data-kiosk', ''); disp.textContent = 'Display ↗';
-    const forget = document.createElement('button');
-    forget.className = 'badge tp-recent-forget';
-    forget.title = 'Forget this show on this device';
-    forget.setAttribute('aria-label', `Forget ${code}`);
-    forget.textContent = '✕';
-    forget.addEventListener('click', () => {
-      writeRecent(readRecent().filter((_, j) => j !== i));
-      renderRecent();
-    });
-    cluster.append(open, disp, forget);
-    meta.append(codeWrap, cluster);
-    item.append(title, meta);
-    li.appendChild(item);
-    ul.appendChild(li);
-  });
-}
-
 
 /* ------------------------------------------------------- screens (F1/F2) --
  * The operator's screens panel: every display tab self-registers a stable
@@ -2338,62 +2270,6 @@ document.addEventListener('click', (e) => {
   }
 }, true);
 
-function initHome() {  const form = $('#create-show');
-  if (form) {
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const title = $('#show-title')?.value.trim() || 'Untitled show';
-      const btn = form.querySelector('button');
-      btn?.classList.add('htmx-request');
-      try {
-        const res = await fetch('/api/shows', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ title }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const out = await res.json();
-        // Agent L (scope change): the share CODE is the only public
-        // address; pre-backfill safety keeps the old numeric fallback.
-        location.href = `/c/${out.code || out.id}`;
-      } catch (err) {
-        const errEl = $('#create-error');
-        if (errEl) { errEl.textContent = `Could not create show: ${err}`; errEl.hidden = false; }
-        btn?.classList.remove('htmx-request');
-      }
-    });
-  }
-  // Agent L: join-by-code box — placeholder XXXX-XXXX; canonicalize client
-  // side (dash/space strip, uppercase, typo maps I→1 L→1 O→0 U→V — the
-  // server timerpi/gen.go rule set), let the server 404 anything else.
-  const join = $('#join-show');
-  join?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const input = $('#join-code');
-    const errEl = $('#join-error');
-    let code = (input?.value || '').toUpperCase().replace(/[^0-9A-Z]/g, '')
-      .replace(/I/g, '1').replace(/L/g, '1').replace(/O/g, '0').replace(/U/g, 'V');
-    input.value = code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
-    if (code.length !== 8) {
-      if (errEl) {
-        errEl.textContent = 'Session codes are 8 characters, like K7QP-M3XB.';
-        errEl.hidden = false;
-      }
-      input?.focus();
-      return;
-    }
-    location.href = `/c/${code}`;
-  });
-}
-
-/* ------------------------------------------------------ import dropzone -- */
-
-/**
- * U1: the whole Import panel is a drop target — drop a file and it fills
- * #import-file, exactly like picking it by hand. No route/protocol
- * change: the form still posts through htmx when the operator presses
- * Import (or presses Enter).
- */
 function initImportDrop() {
   const zone = $('.tp-import');
   const input = $('#import-file');
@@ -2451,7 +2327,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initKioskLinks();
   initImportDrop();
 
-  if (page === 'home') { initHome(); renderRecent(); }
   if (page === 'screens') { initScreensPage(); initScreens(); } // + presets (moved from Setup, U29)
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting

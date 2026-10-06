@@ -54,6 +54,7 @@
       if (!j || !j.ok || !j.config) return;
       document.getElementById('osc-in-enabled').value = j.config.in.enabled ? '1' : '';
       document.getElementById('osc-in-port').value = j.config.in.port || '';
+      document.getElementById('osc-in-allow').value = j.config.in.allow || '';
       document.getElementById('osc-out-enabled').value = j.config.out.enabled ? '1' : '';
       document.getElementById('osc-out-host').value = j.config.out.host || '';
       document.getElementById('osc-out-port').value = j.config.out.port || '';
@@ -62,7 +63,7 @@
       fetch('/api/osc', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          in: { enabled: document.getElementById('osc-in-enabled').value === '1', port: document.getElementById('osc-in-port').value.trim() },
+          in: { enabled: document.getElementById('osc-in-enabled').value === '1', port: document.getElementById('osc-in-port').value.trim(), allow: document.getElementById('osc-in-allow').value.trim() },
           out: { enabled: document.getElementById('osc-out-enabled').value === '1', host: document.getElementById('osc-out-host').value.trim(), port: document.getElementById('osc-out-port').value.trim() }
         })
       }).then(function (r) { return r.json().then(function (j) { return { code: r.code || r.status, j: j }; }); })
@@ -178,6 +179,10 @@
       <div class="field">
         <label class="label" for="osc-in-port">Inbound port</label>
         <input class="input input-sm mono" id="osc-in-port" placeholder="9000" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label class="label" for="osc-in-allow">Accept from (IPs or CIDRs, comma-separated; empty = anyone)</label>
+        <input class="input input-sm mono" id="osc-in-allow" placeholder="192.168.1.20, 10.0.0.0/24">
       </div>
       <div class="field">
         <label class="label" for="osc-out-enabled">Outbound (TimerPi → CuTePi)</label>

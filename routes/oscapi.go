@@ -78,6 +78,9 @@ func (d *Deps) oscSync() error {
 		}
 		addr = "0.0.0.0:" + port
 	}
+	if err := OscInbound.SetAllow(kv["osc.in.allow"]); err != nil {
+		return err
+	}
 	if err := OscInbound.SetInbound(addr, d.oscDispatch, func(perr error) {
 		log.Printf("osc: inbound packet: %v", perr)
 	}); err != nil {
@@ -143,6 +146,7 @@ func (d *Deps) apiOscGet(c *gin.Context) {
 		"in": gin.H{
 			"enabled": kv["osc.in.enabled"] == "1",
 			"port":    kv["osc.in.port"],
+			"allow":   kv["osc.in.allow"],
 		},
 		"out": gin.H{
 			"enabled": kv["osc.out.enabled"] == "1",
@@ -163,6 +167,7 @@ func (d *Deps) apiOscSet(c *gin.Context) {
 		In struct {
 			Enabled bool   `json:"enabled"`
 			Port    string `json:"port"`
+			Allow   string `json:"allow"` // source IPs/CIDRs (RS40)
 		} `json:"in"`
 		Out struct {
 			Enabled bool   `json:"enabled"`
@@ -179,6 +184,10 @@ func (d *Deps) apiOscSet(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad inbound port"})
 			return
 		}
+	}
+	if err := (&oscbridge.Inbound{}).SetAllow(body.In.Allow); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "oscbridge: ")})
+		return
 	}
 	if h := strings.TrimSpace(body.Out.Host); h != "" && !oscbridge.ValidHost(h) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The outbound host must be an IP address or a hostname"})
@@ -200,6 +209,7 @@ func (d *Deps) apiOscSet(c *gin.Context) {
 	}
 	sv("osc.in.enabled", b01(body.In.Enabled))
 	sv("osc.in.port", body.In.Port)
+	sv("osc.in.allow", strings.TrimSpace(body.In.Allow))
 	sv("osc.out.enabled", b01(body.Out.Enabled))
 	sv("osc.out.host", body.Out.Host)
 	sv("osc.out.port", body.Out.Port)

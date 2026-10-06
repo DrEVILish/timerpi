@@ -19,7 +19,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -263,8 +262,8 @@ func (d *Deps) boardView(c *gin.Context, showID int64, snap timerpi.Snapshot) {
 		// NEVER render a raw error page mid-event — fall back to the show's
 		// default board so the room keeps showing something (the URL the
 		// gallery serves always carries the resolved id).
-		if board, gerr := boards.GetBoard(d.Store.DB, showID, bid); perr == nil && bid > 0 && gerr == nil {
-			d.render(c, "display_board", d.boardData(c, snap, showID, board))
+		if b, gerr := boards.GetBoard(d.Store.DB, showID, bid); perr == nil && bid > 0 && gerr == nil {
+			d.render(c, "display_board", d.boardData(c, snap, showID, b))
 			return
 		}
 	}
@@ -330,7 +329,7 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		PageData:       pd,
 		Board:          views.BoardVM{ID: board.ID, Name: board.Name, Rows: layout.Rows, Orientation: layout.Orientation, Widgets: widgets},
 		Boards:         infos,
-		Join:           boardJoinOf(c, snap, board.ID),
+		Join:           boardJoinOf(c, snap),
 		BoardID:        board.ID,
 		NowFmt:         views.FmtTimeOfDay(now),
 		CountdownFmt:   countdownFmt,
@@ -349,24 +348,11 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 	}
 }
 
-// boardJoinOf derives the share affordance off THIS request (absolute board
-// URL incl. query, so the QR lands on the exact same board). Code-addressed
-// (Agent L): /api qr + /c links use the show CODE.
-func boardJoinOf(c *gin.Context, snap timerpi.Snapshot, bid int64) views.BoardJoinVM {
-	self := *c.Request.URL
-	self.Host = c.Request.Host
-	self.Scheme = "http"
-	if c.Request.TLS != nil {
-		self.Scheme = "https"
-	}
-	selfURL := self.String()
-	code := timerpi.NormalizeCode(snap.Show.Code)
-	return views.BoardJoinVM{
-		Self:    selfURL,
-		QR:      "/api/shows/" + code + "/qr?data=" + url.QueryEscape(selfURL) + "&size=132",
-		Control: "/c/" + code,
-		Host:    hostname(),
-	}
+// boardJoinOf is the board page's share affordance: the same values as
+// the display's (joinVMof), absolute board URL included, so the QR lands
+// on the exact same board.
+func boardJoinOf(c *gin.Context, snap timerpi.Snapshot) views.BoardJoinVM {
+	return views.BoardJoinVM(joinVMof(c, snap))
 }
 
 // boardCountdown is the zero-JS initial for the countdown tile: remaining
@@ -386,19 +372,13 @@ func boardCountdown(snap timerpi.Snapshot, now int64) (string, string) {
 	if active == nil {
 		return "--:--", "idle"
 	}
-	stored := timerpi.Runtime{
-		ShowID: snap.Show.ID, ActivePos: rt.ActivePos, PrevPos: rt.PrevPos,
-		NextPos: rt.NextPos, Paused: rt.Paused, Running: rt.Running,
-		EndAction: rt.EndAction, AnchorTS: rt.AnchorTS, Rate: rt.Rate,
-		PausedElapsedMS: rt.PausedElapsedMS, DayStartTS: rt.DayStartTS,
-	}
-	rem, overtime, alert := timerpi.DisplayedRemaining(active, stored, now)
+	rem, overtime, alert := timerpi.DisplayedRemaining(active, boardRuntimeOf(snap), now)
 	switch {
 	case active.TimerKind == timerpi.TimerClock:
 		return views.FmtTimeOfDay(now), "running"
 	case active.TimerKind == timerpi.TimerCountStop:
 		return views.FmtDur(rem), "running"
-	case !rt.Running && !rt.Paused && stored.PausedElapsedMS >= active.DurationMS && active.DurationMS > 0:
+	case !rt.Running && !rt.Paused && rt.PausedElapsedMS >= active.DurationMS && active.DurationMS > 0:
 		if active.EndAction == timerpi.EndBlank || rt.Blank {
 			return "—", "blank"
 		}

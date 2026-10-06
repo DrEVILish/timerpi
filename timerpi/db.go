@@ -86,7 +86,10 @@ func Open(path string) (*DB, error) {
 	// The app serialises on one pooled connection: SQLite only benefits from
 	// extra write connections and they just raise busy contention.
 	raw.SetMaxOpenConns(1)
-	d := &DB{DB: raw}
+	// Unsafe: a column the structs don't know yet (a newer migration, an
+	// older binary on a newer file) is skipped instead of failing every
+	// SELECT * read (BUGLOG RS36).
+	d := &DB{DB: raw.Unsafe()}
 	if err := d.migrate(); err != nil {
 		raw.Close()
 		return nil, err

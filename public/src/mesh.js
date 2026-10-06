@@ -21,6 +21,11 @@ import {
 } from './engine.js';
 
 const SIGNALING_CHANNEL = 'timerpi';
+/** reconnectDelay spreads reconnects: 50–150 % of the backoff. */
+export function reconnectDelay(backoff, rnd = Math.random) {
+  return Math.round(backoff * (0.5 + rnd()));
+}
+
 // A display whose room is gone re-checks this often (BUGLOG RW45).
 const BADSHOW_RETRY_MS = 60_000;
 
@@ -342,7 +347,9 @@ export class Mesh {
     this._setStatus('offline');
     clearTimeout(this._wsReconnectTimer);
     this._wsBackoff = Math.min(this._wsBackoff * 1.5, 8000);
-    this._wsReconnectTimer = setTimeout(() => this._wsConnect(), this._wsBackoff);
+    // Jitter: after a box restart every screen used to reconnect in
+    // lockstep (BUGLOG RS34).
+    this._wsReconnectTimer = setTimeout(() => this._wsConnect(), reconnectDelay(this._wsBackoff));
   }
 
   /** Called after (re)joining: push our state up if we advanced it offline. */

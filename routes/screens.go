@@ -109,13 +109,15 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 		live = d.Hub.ScreenSessions(id)
 		peers = d.Hub.ScreenPeers(id)
 	}
-	boardNames := map[int64]string{}
+	// Every layout the cards need, loaded once (BUGLOG RS32: each card
+	// used to read its board again — an N+1 on every 3 s poll).
+	byID := map[int64]boards.Board{}
 	var defaultBoardID int64
 	if d.Store != nil {
 		if list, berr := boards.ListBoards(d.Store.DB, id); berr == nil && len(list) > 0 {
 			defaultBoardID = list[0].ID // the seeded show default leads the list
 			for _, b := range list {
-				boardNames[b.ID] = b.Name
+				byID[b.ID] = b
 			}
 		}
 	}
@@ -153,13 +155,13 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 	for _, r := range rows {
 		seen[r.Name] = true
 		out = append(out, d.screenCard(r, live, peers,
-			boardNames, defaultBoardID, id, activeLabel, activeClock, activePct))
+			byID, defaultBoardID, id, activeLabel, activeClock, activePct))
 	}
 	for name := range live { // tabs that joined before their registry row was read
 		if seen[name] {
 			continue
 		}
-		out = append(out, d.screenCard(timerpi.Screen{Name: name}, live, peers, boardNames, defaultBoardID,
+		out = append(out, d.screenCard(timerpi.Screen{Name: name}, live, peers, byID, defaultBoardID,
 			id, activeLabel, activeClock, activePct))
 	}
 	return out, nil
@@ -168,7 +170,7 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 // screenCard assembles one panel/gallery entry with its preview boxes.
 func (d *Deps) screenCard(r timerpi.Screen,
 	live map[string]int, peers map[string][][2]string,
-	boardNames map[int64]string, defaultBoardID, showID int64,
+	byID map[int64]boards.Board, defaultBoardID, showID int64,
 	activeLabel, activeClock string, activePct int) screenView {
 	name, boardID := r.Name, r.BoardID
 	v := screenView{Name: name, Theme: r.Theme, BoardID: boardID, Room: r.Room, LastSeen: r.LastSeen,
@@ -181,8 +183,8 @@ func (d *Deps) screenCard(r timerpi.Screen,
 	// redirects to a board when one is assigned), so it previews as that,
 	// never as the room's first board (BUGLOG RW36).
 	bid := boardID
-	if n, ok := boardNames[bid]; ok {
-		v.BoardName = n
+	if b, ok := byID[bid]; ok {
+		v.BoardName = b.Name
 	}
 	v.Template = r.Template
 	if bid == 0 && r.Template != "" {
@@ -195,8 +197,8 @@ func (d *Deps) screenCard(r timerpi.Screen,
 			}
 		}
 	}
-	if d.Store != nil && bid != 0 {
-		if b, err := boards.GetBoard(d.Store.DB, showID, bid); err == nil {
+	if bid != 0 {
+		if b, ok := byID[bid]; ok {
 			l := b.Parsed()
 			v.Rows, v.Orientation = l.Rows, l.Orientation
 			for _, w := range l.Widgets {

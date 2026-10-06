@@ -259,3 +259,31 @@ func TestTargetsAndHosts(t *testing.T) {
 		}
 	}
 }
+
+// BUGLOG RS40: a flood of bad packets logs at most 10 lines a minute, and
+// the listener can be limited to known senders.
+func TestOSCFloodAndAllowlist(t *testing.T) {
+	logged := 0
+	report := limitReport(func(error) { logged++ }, 10)
+	for i := 0; i < 500; i++ {
+		report(fmt.Errorf("bad"))
+	}
+	if logged != 10 {
+		t.Errorf("500 bad packets logged %d lines, want 10", logged)
+	}
+	var in Inbound
+	if err := in.SetAllow("192.168.1.20, 10.0.0.0/24"); err != nil {
+		t.Fatal(err)
+	}
+	for ip, want := range map[string]bool{"192.168.1.20": true, "10.0.0.7": true, "192.168.1.21": false} {
+		if got := in.allowed(net.ParseIP(ip)); got != want {
+			t.Errorf("allowed(%s) = %v, want %v", ip, got, want)
+		}
+	}
+	if err := in.SetAllow("not-an-ip"); err == nil {
+		t.Error("a bad allowlist entry was accepted")
+	}
+	if err := in.SetAllow(""); err != nil || !in.allowed(net.ParseIP("1.2.3.4")) {
+		t.Error("an empty allowlist should accept anyone")
+	}
+}

@@ -73,29 +73,6 @@ func homePage(d *Deps) gin.HandlerFunc {
 	}
 }
 
-// listShowRows reads the homepage metadata (shows + cue count + day total).
-func (d *Deps) listShowRows() (views.ShowMetas, error) {
-	if d.Store == nil {
-		return nil, nil
-	}
-	shows, err := d.Store.ListShows()
-	if err != nil {
-		return nil, err
-	}
-	metas := make(views.ShowMetas, 0, len(shows))
-	for _, s := range shows {
-		total := int64(0)
-		n := 0
-		if cues, cerr := d.Store.ListCues(s.ID); cerr == nil {
-			n = len(cues)
-			sched := timerpi.ComputeSchedule(cues, 0, 1)
-			total = sched.TotalMS
-		}
-		metas = append(metas, views.ShowMeta{Show: s, CueCount: n, TotalMS: total})
-	}
-	return metas, nil
-}
-
 // dashboardPage is GET /c/:ident — the operator dashboard. :ident is a
 // share code (Agent L scope change): digits/unknown → friendly 404.
 func dashboardPage(d *Deps) gin.HandlerFunc {
