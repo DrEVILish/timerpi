@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 59 | 5 |
+| Warning | 59 | 0 |
 | Suggestion | 41 | 34 |
 
 ## Critical
@@ -107,12 +107,12 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RW53 | `timerpi/polls.go:584-640`; `ws/hub.go:756-788`; `public/src/audience.js:66-88` | Every poll frame carries all approved Q&A/ideas entries and cloud words, and goes to every phone up to 4 times a second. At ~300 entries and 1,000 phones that is tens of MB/s over venue Wi-Fi, and each phone rebuilds its DOM on every frame. | Send the top N entries plus spotlight and the phone's own, or deltas. | Open |
+| RW53 | `timerpi/polls.go:584-640`; `ws/hub.go:756-788`; `public/src/audience.js:66-88` | Every poll frame carries all approved Q&A/ideas entries and cloud words, and goes to every phone up to 4 times a second. At ~300 entries and 1,000 phones that is tens of MB/s over venue Wi-Fi, and each phone rebuilds its DOM on every frame. | Send the top N entries plus spotlight and the phone's own, or deltas. | Fixed 2026-10-06 (c404e93) |
 | RW54 | `ws/session.go:197-200`; `routes/audience.go:191, 221`; `public/src/audience.js:251`; `ws/hub.go:394-407` | `OnAirNow` is never cached. It is rebuilt on every phone join, REST read, `/ask` and 4 s fallback poll, all on the single DB connection, so a reconnect storm means 1,000+ rebuilds. `broadcast()` also calls it inline on the 250 ms tick before checking for sessions, so timer ticks for every room wait behind vote inserts. | Cache on-air per show, invalidate in `pollsChanged`; return early when a show has no sessions. | Fixed 2026-10-06 `b4156fb` |
-| RW55 | `timerpi/engine.go:312`; `timerpi/db.go:42`; `ws/hub.go:311-330` | Every engine ever loaded runs `SELECT * FROM cues` every 250 ms while holding its mutex, on `SetMaxOpenConns(1)`. 20 idle rooms is ~80 queries/s, and any long transaction (a big import) stalls every room's zero crossing. | Cache the cue list in the engine (invalidate on mutation); tick only running engines or those with pending `startAt`. | Open |
-| RW56 | `timerpi/engine.go:385-386`; `main.go:58-74`; `oscbridge/oscbridge.go:315-335` | `OnStart` runs synchronously in the hub's single tick goroutine, doing `AllSettings()` and `ResolveUDPAddr` each time. With `osc.out.host` set to a hostname and slow or no DNS, every room's ticks stall. | Send via a buffered channel and worker; cache the resolved address. | Open |
-| RW57 | `routes/walkin.go:63-66`; `public/src/board.js:407` | Each walk-in screen polls every 5 s, and each request runs `engineFor` + `Snapshot()` for every room (mutex plus 3+ queries), creating engines for idle rooms. 20 screens × 10 rooms ≈ 150 queries/s on a Pi. | Cache the feed per event for ~2 s (singleflight), or push it over WS on change. | Open |
-| RW58 | `public/src/moderate.js:95`; `public/src/timerpi.js:838-840`; `timerpi/polls.go:672-682` | Every poll frame (up to 2.5/s per moderator) reloads `ModeratorItems` (2–3 queries per item for every item ever, with all entries) and rebuilds the whole panel DOM. A click landing during the swap is lost. | On `poll` frames refresh only the on-air tally; diff the DOM instead of replacing it. | Open |
+| RW55 | `timerpi/engine.go:312`; `timerpi/db.go:42`; `ws/hub.go:311-330` | Every engine ever loaded runs `SELECT * FROM cues` every 250 ms while holding its mutex, on `SetMaxOpenConns(1)`. 20 idle rooms is ~80 queries/s, and any long transaction (a big import) stalls every room's zero crossing. | Cache the cue list in the engine (invalidate on mutation); tick only running engines or those with pending `startAt`. | Fixed 2026-10-06 (c404e93) |
+| RW56 | `timerpi/engine.go:385-386`; `main.go:58-74`; `oscbridge/oscbridge.go:315-335` | `OnStart` runs synchronously in the hub's single tick goroutine, doing `AllSettings()` and `ResolveUDPAddr` each time. With `osc.out.host` set to a hostname and slow or no DNS, every room's ticks stall. | Send via a buffered channel and worker; cache the resolved address. | Fixed 2026-10-06 (c404e93) |
+| RW57 | `routes/walkin.go:63-66`; `public/src/board.js:407` | Each walk-in screen polls every 5 s, and each request runs `engineFor` + `Snapshot()` for every room (mutex plus 3+ queries), creating engines for idle rooms. 20 screens × 10 rooms ≈ 150 queries/s on a Pi. | Cache the feed per event for ~2 s (singleflight), or push it over WS on change. | Fixed 2026-10-06 (c404e93) |
+| RW58 | `public/src/moderate.js:95`; `public/src/timerpi.js:838-840`; `timerpi/polls.go:672-682` | Every poll frame (up to 2.5/s per moderator) reloads `ModeratorItems` (2–3 queries per item for every item ever, with all entries) and rebuilds the whole panel DOM. A click landing during the swap is lost. | On `poll` frames refresh only the on-air tally; diff the DOM instead of replacing it. | Fixed 2026-10-06 (c404e93) |
 | RW59 | `timerpi/engine.go` (`startLocked`) | With no day start set, the first GO anchored the day at local midnight, so planned times read 00:00-based and the dashboard said "+21:50 vs plan". Found 2026-10-06 while checking the room page. | Anchor so the started cue is on plan. | Fixed 2026-10-06 (b5d055d) |
 
 ## Suggestion
