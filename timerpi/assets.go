@@ -87,35 +87,3 @@ func (d *DB) DeleteAsset(id int64) error {
 	}
 	return nil
 }
-
-// SetZoneMap points a zone label at an asset id (empty assetId clears).
-func (d *DB) SetZoneMap(zone string, assetID int64) error {
-	zone = SanitizeScreenName(zone)
-	if zone == "" {
-		return fmt.Errorf("timerpi: zone map needs a zone")
-	}
-	key := "zone.map." + zone
-	if assetID <= 0 {
-		_, err := d.Exec(`DELETE FROM settings WHERE key = ?`, key)
-		if err != nil {
-			return fmt.Errorf("timerpi: zone map clear: %w", err)
-		}
-		return nil
-	}
-	return d.SetSetting(key, fmt.Sprintf("%d", assetID))
-}
-
-// ZoneMap returns the asset id mapped to a zone (0 = none).
-func (d *DB) ZoneMap(zone string) int64 {
-	zone = SanitizeScreenName(zone)
-	if zone == "" {
-		return 0
-	}
-	var v string
-	if err := d.Get(&v, `SELECT value FROM settings WHERE key = ?`, "zone.map."+zone); err != nil {
-		return 0
-	}
-	var id int64
-	_, _ = fmt.Sscanf(v, "%d", &id)
-	return id
-}

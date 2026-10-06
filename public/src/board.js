@@ -81,31 +81,9 @@ try {
   const raw = $('#b-layout');
   if (raw) layout = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
 } catch { /* corrupt embed: render-only, editor stays inert */ }
-const pristine = JSON.parse(JSON.stringify(layout)); // reset-to-saved baseline
 // lastSaved is the layout the server last accepted: a structural change
 // that fails to save rolls back to it instead of reloading (BUGLOG RW43).
 let lastSaved = JSON.parse(JSON.stringify(layout));
-
-// FACTORY_DEFAULT mirrors boards.DefaultLayout() (Go) for Reset-to-default.
-// NOTE (NOTES-board.md): this is a deliberate mirror — the supervisor pass
-// should confirm a single-source alternative (e.g. GET default from REST).
-const FACTORY_DEFAULT = {
-  v: 1,
-  widgets: [
-    { id: 'countdown', type: 'countdown', x: 0, y: 0, w: 8, h: 3, opts: { tenths: '1' } },
-    { id: 'messages', type: 'messages', x: 8, y: 0, w: 4, h: 3 },
-    { id: 'cuelabel', type: 'cuelabel', x: 0, y: 3, w: 5, h: 1, opts: { source: 'label' } },
-    { id: 'speaker', type: 'speaker', x: 5, y: 3, w: 3, h: 1 },
-    { id: 'nextup', type: 'nextup', x: 8, y: 3, w: 4, h: 2 },
-    { id: 'progress', type: 'progress', x: 0, y: 4, w: 8, h: 1 },
-    { id: 'wallclock', type: 'wallclock', x: 8, y: 5, w: 4, h: 1, opts: { tenths: '0' } },
-    { id: 'dayprogress', type: 'dayprogress', x: 0, y: 5, w: 8, h: 1 },
-    { id: 'rate', type: 'rate', x: 0, y: 6, w: 2, h: 1 },
-    { id: 'showtitle', type: 'showtitle', x: 2, y: 6, w: 6, h: 1 },
-    { id: 'schedule', type: 'schedule', x: 8, y: 6, w: 4, h: 4, opts: { count: '5' } },
-  ],
-};
-
 
 // Palette defaults for newly added tiles (mirror of the Go registry).
 const TILE_DEFAULTS = {
@@ -1077,12 +1055,9 @@ function buildEditorList(editing) {
     del.textContent = '🗑';
     del.setAttribute('aria-label', `Delete ${w.type} tile`);
     del.addEventListener('click', async () => {
-      layout.widgets = (layout.widgets || []).filter((x) => x.id !== w.id);
-      if (!layout.widgets.length) {
-        saveState('A board needs at least one tile');
-        layout.widgets = pristine.widgets.length ? JSON.parse(JSON.stringify(pristine.widgets)) : [FACTORY_DEFAULT.widgets[0]];
-        return;
-      }
+      const rest = (layout.widgets || []).filter((x) => x.id !== w.id);
+      if (!rest.length) { saveState('A board needs at least one tile'); return; }
+      layout.widgets = rest;
       await reloadEditing();
     });
     row.appendChild(del);
@@ -1423,12 +1398,9 @@ function wireCompose() {
     }
     if (e.target.closest('[data-gear]')) openSettings(tile.dataset.wid);
     if (e.target.closest('[data-del]')) {
-      layout.widgets = (layout.widgets || []).filter((w) => w.id !== tile.dataset.wid);
-      if (!layout.widgets.length) {
-        saveState('A board needs at least one tile');
-        layout.widgets = pristine.widgets.length ? JSON.parse(JSON.stringify(pristine.widgets)) : [FACTORY_DEFAULT.widgets[0]];
-        return;
-      }
+      const rest = (layout.widgets || []).filter((w) => w.id !== tile.dataset.wid);
+      if (!rest.length) { saveState('A board needs at least one tile'); return; }
+      layout.widgets = rest;
       await reloadEditing(); // server re-renders tiles, then we relock into edit
     }
   });
@@ -1518,7 +1490,16 @@ function wireCompose() {
 
   $('#b-reset')?.addEventListener('click', async () => {
     if (!(await tpConfirm('Reset this board to the factory layout?', { ok: 'Reset', danger: true }))) return;
-    layout = JSON.parse(JSON.stringify(FACTORY_DEFAULT));
+    // The factory layout comes from the server (boards.DefaultLayout), so
+    // it never drifts from Go (STATUS C5).
+    try {
+      const j = await (await fetch('/api/board-templates')).json();
+      if (!j.default?.widgets?.length) throw new Error('no default layout');
+      layout = j.default;
+    } catch (err) {
+      saveState(`Reset failed: ${err.message}`);
+      return;
+    }
     await reloadEditing();
   });
 

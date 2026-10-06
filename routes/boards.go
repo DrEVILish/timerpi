@@ -481,7 +481,9 @@ func boardRuntimeOf(snap timerpi.Snapshot) timerpi.Runtime {
 // GET /api/board-templates — the built-in layouts: catalog (grouped by
 // display type) + the key → layout map.
 func (d *Deps) apiBoardTemplates(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "catalog": boards.Templates(), "templates": boards.TemplateLayouts()})
+	// default: the factory layout board.js resets to (STATUS C5: served,
+	// not mirrored in JS).
+	c.JSON(http.StatusOK, gin.H{"ok": true, "catalog": boards.Templates(), "templates": boards.TemplateLayouts(), "default": boards.DefaultLayout()})
 }
 
 // roomTheme is the theme a room's screens fall back to: the event's

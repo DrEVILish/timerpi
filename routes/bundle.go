@@ -89,13 +89,14 @@ func (d *Deps) fillBundleExtras(id int64, sf *showFile) {
 			sf.Presets = append(sf.Presets, showFilePreset{Name: p.Name, Data: json.RawMessage([]byte(p.Data))})
 		}
 	}
-	if sf.Zone != "" {
-		if mid := d.Store.ZoneMap(sf.Zone); mid > 0 {
-			if a, aerr := d.Store.GetAsset(mid); aerr == nil {
+	// The event's venue map rides along (STATUS C10: no more zone maps).
+	if sh, serr := d.Store.GetShow(id); serr == nil {
+		if ev, eerr := d.Store.GetEvent(sh.EventID); eerr == nil && ev.MapAsset > 0 {
+			if a, aerr := d.Store.GetAsset(ev.MapAsset); aerr == nil {
 				sf.Assets = append(sf.Assets, showFileAssetRef{
 					ID: int64(len(sf.Assets) + 1), Name: a.Name, Mime: a.Mime, Data: dataURL(a),
 				})
-				sf.ZoneMapIndex = int64(len(sf.Assets))
+				sf.MapIndex = int64(len(sf.Assets))
 			}
 		}
 	}

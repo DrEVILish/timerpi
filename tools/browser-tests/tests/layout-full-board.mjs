@@ -33,6 +33,15 @@ export async function run(t) {
   await ctx.request.put(`${t.base}/api/shows/${room}/boards/${nb.id}`, { data: { layout: low }, headers: H });
   const w = (await layoutOf()).widgets[0];
   t.check(`a tile sent at y=80 is kept inside 48 rows (y=${w.y} h=${w.h})`, w.y + w.h <= 48);
+  // STATUS C5: Reset restores the server's factory layout.
+  const def = (await (await ctx.request.get(`${t.base}/api/board-templates`)).json()).default;
+  await pg.reload();
+  await pg.waitForSelector('#b-reset', { state: 'attached' });
+  await pg.$eval('#b-reset', (b) => b.click());
+  await pg.click('.tp-dlg-actions .btn-danger');
+  await pg.waitForTimeout(1500);
+  const after = await layoutOf();
+  t.check(`Reset restores the server's factory layout (${after.widgets.length} tiles)`, after.widgets.map((w) => w.id).sort().join() === def.widgets.map((w) => w.id).sort().join());
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
   await ctx.close();
 }

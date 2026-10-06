@@ -20,7 +20,7 @@ func TestBundleFullFidelity(t *testing.T) {
 	ts := newAPITest(t)
 
 	// Stage the event: cue, poll + question + submission + votes, screens
-	// config, board, preset, zone + map asset.
+	// config, board, preset, the event's venue map.
 	if _, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "Welcome", DurationMS: 300_000}); err != nil {
 		t.Fatalf("cue: %v", err)
 	}
@@ -30,16 +30,14 @@ func TestBundleFullFidelity(t *testing.T) {
 		`{"v":1,"widgets":[{"id":"a","type":"notice","x":0,"y":0,"w":4,"h":1}]}`); err != nil {
 		t.Fatalf("board: %v", err)
 	}
-	if err := ts.db.SetShowZone(ts.showID, "Hall A"); err != nil {
-		t.Fatalf("zone: %v", err)
-	}
 	img := append([]byte(pngHeader), bytes.Repeat([]byte{1, 2, 3}, 24)...)
 	a, aerr := ts.db.CreateAsset(0, "floorplan.png", "image/png", img)
 	if aerr != nil {
 		t.Fatalf("asset: %v", aerr)
 	}
-	if err := ts.db.SetZoneMap("Hall A", a.ID); err != nil {
-		t.Fatalf("zone map: %v", err)
+	sh0, _ := ts.db.GetShow(ts.showID)
+	if err := ts.db.SetEventMap(sh0.EventID, a.ID); err != nil {
+		t.Fatalf("event map: %v", err)
 	}
 
 	var cloud, q1, q2 int64
@@ -86,6 +84,7 @@ func TestBundleFullFidelity(t *testing.T) {
 		ManifestVersion int            `json:"manifestVersion"`
 		Zone            string         `json:"zone"`
 		ZoneMapIndex    int64          `json:"zoneMapIndex"`
+		MapIndex        int64          `json:"mapIndex"`
 		Polls           []timerpi.Poll `json:"polls"`
 		Votes           []struct {
 			PollID int64  `json:"pollId"`
@@ -109,16 +108,20 @@ func TestBundleFullFidelity(t *testing.T) {
 	if sf.ManifestVersion != 2 {
 		t.Fatalf("version: %d", sf.ManifestVersion)
 	}
-	if sf.Zone != "Hall A" || len(sf.Polls) != 3 || len(sf.Screens) != 1 ||
-		len(sf.Boards) == 0 || len(sf.Presets) == 0 || sf.ZoneMapIndex != int64(len(sf.Assets)) || len(sf.Assets) != 1 {
+	if sf.Zone != "" || sf.ZoneMapIndex != 0 || len(sf.Polls) != 3 || len(sf.Screens) != 1 ||
+		len(sf.Boards) == 0 || len(sf.Presets) == 0 || sf.MapIndex != int64(len(sf.Assets)) || len(sf.Assets) != 1 {
 		t.Fatalf("bundle content: zone=%q polls=%d screens=%d assets=%d mapIdx=%d boards=%d presets=%d",
-			sf.Zone, len(sf.Polls), len(sf.Screens), len(sf.Assets), sf.ZoneMapIndex, len(sf.Boards), len(sf.Presets))
+			sf.Zone, len(sf.Polls), len(sf.Screens), len(sf.Assets), sf.MapIndex, len(sf.Boards), len(sf.Presets))
 	}
 	if !bytes.Contains(raw, []byte(base64.StdEncoding.EncodeToString(img))) {
 		t.Error("map asset bytes missing from the bundle")
 	}
 
 	// Import into a NEW show.
+	// The map fills an event that has none (STATUS C10).
+	if err := ts.db.SetEventMap(sh0.EventID, 0); err != nil {
+		t.Fatal(err)
+	}
 	iw, ib := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", raw, "")
 	if iw != 201 {
 		t.Fatalf("import: %d %.200s", iw, ib)
@@ -135,8 +138,8 @@ func TestBundleFullFidelity(t *testing.T) {
 	if serr != nil {
 		t.Fatalf("imported show: %v", serr)
 	}
-	if impShow.Zone != "Hall A" {
-		t.Errorf("zone not restored: %q", impShow.Zone)
+	if impShow.Zone != "" {
+		t.Errorf("bundles no longer carry zones (C10): %q", impShow.Zone)
 	}
 	// Polls round-trip with moderation state + parent re-keyed.
 	impPolls, _ := ts.db.ListPolls(impShow.ID)
@@ -169,10 +172,10 @@ func TestBundleFullFidelity(t *testing.T) {
 	if scr, err := ts.db.GetScreenByName(impShow.ID, "Stage Left"); err != nil || scr.Theme != "lcars" || scr.Room != "Hall A" {
 		t.Errorf("screen registry not restored: %+v err %v", scr, err)
 	}
-	// Zone map re-pointed at a NEW asset carrying the same bytes.
-	if mid := ts.db.ZoneMap(impShow.Zone); mid <= 0 {
-		t.Error("zone map pointer not restored")
-	} else if na, err := ts.db.GetAsset(mid); err != nil || !bytes.Equal(na.Bytes, img) {
+	// The event map re-pointed at a NEW asset carrying the same bytes.
+	if ev, _ := ts.db.GetEvent(impShow.EventID); ev.MapAsset <= 0 {
+		t.Error("event map not restored")
+	} else if na, err := ts.db.GetAsset(ev.MapAsset); err != nil || !bytes.Equal(na.Bytes, img) {
 		t.Errorf("restored asset bytes differ: %v", err)
 	}
 	_ = q2

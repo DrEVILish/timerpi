@@ -195,8 +195,12 @@ type showFile struct {
 	Messages        []timerpi.Message `json:"messages"`
 	Schedule        showFileSchedule  `json:"schedule"`
 	// §11.9 full fidelity (v2, ZIP): the whole event rides the bundle.
+	// MapIndex is the event's venue map (→ Assets[i-1]). Zone and
+	// ZoneMapIndex are read from pre-event bundles only, never written
+	// (STATUS C10): their map becomes the event map when it has none.
+	MapIndex     int64              `json:"mapIndex,omitempty"`
 	Zone         string             `json:"zone,omitempty"`
-	ZoneMapIndex int64              `json:"zoneMapIndex,omitempty"` // → Assets[i-1]
+	ZoneMapIndex int64              `json:"zoneMapIndex,omitempty"`
 	Polls        []showFilePoll     `json:"polls,omitempty"`
 	Votes        []showFileVote     `json:"votes,omitempty"`
 	Screens      []showFileScreen   `json:"screens,omitempty"`
@@ -319,7 +323,6 @@ func (d *Deps) apiShowFile(c *gin.Context) {
 		Cues:            out,
 		Messages:        msgOut,
 		Schedule:        sched,
-		Zone:            show.Zone,
 		Version:         appVersion(),
 	}
 	d.fillBundleExtras(id, &sf)
@@ -426,9 +429,6 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 	// interaction items with moderation state, votes, screens (re-keyed to
 	// imported boards), presets. v1 bundles simply lack the sections.
 	if sf.ManifestVersion == showFileVersionV2 {
-		if sf.Zone != "" {
-			_ = d.Store.SetShowZone(show.ID, sf.Zone)
-		}
 		boardX := map[int64]int64{}
 		for _, b := range sf.Boards {
 			layout := string(b.Layout)
@@ -489,9 +489,15 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 				_, _ = d.Store.SavePreset(show.ID, pr.Name, string(pr.Data))
 			}
 		}
-		if sf.ZoneMapIndex > 0 {
-			if aid := assetX[sf.ZoneMapIndex]; aid > 0 {
-				_ = d.Store.SetZoneMap(sf.Zone, aid)
+		// The venue map belongs to the event: a bundle's map (or a
+		// pre-event bundle's zone map) fills it only when it has none.
+		idx := sf.MapIndex
+		if idx == 0 {
+			idx = sf.ZoneMapIndex
+		}
+		if aid := assetX[idx]; idx > 0 && aid > 0 {
+			if ev, eerr := d.Store.GetEvent(show.EventID); eerr == nil && ev.MapAsset == 0 {
+				_ = d.Store.SetEventMap(ev.ID, aid)
 			}
 		}
 	}

@@ -11,6 +11,8 @@ import (
 	"mime/multipart"
 	"strings"
 	"testing"
+
+	"timerpi/boards"
 )
 
 func pngBytes(t *testing.T) []byte {
@@ -91,6 +93,16 @@ func TestBoardTemplatesEndpoint(t *testing.T) {
 		if !strings.Contains(s, name) {
 			t.Errorf("templates missing %s", name)
 		}
+	}
+	// STATUS C5: the factory layout is served, not mirrored in board.js.
+	var out struct {
+		Default boards.Layout `json:"default"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := boards.DefaultLayout(); len(out.Default.Widgets) != len(want.Widgets) || out.Default.Widgets[0].ID != want.Widgets[0].ID {
+		t.Errorf("default layout = %+v, want boards.DefaultLayout()", out.Default)
 	}
 }
 

@@ -382,11 +382,6 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 			return Show{}, err
 		}
 	}
-	if src.Zone != "" {
-		if err := d.SetShowZone(dst.ID, src.Zone); err != nil {
-			return Show{}, err
-		}
-	}
 	cues, err := d.ListCues(id)
 	if err != nil {
 		return Show{}, err

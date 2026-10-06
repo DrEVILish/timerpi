@@ -20,7 +20,7 @@ func TestAudiencePage(t *testing.T) {
 	}
 	s := string(body)
 	for _, sub := range []string{`tp-aud-card`, `tp-aud-main`,
-		`data-show-code="` + ts.showCode + `"`, `WAITING FOR THE ROOM`} {
+		`data-show-code="` + ts.showCode + `"`, `Waiting for the room`, `class="panel tp-aud-card"`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("audience page missing %q", sub)
 		}
