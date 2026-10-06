@@ -64,6 +64,9 @@ install-pi:
 BUILD_TIMESTAMP ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 export BUILD_TIMESTAMP
 
+browser-test: ## end-to-end browser checks (tools/browser-tests; needs npm install there once)
+	cd tools/browser-tests && node run.mjs
+
 update: ## full safe-update rehearsal: vet+test+build (both arches), stage, gate, restart, health, rollback
 	bash scripts/update.sh
 

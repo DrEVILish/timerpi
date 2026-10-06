@@ -7,7 +7,7 @@
  * change applies immediately and is pushed to the screen. Browsers waiting
  * on /d/ are set up (captured) from here with the same choices.
  */
-import { api, toast, el, inlineEdit } from './ui.js';
+import { api, toast, el, inlineEdit, isEditingIn } from './ui.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 
 const KIND_LABEL = { audience: 'Audience', walkin: 'Walk-in', presenter: 'Presenter' };
@@ -37,7 +37,8 @@ export async function pull() {
   ]);
   if (s) st.screens = s.screens || [];
   if (w) st.waiting = w.waiting || [];
-  if (busy) return;
+  // A rename box or dropdown in use: skip this redraw (U13, BUGLOG RW37).
+  if (busy || isEditingIn(document.getElementById('tp-screens-page'))) return;
   renderWaiting();
   renderScreens();
 }
@@ -62,8 +63,6 @@ function themeSelect(value, onchange, label) {
   for (const t of st.themes) sel.appendChild(new Option(t, t));
   if (value && !st.themes.includes(value)) sel.appendChild(new Option(`${value} (missing)`, value));
   sel.value = value || '';
-  sel.addEventListener('focus', () => { busy = true; });
-  sel.addEventListener('blur', () => { busy = false; });
   sel.addEventListener('change', () => onchange(sel.value));
   return sel;
 }
@@ -96,14 +95,12 @@ function card(s) {
   kindSel.appendChild(new Option('Type…', ''));
   for (const [k, v] of Object.entries(KIND_LABEL)) kindSel.appendChild(new Option(v, k));
   kindSel.value = s.kind || '';
-  kindSel.addEventListener('focus', () => { busy = true; });
   kindSel.addEventListener('change', () => apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: s.boardId, room: s.room, kind: kindSel.value }), 'Display type saved'));
 
   const tplSel = el('select', { class: 'select input-sm', 'aria-label': `Layout of ${s.name}` });
   tplSel.appendChild(new Option(s.boardName ? `Current: ${s.boardName}` : 'Current layout', ''));
   const pick = st.catalog.filter((t) => !s.kind || t.kind === s.kind);
   for (const t of pick) tplSel.appendChild(new Option(`Use template: ${t.name}`, t.key));
-  tplSel.addEventListener('focus', () => { busy = true; });
   tplSel.addEventListener('change', async () => {
     if (!tplSel.value) return;
     const t = st.catalog.find((x) => x.key === tplSel.value);
@@ -118,7 +115,6 @@ function card(s) {
   const rotSel = el('select', { class: 'select input-sm', 'aria-label': `Rotation of ${s.name}` });
   for (const r of [0, 90, 270, 180]) rotSel.appendChild(new Option(ROT_LABEL[r], String(r)));
   rotSel.value = String(s.rotation || 0);
-  rotSel.addEventListener('focus', () => { busy = true; });
   rotSel.addEventListener('change', () => apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: s.boardId, room: s.room, rotation: Number(rotSel.value) }), 'Rotation saved'));
 
   const themeSel = themeSelect(s.theme, (v) => apply(() => post('/screens/config', { name: s.name, theme: v, boardId: s.boardId, room: s.room }), 'Theme saved'), `Theme of ${s.name}`);

@@ -29,7 +29,7 @@ The previous docs became append-only logs: three trackers and many handoff notes
 
 - Go 1.25, CGO (gcc) for SQLite. For the Pi: `aarch64-linux-gnu-gcc` + `make build-arm64`.
 - `make run`: dev server on :8080 with data in `./data`. Never point development at `/var/lib/timerpi`.
-- Before finishing: `go build ./... && go vet ./... && go test ./...` must pass. Every feature or bug fix lands with a test.
+- Before finishing: `go build ./... && go vet ./... && go test ./...` must pass. Every feature or bug fix lands with a test. UI behaviour that only a browser shows gets a test in `tools/browser-tests/` (`make browser-test`).
 - If the machine runs `timerpi.service` from this checkout: `make build` → `systemctl restart timerpi` → `curl -s localhost/health`. Never leave a stale binary serving.
 - **Do not run `go mod tidy`.** Dependencies are pinned by `tools/deps/deps.go`; add new deps there first.
 - Changing JS/CSS: bump the asset version with `tools/bump-assets.sh`, so screens don't run cached code (see ARCHITECTURE §12).

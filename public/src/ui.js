@@ -159,3 +159,13 @@ export function inlineEdit(span, onCommit) {
     lastTap = now;
   });
 }
+
+/** True while the user is typing or choosing inside root (an input,
+ * textarea, select or editable element has focus). Polling pages skip
+ * their re-render then, so a redraw never rips out a field mid-edit
+ * (STATUS U13). */
+export function isEditingIn(root) {
+  const a = document.activeElement;
+  if (!a || !root || !root.contains(a)) return false;
+  return a.matches('input, textarea, select') || a.isContentEditable;
+}

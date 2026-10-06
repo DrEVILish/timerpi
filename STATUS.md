@@ -148,7 +148,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U13** | Bug: typing "R" (and other shortcut keys) in an inline input triggers a shortcut. Shortcuts must ignore keys typed into inputs. |
+| **U13** | ✅ Fixed 2026-10-06: while a cue cell was being edited, the client's row check saw the cell empty and rebuilt the table, destroying the input, so the next keys hit the shortcuts (Space = GO, R = reset). The rebuild now waits for the edit; the Screens page skips its redraw while a field is in use. Browser test `keys-while-typing`. |
 | **U14** | Adding a cue: pick **Session (speaker)** or **Break**; a break can have a location, e.g. where lunch is served ("Great Hall"). |
 | **U15** | Dragging or reordering the running order never interrupts the running cue (engine side fixed in BUGLOG RC2; verify in the UI). |
 | **U16** | Editing a cue (title, alerts…) never resets its running timer: a 30-minute countdown keeps counting from where it was. |

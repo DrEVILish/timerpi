@@ -405,6 +405,11 @@ class ClockUI {
     if (!snap || this.page !== 'dashboard') return;
     const tbody = $('#cuelist tbody');
     if (!tbody) return;
+    // A cell editor is open: its cell reads empty, so the signature below
+    // would mismatch and the rebuild would rip the input out mid-typing,
+    // sending the next keys to the shortcuts (Space = GO, R = reset; STATUS
+    // U13). finish() re-renders once the edit ends.
+    if (tbody.querySelector('input')) return;
     const domSig = [...tbody.querySelectorAll('tr[data-pos]')].map(tr =>
       `${tr.dataset.pos}:${tr.querySelector('.tp-cue-label')?.childNodes[0]?.textContent ?? ''}`).join(',');
     const snapSig = (snap.cues || []).map(c =>
