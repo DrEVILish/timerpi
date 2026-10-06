@@ -15,7 +15,7 @@ const ROT_LABEL = { 0: 'Normal', 90: 'Portrait ↻', 270: 'Portrait ↺', 180: '
 
 const page = document.getElementById('tp-screens-page');
 const code = page?.dataset.room || '';
-const st = { screens: [], waiting: [], themes: [], catalog: [] };
+const st = { screens: [], waiting: [], themes: [], catalog: [], layouts: [] };
 let busy = false; // pause re-render while a select/rename is in use
 
 export function initScreens() {
@@ -31,12 +31,14 @@ export function initScreens() {
 
 export async function pull() {
   if (!page) return;
-  const [s, w] = await Promise.all([
+  const [s, w, l] = await Promise.all([
     api('GET', `/api/shows/${code}/screens`).catch(() => null),
     api('GET', '/api/waiting').catch(() => null),
+    api('GET', `/api/shows/${code}/boards`).catch(() => null),
   ]);
   if (s) st.screens = s.screens || [];
   if (w) st.waiting = w.waiting || [];
+  if (l) st.layouts = l.boards || l || [];
   // A rename box or dropdown in use: skip this redraw (U13, BUGLOG RW37).
   if (busy || isEditingIn(document.getElementById('tp-screens-page'))) return;
   renderWaiting();
@@ -97,19 +99,30 @@ function card(s) {
   kindSel.value = s.kind || '';
   kindSel.addEventListener('change', () => apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: s.boardId, room: s.room, kind: kindSel.value }), 'Display type saved'));
 
+  // Layout: the room's own layouts (pick one: applied at once), the plain
+  // timer, or a built-in template (copied into a new layout for this
+  // screen, after a confirm) — STATUS U9.
   const tplSel = el('select', { class: 'select input-sm', 'aria-label': `Layout of ${s.name}` });
-  tplSel.appendChild(new Option(s.boardName ? `Current: ${s.boardName}` : 'Current layout', ''));
-  const pick = st.catalog.filter((t) => !s.kind || t.kind === s.kind);
-  for (const t of pick) tplSel.appendChild(new Option(`Use template: ${t.name}`, t.key));
+  const own = el('optgroup', { label: 'Layouts' });
+  own.appendChild(new Option('Plain timer (no layout)', 'b:0'));
+  for (const b of st.layouts) own.appendChild(new Option(b.name || `Layout ${b.id}`, `b:${b.id}`));
+  tplSel.appendChild(own);
+  const tpls = el('optgroup', { label: 'New from template' });
+  for (const t of st.catalog.filter((x) => !s.kind || x.kind === s.kind)) tpls.appendChild(new Option(t.name, `t:${t.key}`));
+  tplSel.appendChild(tpls);
+  tplSel.value = `b:${s.boardId || 0}`;
   tplSel.addEventListener('change', async () => {
-    if (!tplSel.value) return;
-    const t = st.catalog.find((x) => x.key === tplSel.value);
-    if (!(await tpConfirm(`"${s.name}" switches to the "${t?.name}" layout. Its current layout edits are replaced.`, { title: 'Change layout?', ok: 'Change layout' }))) {
-      tplSel.value = '';
-      busy = false;
+    const [kind, val] = tplSel.value.split(':');
+    if (kind === 'b') {
+      apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: Number(val), room: s.room }), 'Layout changed');
       return;
     }
-    apply(() => post('/screens/template', { name: s.name, template: tplSel.value }), 'Layout changed');
+    const t = st.catalog.find((x) => x.key === val);
+    if (!(await tpConfirm(`"${s.name}" gets a new layout made from the "${t?.name}" template.`, { title: 'Use template?', ok: 'Use template' }))) {
+      tplSel.value = `b:${s.boardId || 0}`;
+      return;
+    }
+    apply(() => post('/screens/template', { name: s.name, template: val }), 'Layout changed');
   });
 
   const rotSel = el('select', { class: 'select input-sm', 'aria-label': `Rotation of ${s.name}` });

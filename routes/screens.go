@@ -175,10 +175,10 @@ func (d *Deps) screenCard(r timerpi.Screen,
 	for _, pr := range peers[name] {
 		v.Peers = append(v.Peers, screenSessionView{PeerID: pr[0], Role: pr[1]})
 	}
+	// An unassigned screen shows the plain stage timer (display.go only
+	// redirects to a board when one is assigned), so it previews as that,
+	// never as the room's first board (BUGLOG RW36).
 	bid := boardID
-	if bid == 0 {
-		bid = defaultBoardID // unassigned screens render the show board
-	}
 	if n, ok := boardNames[bid]; ok {
 		v.BoardName = n
 	}
@@ -204,16 +204,19 @@ func (d *Deps) pushScreen(id int64, name string) {
 	if err != nil {
 		return
 	}
+	// Always push the resolved theme and board: resetting a screen to the
+	// event default theme or to "no layout" must reach the live TV too
+	// (BUGLOG RW35; boardId 0 sends it back to the plain timer).
 	var frames [][]byte
-	if s.Theme != "" {
-		if b, jerr := json.Marshal(map[string]any{"t": "display", "theme": s.Theme}); jerr == nil {
-			frames = append(frames, b)
-		}
+	theme := s.Theme
+	if theme == "" {
+		theme = d.roomTheme(id)
 	}
-	if s.BoardID > 0 {
-		if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID}); jerr == nil {
-			frames = append(frames, b)
-		}
+	if b, jerr := json.Marshal(map[string]any{"t": "display", "theme": theme}); jerr == nil {
+		frames = append(frames, b)
+	}
+	if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID}); jerr == nil {
+		frames = append(frames, b)
 	}
 	if b, jerr := json.Marshal(map[string]any{"t": "screen-look", "kind": s.Kind, "rotation": s.Rotation}); jerr == nil {
 		frames = append(frames, b)

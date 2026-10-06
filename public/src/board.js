@@ -203,11 +203,14 @@ function initMesh() {
           }
           // F1: the operator re-assigned this screen's board — navigate
           // (locked screens only; an open editor must not lose its draft).
-          if (m.t === 'screen-board' && m.boardId && !editable) {
+          // boardId 0 = "plain timer": back to the stage view (RW35).
+          if (m.t === 'screen-board' && !editable) {
             const cur = Number(new URLSearchParams(location.search).get('board') || 0);
-            if (cur !== m.boardId) {
+            const want = Number(m.boardId) || 0;
+            if (cur !== want) {
               const u = new URL(location.href);
-              u.searchParams.set('board', String(m.boardId));
+              if (want > 0) u.searchParams.set('board', String(want));
+              else { u.searchParams.delete('board'); u.searchParams.delete('view'); }
               location.replace(u.toString());
             }
           }
