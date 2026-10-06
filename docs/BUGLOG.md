@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 59 | 0 |
+| Warning | 60 | 0 |
 | Suggestion | 41 | 2 |
 
 ## Critical
@@ -114,6 +114,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RW57 | `routes/walkin.go:63-66`; `public/src/board.js:407` | Each walk-in screen polls every 5 s, and each request runs `engineFor` + `Snapshot()` for every room (mutex plus 3+ queries), creating engines for idle rooms. 20 screens × 10 rooms ≈ 150 queries/s on a Pi. | Cache the feed per event for ~2 s (singleflight), or push it over WS on change. | Fixed 2026-10-06 (c404e93) |
 | RW58 | `public/src/moderate.js:95`; `public/src/timerpi.js:838-840`; `timerpi/polls.go:672-682` | Every poll frame (up to 2.5/s per moderator) reloads `ModeratorItems` (2–3 queries per item for every item ever, with all entries) and rebuilds the whole panel DOM. A click landing during the swap is lost. | On `poll` frames refresh only the on-air tally; diff the DOM instead of replacing it. | Fixed 2026-10-06 (c404e93) |
 | RW59 | `timerpi/engine.go` (`startLocked`) | With no day start set, the first GO anchored the day at local midnight, so planned times read 00:00-based and the dashboard said "+21:50 vs plan". Found 2026-10-06 while checking the room page. | Anchor so the started cue is on plan. | Fixed 2026-10-06 (b5d055d) |
+| RW60 | `ws/hub.go` (`broadcast`) | The running order fragment was re-rendered only when cues changed, so after the first GO (or "Day starts now") a live room page kept "+0:10" offsets instead of clock times until it was reloaded. Found 2026-10-06. | Include the day start in the fragment signature. | Fixed 2026-10-06 (76c31af) |
 
 ## Suggestion
 
