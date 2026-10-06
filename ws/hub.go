@@ -428,7 +428,8 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 		for _, b := range leads {
 			h.fanout(showID, b)
 		}
-		h.fanout(showID, marshalFrame("t", "state", "snapshot", snap))
+		h.fanoutSplit(showID, marshalFrame("t", "state", "snapshot", snap),
+			marshalFrame("t", "state", "snapshot", snap.Public()))
 		return
 	}
 	data := views.ShowData(snap, h.nowFn(), "")
@@ -471,9 +472,9 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 		h.fanout(showID, b)
 	}
 	for _, b := range oobs {
-		h.fanout(showID, b)
+		h.fanoutSplit(showID, b, nil) // operator fragments: trusted only
 	}
-	h.fanout(showID, state)
+	h.fanoutSplit(showID, state, marshalFrame("t", "state", "snapshot", snap.Public()))
 }
 
 // scheduleRowFrame is the lean schedule row for the `schedule` frame; the
@@ -556,6 +557,30 @@ func (h *Hub) fanout(showID int64, frame []byte) {
 	h.mu.Unlock()
 	for _, s := range targets {
 		s.offer(frame)
+	}
+}
+
+// fanoutSplit offers trusted sessions one frame and the rest another
+// (BUGLOG RW9); a nil public frame skips untrusted sessions.
+func (h *Hub) fanoutSplit(showID int64, trusted, public []byte) {
+	h.mu.Lock()
+	sh, ok := h.byShow[showID]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+	targets := make([]*session, 0, len(sh.sessions))
+	for s := range sh.sessions {
+		targets = append(targets, s)
+	}
+	h.mu.Unlock()
+	for _, s := range targets {
+		switch {
+		case s.trusted:
+			s.offer(trusted)
+		case public != nil:
+			s.offer(public)
+		}
 	}
 }
 
@@ -821,7 +846,11 @@ func (h *Hub) broadcastPollNow(showID int64) {
 	}
 	h.mu.Unlock()
 	for _, s2 := range full {
-		s2.offer(fullFrame)
+		if s2.trusted {
+			s2.offer(fullFrame)
+		} else {
+			s2.offer(audFrame) // untrusted screens: audience target only (RW9)
+		}
 	}
 	for _, s2 := range aud {
 		s2.offer(audFrame)

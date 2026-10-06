@@ -178,7 +178,15 @@ Access is per event, plus one box password for the box's own settings:
 - **Lost box password:** stop the service and clear it with
   `sqlite3 /var/lib/timerpi/timerpi.db "DELETE FROM settings WHERE key='box.pw_hash';"`.
   The next visitor to `/box` then sets a new one, so do this on a closed network.
-- Screens (`/d/`), audience phones (`/a/`) and `/health` never sign in.
+- Screens (`/d/`), audience phones (`/a/`) and `/health` never sign in. A
+  screen set up through capture carries a **screen key** in its address;
+  only keyed screens (or a browser a moderator opened) get stage messages,
+  notes and the Presenter item. A screen opened by hand with just
+  `/d/<room>` shows the public timer. To open a screen by hand with full
+  content, use **Screen link** on the Screens page.
+- **After updating from a build without screen keys:** screens set up
+  earlier have no key. Re-capture them (open `/d/` on them) or open their
+  **Screen link**; until then they show the public timer.
 - **Lost supervisor password:** stop the service and clear it with
   `sqlite3 /var/lib/timerpi/timerpi.db "UPDATE events SET super_hash='' WHERE code='<CODE>';"`.
   The event then admits anyone holding its code until a new password is set.

@@ -61,14 +61,27 @@ async function register() {
     await fetch('/api/waiting/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: screenName(), host: location.host }),
+      body: JSON.stringify({ name: screenName(), host: location.host, token: waitToken() }),
     });
   } catch { /* nothing to register against while fully offline */ }
 }
 
+// waitToken proves this tab is the waiting screen it claims to be: the
+// capture (and its screen key) is only handed to the tab that registered
+// with it (BUGLOG RW9).
+function waitToken() {
+  let t = '';
+  try { t = sessionStorage.getItem('tp.waitToken') || ''; } catch { /* */ }
+  if (!t) {
+    t = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+    try { sessionStorage.setItem('tp.waitToken', t); } catch { /* */ }
+  }
+  return t;
+}
+
 async function pollMine() {
   try {
-    const q = `?name=${encodeURIComponent(screenName())}&host=${encodeURIComponent(location.host)}`;
+    const q = `?name=${encodeURIComponent(screenName())}&host=${encodeURIComponent(location.host)}&token=${waitToken()}`;
     const j = await (await fetch('/api/waiting/mine' + q)).json();
     if (j && j.assigned) {
       clearInterval(pollTimer);
@@ -76,7 +89,8 @@ async function pollMine() {
       // The capture modal may have (re)named this screen — adopt it.
       const name = j.screen || screenName();
       try { sessionStorage.setItem('tp.screen', name); } catch { /* */ }
-      location.href = `/d/${encodeURIComponent(j.assigned)}?screen=${encodeURIComponent(name)}`;
+      const key = j.key ? `&key=${encodeURIComponent(j.key)}` : '';
+      location.href = `/d/${encodeURIComponent(j.assigned)}?screen=${encodeURIComponent(name)}${key}`;
     }
   } catch { /* keep waiting */ }
 }

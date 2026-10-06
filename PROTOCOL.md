@@ -82,13 +82,14 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET …/screens` · `GET …/screens/self?name=` | Registry ∪ live sessions (with preview data) · a screen's own config |
 | `POST …/screens/config {name, theme?, boardId?, room?, kind?, rotation?}` | mod. Theme, layout, display type (`audience\|walkin\|presenter`), rotation (0/90/180/270) |
 | `POST …/screens/template {name, template}` | mod. Give the screen its own copy of a built-in template |
-| `POST …/screens/match\|rename\|forget` | mod. Copy one screen's look to all · rename `{from,to}` · forget |
+| `POST …/screens/match\|rename\|forget` | mod. Copy one screen's look to all · rename `{from,to}` · forget (drops the screen's key: it is released) |
+| `POST …/screens/link {name}` | mod. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
 | `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}` |
 | `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
 | `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | Layouts `{v, rows, orientation, widgets[]}`. `PUT {name?, layout?}` is validated (types, overlap, limits) |
-| `POST /api/waiting/register {name,host}` · `GET /api/waiting/mine?name&host` | Screen side (open) |
-| `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session |
+| `POST /api/waiting/register {name,host,token}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>` |
+| `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session; capture needs moderator access to the room. A screen already captured into another room → 409 |
 
 ### Audience interactions (`routes/audience.go`, model in `timerpi/polls.go`)
 Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets: **audience** (phones + audience screens) and **presenter** (DSM). One item per target per room. Submissions (questions, words, ideas) are entries under their item.
@@ -125,8 +126,10 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 ### Join (first frame, within 10 s)
 ```json
 {"v":1,"t":"join","role":"controls|display|screen|audience","show":"<room code>",
- "peerId":"<uuid>","joinedAt":<ms>,"screen":"<name>"}
+ "peerId":"<uuid>","joinedAt":<ms>,"screen":"<name>","key":"<screen key>"}
 ```
+- **Trusted vs public** (BUGLOG RW9): operators, a screen whose `key` matches its `screen` name, and a display opened by a browser with moderator access are *trusted*. Everyone else gets the **public snapshot**: no show or cue notes, no cue tags, no stage messages, no `presenter` item, and no `oob` operator fragments. `joined.you.trusted` says which. The same rule applies to the first paint of `/d/` pages.
+- `peerId` must be ≤ 64 plain characters (else one is generated). The same id in another role is refused; in the same role it replaces the stale session. `joinedAt` is clamped: never in the future; only operators keep it (up to a day back), screens and phones join "now".
 - `controls` needs a moderator (or supervisor) session cookie on the upgrade request; otherwise `err` "moderator access required".
 - `screen` is for screens only; it upserts the screens registry.
 - `audience` joins a separate bucket (cap 4000/room). Others share the room bucket (cap 512).

@@ -39,8 +39,12 @@ func TestSharePanelAndCodeOnlyAddress(t *testing.T) {
 			t.Errorf("dashboard missing %q", want)
 		}
 	}
-	if bytes.Contains(body, []byte(`/d/`+ts.showIDNumber())) {
-		t.Errorf("dashboard still links a numeric display URL")
+	// A numeric link ends right after the id; a random code may merely
+	// START with the same digit (that made this test flaky).
+	for _, end := range []string{`"`, `?`, `'`, `<`} {
+		if bytes.Contains(body, []byte(`/d/`+ts.showIDNumber()+end)) {
+			t.Errorf("dashboard still links a numeric display URL")
+		}
 	}
 
 	// Display page resolves by code (and by dashed/lowercase spelling).

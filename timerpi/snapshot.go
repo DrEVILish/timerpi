@@ -198,3 +198,22 @@ func AlertColor(c *Cue, state int) string {
 	}
 	return ""
 }
+
+// Public is the snapshot for an untrusted screen: a browser that opened a
+// room's display link without a screen key or an operator session (BUGLOG
+// RW9). It keeps what a stage timer shows anyone in the room (title,
+// running order labels, speakers, times, runtime, the audience item) and
+// drops operator content: show and cue notes, cue tags, stage messages and
+// the Presenter-only item.
+func (s Snapshot) Public() Snapshot {
+	out := s
+	out.Show.Notes = ""
+	out.Messages = []Message{}
+	out.Presenter = nil
+	out.Cues = make([]Cue, len(s.Cues))
+	for i, c := range s.Cues {
+		c.Notes, c.Tags = "", ""
+		out.Cues[i] = c
+	}
+	return out
+}

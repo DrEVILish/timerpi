@@ -1,7 +1,10 @@
 package timerpi
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -234,9 +237,11 @@ func (d *DB) migrate() error {
 			{"room", "TEXT NOT NULL DEFAULT ''"},
 			{"kind", "TEXT NOT NULL DEFAULT ''"},
 			{"rotation", "INTEGER NOT NULL DEFAULT 0"},
+			{"key", "TEXT NOT NULL DEFAULT ''"},
 		},
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
+			{"token", "TEXT NOT NULL DEFAULT ''"},
 		},
 		"assets": {
 			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
@@ -1293,6 +1298,47 @@ func (d *DB) RenameScreen(showID int64, from, to string) error {
 	return tx.Commit()
 }
 
+// ScreenKey returns the screen's key, creating the screen row and a fresh
+// random key when either is missing (BUGLOG RW9). The key rides the
+// screen's URL (?key=) from capture or the Screens page "screen link"; only
+// a keyed screen receives operator content (stage messages, notes, the
+// Presenter item). Forgetting the screen (DeleteScreen) or deleting its
+// room or event drops the key: the screen is released.
+func (d *DB) ScreenKey(showID int64, name string) (string, error) {
+	name = SanitizeScreenName(name)
+	if name == "" {
+		return "", fmt.Errorf("timerpi: screen key needs a name")
+	}
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	fresh := hex.EncodeToString(b[:])
+	if _, err := d.Exec(`INSERT INTO screens (show_id, name, last_seen, key) VALUES (?, ?, ?, ?)
+		ON CONFLICT (show_id, name) DO UPDATE SET key = CASE WHEN key = '' THEN excluded.key ELSE key END`,
+		showID, name, nowMS(), fresh); err != nil {
+		return "", fmt.Errorf("timerpi: screen key: %w", err)
+	}
+	var key string
+	if err := d.Get(&key, `SELECT key FROM screens WHERE show_id = ? AND name = ?`, showID, name); err != nil {
+		return "", fmt.Errorf("timerpi: screen key: %w", err)
+	}
+	return key, nil
+}
+
+// ScreenKeyValid reports whether key is the named screen's key.
+func (d *DB) ScreenKeyValid(showID int64, name, key string) bool {
+	name = SanitizeScreenName(name)
+	if name == "" || key == "" {
+		return false
+	}
+	var want string
+	if err := d.Get(&want, `SELECT key FROM screens WHERE show_id = ? AND name = ?`, showID, name); err != nil || want == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(want), []byte(key)) == 1
+}
+
 // ClearScreenBoard drops the board assignment from every screen pointing
 // at bid (called when a board is deleted — a stale id would navigate locked
 // TVs to a 404 on every join push).
@@ -1342,6 +1388,14 @@ var ErrWaitingFull = errors.New("timerpi: too many screens waiting to be set up"
 // RegisterWaiting upserts a waiting display (name sanitized; host free text,
 // bounded). Empty name after sanitizing is refused.
 func (d *DB) RegisterWaiting(name, host string) error {
+	return d.RegisterWaitingToken(name, host, "")
+}
+
+// RegisterWaitingToken is RegisterWaiting with the tab's waiting token:
+// the first token a row sees is the only one that may later claim its
+// capture (and the screen key that comes with it; BUGLOG RW9).
+func (d *DB) RegisterWaitingToken(name, host, token string) error {
+	token = ClipUTF8(strings.TrimSpace(token), 64)
 	name = SanitizeScreenName(name)
 	if name == "" {
 		return fmt.Errorf("timerpi: waiting register needs a name")
@@ -1360,8 +1414,9 @@ func (d *DB) RegisterWaiting(name, host string) error {
 			return ErrWaitingFull
 		}
 	}
-	_, err := d.Exec(`INSERT INTO waiting_screens (name, host, last_seen) VALUES (?, ?, ?)
-		ON CONFLICT (name, host) DO UPDATE SET last_seen = ?`, name, host, now, now)
+	_, err := d.Exec(`INSERT INTO waiting_screens (name, host, last_seen, token) VALUES (?, ?, ?, ?)
+		ON CONFLICT (name, host) DO UPDATE SET last_seen = ?,
+			token = CASE WHEN token = '' THEN excluded.token ELSE token END`, name, host, now, token, now)
 	if err != nil {
 		return fmt.Errorf("timerpi: register waiting: %w", err)
 	}
@@ -1392,18 +1447,30 @@ func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 // captured show code + the screen name to adopt, ONCE. The row is removed
 // on claim — the display leaves the waiting room for good (PLAN §11.2).
 func (d *DB) ClaimWaiting(name, host string) (string, string, error) {
+	return d.ClaimWaitingToken(name, host, "")
+}
+
+// ClaimWaitingToken is ClaimWaiting for a tab holding a waiting token: a
+// row registered with a token is only claimed by that same token, so a
+// stranger polling with the screen's name can't steal its capture.
+func (d *DB) ClaimWaitingToken(name, host, token string) (string, string, error) {
 	name = SanitizeScreenName(name)
 	host = ClipUTF8(strings.TrimSpace(host), 80)
-	now := nowMS()
-	_, _ = d.Exec(`INSERT INTO waiting_screens (name, host, last_seen) VALUES (?, ?, ?)
-		ON CONFLICT (name, host) DO UPDATE SET last_seen = ?`, name, host, now, now)
+	token = ClipUTF8(strings.TrimSpace(token), 64)
+	if err := d.RegisterWaitingToken(name, host, token); err != nil && !errors.Is(err, ErrWaitingFull) {
+		return "", "", nil
+	}
 	var row struct {
 		Assigned string `db:"assigned"`
 		Screen   string `db:"screen"`
+		Token    string `db:"token"`
 	}
-	err := d.Get(&row, `SELECT assigned, screen FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
+	err := d.Get(&row, `SELECT assigned, screen, token FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
 	if err != nil || row.Assigned == "" {
 		return "", "", nil
+	}
+	if row.Token != "" && subtle.ConstantTimeCompare([]byte(row.Token), []byte(token)) != 1 {
+		return "", "", nil // not the tab that registered this screen
 	}
 	// Atomic win: the conditional UPDATE claims the row or loses it to a
 	// racing claimant (hardening round — the read-then-delete window let
@@ -1433,8 +1500,13 @@ func (d *DB) GetWaiting(id int64) (WaitingScreen, error) {
 
 // AssignWaiting marks a waiting row captured into a show code, carrying
 // the screen name the display adopts on its hop (PLAN §11.2 capture modal).
+// Only an unassigned row, or one already assigned to the same room (the
+// operator correcting a capture before the screen hops), is taken (BUGLOG
+// RW38): operators of two rooms capturing the same screen can't both win;
+// the loser gets sql.ErrNoRows.
 func (d *DB) AssignWaiting(id int64, code, screen string) error {
-	res, err := d.Exec(`UPDATE waiting_screens SET assigned = ?, screen = ? WHERE id = ?`, code, SanitizeScreenName(screen), id)
+	res, err := d.Exec(`UPDATE waiting_screens SET assigned = ?, screen = ? WHERE id = ? AND (assigned = '' OR assigned = ?)`,
+		code, SanitizeScreenName(screen), id, code)
 	if err != nil {
 		return fmt.Errorf("timerpi: assign waiting: %w", err)
 	}

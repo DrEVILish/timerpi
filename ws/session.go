@@ -35,6 +35,11 @@ type session struct {
 	showID      int64
 	joinedAt    int64
 	active      int64 // unix ms of last inbound activity (atomic)
+	// trusted sessions receive operator content (stage messages, notes,
+	// the Presenter item, operator fragments): operators, captured screens
+	// holding their key, and browsers a moderator opened. Everything else
+	// gets the public snapshot (BUGLOG RW9).
+	trusted bool
 }
 
 // Session pipeline:
@@ -92,6 +97,7 @@ func (h *Hub) readJoin(s *session) bool {
 		PeerID   string          `json:"peerId"`
 		JoinedAt int64           `json:"joinedAt"`
 		Screen   string          `json:"screen"`
+		Key      string          `json:"key"` // screen key (?key=), RW9
 	}
 	if jerr := json.Unmarshal(raw, &j); jerr != nil || j.T != "join" {
 		s.sendErr("first frame must be a join frame")
@@ -124,6 +130,16 @@ func (h *Hub) readJoin(s *session) bool {
 	s.screen = timerpi.SanitizeScreenName(j.Screen)
 	s.showID = showID
 	s.joinedAt = clampJoinedAt(j.Role, j.JoinedAt, h.nowFn())
+	switch {
+	case s.role == "controls":
+		s.trusted = true // gated above
+	case s.role == "audience":
+		s.trusted = false
+	case s.screen != "" && h.store.ScreenKeyValid(showID, s.screen, j.Key):
+		s.trusted = true
+	default:
+		s.trusted = routes.ModerateFromCookies(h.store, s.httpCookies, showID)
+	}
 	return true
 }
 
@@ -272,9 +288,13 @@ func (h *Hub) register(s *session) bool {
 	}
 
 	// Join reply first (client builds its peer table from it).
+	joinSnap := snap
+	if !s.trusted {
+		joinSnap = snap.Public()
+	}
 	s.sendFrame("t", "joined",
-		"you", map[string]any{"peerId": s.id, "role": s.role, "joinedAt": s.joinedAt},
-		"snapshot", snap,
+		"you", map[string]any{"peerId": s.id, "role": s.role, "joinedAt": s.joinedAt, "trusted": s.trusted},
+		"snapshot", joinSnap,
 		"peers", others.wire(),
 	)
 	if len(others) > 0 {
@@ -301,7 +321,7 @@ func (h *Hub) register(s *session) bool {
 	// never fire; owner-visible bug: reload ≠ bars).
 	if fn := h.pollsFnFor(); fn != nil {
 		if on, perr := fn(s.showID); perr == nil {
-			s.offer(pollFrame(on, true, h.nowFn()))
+			s.offer(pollFrame(on, s.trusted, h.nowFn()))
 		}
 	}
 	h.logf("ws: %s joined show %d as %s (%d connected)", s.id, s.showID, s.role, everyone.len())

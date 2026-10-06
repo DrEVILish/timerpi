@@ -889,12 +889,7 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 	// (openresty blocks query paths that start with "/d/" — owner-round
 	// finding: the dashboard QR 403'd through the edge in that exact form).
 	if strings.HasPrefix(data, "/") {
-		scheme := "http"
-		if c.Request.Header.Get("X-Forwarded-Proto") == "https" ||
-			(c.Request.TLS != nil && c.Request.TLS.HandshakeComplete) {
-			scheme = "https"
-		}
-		data = scheme + "://" + c.Request.Host + data
+		data = requestOrigin(c) + data
 	}
 	if len(data) > 512 {
 		c.String(http.StatusBadRequest, "qr data too long (max 512 chars)")
@@ -911,4 +906,15 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", `inline; filename="timerpi-share.png"`)
 	c.Data(http.StatusOK, "image/png", png)
+}
+
+// requestOrigin is scheme://host of the request as the browser sees it
+// (X-Forwarded-Proto wins behind a TLS proxy).
+func requestOrigin(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.Header.Get("X-Forwarded-Proto") == "https" ||
+		(c.Request.TLS != nil && c.Request.TLS.HandshakeComplete) {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host
 }

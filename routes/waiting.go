@@ -44,8 +44,9 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
-		Host string `json:"host"`
+		Name  string `json:"name"`
+		Host  string `json:"host"`
+		Token string `json:"token"`
 	}
 	_ = c.ShouldBindJSON(&body) // form fallback below keeps curl honest
 	if body.Name == "" {
@@ -60,7 +61,7 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "too many screens registering from this address"})
 		return
 	}
-	if err := d.Store.RegisterWaiting(body.Name, body.Host); err != nil {
+	if err := d.Store.RegisterWaitingToken(body.Name, body.Host, body.Token); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, timerpi.ErrWaitingFull) {
 			status = http.StatusTooManyRequests
@@ -82,12 +83,20 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "name required"})
 		return
 	}
-	code, screen, err := d.Store.ClaimWaiting(c.Query("name"), c.Query("host"))
+	code, screen, err := d.Store.ClaimWaitingToken(c.Query("name"), c.Query("host"), c.Query("token"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "assigned": code, "screen": screen})
+	// The captured screen's key travels with the hop (BUGLOG RW9): only
+	// keyed screens receive operator content.
+	key := ""
+	if code != "" && screen != "" {
+		if sid, ok := timerpi.ResolveShowID(d.Store, code); ok {
+			key, _ = d.Store.ScreenKey(sid, screen)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "assigned": code, "screen": screen, "key": key})
 }
 
 // waitingJSON is the operator list shape.
@@ -189,20 +198,23 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
 		return
 	}
+	// Take the waiting row first (RW38): a second operator capturing the
+	// same screen loses here, before writing any config of its own.
+	if err := d.Store.AssignWaiting(id, sh.Code, name); err != nil {
+		status := http.StatusInternalServerError
+		msg := err.Error()
+		if errors.Is(err, sql.ErrNoRows) {
+			status, msg = http.StatusConflict, "someone else just set this screen up"
+		}
+		c.JSON(status, gin.H{"ok": false, "error": msg})
+		return
+	}
 	if err := d.Store.SetScreenConfig(sid, name, body.Theme, boardID, body.Room); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	if err := d.Store.SetScreenLook(sid, name, body.Kind, body.Rotation); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	if err := d.Store.AssignWaiting(id, sh.Code, name); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, sql.ErrNoRows) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	d.notifyControls(sid)

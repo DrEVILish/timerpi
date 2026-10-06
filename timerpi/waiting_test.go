@@ -1,6 +1,7 @@
 package timerpi
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -95,5 +96,36 @@ func TestRegisterWaitingCap(t *testing.T) {
 	}
 	if err := d.RegisterWaiting("S0", "h"); err != nil {
 		t.Fatalf("known screen refresh at cap: %v", err)
+	}
+}
+
+// BUGLOG RW9: a capture (and the screen key with it) is only claimed by
+// the tab that registered with the token; another poller using the same
+// name and host gets nothing. RW38: another room can't steal an assigned
+// row; the same room may correct its capture.
+func TestClaimWaitingNeedsToken(t *testing.T) {
+	d := openTestDB(t)
+	if err := d.RegisterWaitingToken("TV-1", "box", "tok-real"); err != nil {
+		t.Fatal(err)
+	}
+	ws, _ := d.ListWaiting()
+	if err := d.AssignWaiting(ws[0].ID, "ROOMAAAA", "TV-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.AssignWaiting(ws[0].ID, "ROOMBBBB", "TV-1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("other room re-assign: %v, want ErrNoRows", err)
+	}
+	if err := d.AssignWaiting(ws[0].ID, "ROOMAAAA", "TV-One"); err != nil {
+		t.Errorf("same room correction: %v", err)
+	}
+	if code, _, _ := d.ClaimWaitingToken("TV-1", "box", "tok-thief"); code != "" {
+		t.Fatal("claimed with the wrong token")
+	}
+	if code, _, _ := d.ClaimWaiting("TV-1", "box"); code != "" {
+		t.Fatal("claimed with no token")
+	}
+	code, screen, err := d.ClaimWaitingToken("TV-1", "box", "tok-real")
+	if err != nil || code != "ROOMAAAA" || screen != "TV-One" {
+		t.Fatalf("real claim: %q %q %v", code, screen, err)
 	}
 }

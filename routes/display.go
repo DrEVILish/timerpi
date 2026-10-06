@@ -115,8 +115,12 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	if view == defaultStage && c.Query("screen") != "" && d.Store != nil && c.Query("edit") != "1" {
 		if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
 			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && scr.BoardID > 0 {
-				c.Redirect(http.StatusFound, fmt.Sprintf("/d/%s?view=board&board=%d&screen=%s",
-					c.Param("ident"), scr.BoardID, url.QueryEscape(name)))
+				dst := fmt.Sprintf("/d/%s?view=board&board=%d&screen=%s",
+					c.Param("ident"), scr.BoardID, url.QueryEscape(name))
+				if key := c.Query("key"); key != "" {
+					dst += "&key=" + url.QueryEscape(key) // the screen key rides along (RW9)
+				}
+				c.Redirect(http.StatusFound, dst)
 				return
 			}
 		}
@@ -134,6 +138,9 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	if err != nil {
 		pageUnknownCode(c)
 		return
+	}
+	if !d.screenTrusted(c, showID) {
+		snap = snap.Public() // first paint matches what the WS will send
 	}
 
 	if view == defaultStage {
@@ -156,6 +163,19 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	data := d.variantData(c, snap, showID, view, accent, bg)
 	d.screenLook(c, showID, data.PageData)
 	d.render(c, "display_variants", data)
+}
+
+// screenTrusted: this screen page may show operator content (stage
+// messages, notes, the Presenter item): it carries its screen key
+// (?screen=&key=) or a moderator opened it (BUGLOG RW9).
+func (d *Deps) screenTrusted(c *gin.Context, showID int64) bool {
+	if d.Store == nil {
+		return false
+	}
+	if d.Store.ScreenKeyValid(showID, c.Query("screen"), c.Query("key")) {
+		return true
+	}
+	return d.canModerate(c, showID)
 }
 
 // screenLook applies the named screen's theme and rotation (else the

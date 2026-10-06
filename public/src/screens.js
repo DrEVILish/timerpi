@@ -8,7 +8,7 @@
  * on /d/ are set up (captured) from here with the same choices.
  */
 import { api, toast, el, inlineEdit } from './ui.js';
-import { tpConfirm } from './dialog.js';
+import { tpConfirm, tpPrompt } from './dialog.js';
 
 const KIND_LABEL = { audience: 'Audience', walkin: 'Walk-in', presenter: 'Presenter' };
 const ROT_LABEL = { 0: 'Normal', 90: 'Portrait ↻', 270: 'Portrait ↺', 180: 'Upside down' };
@@ -132,6 +132,19 @@ function card(s) {
   const actions = el('div', { class: 'cluster is-gap-2xs' },
     el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => openEditor(s) }, 'Edit layout'),
     el('a', { class: 'btn btn-sm', href: `/d/${code}?screen=${encodeURIComponent(s.name)}`, target: '_blank', rel: 'opener', title: 'Open what this screen shows' }, 'View'),
+    el('button', {
+      class: 'btn btn-sm btn-ghost', type: 'button', title: 'The address to open on this screen by hand (kiosk start page, TV bookmark)',
+      onclick: async () => {
+        try {
+          const out = await post('/screens/link', { name: s.name });
+          let copied = false;
+          try { await navigator.clipboard.writeText(out.link); copied = true; } catch { /* plain-http box: no clipboard API */ }
+          await tpPrompt(copied ? 'Copied. This is the screen\'s own address; keep it private, it lets a browser show this screen\'s stage messages and notes.'
+            : 'This is the screen\'s own address. Copy it; keep it private, it lets a browser show this screen\'s stage messages and notes.',
+          out.link, { title: `Screen link · ${s.name}`, ok: 'Done' });
+        } catch (e) { toast(e.message, 'danger'); }
+      },
+    }, 'Screen link'),
     s.connected ? el('button', {
       class: 'btn btn-sm btn-ghost', type: 'button', title: 'Disconnect this screen (it returns to the ready card)',
       onclick: async () => {

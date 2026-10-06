@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -80,6 +81,7 @@ func registerScreens(g *gin.RouterGroup, d *Deps) {
 	g.POST("/shows/:ident/screens/match", d.apiScreenMatch)
 	g.POST("/shows/:ident/screens/rename", d.apiScreenRename)
 	g.POST("/shows/:ident/screens/forget", d.apiScreenForget)
+	g.POST("/shows/:ident/screens/link", d.apiScreenLink)
 	g.POST("/shows/:ident/screens/template", d.apiScreenTemplate)
 
 	g.GET("/shows/:ident/presets", d.apiPresetsList)
@@ -411,6 +413,41 @@ func (d *Deps) apiScreenRename(c *gin.Context) {
 
 // POST /api/shows/:ident/screens/forget {name} — drop a screen from the
 // registry (a still-open tab simply re-registers on its next join).
+// POST /api/shows/:ident/screens/link {name} → {link}: the screen's own
+// URL with its key (BUGLOG RW9), for opening a screen by hand (a kiosk's
+// start page, a TV browser bookmark) instead of capturing it. Moderators
+// only; the key is created on first use.
+func (d *Deps) apiScreenLink(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name}"})
+		return
+	}
+	name := timerpi.SanitizeScreenName(body.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+		return
+	}
+	sh, err := d.Store.GetShow(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "no such room"})
+		return
+	}
+	key, err := d.Store.ScreenKey(id, name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	link := fmt.Sprintf("%s/d/%s?screen=%s&key=%s", requestOrigin(c), sh.Code, url.QueryEscape(name), key)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "link": link})
+}
+
 func (d *Deps) apiScreenForget(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {

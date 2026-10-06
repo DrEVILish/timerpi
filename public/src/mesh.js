@@ -44,6 +44,15 @@ export function screenName() {
   return n;
 }
 
+/** screenKey is this screen's key (?key= from capture or the Screens page
+ * screen link), remembered for the window like the screen name. */
+export function screenKey() {
+  let q = '';
+  try { q = new URL(location.href).searchParams.get('key') || ''; } catch { /* */ }
+  if (q) { try { sessionStorage.setItem('tp.screenKey', q); } catch { /* */ } return q; }
+  try { return sessionStorage.getItem('tp.screenKey') || ''; } catch { return ''; }
+}
+
 export class Mesh {
   constructor({ showId, role = 'display', screen = '', onSnapshot, onStatusChange, onFrame, onLog, onMerged }) {
     this.showId = String(showId || '');
@@ -214,8 +223,10 @@ export class Mesh {
         v: 1, t: 'join', role: this.role, show: this.showId,
         peerId: this.peerId, joinedAt: this.joinedAt ?? Date.now(),
         ...(this.screen ? { screen: this.screen } : {}),
-        // Operator access rides the session cookies of the upgrade request
-        // (routes/access.go) — nothing to send here.
+        // A captured screen proves itself with its key (BUGLOG RW9); without
+        // it the hub sends the public snapshot. Operator access rides the
+        // session cookies of the upgrade request (routes/access.go).
+        ...(this.screen && screenKey() ? { key: screenKey() } : {}),
       }));
     };
     ws.onclose = fail;

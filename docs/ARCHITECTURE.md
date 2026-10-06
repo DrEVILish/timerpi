@@ -156,7 +156,8 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 |---|---|---|
 | SuperOperator | Cookie `tp_ev_<EVENT>`, issued by `POST /api/events/:code/login` (supervisor password) or on event creation | Everything in the event, including moderating every room |
 | Moderator | Cookie `tp_rm_<ROOM>`, issued by `POST /api/events/:code/rooms/:room/login` (room password, or none). Getting it needs the **event code** | One room: `/c/`, `/screens/`, show-scoped REST (`requireShowGated`), WS `controls` joins |
-| Screen / audience | Nothing | `/d/*`, `/a/*`, WS `display`/`screen`/`audience` joins (read-only), waiting-room register/mine, QR images, error reports |
+| Screen | A **screen key** (`?key=`, from capture or the Screens page "Screen link"; `screens.key`), or a moderator session on that browser | Trusted screen: stage messages, notes, the Presenter item. Released when the screen is forgotten or its room/event is deleted |
+| Screen (no key) / audience | Nothing | `/d/*`, `/a/*`, WS `display`/`screen`/`audience` joins (read-only, **public snapshot**), waiting-room register/mine, QR images, error reports |
 | Box admin | Cookie `tp_box`, issued by `POST /api/box/setup` (first time, while no box password exists) or `POST /api/box/login` (box password). Event sessions never count (`routes/box.go`) | `/settings`, `/api/network/*`, `/api/osc*`, `POST /api/theme` |
 
 - Session cookies are `HMAC(secret, scope | codes | stored password hash)`. The secret is random per box (settings `auth.secret`). Changing a password therefore signs every holder of the old one out.
