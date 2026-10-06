@@ -27,7 +27,10 @@ import (
 type Backend interface {
 	Open() error
 	Size() (w, h int)
-	Present(buf []byte, dirty []Rect) error
+	// Present copies the dirty rects of img (its own size and stride, not
+	// the panel's) to the screen, clipped to the smaller of the two
+	// (BUGLOG RW48: a 720p panel used to shear a 1080p frame).
+	Present(img *Image, dirty []Rect) error
 	Close() error
 }
 
@@ -85,5 +88,5 @@ type OffBackend struct{}
 
 func (OffBackend) Open() error                  { return nil }
 func (OffBackend) Size() (int, int)             { return LayoutW, LayoutH }
-func (OffBackend) Present([]byte, []Rect) error { return nil }
+func (OffBackend) Present(*Image, []Rect) error { return nil }
 func (OffBackend) Close() error                 { return nil }

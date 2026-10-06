@@ -151,16 +151,12 @@ func main() {
 
 	// HDMI renderer (drm/): runs the 50 fps present loop when
 	// TIMERPI_DISPLAY selects drm/fb; off/absent → headless as usual.
-	drmSel, drmClock := startDRMClock(engines, db)
+	_, drmClock := startDRMClock(engines, db)
 	if drmClock != nil {
-		drmCtx, drmCancel := context.WithCancel(context.Background())
-		defer drmCancel()
-		defer drmSel.Backend.Close()
-		go func() {
-			if err := drmClock.Run(drmCtx); err != nil {
-				log.Printf("timerpi: display loop ended: %v", err)
-			}
-		}()
+		// stop cancels the loop, waits for it, then closes the backend
+		// (BUGLOG RW47: closing first could crash a shutdown mid-frame).
+		stopDRM := drmClock.Start(func(err error) { log.Printf("timerpi: display loop ended: %v", err) })
+		defer stopDRM()
 	}
 
 	g := routes.New(&routes.Deps{

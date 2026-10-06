@@ -220,7 +220,7 @@ func (b *cyclicBackend) Open() error      { b.opens++; return nil }
 func (b *cyclicBackend) Size() (int, int) { return b.w, b.h }
 func (b *cyclicBackend) Close() error     { b.closed = true; return nil }
 
-func (b *cyclicBackend) Present(buf []byte, dirty []Rect) error {
+func (b *cyclicBackend) Present(img *Image, dirty []Rect) error {
 	b.presents++
 	b.dirs = append(b.dirs, dirty)
 	if b.err != nil {
@@ -232,7 +232,7 @@ func (b *cyclicBackend) Present(buf []byte, dirty []Rect) error {
 	for _, r := range dirty {
 		r = r.Clip(Rect{0, 0, b.w, b.h})
 		for dy := 0; dy < r.H; dy++ {
-			src := buf[(r.Y+dy)*4*b.w+r.X*4:]
+			src := img.Pix[(r.Y+dy)*img.Stride+r.X*4:]
 			copy(b.bufs[b.draw][(r.Y+dy)*4*b.w+r.X*4:], src[:r.W*4])
 		}
 	}
@@ -255,7 +255,7 @@ func TestBackendContract(t *testing.T) {
 
 	v := View{Label: "WELCOME", RemainingMS: 65_000, Progress: 0.5, WallClock: "12:00:01"}
 	img := Render(v)
-	if err := back.Present(img.Pix, []Rect{img.Rect()}); err != nil {
+	if err := back.Present(img, []Rect{img.Rect()}); err != nil {
 		t.Fatalf("Present: %v", err)
 	}
 	// Buffer roles swapped to the other double-buffer slot.
@@ -269,7 +269,7 @@ func TestBackendContract(t *testing.T) {
 
 	// Empty damage is a no-op present (still counted, no flip).
 	before := back.draw
-	if err := back.Present(img.Pix, nil); err != nil {
+	if err := back.Present(img, nil); err != nil {
 		t.Fatalf("Present(dirty=nil): %v", err)
 	}
 	if back.draw != before {

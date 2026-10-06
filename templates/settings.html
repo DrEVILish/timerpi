@@ -12,6 +12,36 @@
   {force} · poll GET /frag/network every 5 s into #net-panel.
 */ -}}
 {{define "settings"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TimerPi — {{.Title}}</title>
+<link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
+<link rel="stylesheet" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
+<script defer src="{{asset "/src/htmax.min.js"}}"></script>
+<style>
+  /* Settings-page glue: two-column identity + peers, phone stacking. */
+  .tp-net {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 4vh 4vw;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .tp-net .net-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+  .tp-net .tp-note { min-height: 1.6em; }
+  .tp-net table.net-peers td, .tp-net table.net-peers th { padding: .55rem .75rem; }
+  .tp-net .net-role-chip { white-space: nowrap; }
+  @media (max-width: 760px) {
+    .tp-net table.net-peers { font-size: .95rem; }
+  }
+</style>
 <script>
   // PLAN §11.6: OSC bridge settings (global kv via /api/osc).
   document.addEventListener('DOMContentLoaded', function () {
@@ -47,36 +77,6 @@
     });
   });
 </script>
-<!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TimerPi — {{.Title}}</title>
-<link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
-<link rel="stylesheet" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
-<script defer src="{{asset "/src/htmax.min.js"}}"></script>
-<style>
-  /* Settings-page glue: two-column identity + peers, phone stacking. */
-  .tp-net {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 4vh 4vw;
-    display: grid;
-    gap: 1.25rem;
-  }
-  .tp-net .net-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.25rem;
-  }
-  .tp-net .tp-note { min-height: 1.6em; }
-  .tp-net table.net-peers td, .tp-net table.net-peers th { padding: .55rem .75rem; }
-  .tp-net .net-role-chip { white-space: nowrap; }
-  @media (max-width: 760px) {
-    .tp-net table.net-peers { font-size: .95rem; }
-  }
-</style>
 </head>
 <body class="app" data-page="settings">
 <header class="bar">
@@ -232,6 +232,18 @@
 <script>
 // Role override + rename handlers post the raw JSON these endpoints take
 // (htmx form fields would need rework server-side; endpoints are JSON APIs).
+// showNote writes the status line with textContent only (no markup from
+// the server ever reaches innerHTML).
+function showNote(ok, text) {
+  var note = document.getElementById('net-note');
+  if (!note) return;
+  var div = document.createElement('div');
+  div.className = ok ? 'alert alert-success' : 'field-error';
+  div.setAttribute('role', 'alert');
+  div.textContent = text;
+  note.replaceChildren(div);
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   var roleSel = document.getElementById('net-role');
   if (roleSel) roleSel.addEventListener('change', function () {
@@ -239,12 +251,14 @@ document.addEventListener('DOMContentLoaded', function () {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ force: roleSel.value }),
-    }).then(function (r) { return r.json(); }).then(function (out) {
-      var note = document.getElementById('net-note');
-      if (note) note.innerHTML = '<div class="' + (out.ok === false ? 'field-error' : 'alert alert-success') +
-        '" role="alert">' + (out.ok === false ? (out.error || 'rejected') : 'Role override saved: ' + roleSel.value) + '</div>';
-      setTimeout(function () { window.location.reload(); }, 900);
-    });
+    }).then(function (r) {
+      // Errors come back as {error} with a 4xx/5xx status: branch on the
+      // status, not on ok (BUGLOG RW51: a 400 used to say "saved").
+      return r.json().catch(function () { return {}; }).then(function (out) { return { ok: r.ok && out.ok !== false, out: out }; });
+    }).then(function (x) {
+      showNote(x.ok, x.ok ? 'Role override saved: ' + roleSel.value : (x.out.error || 'Not saved'));
+      if (x.ok) setTimeout(function () { window.location.reload(); }, 900);
+    }).catch(function () { showNote(false, 'Network error — not saved'); });
   });
 
   // Appliance default theme (B7): fetched list, DB-persisted selection.

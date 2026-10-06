@@ -40,6 +40,7 @@ const (
 	txtRole  = "role"
 	txtVer   = "ver"
 	txtEpoch = "epoch"
+	txtBoot  = "boot" // per-boot random id: tells our own echo from a same-named box
 )
 
 // ServiceMeta is the message carried in the TXT record pair:
@@ -53,6 +54,7 @@ type ServiceMeta struct {
 	Role  string
 	Ver   string
 	Epoch int64
+	Boot  string // per-boot random id ("" = not sent)
 }
 
 // String renders the meta for logs.
@@ -66,12 +68,16 @@ func (m ServiceMeta) String() string {
 // identical bytes for identical data — same-host integration tests and
 // snapshot comparisons stay deterministic.
 func (m ServiceMeta) EncodeTXT() []string {
-	return []string{
+	out := []string{
 		txtHost + "=" + m.Host,
 		txtRole + "=" + m.Role,
 		txtVer + "=" + m.Ver,
 		txtEpoch + "=" + strconv.FormatInt(m.Epoch, 10),
 	}
+	if m.Boot != "" {
+		out = append(out, txtBoot+"="+m.Boot)
+	}
+	return out
 }
 
 // DecodeTXT flattens a zeroconf TXT payload ("k=v" strings) into a map.
@@ -97,6 +103,7 @@ func MetaFromTXT(lines []string) (ServiceMeta, bool) {
 		Host: kv[txtHost],
 		Role: kv[txtRole],
 		Ver:  kv[txtVer],
+		Boot: kv[txtBoot],
 	}
 	epoch, err := strconv.ParseInt(kv[txtEpoch], 10, 64)
 	if err != nil {

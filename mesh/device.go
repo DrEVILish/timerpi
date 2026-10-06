@@ -29,6 +29,8 @@ package mesh
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -260,6 +262,11 @@ type Device struct {
 	effectiveRole   string // role token of the live announce ("" = none)
 	conflictRename  int
 	now             func() time.Time
+
+	// bootID is random per process start and rides our TXT, so our own
+	// announce browsed back is recognised even when another box has the
+	// same hostname and port (BUGLOG RW49).
+	bootID string
 }
 
 // New builds a Device (NOT started, NOT announcing). Loads persisted state
@@ -270,6 +277,10 @@ func New(opts Options) (*Device, error) {
 	opts.fill()
 	d := &Device{opts: opts, logf: func(f string, a ...any) { log.Printf("mesh: "+f, a...) }}
 	d.now = opts.Now
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		d.bootID = hex.EncodeToString(b[:])
+	}
 
 	if hn := strings.TrimSpace(opts.Hostname); hn != "" {
 		d.hostname = hn
@@ -361,7 +372,21 @@ func (dev *Device) Tick(ctx context.Context) error {
 // needed and returns the resulting state.
 func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
 	dev.mu.Lock()
-	defer dev.mu.Unlock()
+	var harvest func()
+	defer func() {
+		dev.mu.Unlock()
+		// The takeover GET runs without the lock: holding it for up to 3 s
+		// stalled Status() and the network panel (BUGLOG RW50).
+		if harvest != nil {
+			harvest()
+		}
+	}()
+
+	// A name conflict can show up any time after Register (the first
+	// browse hasn't even run then): check on every step (BUGLOG RW49).
+	if dev.annCollides != nil && dev.annCollides() {
+		dev.resolveCollisionLocked()
+	}
 
 	peers = dev.dropSelfEchoLocked(peers)
 	dev.peers = peers
@@ -378,8 +403,9 @@ func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
 	from := dev.state
 	switch dev.decideLocked() {
 	case StateTakeover:
-		// Compound step: observe loss → harvest snapshot → land as primary.
-		dev.doTakeoverLocked()
+		// Compound step: observe loss → land as primary → harvest the
+		// snapshot (after the unlock).
+		harvest = dev.takeoverLocked()
 		dev.transitionLocked(from, StatePrimary)
 	case StateIdle:
 		if from != StateIdle {
@@ -428,10 +454,19 @@ func seniorThan(ep int64, host string, port int, ep2 int64, host2 string, port2 
 func (dev *Device) dropSelfEchoLocked(peers []mdns.Peer) []mdns.Peer {
 	out := peers[:0:0]
 	for _, p := range peers {
+		// A boot id settles it: ours is our echo, any other is a real box,
+		// even one with our hostname and port (BUGLOG RW49).
+		if b := p.TXT["boot"]; b != "" && dev.bootID != "" {
+			if b == dev.bootID {
+				continue
+			}
+			out = append(out, p)
+			continue
+		}
 		h, _, _, _ := peerMeta(p)
-		// Identity is (host, port), not host alone: two instances may
-		// share a hostname (containers, drill rigs), and our own
-		// announcement always echoes back on our own port.
+		// Older boxes send no boot id. Identity is then (host, port), not
+		// host alone: two instances may share a hostname (containers, drill
+		// rigs), and our own announcement always echoes back on our port.
 		if h == dev.hostname && p.Port == dev.opts.Port {
 			continue
 		}
@@ -510,35 +545,39 @@ func (dev *Device) transitionLocked(from, to State) {
 	dev.fireLocked(from, to)
 }
 
-// doTakeoverLocked promotes self after primary loss: best-effort snapshot
-// harvest from the last known primary address, then the caller lands us in
-// StatePrimary. Harvest failure never blocks the promotion (the show starts
-// empty; peers resume via normal WS once they see our role flip).
-func (dev *Device) doTakeoverLocked() {
+// takeoverLocked promotes self after primary loss and returns the
+// best-effort snapshot harvest to run AFTER the lock is released (nil when
+// there is nothing to do). Without ApplySnapshot wired (production: event
+// data reaches a new primary through sync, docs/VENUE-CLOUD.md) there is
+// no GET at all: it used to fetch show 1 and throw the result away
+// (BUGLOG RW50). Harvest failure never blocks the promotion.
+func (dev *Device) takeoverLocked() func() {
+	dev.claimLocked()
+	if dev.opts.ApplySnapshot == nil {
+		dev.logf("takeover: promoting")
+		return nil
+	}
 	p := dev.harvestTargetLocked()
 	if p == nil {
 		dev.logf("takeover: no harvestable primary address — promoting blind")
-		return
+		return nil
 	}
-	host, role, ep, _ := peerMeta(*p)
-	_ = role
-	dev.claimLocked()
-
-	ctx, cancel := context.WithTimeout(context.Background(), harvestTimeout)
-	defer cancel()
-	raw, err := dev.opts.Source.Snapshot(ctx, peerBaseURL(*p), dev.opts.ShowID)
-	if err != nil {
-		dev.logf("takeover: harvest show %d from %s (%s, epoch %d) failed: %v — promoting anyway",
-			dev.opts.ShowID, host, peerBaseURL(*p), ep, err)
-		return
-	}
-	dev.logf("takeover: harvested show %d from %s (%d bytes)", dev.opts.ShowID, host, len(raw))
-	if dev.opts.ApplySnapshot != nil {
-		if err := dev.opts.ApplySnapshot(raw, host); err != nil {
+	target := *p
+	host, _, ep, _ := peerMeta(target)
+	src, showID, apply := dev.opts.Source, dev.opts.ShowID, dev.opts.ApplySnapshot
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), harvestTimeout)
+		defer cancel()
+		raw, err := src.Snapshot(ctx, peerBaseURL(target), showID)
+		if err != nil {
+			dev.logf("takeover: harvest show %d from %s (%s, epoch %d) failed: %v — promoted anyway",
+				showID, host, peerBaseURL(target), ep, err)
+			return
+		}
+		dev.logf("takeover: harvested show %d from %s (%d bytes)", showID, host, len(raw))
+		if err := apply(raw, host); err != nil {
 			dev.logf("takeover: applying harvested snapshot: %v", err)
 		}
-	} else {
-		dev.logf("takeover: no ApplySnapshot wired — harvested snapshot dropped (integration: main.go may ingest it)")
 	}
 }
 
@@ -625,6 +664,7 @@ func (dev *Device) announceMetaLocked() mdns.ServiceMeta {
 		Role:  dev.roleLocked(),
 		Ver:   dev.opts.Version,
 		Epoch: dev.claimedEpoch,
+		Boot:  dev.bootID,
 	}
 }
 

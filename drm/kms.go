@@ -540,8 +540,8 @@ func (b *KMSBackend) Size() (int, int) { return b.w, b.h }
 // Present pushes damage into the back buffer, then page-flips it and
 // (blocking) waits for the flip-complete vblank event. That wait is
 // the frame pacing; there is no separate WAIT_VBLANK ioctl anywhere.
-func (b *KMSBackend) Present(buf []byte, dirty []Rect) error {
-	if len(dirty) == 0 {
+func (b *KMSBackend) Present(img *Image, dirty []Rect) error {
+	if len(dirty) == 0 || img == nil {
 		return nil // untouched frame: nothing to scan
 	}
 	back := &b.bufs[b.draw]
@@ -549,17 +549,19 @@ func (b *KMSBackend) Present(buf []byte, dirty []Rect) error {
 	if stride < w*4 {
 		return fmt.Errorf("kms: backend geometry is broken (stride %d < %d)", stride, w*4)
 	}
-	if len(buf) < stride*h {
-		return fmt.Errorf("kms: frame buffer too small (%d bytes, need %d)", len(buf), stride*h)
+	// The source is checked against ITS OWN stride (a padded destination
+	// stride used to fail every frame; BUGLOG RW48).
+	if img.Stride < img.W*4 || len(img.Pix) < img.Stride*img.H {
+		return fmt.Errorf("kms: source frame is broken (%dx%d, stride %d, %d bytes)", img.W, img.H, img.Stride, len(img.Pix))
 	}
-	srcStride := 4 * w // renderers emit tightly packed rows
+	clip := Rect{0, 0, min(w, img.W), min(h, img.H)}
 	for _, r := range dirty {
-		r = r.Clip(Rect{0, 0, w, h})
+		r = r.Clip(clip)
 		if r.Empty() {
 			continue
 		}
 		for dy := 0; dy < r.H; dy++ {
-			src := buf[(r.Y+dy)*srcStride+r.X*4:]
+			src := img.Pix[(r.Y+dy)*img.Stride+r.X*4:]
 			dst := back.data[(r.Y+dy)*stride+r.X*4:]
 			copy(dst[:r.W*4], src[:r.W*4])
 		}

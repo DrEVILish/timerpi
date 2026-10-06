@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -68,7 +69,7 @@ func (c *Clock) Frame(nowMS int64) (bool, error) {
 		c.last = img
 		return false, nil
 	}
-	if err := c.back.Present(img.Pix, dirty); err != nil {
+	if err := c.back.Present(img, dirty); err != nil {
 		// The scan buffers may hold a partial frame; drop the diff
 		// baseline so the next success copies the frame in full.
 		c.last, c.lastView = nil, View{}
@@ -117,4 +118,28 @@ func (c *Clock) Run(ctx context.Context) error {
 func (c *Clock) step() error {
 	_, err := c.Frame(time.Now().UnixMilli())
 	return err
+}
+
+// Start runs the clock in its own goroutine and returns stop. stop cancels
+// the loop, waits for the in-flight frame to finish, THEN closes the
+// backend: closing first unmapped the framebuffer under a running
+// Present, which could crash the box on shutdown (BUGLOG RW47). onEnd, if
+// set, hears a loop that ended by itself with an error.
+func (c *Clock) Start(onEnd func(error)) (stop func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := c.Run(ctx); err != nil && onEnd != nil {
+			onEnd(err)
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+			_ = c.back.Close()
+		})
+	}
 }

@@ -157,26 +157,26 @@ func (b *FBBackend) Size() (int, int) { return b.w, b.h }
 // Present copies the damage rects, translating ARGB→fb packing via
 // the var-screeninfo bitfields (splash math). Single-buffered: rows go
 // to the panel as written; a fast panel shows them on the next scan.
-func (b *FBBackend) Present(buf []byte, dirty []Rect) error {
-	if len(dirty) == 0 || b.data == nil {
+func (b *FBBackend) Present(img *Image, dirty []Rect) error {
+	if len(dirty) == 0 || b.data == nil || img == nil {
 		return nil
 	}
 	bppBytes := b.bpp / 8
 	if b.stride < b.w*bppBytes {
 		return fmt.Errorf("fb: geometry is broken (stride %d < %d)", b.stride, b.w*bppBytes)
 	}
-	srcStride := 4 * b.w
-	if len(buf) < srcStride*b.h {
-		return fmt.Errorf("fb: frame buffer too small (%d bytes, need %d)", len(buf), srcStride*b.h)
+	if img.Stride < img.W*4 || len(img.Pix) < img.Stride*img.H {
+		return fmt.Errorf("fb: source frame is broken (%dx%d, stride %d, %d bytes)", img.W, img.H, img.Stride, len(img.Pix))
 	}
+	clip := Rect{0, 0, min(b.w, img.W), min(b.h, img.H)}
 	scale := pixScaler(b.v)
 	for _, r := range dirty {
-		r = r.Clip(Rect{0, 0, b.w, b.h})
+		r = r.Clip(clip)
 		if r.Empty() {
 			continue
 		}
 		for dy := 0; dy < r.H; dy++ {
-			src := buf[(r.Y+dy)*srcStride+r.X*4:]
+			src := img.Pix[(r.Y+dy)*img.Stride+r.X*4:]
 			dst := b.data[(r.Y+dy)*b.stride+r.X*bppBytes:]
 			for x := 0; x < r.W; x++ {
 				off := x * 4
