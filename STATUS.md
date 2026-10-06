@@ -126,7 +126,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U1** | Handle device rotation on phones/tablets used as displays (e.g. an iPhone as a timer display): rotating the device re-lays the screen automatically. |
+| **U1** | ✅ Done 2026-10-06: on a touch device with an orientation sensor (phones, tablets) screens ignore the Mounted rotation (first paint and live pushes) and follow the device; turning it re-lays the page. Kiosks/TVs keep Mounted. Browser test `device-rotation`. |
 | **U2** | ✅ Done 2026-10-06: no tap/F fullscreen and no hint chip on any screen (ready card included). Browser test `display-no-fullscreen`. |
 | **U3** | ✅ Done 2026-10-06: schedule tiles show `hh:mm  Title - Speaker` (planned start, 24 h, no duration; no time until the day has a start). Browser test `walkin-format`. |
 | **U4** | ✅ Done 2026-10-06: new **Current & next** tile (`nownext`): `Current Session: <title>` / `Next Session: <title>`, each with `Start Time`, `Duration`, `Speaker`. The Room walk-in templates use it; screens already on the old walk-in layout get it by picking the template again. Browser test `walkin-format`. |

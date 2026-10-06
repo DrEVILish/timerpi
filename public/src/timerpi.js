@@ -852,7 +852,8 @@ function initMesh(showId, role, page) {
         case 'screen-look':
           // A screen's rotation (portrait poster screens), pushed live.
           if (document.body.dataset.role === 'display') {
-            if (m.rotation) document.documentElement.dataset.rotate = String(m.rotation);
+            // A phone/tablet follows its own orientation (U1): Mounted is ignored.
+            if (m.rotation && !document.documentElement.dataset.deviceOrient) document.documentElement.dataset.rotate = String(m.rotation);
             else delete document.documentElement.dataset.rotate;
           }
           break;

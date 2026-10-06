@@ -182,7 +182,8 @@ function initMesh() {
           break;
         case 'screen-look':
           if (!editable) {
-            if (m.rotation) document.documentElement.dataset.rotate = String(m.rotation);
+            // A phone/tablet follows its own orientation (U1): Mounted is ignored.
+            if (m.rotation && !document.documentElement.dataset.deviceOrient) document.documentElement.dataset.rotate = String(m.rotation);
             else delete document.documentElement.dataset.rotate;
             if (m.kind) body.dataset.kind = m.kind;
           }

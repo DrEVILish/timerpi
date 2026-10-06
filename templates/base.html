@@ -26,6 +26,17 @@
 <link rel="stylesheet" href="{{asset "/css/app.css"}}">
 <!-- JS/CSS URLs go through the asset template func (views/assets.go): a content-hash path segment busts caches. -->
 <script>
+/* Phones and tablets know which way up they are (STATUS U1, owner
+   2026-10-06): on a touch device with an orientation sensor the screen's
+   "Mounted" rotation is ignored and the page simply follows the device.
+   Kiosk Pis and TVs (no touch) keep their Mounted setting. */
+(function () {
+  var h = document.documentElement;
+  var handheld = (navigator.maxTouchPoints || 0) > 0 && window.matchMedia && matchMedia('(pointer: coarse)').matches && ('orientation' in screen || 'onorientationchange' in window);
+  if (handheld) { h.dataset.deviceOrient = '1'; delete h.dataset.rotate; }
+})();
+</script>
+<script>
 /* Theme bootstrap before first paint: localStorage `timerpi.theme`, else the
    appliance default (B7 — blue-future is the product default), rendered into
    html[data-theme] and the default link's href server-side. Only a stored
