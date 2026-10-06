@@ -320,3 +320,42 @@ func TestSyncEdgeAdversarialIdents(t *testing.T) {
 		}
 	}
 }
+
+// BUGLOG RC6: a sync push delivered twice (lost response, retry) must not
+// duplicate the running order. Cue IDs survive the merge, so the second
+// delivery is recognised; the ID-less offline add is recognised by its
+// content and stamp.
+func TestSyncMergeRetryIsIdempotent(t *testing.T) {
+	ts := newAPITest(t)
+	a, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "A", DurationMS: 60_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "B", DurationMS: 60_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := a.UpdatedAt + 1_000
+	body := map[string]any{
+		"updatedAt": stamp,
+		"cues": []timerpi.Cue{
+			{ID: a.ID, Pos: 1, Label: "A2", DurationMS: 60_000, Kind: "session", TimerKind: "COUNTDOWN", EndAction: "HOLD", UpdatedAt: stamp},
+			{ID: b.ID, Pos: 2, Label: "B", DurationMS: 60_000, Kind: "session", TimerKind: "COUNTDOWN", EndAction: "HOLD", UpdatedAt: b.UpdatedAt},
+			{ID: 0, Pos: 3, Label: "C", DurationMS: 30_000, Kind: "session", TimerKind: "COUNTDOWN", EndAction: "HOLD", UpdatedAt: stamp},
+		},
+		"runtime": map[string]any{"rate": 1.0}, "messages": []any{},
+	}
+	for i := 0; i < 2; i++ {
+		if code, env := ts.syncPost(t, body); code != http.StatusOK || env["ok"] != true {
+			t.Fatalf("sync #%d: %d %v", i+1, code, env)
+		}
+	}
+	cues := ts.typedCues(t)
+	got := cueLabels(cues)
+	if len(got) != 3 || got[0] != "A2" || got[1] != "B" || got[2] != "C" {
+		t.Fatalf("after two identical pushes cues = %v, want [A2 B C]", got)
+	}
+	if cues[0].ID != a.ID || cues[1].ID != b.ID {
+		t.Fatalf("cue IDs changed across sync: %d,%d want %d,%d", cues[0].ID, cues[1].ID, a.ID, b.ID)
+	}
+}

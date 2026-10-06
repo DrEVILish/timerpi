@@ -122,8 +122,33 @@ func MergeCues(serverCues, incomingCues []Cue, tombstones []CueTombstone) (merge
 		adds = append(adds, c) // non-positive ID (offline add)
 	}
 
+	// A retried push resends its offline adds with no ID. One the server
+	// already holds (same content, same non-zero stamp) is not added again
+	// (BUGLOG RC6); that server row is the master's own op, not remote.
+	applied := map[int64]bool{}
+	kept := adds[:0]
+	for _, a := range adds {
+		dup := false
+		if a.UpdatedAt != 0 {
+			for id, s := range byServer {
+				if !applied[id] && s.UpdatedAt == a.UpdatedAt && cuesSameContent(s, a) {
+					applied[id], dup = true, true
+					break
+				}
+			}
+		}
+		if !dup {
+			kept = append(kept, a)
+		}
+	}
+	adds = kept
+
 	out := make([]Cue, 0, len(serverCues)+len(adds))
 	for id, s := range byServer {
+		if applied[id] {
+			out = append(out, s)
+			continue
+		}
 		in, ok := byIncoming[id]
 		if ok {
 			// Both sides have the row: newer stamp wins, ties → incoming.
@@ -169,18 +194,41 @@ func MergeCues(serverCues, incomingCues []Cue, tombstones []CueTombstone) (merge
 	return out, remoteCount
 }
 
-// ReplaceCuesStamped swaps the whole cue list like ReplaceCues, but each
-// row keeps its in-memory UpdatedAt stamp (0 → now). The sync merge path
-// uses it so per-cue stamps survive the merge for the NEXT offline round;
-// all other writers keep ReplaceCues (fresh now stamps).
+// ReplaceCuesStamped makes the show's cue list exactly cues, in order, but
+// each row keeps its in-memory UpdatedAt stamp (0 → now). The sync merge
+// path uses it so per-cue stamps survive for the NEXT offline round.
+//
+// Rows are upserted by ID (BUGLOG RC6): a cue whose ID already belongs to
+// this show is updated in place, ID 0 (or a foreign ID) is inserted, and
+// only rows missing from cues are deleted. Cue IDs therefore stay stable
+// across syncs, so a retried or second push is recognised instead of being
+// re-added as "offline adds". All other writers keep ReplaceCues.
 func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 	tx, err := d.Beginx()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM cues WHERE show_id = ?`, showID); err != nil {
+	var existing []int64
+	if err := tx.Select(&existing, `SELECT id FROM cues WHERE show_id = ?`, showID); err != nil {
 		return err
+	}
+	have := make(map[int64]bool, len(existing))
+	for _, id := range existing {
+		have[id] = true
+	}
+	keep := make(map[int64]bool, len(cues))
+	for _, c := range cues {
+		if c.ID > 0 && have[c.ID] {
+			keep[c.ID] = true
+		}
+	}
+	for _, id := range existing {
+		if !keep[id] {
+			if _, err := tx.Exec(`DELETE FROM cues WHERE id = ? AND show_id = ?`, id, showID); err != nil {
+				return err
+			}
+		}
 	}
 	now := nowMS()
 	ids := make([]int64, 0, len(cues))
@@ -190,18 +238,38 @@ func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 		if err := c.Validate(); err != nil {
 			return err
 		}
+		if c.Day < 1 {
+			c.Day = 1
+		}
 		stamp := c.UpdatedAt
 		if stamp == 0 {
 			stamp = now
 		}
+		if keep[c.ID] {
+			if _, err := tx.Exec(`UPDATE cues SET
+				label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
+				timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
+				end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, day = ?,
+				updated_at = ?
+				WHERE id = ? AND show_id = ?`,
+				c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
+				c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
+				c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Day,
+				stamp, c.ID, showID); err != nil {
+				return err
+			}
+			delete(keep, c.ID) // a duplicate ID later in cues is inserted fresh
+			ids = append(ids, c.ID)
+			continue
+		}
 		res, err := tx.Exec(`INSERT INTO cues
 			(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
 			 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-			 end_action, autocontinue, notes, color, start_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 end_action, autocontinue, notes, color, start_at, day, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			showID, -(i + 1), c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 			c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, stamp)
+			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Day, stamp)
 		if err != nil {
 			return err
 		}
@@ -215,6 +283,16 @@ func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// cuesSameContent is cuesEqualContent ignoring position.
+// Both sides are normalised first: the stored row was, the pushed one may
+// not be.
+func cuesSameContent(a, b Cue) bool {
+	a.Normalize()
+	b.Normalize()
+	b.Pos = a.Pos
+	return cuesEqualContent(a, b)
 }
 
 // cuesEqualContent compares the operator-visible fields (identity excluded

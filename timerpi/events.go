@@ -220,10 +220,12 @@ func (d *DB) ListEvents() ([]Event, error) {
 
 // CountProtectedEvents reports how many events carry a supervisor
 // password (box settings stay open while there are none).
-func (d *DB) CountProtectedEvents() int {
+// A query error is returned, never read as "none" (BUGLOG RW6: that
+// opened box settings to everyone whenever the database was busy).
+func (d *DB) CountProtectedEvents() (int, error) {
 	var n int
-	_ = d.Get(&n, `SELECT COUNT(*) FROM events WHERE super_hash != ''`)
-	return n
+	err := d.Get(&n, `SELECT COUNT(*) FROM events WHERE super_hash != ''`)
+	return n, err
 }
 
 // ListRooms returns the event's rooms in room order.

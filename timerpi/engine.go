@@ -23,6 +23,12 @@ type Engine struct {
 	// Tick bookkeeping (not persisted): a fresh start resets both.
 	lastAlert   int
 	lastCrossed bool
+	rtDirty     bool // reconcileLocked repaired rt; Tick must commit it
+
+	// activeID is the cue id behind rt.ActivePos (0 = unknown). Cue CRUD
+	// renumbers positions behind the engine's back; cuesLocked re-finds
+	// the active cue by id so the playhead follows it (BUGLOG RC2).
+	activeID int64
 
 	// onFire is the outbound media hook (OSCbridge wiring, proposal #8):
 	// invoked after a mutation leaves a cue RUNNING, with the running pos.
@@ -76,13 +82,26 @@ func NewEngine(showID int64, deps EngineDeps) (*Engine, error) {
 				rt.Rate = DefaultRate
 			}
 			e.rt = rt
-			// Crash recovery: if the persisted state was already past zero,
-			// don't replay the crossing as a fresh event on the first Tick.
+			if cues, cerr := d.Cues(); cerr == nil {
+				if c := cueAtPos(cues, rt.ActivePos); c != nil {
+					e.activeID = c.ID
+				}
+			}
+			// Crash recovery: a countdown that crossed zero while the server
+			// was down does not replay the crossing as a fresh event (no
+			// auto-continue march, no start hook). A HOLD/BLANK cue is still
+			// frozen at zero here, exactly as the crossing would have left
+			// it, instead of reading as overtime forever (BUGLOG RC7).
 			if rt.Running && !rt.Paused && rt.ActivePos > 0 {
 				if cues, cerr := d.Cues(); cerr == nil {
 					if c := cueAtPos(cues, rt.ActivePos); c != nil && c.TimerKind == TimerCountdown {
-						rem, _, _ := DisplayedRemaining(c, rt, d.Now())
+						rem, _, _ := DisplayedRemaining(c, e.rt, d.Now())
 						e.lastCrossed = rem <= 0
+						if e.lastCrossed && (c.EndAction == EndHold || c.EndAction == EndBlank) {
+							e.rt.Running = false
+							e.rt.PausedElapsedMS = c.DurationMS
+							e.rtDirty = true
+						}
 					}
 				}
 			}
@@ -309,7 +328,7 @@ func (e *Engine) Tick(nowMS int64) error {
 	e.mu.Lock()
 	changed := false
 	startedPos := int64(0) // a cue auto-started this tick (media hook)
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		e.mu.Unlock()
 		return err
@@ -368,6 +387,9 @@ func (e *Engine) Tick(nowMS int64) error {
 			}
 		}
 	}
+	if e.rtDirty {
+		changed = true
+	}
 	if !changed {
 		e.mu.Unlock()
 		return nil
@@ -401,13 +423,13 @@ func (e *Engine) Snapshot() (Snapshot, error) {
 // Timer is the small frame for the display path
 // (`{"t":"timer", …}`): what the digits need beyond the state snapshot.
 func (e *Engine) Timer() (TimerFrame, error) {
-	cues, err := e.deps.Cues()
+	e.mu.Lock()
+	cues, err := e.cuesLocked()
+	rt, now := e.rt, e.now()
+	e.mu.Unlock()
 	if err != nil {
 		return TimerFrame{}, err
 	}
-	e.mu.Lock()
-	rt, now := e.rt, e.now()
-	e.mu.Unlock()
 	return timerFrame(cueAtPos(cues, rt.ActivePos), rt, now), nil
 }
 
@@ -486,6 +508,7 @@ func (e *Engine) runMutation(mut func() error) error {
 // commitLocked persists the runtime and builds the snapshot.
 func (e *Engine) commitLocked() (Snapshot, error) {
 	snap, err := e.snapshotLocked()
+	e.rtDirty = false
 	if serr := e.deps.Save(e.rt); err == nil {
 		err = serr
 	}
@@ -498,7 +521,7 @@ func (e *Engine) snapshotLocked() (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -515,7 +538,7 @@ func (e *Engine) snapshotLocked() (Snapshot, error) {
 
 // startLocked anchors cue pos at the wall clock and runs it.
 func (e *Engine) startLocked(pos int64) error {
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		return err
 	}
@@ -551,6 +574,7 @@ func (e *Engine) startLocked(pos int64) error {
 		_ = now
 	}
 	e.rt.ActivePos = c.Pos
+	e.activeID = c.ID
 	e.rt.PrevPos, e.rt.NextPos = neighborsOf(cues, c.Pos)
 	e.rt.Running = true
 	e.rt.Paused = false
@@ -603,7 +627,7 @@ func (e *Engine) resetLocked() error {
 
 // goLocked fires the next unarmed cue.
 func (e *Engine) goLocked() error {
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		return err
 	}
@@ -637,7 +661,7 @@ func (e *Engine) goLocked() error {
 
 // jumpLocked arms the cue at pos.
 func (e *Engine) jumpLocked(pos int64) error {
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		return err
 	}
@@ -646,6 +670,7 @@ func (e *Engine) jumpLocked(pos int64) error {
 		return ErrUnknownPos
 	}
 	e.rt.ActivePos = c.Pos
+	e.activeID = c.ID
 	e.rt.PrevPos, e.rt.NextPos = neighborsOf(cues, c.Pos)
 	e.rt.Running = false
 	e.rt.Paused = false
@@ -659,7 +684,7 @@ func (e *Engine) jumpLocked(pos int64) error {
 
 // jumpRelLocked arms the cue ±1 from the active one.
 func (e *Engine) jumpRelLocked(dir int64) error {
-	cues, err := e.deps.Cues()
+	cues, err := e.cuesLocked()
 	if err != nil {
 		return err
 	}
@@ -729,6 +754,65 @@ func cueAtPos(cues []Cue, pos int64) *Cue {
 		}
 	}
 	return nil
+}
+
+// cuesLocked loads the cue list and re-points the playhead at the active
+// cue by id: cue CRUD (delete, move, insert, duplicate, replace) renumbers
+// positions without telling the engine. If the active cue moved, its pos
+// and neighbours follow it. If it was deleted, the cue that took its slot
+// (or the new last cue) is armed; an empty list goes idle. Returns whether
+// the runtime changed, via e.rtDirty, so Tick commits the repair.
+func (e *Engine) cuesLocked() ([]Cue, error) {
+	cues, err := e.deps.Cues()
+	if err != nil {
+		return nil, err
+	}
+	e.reconcileLocked(cues)
+	return cues, nil
+}
+
+func (e *Engine) reconcileLocked(cues []Cue) {
+	if e.rt.ActivePos == 0 {
+		return
+	}
+	if e.activeID == 0 {
+		if c := cueAtPos(cues, e.rt.ActivePos); c != nil {
+			e.activeID = c.ID
+		}
+		return
+	}
+	for i := range cues {
+		if cues[i].ID != e.activeID {
+			continue
+		}
+		prev, next := neighborsOf(cues, cues[i].Pos)
+		if cues[i].Pos != e.rt.ActivePos || prev != e.rt.PrevPos || next != e.rt.NextPos {
+			e.rt.ActivePos, e.rt.PrevPos, e.rt.NextPos = cues[i].Pos, prev, next
+			e.rtDirty = true
+		}
+		return
+	}
+	// The active cue is gone: arm whatever now sits in its slot.
+	e.rtDirty = true
+	e.lastAlert, e.lastCrossed = 0, false
+	e.rt.Running, e.rt.Paused = false, false
+	e.rt.AnchorTS, e.rt.PausedElapsedMS = 0, 0
+	if len(cues) == 0 {
+		e.activeID = 0
+		e.rt.ActivePos, e.rt.PrevPos, e.rt.NextPos = 0, 0, 0
+		return
+	}
+	c := &cues[len(cues)-1]
+	for i := range cues {
+		if cues[i].Pos >= e.rt.ActivePos {
+			c = &cues[i]
+			break
+		}
+	}
+	e.activeID = c.ID
+	e.rt.ActivePos = c.Pos
+	e.rt.PrevPos, e.rt.NextPos = neighborsOf(cues, c.Pos)
+	e.rt.EndAction = c.EndAction
 }
 
 // neighborsOf returns the positions before/after pos in run order (0 when

@@ -816,6 +816,11 @@ function hideGhost() {
   document.getElementById('b-drag-ghost')?.remove();
 }
 
+// The tile the arrow keys nudge: set by a drag or resize (dragTile), read
+// by the keydown handler in wireCompose. Module scope, so both see it
+// (BUGLOG RC3: it used to be local to wireCompose and every drag threw).
+let lastTouched = null;
+
 function dragTile(tile, wid, startEvent, mode) {
   startEvent.preventDefault();
   const w = widgetOf(wid);
@@ -837,7 +842,7 @@ function dragTile(tile, wid, startEvent, mode) {
       w.h = orig.h + dr;
     }
     clampTile(w);
-    applyGeometry(w);
+    applyGeometry(w.id);
     showGhost(w);
   };
   const up = () => {
@@ -854,7 +859,7 @@ function dragTile(tile, wid, startEvent, mode) {
     const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
     if (hit) {
       Object.assign(w, orig);
-      applyGeometry(w);
+      applyGeometry(w.id);
       tile.classList.remove('b-overlap');
       void tile.offsetWidth; // restart the shake on rapid retry
       tile.classList.add('b-overlap');
@@ -1213,36 +1218,35 @@ function wireCompose() {
       setEditing(true);
     }
   } catch { /* private mode */ }
-// Keyboard nudge (owner "feels bad" round): with editing on, the
-// last-touched tile moves by one cell on the arrow keys (Shift resizes),
-// drop-style confirm on every nudge — overlap reverts exactly like a drag.
-let lastTouched = null;
-document.addEventListener('keydown', (e) => {
-  if (!editing || !lastTouched) return;
-  const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  const d = deltas[e.key];
-  if (!d) return;
-  e.preventDefault();
-  const w = widgetOf(lastTouched.id);
-  if (!w) { lastTouched = null; return; }
-  const orig = { ...w };
-  if (e.shiftKey) { w.w = Math.max(1, w.w + d[0]); w.h = Math.max(1, w.h + d[1]); }
-  else { w.x += d[0]; w.y += d[1]; }
-  clampTile(w);
-  applyGeometry(w);
-  const tile = document.getElementById('b-w-' + lastTouched.id);
-  const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
-  if (hit) {
-    Object.assign(w, orig);
-    applyGeometry(w);
-    if (tile) tile.classList.add('b-overlap');
-    setTimeout(() => tile?.classList.remove('b-overlap'), 600);
-    saveState('Blocked: tiles overlap');
-    return;
-  }
-  lastTouched.w = { ...w };
-  scheduleSave();
-});
+  // Keyboard nudge (owner "feels bad" round): with editing on, the
+  // last-touched tile moves by one cell on the arrow keys (Shift resizes),
+  // drop-style confirm on every nudge — overlap reverts exactly like a drag.
+  document.addEventListener('keydown', (e) => {
+    if (!editing || !lastTouched) return;
+    const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const d = deltas[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const w = widgetOf(lastTouched.id);
+    if (!w) { lastTouched = null; return; }
+    const orig = { ...w };
+    if (e.shiftKey) { w.w = Math.max(1, w.w + d[0]); w.h = Math.max(1, w.h + d[1]); }
+    else { w.x += d[0]; w.y += d[1]; }
+    clampTile(w);
+    applyGeometry(w.id);
+    const tile = document.getElementById('b-w-' + lastTouched.id);
+    const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
+    if (hit) {
+      Object.assign(w, orig);
+      applyGeometry(w.id);
+      if (tile) tile.classList.add('b-overlap');
+      setTimeout(() => tile?.classList.remove('b-overlap'), 600);
+      saveState('Blocked: tiles overlap');
+      return;
+    }
+    lastTouched.w = { ...w };
+    scheduleSave();
+  });
 
   grid.addEventListener('pointerdown', (e) => {
     if (!editing) return;

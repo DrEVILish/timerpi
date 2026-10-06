@@ -76,8 +76,8 @@ func (d *Deps) apiAssetUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "image too large (4 MiB max)"})
 		return
 	}
-	mime := http.DetectContentType(data)
-	if !strings.HasPrefix(mime, "image/") {
+	mime, ok := sniffImage(data)
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "only image uploads"})
 		return
 	}
@@ -90,6 +90,18 @@ func (d *Deps) apiAssetUpload(c *gin.Context) {
 }
 
 func assetURL(id int64) string { return "/assets/" + strconv.FormatInt(id, 10) }
+
+// sniffImage returns the image type sniffed from the bytes. Every way into
+// the asset store (upload, bundle import) goes through it: a declared type
+// is never trusted (BUGLOG RC4). SVG never sniffs as an image, so script
+// inside one can't get in either.
+func sniffImage(data []byte) (string, bool) {
+	if len(data) == 0 || len(data) > maxAssetBytes {
+		return "", false
+	}
+	mime := http.DetectContentType(data)
+	return mime, strings.HasPrefix(mime, "image/")
+}
 
 // GET /assets/:id — the bytes, immutable (ids are never rewritten).
 func (d *Deps) apiAssetGet(c *gin.Context) {
@@ -107,8 +119,18 @@ func (d *Deps) apiAssetGet(c *gin.Context) {
 		c.JSON(status, gin.H{"ok": false})
 		return
 	}
+	// Never let the browser treat an asset as a page (BUGLOG RC4): rows
+	// stored before the import fix may carry any declared type, so the
+	// type is re-checked on the way out too.
+	mime := a.Mime
+	if _, ok := sniffImage(a.Bytes); !ok || !strings.HasPrefix(mime, "image/") {
+		mime = "application/octet-stream"
+		c.Header("Content-Disposition", "attachment")
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox")
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
-	c.Data(http.StatusOK, a.Mime, a.Bytes)
+	c.Data(http.StatusOK, mime, a.Bytes)
 }
 
 // DELETE /api/assets/:id — operator housekeeping.

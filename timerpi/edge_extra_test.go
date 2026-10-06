@@ -161,6 +161,21 @@ func TestEngineRecoveryPastZeroHolds(t *testing.T) {
 	if e2.Runtime().ActivePos != 1 {
 		t.Fatalf("crossing replayed: active=%d (want 1 held-at-zero)", e2.Runtime().ActivePos)
 	}
+	// BUGLOG RC7: the HOLD cue is frozen at zero, not left "running" in
+	// overtime, and the first tick persists that without marching on.
+	if err := e2.Tick(time.Now().UnixMilli()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	got := e2.Runtime()
+	if got.Running || got.ActivePos != 1 || got.PausedElapsedMS != 60_000 {
+		t.Fatalf("not held at zero after restart: %+v", got)
+	}
+	if tf, _ := e2.Timer(); tf.RemainingMS != 0 || tf.Overtime {
+		t.Fatalf("timer after restart: remaining=%d overtime=%v, want 0 held", tf.RemainingMS, tf.Overtime)
+	}
+	if saved, _, _ := d.LoadRuntime(show.ID); saved.Running {
+		t.Fatal("held state not persisted by the first tick")
+	}
 }
 
 // Start{} with no position and an already-armed cue restarts THAT cue

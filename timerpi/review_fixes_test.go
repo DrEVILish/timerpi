@@ -53,17 +53,30 @@ func TestRenameScreenIdentityKeepsConfig(t *testing.T) {
 	}
 }
 
-// goLocked zeroes the spent elapsed BEFORE startLocked can fail (the cue can
-// vanish under REST between hold and GO). runMutation has no rollback, so a
-// failed GO must leave the held state byte-identical.
+// goLocked zeroes the spent elapsed BEFORE startLocked can fail (here: the
+// cue list read fails between goLocked's read and startLocked's). runMutation
+// has no rollback, so a failed GO must leave the held state byte-identical.
+// (A cue vanishing from under the playhead no longer fails GO: the engine
+// re-arms the cue that took its slot, BUGLOG RC2.)
+var errBoom = errors.New("boom")
+
 func TestGoFailureDoesNotUnhold(t *testing.T) {
 	t0 := int64(1_700_000_000_000)
 	clk := &fakeClock{ms: t0}
-	cues := testCues() // closure below reads the VARIABLE, not a snapshot
+	cues := testCues()
+	failAfter := -1 // >0: fail the cue read after this many more successes
 	e, err := NewEngine(1, EngineDeps{
 		Now:  clk.Now,
 		Show: func() (Show, error) { return Show{ID: 1, Title: "Rollback"}, nil },
-		Cues: func() ([]Cue, error) { return cues, nil },
+		Cues: func() ([]Cue, error) {
+			if failAfter == 0 {
+				return nil, errBoom
+			}
+			if failAfter > 0 {
+				failAfter--
+			}
+			return cues, nil
+		},
 		Save: func(Runtime) error { return nil },
 	})
 	if err != nil {
@@ -80,9 +93,9 @@ func TestGoFailureDoesNotUnhold(t *testing.T) {
 	if before.Running || before.PausedElapsedMS != 600_000 {
 		t.Fatalf("setup: not held: %+v", before)
 	}
-	cues = cues[1:] // cue 1 disappears from under the playhead
-	if gerr := e.Go(); !errors.Is(gerr, ErrUnknownPos) {
-		t.Fatalf("Go with vanished cue: %v, want ErrUnknownPos", gerr)
+	failAfter = 1 // goLocked's read succeeds, startLocked's fails
+	if gerr := e.Go(); !errors.Is(gerr, errBoom) {
+		t.Fatalf("Go with failing read: %v, want errBoom", gerr)
 	}
 	after := e.Runtime()
 	if after.PausedElapsedMS != 600_000 || after.Running {

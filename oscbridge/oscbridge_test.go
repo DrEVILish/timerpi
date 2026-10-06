@@ -177,3 +177,30 @@ func readPacket(t *testing.T, srv net.PacketConn) string {
 	}
 	return m.Address
 }
+
+// BUGLOG RC1: a string arg whose padding runs past the packet end used to
+// leave pos beyond len(raw), and the next 's' sliced out of range and
+// panicked the listener goroutine (and the whole box with it).
+func TestParseTruncatedStringPaddingNoPanic(t *testing.T) {
+	for _, raw := range [][]byte{
+		[]byte("/a\x00\x00,ss\x00abcd\x00"),
+		[]byte("/a\x00\x00,si\x00abcd\x00"),
+		[]byte("/a\x00\x00,sf\x00ab"),
+	} {
+		if _, err := Parse(raw); err == nil {
+			t.Fatalf("Parse(%q) = nil error, want truncation error", raw)
+		}
+	}
+}
+
+func TestHandlePacketRecoversDispatchPanic(t *testing.T) {
+	raw, err := Build("/timerpi/X/go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reported error
+	handlePacket(raw, func(Message) { panic("boom") }, func(e error) { reported = e })
+	if reported == nil {
+		t.Fatal("dispatch panic was not reported")
+	}
+}

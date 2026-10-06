@@ -496,12 +496,14 @@ export class Mesh {
         case 'hi':
         case 'hi-ack': {
           const known = this.peers.get(peerId) || { peerId };
+          // A peer's own claims never override what the hub said about it
+          // (BUGLOG RC8): role and joinedAt from the hub win.
           this.peers.set(peerId, {
             ...known, peerId,
-            role: m.meta?.role ?? known.role,
-            joinedAt: m.meta?.joinedAt ?? known.joinedAt,
+            role: known.hubRole ?? m.meta?.role ?? known.role,
+            joinedAt: known.hubRole ? known.joinedAt : (m.meta?.joinedAt ?? known.joinedAt),
           });
-          if (m.snap) this._adopt({ ...m.snap, serverTime: m.now });
+          if (m.snap) this._adoptPeer(peerId, m);
           if (m.t === 'hi' && dc.readyState === 'open') {
             dc.send(JSON.stringify({
               t: 'hi-ack', meta: { peerId: this.peerId, role: this.role, joinedAt: this.joinedAt },
@@ -512,10 +514,12 @@ export class Mesh {
           break;
         }
         case 'mesh-state':
-          if (m.snap) this._adopt({ ...m.snap, serverTime: m.now });
+          if (m.snap) this._adoptPeer(peerId, m);
           break;
         case 'mesh-cmd':
-          if (this.isMaster()) this._applyLocalCommand(m.action, m.args || {});
+          // Only an operator the hub vouched for may drive the show; a
+          // display tab (open to anyone with the room code) never can.
+          if (this.isMaster() && this.trustedPeer(peerId)) this._applyLocalCommand(m.action, m.args || {});
           break;
         default: break;
       }
@@ -541,8 +545,14 @@ export class Mesh {
         })
         .map(([id]) => this.peerInfo(id)),
     ];
+    // Operators outrank screens: when any operator is in the mesh, only
+    // operators may be master, so a display can't win the election by
+    // claiming an early joinedAt (BUGLOG RC8).
+    const isOp = (c) => (c.peerId === this.peerId ? this.role === 'controls' : this.trustedPeer(c.peerId));
+    const anyOp = candidates.some(isOp);
     let best = null;
     for (const c of candidates) {
+      if (anyOp && !isOp(c)) continue;
       if (c.joinedAt === undefined || c.joinedAt === Infinity) continue;
       if (!best || c.joinedAt < best.joinedAt || (c.joinedAt === best.joinedAt && c.peerId < best.peerId)) {
         best = c;
@@ -556,6 +566,25 @@ export class Mesh {
       else if (!this.isMaster() && wasMaster) this._resignMaster();
       this.onStatusChange();
     }
+  }
+
+  /** True when the hub (not the peer itself) reported peerId as an
+   * operator (`controls`, which the server only admits with a room
+   * session). Peers first met after the server went away are untrusted. */
+  trustedPeer(peerId) {
+    return this.peers.get(peerId)?.hubRole === 'controls';
+  }
+
+  /** P2P state adoption (BUGLOG RC8). While the server is reachable it is
+   * the only source of truth, so peer snapshots are ignored. Offline, a
+   * snapshot is taken only from a hub-vouched operator or the elected
+   * master, and never with a stamp from the future (a forged far-future
+   * updatedAt would make every real server frame look stale). */
+  _adoptPeer(peerId, m) {
+    if (this.serverOnline()) return;
+    if (!this.trustedPeer(peerId) && peerId !== this.masterId) return;
+    if ((m.snap.updatedAt ?? 0) > this.now() + 60_000) return;
+    this._adopt({ ...m.snap, serverTime: m.now });
   }
 
   peerInfo(peerId) {
@@ -656,7 +685,7 @@ export class Mesh {
     for (const p of list || []) {
       if (!p || p.peerId === this.peerId) continue;
       const known = this.peers.get(p.peerId) || {};
-      this.peers.set(p.peerId, { ...known, ...p });
+      this.peers.set(p.peerId, { ...known, ...p, hubRole: p.role });
     }
     this.onStatusChange();
   }

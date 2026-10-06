@@ -212,6 +212,51 @@ check('stop detached listeners', (winListeners.online || []).length === 0);
   })());
 }
 
+/* --- BUGLOG RC8: peers are trusted only as far as the hub vouches -------- */
+{
+  const mk = () => {
+    const m = new Mesh({ showId: 'ABCD1234', role: 'controls' });
+    m.snap = { updatedAt: 1000, show: { code: 'ABCD1234' }, runtime: {}, cues: [{ label: 'real' }], messages: [] };
+    m.joinedAt = 50;
+    return m;
+  };
+  const chan = (m, peerId) => {
+    const dc = { readyState: 'open', send() {} };
+    m.connections.set(peerId, { pc: { connectionState: 'connected', close() {} }, dc });
+    m._attachDataChannel(dc, peerId);
+    return (msg) => dc.onmessage({ data: JSON.stringify(msg) });
+  };
+  const forged = { updatedAt: 2000, show: { code: 'ABCD1234' }, runtime: {}, cues: [{ label: 'fake' }], messages: [] };
+
+  const m = mk();
+  m._mergePeers([{ peerId: 'tv', role: 'display', joinedAt: 900 }]);
+  const tv = chan(m, 'tv');
+  tv({ t: 'hi', meta: { peerId: 'tv', role: 'controls', joinedAt: 1 }, snap: forged, now: 0 });
+  check('display cannot claim controls in its hi', m.peers.get('tv').role === 'display' && !m.trustedPeer('tv'));
+  check('display cannot claim an early joinedAt', m.peers.get('tv').joinedAt === 900);
+  check('operator stays master over a display', m.isMaster());
+  check('display snapshot ignored', m.snap.cues[0].label === 'real');
+  let ran = 0;
+  m._applyLocalCommand = () => { ran++; };
+  tv({ t: 'mesh-cmd', action: 'go', args: {} });
+  check('display mesh-cmd ignored by master', ran === 0);
+
+  m._mergePeers([{ peerId: 'op2', role: 'controls', joinedAt: 900 }]);
+  const op2 = chan(m, 'op2');
+  op2({ t: 'mesh-cmd', action: 'go', args: {} });
+  check('operator mesh-cmd applied by master', ran === 1);
+  op2({ t: 'mesh-state', snap: { ...forged, updatedAt: Date.now() + 10 * 60_000 }, now: 0 });
+  check('far-future snapshot ignored', m.snap.cues[0].label === 'real');
+  op2({ t: 'mesh-state', snap: forged, now: 0 });
+  check('operator snapshot adopted while offline', m.snap.cues[0].label === 'fake');
+
+  const on = mk();
+  on._ws = { readyState: 1, close() {} }; // server reachable
+  on._mergePeers([{ peerId: 'op3', role: 'controls', joinedAt: 900 }]);
+  chan(on, 'op3')({ t: 'mesh-state', snap: forged, now: 0 });
+  check('peer snapshot ignored while the server is online', on.snap.cues[0].label === 'real');
+}
+
 /* --- engine.js mirror + formatter --------------------------------------- */
 {
   const snap = { show: { code: 'X', title: 'T' }, runtime: { activePos: 0, running: false, paused: false }, cues: [], messages: [] };

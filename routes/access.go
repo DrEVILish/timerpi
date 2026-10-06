@@ -118,7 +118,14 @@ func (d *Deps) hasAnySession(c *gin.Context) bool {
 // isBoxAdmin: box settings belong to the SuperOperators on this box. While
 // no event carries a supervisor password (fresh box) they are open.
 func (d *Deps) isBoxAdmin(c *gin.Context) bool {
-	if d.Store == nil || d.Store.CountProtectedEvents() == 0 {
+	if d.Store == nil {
+		return true
+	}
+	n, err := d.Store.CountProtectedEvents()
+	if err != nil {
+		return false // fail closed
+	}
+	if n == 0 {
 		return true
 	}
 	cookies := cookieMap(c.Request)

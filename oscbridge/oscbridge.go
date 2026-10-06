@@ -126,6 +126,11 @@ func Parse(raw []byte) (Message, error) {
 				return m, fmt.Errorf("oscbridge: truncated string arg")
 			}
 			val := string(rest[:end])
+			// The padded field must fit too, or the next arg would slice
+			// past the end of the packet (BUGLOG RC1).
+			if pos+oscStringLen(val) > len(raw) {
+				return m, fmt.Errorf("oscbridge: string arg padding truncated")
+			}
 			m.Args = append(m.Args, val)
 			pos += oscStringLen(val)
 		case 'T':
@@ -261,16 +266,7 @@ func (in *Inbound) SetInbound(addr string, dispatch func(m Message), report func
 			if err != nil {
 				return // replaced/closed
 			}
-			m, perr := Parse(buf[:n])
-			if perr != nil {
-				if report != nil {
-					report(perr)
-				}
-				continue
-			}
-			if dispatch != nil {
-				dispatch(m)
-			}
+			handlePacket(buf[:n], dispatch, report)
 		}
 	}()
 	return nil
@@ -336,4 +332,24 @@ func Send(addr string, address string, args ...any) error {
 	// failure mode — never block the show on it.
 	_, _ = conn.Write(raw)
 	return nil
+}
+
+// handlePacket parses and dispatches one datagram. A panic in either step
+// is reported, not fatal: one bad packet must never take the box down.
+func handlePacket(raw []byte, dispatch func(Message), report func(error)) {
+	defer func() {
+		if r := recover(); r != nil && report != nil {
+			report(fmt.Errorf("oscbridge: packet handler panic: %v", r))
+		}
+	}()
+	m, err := Parse(raw)
+	if err != nil {
+		if report != nil {
+			report(err)
+		}
+		return
+	}
+	if dispatch != nil {
+		dispatch(m)
+	}
 }
