@@ -421,7 +421,7 @@ function renderRooms(tile) {
   box.textContent = '';
   for (const r of rooms) {
     const card = mk('div', 'b-room' + (r.now ? ' is-live' : '') + (r.here ? ' is-here' : ''));
-    card.append(mk('div', 'b-room-name', r.name));
+    card.append(mk('div', 'b-room-name', r.label || r.name));
     card.append(mk('div', 'b-room-now', r.now ? r.now.label : (r.next ? 'Next session soon' : 'No more sessions today')));
     if (r.now?.speaker) card.append(mk('div', 'b-room-meta', r.now.speaker));
     if (r.next) card.append(mk('div', 'b-room-meta', `Next${r.next.startTS ? ' ' + hhmm(r.next.startTS) : ''}: ${r.next.label}`));
@@ -435,7 +435,7 @@ function renderEventSchedule(tile) {
   box.textContent = '';
   for (const r of rooms) {
     const col = mk('div', 'b-evsched-col');
-    col.append(mk('h3', '', r.name));
+    col.append(mk('h3', '', r.label || r.name));
     // Done sessions drop off the top so the column shows what is left.
     const rows = r.schedule.filter((x) => x.state !== 'done');
     for (const s of (rows.length ? rows : r.schedule)) {
@@ -539,7 +539,7 @@ function renderStaticBody() {
         break;
       }
       case 'showtitle':
-        setText($('.b-js-showtitle', tile), snap.show?.title || '');
+        setText($('.b-js-showtitle', tile), snap.show?.title ? (document.body.dataset.roomPrefix || '') + snap.show.title : '');
         break;
       case 'notice':
         setText($('.b-js-notice', tile), w?.opts?.text || '');

@@ -34,3 +34,26 @@ func TestScreensShowNoCode(t *testing.T) {
 		}
 	}
 }
+
+// STATUS U6: screens print "Room: <name>" when the event has several
+// rooms, and just the name for a single-room event. The walk-in feed
+// carries the same label.
+func TestScreensRoomPrefix(t *testing.T) {
+	ts := newAPITest(t) // one room: "API Test Show"
+	p := newPersona(ts)
+	_, page := p.do("GET", "/d/"+ts.showCode, "")
+	if strings.Contains(page, "Room: API Test Show") || !strings.Contains(page, "API Test Show") {
+		t.Errorf("single-room event: want the bare name")
+	}
+	ts.newRoom("Stark")
+	for _, view := range []string{"", "?view=next", "?view=clock", "?view=board"} {
+		_, page = p.do("GET", "/d/"+ts.showCode+view, "")
+		if !strings.Contains(page, "Room: API Test Show") || !strings.Contains(page, `data-room-prefix="Room: "`) {
+			t.Errorf("view %q: no \"Room: \" prefix with two rooms", view)
+		}
+	}
+	_, feed := p.do("GET", "/api/shows/"+ts.showCode+"/walkin", "")
+	if !strings.Contains(feed, `"label":"Room: Stark"`) || !strings.Contains(feed, `"label":"Room: API Test Show"`) {
+		t.Errorf("walk-in feed labels: %.300s", feed)
+	}
+}

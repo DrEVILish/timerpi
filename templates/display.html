@@ -13,7 +13,7 @@
   /* display-only glue that must precede JS */
 </style>
 </head>
-<body class="tp-display" data-page="display" data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-role="display" data-blanked="{{.Show.Blanked}}">
+<body class="tp-display" data-page="display" data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-role="display" data-room-prefix="{{.RoomPrefix}}" data-blanked="{{.Show.Blanked}}">
 {{template "frag-display" .}}
 
 <div class="tp-waiting" id="tp-waiting" aria-hidden="true">

@@ -105,7 +105,7 @@
 <section class="b-widget b-w-showtitle" id="b-w-{{.W.ID}}" data-widget="showtitle" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Show title</span><button class="b-w-del" type="button" data-del aria-label="Remove show title">×</button></div>{{end}}
   <div class="b-w-body">
-    <span class="b-show-title b-js-showtitle">{{.P.Show.Title}}</span>
+    <span class="b-show-title b-js-showtitle">{{.P.RoomPrefix}}{{.P.Show.Title}}</span>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>

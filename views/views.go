@@ -193,6 +193,10 @@ type PageData struct {
 
 	// Screen pages: this screen's rotation (0/90/180/270).
 	Rotation int
+
+	// RoomPrefix is "Room: " when the room's event has several rooms, so
+	// screens read "Room: Stark"; "" for a single-room event (STATUS U6).
+	RoomPrefix string
 }
 
 // EventRef is the parent-event context on room pages (app bar, nav).

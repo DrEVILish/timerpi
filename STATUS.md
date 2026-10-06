@@ -131,7 +131,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **U3** | Walk-in schedule: one line per session, `hh:mm  Session Title - Speaker Name` (start time only, 24-hour clock). |
 | **U4** | Walk-in current and next session read: `Current Session: Start Time · Duration · Speaker` and `Next Session: Start Time · Duration · Speaker`. |
 | **U5** | ✅ Done 2026-10-06: screens no longer print the room code ("Session XXXX-XXXX" lines, the title tile's code) or the corner join card with the control-room link. The audience join QR tile stays (that is how phones join). Test `TestScreensShowNoCode`. |
-| **U6** | Wherever a display shows the room name, prefix it `Room: <name>` (e.g. "Room: Stark"), only when the event has more than one room. |
+| **U6** | ✅ Done 2026-10-06: screens print `Room: <name>` when the event has more than one room (titles, stage status, board title tile, walk-in room cards and schedule columns via the feed's `label`), and the bare name otherwise. Tests `TestScreensRoomPrefix`, browser `room-prefix`. |
 | **U7** | Turning an audience interaction on or off must not flash or re-render Walk-in screens (it doesn't concern them). |
 
 **Layouts and the Screens page**

@@ -18,10 +18,10 @@
 {{template "head" .}}
 </head>
 <body class="tp-display b-board" data-page="display" data-view="board" data-role="display"
-      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-blanked="{{.Show.Blanked}}" data-orientation="{{.Board.Orientation}}"{{if .ScreenKind}} data-kind="{{.ScreenKind}}"{{end}} style="--b-rows: {{.Board.Rows}}">
+      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-room-prefix="{{.RoomPrefix}}" data-blanked="{{.Show.Blanked}}" data-orientation="{{.Board.Orientation}}"{{if .ScreenKind}} data-kind="{{.ScreenKind}}"{{end}} style="--b-rows: {{.Board.Rows}}">
 <div class="b-topbar">
   <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
-  <span class="b-topbar-show">{{if .Show}}{{.Show.Title}}{{end}}</span>
+  <span class="b-topbar-show">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
   <span class="b-topbar-board">{{.Board.Name}}</span>
   <span class="b-link" id="b-link" data-online="1">LINK LIVE</span>
 </div>

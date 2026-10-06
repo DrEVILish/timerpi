@@ -297,6 +297,7 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 	countdownFmt, countdownState := boardCountdown(snap, now)
 	rotation, kind := 0, ""
 	pd.DefaultTheme = d.roomTheme(showID)
+	pd.RoomPrefix = d.roomPrefix(showID)
 	if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
 		if scr, err := d.Store.GetScreenByName(showID, name); err == nil {
 			rotation, kind = scr.Rotation, scr.Kind

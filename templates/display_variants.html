@@ -481,7 +481,7 @@ tick();
 </script>
 </head>
 <body class="tp-display tp-dv" data-page="display" data-role="display" data-view="{{.View}}"
-      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-fit="{{.Fit}}"{{if .Print}} data-print="true"{{end}} data-blanked="{{.Show.Blanked}}">
+      data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-fit="{{.Fit}}"{{if .Print}} data-print="true"{{end}} data-room-prefix="{{.RoomPrefix}}" data-blanked="{{.Show.Blanked}}">
 {{/* view dispatch — exactly one root fragment (thin wrapper, per contract) */}}
 {{if eq .View "next"}}
 {{template "frag-d-next" .}}

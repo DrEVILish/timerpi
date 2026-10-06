@@ -165,6 +165,23 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	d.render(c, "display_variants", data)
 }
 
+// roomPrefix is "Room: " when the room's event has more than one room
+// (screens then read "Room: Stark"), else "" (STATUS U6).
+func (d *Deps) roomPrefix(showID int64) string {
+	if d.Store == nil {
+		return ""
+	}
+	room, err := d.Store.GetShow(showID)
+	if err != nil || room.EventID == 0 {
+		return ""
+	}
+	rooms, err := d.Store.ListRooms(room.EventID)
+	if err != nil || len(rooms) < 2 {
+		return ""
+	}
+	return "Room: "
+}
+
 // screenTrusted: this screen page may show operator content (stage
 // messages, notes, the Presenter item): it carries its screen key
 // (?screen=&key=) or a moderator opened it (BUGLOG RW9).
@@ -185,6 +202,7 @@ func (d *Deps) screenLook(c *gin.Context, showID int64, pd *views.PageData) {
 		return
 	}
 	pd.DefaultTheme = d.roomTheme(showID)
+	pd.RoomPrefix = d.roomPrefix(showID)
 	if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
 		if scr, err := d.Store.GetScreenByName(showID, name); err == nil {
 			pd.Rotation = scr.Rotation

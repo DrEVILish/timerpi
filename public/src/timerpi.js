@@ -232,7 +232,7 @@ class ClockUI {
         if (b.disabled !== !canAdjust) b.disabled = !canAdjust;
       }
     } else {
-      setText(this.el.dLabel, cue ? cue.label : (snap.show?.title || ''));
+      setText(this.el.dLabel, cue ? cue.label : roomTitle(snap));
       setText(this.el.dSpeaker, cue && cue.speaker ? `🎙 ${cue.speaker}` : '');
       setText(this.el.dNextLabel, next ? next.label : '');
       setText(this.el.dNextDur, next ? fmtDuration(next.durationMS) : '');
@@ -742,7 +742,7 @@ class ClockUI {
         // show identity, link state, next cue.
         const bits = [
           view.state.toUpperCase(),
-          snap.show?.title || '',
+          roomTitle(snap),
           statusLabel(mesh),
           this.el.dNextLabel && snap.runtime.nextPos ? `Next: ${this.el.dNextLabel.textContent}` : '',
         ];
@@ -1959,6 +1959,14 @@ function startCellEdit(td) {
 }
 
 /** milliseconds → "m:ss" / "h:mm:ss" for the duration editor's initial text. */
+/** The room's name as screens show it: "Room: Stark" when the event has
+    several rooms (server sets body[data-room-prefix]), else just the name
+    (STATUS U6). */
+function roomTitle(snap) {
+  const t = snap?.show?.title || '';
+  return t ? (document.body.dataset.roomPrefix || '') + t : '';
+}
+
 /** milliseconds → text that parseDur(text, unit) reads back to the same
     value: 'hm' (durations) "0:30" / "1:30" / "1:30:05"; 'ms' (alerts,
     hold) "5:00" / "1:00:00". Round-trip matters: the details panel used

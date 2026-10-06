@@ -15,7 +15,7 @@
     <span class="tp-brand">
       <img src="/img/timerpi.svg" alt="" width="26" height="26">
     </span>
-    <span class="tp-display-label" id="d-label">{{if .Show}}{{.Show.Title}}{{end}}</span>
+    <span class="tp-display-label" id="d-label">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
     <span class="tp-state-chip" id="d-chip" hidden></span>
   </div>
 
@@ -32,7 +32,7 @@
   <div class="tp-display-speaker" id="d-speaker">{{if .Current}}{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}{{end}}</div>
 
   <div class="tp-display-status">
-    <span id="d-status">{{if .Show}}{{.Show.Title}}{{end}}</span>
+    <span id="d-status">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
     {{if .Hostname}}<span class="mono">{{.Hostname}}</span>{{end}}
   </div>
 

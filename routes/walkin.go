@@ -30,7 +30,8 @@ type walkinRow struct {
 
 type walkinRoom struct {
 	Name        string      `json:"name"`
-	Here        bool        `json:"here"` // the room this screen belongs to
+	Label       string      `json:"label"` // how screens print it: "Room: Name" when the event has several rooms (U6)
+	Here        bool        `json:"here"`  // the room this screen belongs to
 	Running     bool        `json:"running"`
 	Paused      bool        `json:"paused"`
 	RemainingMS int64       `json:"remainingMS"`
@@ -62,7 +63,12 @@ func (d *Deps) apiWalkin(c *gin.Context) {
 	now := time.Now().UnixMilli()
 	out := make([]walkinRoom, 0, len(rooms))
 	for _, r := range rooms {
-		out = append(out, d.walkinRoomOf(r, r.ID == id, now))
+		wr := d.walkinRoomOf(r, r.ID == id, now)
+		wr.Label = wr.Name
+		if len(rooms) > 1 {
+			wr.Label = "Room: " + wr.Name
+		}
+		out = append(out, wr)
 	}
 	mapURL := ""
 	if ev.MapAsset > 0 {
