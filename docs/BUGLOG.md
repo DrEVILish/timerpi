@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 58 | 29 |
-| Suggestion | 41 | 38 |
+| Suggestion | 41 | 36 |
 
 ## Critical
 
@@ -138,8 +138,8 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS11 | `public/src/audience.js:102-109, 205-208` | The phone records "mine" and the upvote before the server accepts. On failure (429, voting closed) it still shows "(you)" or "You got it right!", and the upvote button stays disabled. | Roll back local state on failure. | Open |
 | RS12 | `timerpi/polls.go:575-577` | The public submission total counts pending and dismissed entries, revealing how many are held back. | Count only visible entries in public views. | Open |
 | RS13 | `timerpi/polls.go:452-461` (`DeletePoll`) | Two statements with no transaction, second error ignored. Deleting a spotlighted entry leaves `spot` pointing at a missing row. | One transaction plus `UPDATE polls SET spot=0 WHERE spot=?`. | Open |
-| RS14 | `routes/audience.go:385-393` (`apiPollEdit`) | Omitted `autoApprove` becomes false and omitted `correct` becomes -1, so a PATCH that changes only the question turns auto-approve off, and quiz edits without `correct` fail. | Pointer fields; keep stored values when absent. | Open |
-| RS15 | `public/src/moderate.js:224-225` | `kept.indexOf(options[correct])` returns the first match, so duplicate option text can store the wrong quiz answer. | Compute the index while filtering empty options. | Open |
+| RS14 | `routes/audience.go:385-393` (`apiPollEdit`) | Omitted `autoApprove` becomes false and omitted `correct` becomes -1, so a PATCH that changes only the question turns auto-approve off, and quiz edits without `correct` fail. | Pointer fields; keep stored values when absent. | Fixed 2026-10-06 `ffdf054` |
+| RS15 | `public/src/moderate.js:224-225` | `kept.indexOf(options[correct])` returns the first match, so duplicate option text can store the wrong quiz answer. | Compute the index while filtering empty options. | Fixed 2026-10-06 `ffdf054` |
 | RS16 | `routes/theme.go:61`; `config/config.go:295` | POST `/api/theme` with an unknown name is sanitised to "" (blue-future) and returns ok. | 400 unless the name is in `installedThemes()`. | Open |
 | RS17 | `routes/screens.go:154-160` | "Forget" on a connected screen looks like a no-op: the card is re-added from live sessions with an empty config. | Mark live-only cards, or disconnect on forget. | Open |
 | RS18 | `public/src/screens.js:284-285` | "Edit layout" on a screen with `boardId 0` opens the shared default board, so edits change every unassigned screen. | Create the screen's own board first, or warn. | Open |
