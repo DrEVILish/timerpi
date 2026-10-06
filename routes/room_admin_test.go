@@ -29,8 +29,8 @@ func TestRoomDeleteCloneNeedSuper(t *testing.T) {
 	if code, _ := ts.call("POST", "/api/shows/"+ts.showCode+"/clone", []byte(`{"title":"Copy"}`), "application/json"); code != http.StatusCreated {
 		t.Errorf("super clone: %d", code)
 	}
-	_, page2 := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	if !strings.Contains(string(page2), "show-clone-form") {
-		t.Error("SuperOperator lost the Duplicate panel")
+	_, page2 := ts.call("GET", "/e/"+ts.eventCode+"/admin", nil, "")
+	if !strings.Contains(string(page2), "data-room-dup") {
+		t.Error("SuperOperator dashboard lost Duplicate")
 	}
 }

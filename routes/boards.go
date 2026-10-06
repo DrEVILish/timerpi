@@ -78,7 +78,7 @@ func boardJSON(b boards.Board) gin.H {
 
 // GET /api/shows/:ident/boards — list (seeds the show default on first hit).
 func (d *Deps) apiBoardsList(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -114,7 +114,7 @@ func (d *Deps) apiBoardsList(c *gin.Context) {
 
 // POST /api/shows/:ident/boards {name} → 201 (factory layout).
 func (d *Deps) apiBoardsCreate(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -141,7 +141,7 @@ func (d *Deps) apiBoardsCreate(c *gin.Context) {
 // layout is the full layout_json document (validated: unknown types and
 // overlaps answer 400).
 func (d *Deps) apiBoardsUpdate(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -190,7 +190,7 @@ func (d *Deps) apiBoardsUpdate(c *gin.Context) {
 
 // DELETE /api/shows/:ident/boards/:bid → 200.
 func (d *Deps) apiBoardsDelete(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -344,7 +344,7 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		// chrome is operator furniture, not display furniture — the REST is
 		// already behind A1's AuthGate, so this just stops shipping a toolbar
 		// that can only ever answer 401s.
-		Editable:   c.Query("edit") == "1" && d.canModerate(c, showID),
+		Editable:   c.Query("edit") == "1" && d.superOfShow(c, showID), // layouts: SuperOperator only (U25)
 		LayoutJSON: template.JS(board.Layout),
 	}
 }

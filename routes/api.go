@@ -310,6 +310,17 @@ func (d *Deps) apiShowSnapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, snap)
 }
 
+// superOfShow: the request holds the SuperOperator session of the room's
+// event.
+func (d *Deps) superOfShow(c *gin.Context, showID int64) bool {
+	room, err := d.Store.GetShow(showID)
+	if err != nil {
+		return false
+	}
+	ev, err := d.Store.GetEvent(room.EventID)
+	return err == nil && d.isSuper(c, ev)
+}
+
 // requireSuperOfShow resolves :ident and demands a SuperOperator session
 // for the room's event: creating and deleting rooms is the SuperOperator's
 // job (PRODUCT §3), never a moderator's (BUGLOG RW5).
@@ -318,11 +329,8 @@ func (d *Deps) requireSuperOfShow(c *gin.Context) (int64, bool) {
 	if !ok {
 		return 0, false
 	}
-	room, err := d.Store.GetShow(id)
-	if err == nil {
-		if ev, eerr := d.Store.GetEvent(room.EventID); eerr == nil && d.isSuper(c, ev) {
-			return id, true
-		}
+	if d.superOfShow(c, id) {
+		return id, true
 	}
 	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "SuperOperator sign-in required"})
 	return 0, false

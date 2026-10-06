@@ -175,11 +175,11 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U25** | A moderator only works in **Run** and **Audience**. |
-| **U26** | Moderators can import a running order (.xlsx, .xls, .csv, .json): before importing, match the file's column headers to ours and flag any mismatch. |
-| **U27** | Moderators can import a list of audience interactions (.xlsx, .xls, .csv, .json), with the same header matching and flagging. |
-| **U28** | Only the SuperOperator changes themes; moderators can't. |
-| **U29** | Remove the **Setup** tab (redundant); its remaining pieces move to Run, Audience or the SuperOperator dashboard. |
+| **U25** | ✅ Done 2026-10-06: moderators get Run and Audience only. Screens, layouts, presets and screen capture need the SuperOperator (API and page). Test `TestModeratorRunAndAudienceOnly`, browser `room-scope`. |
+| **U26** | 🟡 Moderators import a running order from the Run tab (Import panel). Header matching is deferred (owner, 2026-10-06). |
+| **U27** | Deferred with U26's header matching (owner, 2026-10-06). |
+| **U28** | ✅ Done 2026-10-06: the room page's theme picker shows for the SuperOperator only; screen themes are set on the Screens page (SuperOperator). |
+| **U29** | ✅ Done 2026-10-06: no Setup tab. Import → Run (collapsible); Duplicate → SuperOperator dashboard rooms table; presets → Screens page; the old Screens panel (a copy of the Screens page) is gone. |
 
 ### 4.3 Cleanup (hanging leftovers)
 

@@ -109,15 +109,17 @@ func TestCloneShowDefaultsE1(t *testing.T) {
 	}
 }
 
-// The dashboard ships the clone affordance (template-ship contract for
-// pure-JS features).
+// Duplicate lives on the SuperOperator dashboard's rooms table (STATUS
+// U29: the room page's Setup tab is gone).
 func TestCloneFormShipsE1(t *testing.T) {
 	ts := newAPITest(t)
-	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	for _, sub := range []string{`id="show-clone-form"`, `id="show-clone-title"`, `Duplicate`} {
-		if !strings.Contains(string(body), sub) {
-			t.Errorf("dashboard missing %q", sub)
-		}
+	_, body := ts.call("GET", "/e/"+ts.eventCode+"/admin", nil, "")
+	if !strings.Contains(string(body), `data-room-dup`) {
+		t.Error("SuperOperator dashboard has no Duplicate button")
+	}
+	_, room := ts.call("GET", "/c/"+ts.showCode, nil, "")
+	if strings.Contains(string(room), `show-clone-form`) {
+		t.Error("the room page still has the old Duplicate form")
 	}
 }
 

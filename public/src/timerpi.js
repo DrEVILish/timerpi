@@ -1445,29 +1445,6 @@ function renderRecent() {
   });
 }
 
-function initShowClone() {
-  // E1: duplicate the day — POST clone, then open the new dashboard.
-  const form = $('#show-clone-form');
-  if (!form || form.dataset.bound) return;
-  form.dataset.bound = '1';
-  const code = document.body.dataset.show || mesh?.showId || '';
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const title = $('#show-clone-title')?.value || '';
-    try {
-      const res = await fetch(`/api/shows/${code}/clone`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title }),
-      });
-      const out = await res.json();
-      if (!res.ok || !out.code) { toast(out.error || 'could not duplicate the room', 'danger'); return; }
-      location.href = `/c/${out.code}`;
-    } catch {
-      toast('network error', 'danger');
-    }
-  });
-}
 
 /* ------------------------------------------------------- screens (F1/F2) --
  * The operator's screens panel: every display tab self-registers a stable
@@ -1641,7 +1618,8 @@ async function screensPost(action, body) {
 }
 
 function initScreens() {
-  const panel = document.getElementById('screens-panel');
+  // Presets now live on the Screens page (#screens-presets, STATUS U29).
+  const panel = document.getElementById('screens-panel') || document.getElementById('screens-presets');
   if (!panel || initScreens.bound) return;
   initScreens.bound = true;
 
@@ -2408,7 +2386,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initImportDrop();
 
   if (page === 'home') { initHome(); renderRecent(); }
-  if (page === 'screens') initScreensPage();
+  if (page === 'screens') { initScreensPage(); initScreens(); } // + presets (moved from Setup, U29)
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting
   // timerpi.js's mesh too meant TWO WS sessions per screen (double join,
@@ -2424,7 +2402,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initShowClone(); initScreens(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
 
   // Offline indicator toggling (display + dashboard)

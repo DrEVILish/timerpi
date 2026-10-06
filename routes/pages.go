@@ -166,7 +166,10 @@ func galleryPage(d *Deps) gin.HandlerFunc {
 			pageUnknownCode(c)
 			return
 		}
-		if d.Store != nil && !d.moderatorPageGate(c, showID) {
+		// Screens and layouts are the SuperOperator's (STATUS U25):
+		// moderators work in Run and Audience only.
+		if d.Store != nil && !d.superOfShow(c, showID) {
+			d.renderAccessDenied(c, "Screens are set up by the SuperOperator", "Ask your SuperOperator to set up or change this room's screens.")
 			return
 		}
 		if d.Engines == nil {

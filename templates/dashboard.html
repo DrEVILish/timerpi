@@ -16,8 +16,9 @@
   <nav class="tabs tp-room-tabs" role="tablist" aria-label="Room views">
     <button class="tab is-active" role="tab" data-tab="run" aria-selected="true">Run</button>
     <button class="tab" role="tab" data-tab="audience" aria-selected="false">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></button>
-    <button class="tab" role="tab" data-tab="setup" aria-selected="false">Setup</button>
-    <a class="tab" href="/screens/{{.Show.Code}}">Screens</a>
+    {{- /* Moderators work in Run and Audience only; Screens is the
+         SuperOperator's (STATUS U25, U29: no Setup tab). */}}
+    {{if .Event.IsSuper}}<a class="tab" href="/screens/{{.Show.Code}}">Screens</a>{{end}}
   </nav>
   <div class="tp-dash" data-panel="run">
 
@@ -83,6 +84,42 @@
 
     <aside class="tp-dash-right stack">
       {{template "frag-messages" .}}
+        <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
+             on drop); the hint names the gesture so the affordance is obvious
+             before anything is dragged. -->
+        <details class="panel tp-import">
+          <summary class="panel-header">Import running order</summary>
+          <form class="stack is-gap-s"
+                hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
+                hx-target="#import-result" hx-swap="innerHTML">
+            <div class="field">
+              <label class="label" for="import-file">File</label>
+              <input class="input" type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json">
+              <span class="field-hint">Drag an .xlsx / .xls / .csv / .json file straight onto this panel.</span>
+            </div>
+            <div class="row is-gap-s">
+              <div class="field" style="flex:1">
+                <label class="label" for="import-kind">Format</label>
+                <select class="select" id="import-kind" name="kind">
+                  <option value="auto" selected>Auto-detect</option>
+                  <option value="xlsx">.xlsx</option>
+                  <option value="xls">.xls (legacy)</option>
+                  <option value="csv">.csv</option>
+                  <option value="json">.json</option>
+                </select>
+              </div>
+              <div class="field" style="flex:1">
+                <label class="label" for="import-mode">Mode</label>
+                <select class="select" id="import-mode" name="mode">
+                  <option value="replace" selected>Replace all cues</option>
+                  <option value="append">Append</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Import <span class="indicator"></span></button>
+          </form>
+          <div id="import-result" class="tp-fragment" aria-live="polite"></div>
+        </details>
 
 
 
@@ -105,80 +142,6 @@
       </aside>
   </div>
 
-  <div class="tp-setup-grid" data-panel="setup" hidden>
-      {{if .Event.IsSuper}}
-      <section class="panel">
-        <div class="panel-header">Duplicate this room</div>
-    <div class="stack is-gap-2xs">
-      <form id="show-clone-form" class="cluster is-gap-2xs">
-        <input class="input input-sm" type="text" id="show-clone-title" autocomplete="off"
-               placeholder="New room name (optional)" aria-label="New room name (optional)" style="min-width:0">
-        <button type="submit" class="btn btn-sm" title="Copy this running order into a new room of the event">Duplicate</button>
-      </form>
-      <span class="field-hint">Same sessions, notes and day start — a new room, stopped, without a password.</span>
-    </div>
-      </section>
-      {{end}}
-      <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
-           on drop); the hint names the gesture so the affordance is obvious
-           before anything is dragged. -->
-      <section class="panel tp-import">
-        <div class="panel-header">Import cue list</div>
-        <form class="stack is-gap-s"
-              hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
-              hx-target="#import-result" hx-swap="innerHTML">
-          <div class="field">
-            <label class="label" for="import-file">File</label>
-            <input class="input" type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json">
-            <span class="field-hint">Drag an .xlsx / .xls / .csv / .json file straight onto this panel.</span>
-          </div>
-          <div class="row is-gap-s">
-            <div class="field" style="flex:1">
-              <label class="label" for="import-kind">Format</label>
-              <select class="select" id="import-kind" name="kind">
-                <option value="auto" selected>Auto-detect</option>
-                <option value="xlsx">.xlsx</option>
-                <option value="xls">.xls (legacy)</option>
-                <option value="csv">.csv</option>
-                <option value="json">.json</option>
-              </select>
-            </div>
-            <div class="field" style="flex:1">
-              <label class="label" for="import-mode">Mode</label>
-              <select class="select" id="import-mode" name="mode">
-                <option value="replace" selected>Replace all cues</option>
-                <option value="append">Append</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn btn-primary" type="submit">Import <span class="indicator"></span></button>
-        </form>
-        <div id="import-result" class="tp-fragment" aria-live="polite"></div>
-      </section>
-      <!-- F1/F2: the screens system — every connected display tab self-registers
-           a stable name; assign theme/board per screen, match one to all,
-           save/apply presets (server-side, exportable/importable JSON). -->
-      <section class="panel" id="screens-panel">
-        <div class="panel-header">Screens
-          <span class="badge push" id="tp-screens-count"></span>
-          <a class="badge" href="/screens/{{.Show.Code}}">Gallery →</a>
-        </div>
-        <div id="tp-screens" class="stack is-gap-2xs">
-          <p class="text-muted">Open a display page to register a screen.</p>
-        </div>
-        <div class="stack is-gap-2xs" style="margin-top:.75rem">
-          <span class="label">Presets</span>
-          <div id="tp-presets" class="stack is-gap-2xs"></div>
-          <form id="tp-preset-save" class="cluster is-gap-2xs">
-            <input class="input input-sm" name="name" placeholder="Preset name" aria-label="Preset name" required style="min-width:0">
-            <button class="btn btn-sm" type="submit">Save current</button>
-          </form>
-          <label class="btn btn-sm btn-ghost" style="cursor:pointer">Import preset
-            <input type="file" id="tp-preset-import" accept="application/json,.json" hidden>
-          </label>
-        </div>
-      </section>
-  </div>
 </div>
 
 {{- /* B1: the cue INSPECTOR — one <dialog>, per-show modal over the grid.

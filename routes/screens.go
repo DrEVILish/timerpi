@@ -264,7 +264,7 @@ func (d *Deps) boardKnown(showID, bid int64) bool {
 
 // GET /api/shows/:ident/screens — the operator panel view (show-gated).
 func (d *Deps) apiScreens(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -299,7 +299,7 @@ func (d *Deps) apiScreenSelf(c *gin.Context) {
 // POST /api/shows/:ident/screens/config {name,theme,boardId} — assign one
 // screen (empty theme / 0 board = follow defaults). Persisted + pushed.
 func (d *Deps) apiScreenConfig(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -355,7 +355,7 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 // onto EVERY registered screen (the "make them all look like this one"
 // button) and push it live.
 func (d *Deps) apiScreenMatch(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -396,7 +396,7 @@ func (d *Deps) apiScreenMatch(c *gin.Context) {
 // POST /api/shows/:ident/screens/rename {from,to} — move the registry row
 // and tell the live tab to adopt the new identity (it persists + rejoins).
 func (d *Deps) apiScreenRename(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -433,7 +433,7 @@ func (d *Deps) apiScreenRename(c *gin.Context) {
 // start page, a TV browser bookmark) instead of capturing it. Moderators
 // only; the key is created on first use.
 func (d *Deps) apiScreenLink(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -464,7 +464,7 @@ func (d *Deps) apiScreenLink(c *gin.Context) {
 }
 
 func (d *Deps) apiScreenForget(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -525,7 +525,7 @@ func (d *Deps) presetSnapshotData(id int64) (string, error) {
 
 // GET /api/shows/:ident/presets — list (id, name, updatedAt, parsed data).
 func (d *Deps) apiPresetsList(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -546,7 +546,7 @@ func (d *Deps) apiPresetsList(c *gin.Context) {
 // POST /api/shows/:ident/presets {name, data?} — save. Without data the
 // CURRENT registry is snapshotted (the "Save current" button).
 func (d *Deps) apiPresetsSave(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -580,7 +580,7 @@ func (d *Deps) apiPresetsSave(c *gin.Context) {
 // POST /api/shows/:ident/presets/:pid/apply — write the preset onto every
 // screen it names (registry + live pushes).
 func (d *Deps) apiPresetApply(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -619,7 +619,7 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 
 // DELETE /api/shows/:ident/presets/:pid — drop a preset.
 func (d *Deps) apiPresetDelete(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -638,7 +638,7 @@ func (d *Deps) apiPresetDelete(c *gin.Context) {
 // GET /api/shows/:ident/presets/:pid/export — download the preset as a
 // JSON file (the same shape apiPresetImport accepts).
 func (d *Deps) apiPresetExport(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -680,7 +680,7 @@ func (d *Deps) apiPresetExport(c *gin.Context) {
 // POST /api/shows/:ident/presets/import — upload an exported JSON preset
 // (raw body or multipart field "file"); stored under its own name.
 func (d *Deps) apiPresetImport(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -745,7 +745,7 @@ func templateName(key string) string {
 // (POST …/layouts/copy, STATUS U11). A screen with no display type yet
 // takes the template's.
 func (d *Deps) apiScreenTemplate(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}

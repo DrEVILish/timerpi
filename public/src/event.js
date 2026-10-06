@@ -244,6 +244,15 @@ function initAdmin() {
         run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { pos })).then(reload);
       });
     }
+    // Duplicate (moved here from the room's Setup tab, STATUS U29): same
+    // sessions, notes and day start — a new room, stopped, no password.
+    row.querySelector('[data-room-dup]')?.addEventListener('click', async () => {
+      const res = await tpPrompt('The new room gets the same sessions, notes and day start. It starts stopped, without a password.', `${nameEl.textContent} (copy)`, {
+        title: 'Duplicate room', ok: 'Duplicate',
+      });
+      if (!res) return;
+      run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then(reload);
+    });
     row.querySelector('[data-room-delete]')?.addEventListener('click', async () => {
       const ok = await tpConfirm(`"${nameEl.textContent}" and its sessions, polls and screen layouts are deleted for good.`, { title: 'Delete room?', ok: 'Delete', danger: true });
       if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then(reload);

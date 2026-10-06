@@ -77,16 +77,13 @@ func TestLayoutCopyFromBuiltIn(t *testing.T) {
 		}
 	}
 
-	// A moderator of Stark only: targets show Stark only, and naming a
-	// Banner screen is refused.
+	// Moderators don't manage screens or layouts at all (STATUS U25).
 	mod := newPersona(ts)
 	mod.do("POST", "/api/events/"+ts.eventCode+"/rooms/"+ts.showCode+"/login", `{"pw":""}`)
-	_, tg := mod.do("GET", "/api/shows/"+ts.showCode+"/layout-targets?kind=walkin", "")
-	if strings.Contains(tg, "Banner") {
-		t.Errorf("moderator sees another room's screens: %s", tg)
+	if code, _ := mod.do("GET", "/api/shows/"+ts.showCode+"/layout-targets?kind=walkin", ""); code != http.StatusUnauthorized {
+		t.Errorf("moderator layout targets: %d, want 401", code)
 	}
-	if code, _ := mod.do("POST", "/api/shows/"+ts.showCode+"/layouts", fmt.Sprintf(
-		`{"name":"Sneaky","template":"room","screens":[{"room":%q,"name":"Banner door"}]}`, banner.Code)); code != http.StatusForbidden {
-		t.Errorf("moderator switched another room's screen: %d", code)
+	if code, _ := mod.do("POST", "/api/shows/"+ts.showCode+"/layouts", `{"name":"Sneaky","template":"room","screens":[]}`); code != http.StatusUnauthorized {
+		t.Errorf("moderator made a layout: %d, want 401", code)
 	}
 }

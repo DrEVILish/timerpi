@@ -12,7 +12,7 @@
 | `/e/:code` lobby | `event.html` → `event` | `event.js` | Room sign-in, SuperOperator sign-in |
 | `/e/:code/admin` | `event.html` → `event-admin` | `event.js` | Live rooms, rooms admin, event settings |
 | access denied | `event.html` → `denied` | — | Rendered by `routes/access.go` |
-| `/c/:room` room | `base.html` → `page-dashboard` (`dashboard.html`) | `timerpi.js` + `moderate.js` | Tabs: Run · Audience · Setup (hash `#audience`, `#setup`) · Screens link |
+| `/c/:room` room | `base.html` → `page-dashboard` (`dashboard.html`) | `timerpi.js` + `moderate.js` | Tabs: Run · Audience (hash `#audience`) · Screens link (SuperOperator only). Import is a collapsible panel on Run. The theme picker shows for the SuperOperator only |
 | `/screens/:room` | `base.html` → `page-screens` (`screens.html`) | `timerpi.js` → `screens.js` | Screens cards, set-up dialog, layout editor dialog |
 | `/d/` ready card | `dready.html` | `waiting.js` | Waits to be captured |
 | `/d/:room` timer | `display.html` | `timerpi.js` | Plain stage timer |

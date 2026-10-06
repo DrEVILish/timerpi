@@ -49,9 +49,9 @@ Every screen is styled by **ftl-themes** and animates items in and out.
 | Role | Device | Gets in by | Can do |
 |---|---|---|---|
 | **SuperOperator** | Laptop | Creates the event and sets the **supervisor password**. Later: event code + supervisor password | **Full admin of the event.** Create/edit/delete rooms, sessions and interactions in every room. Run any room. Manage every screen. Set moderator passwords. Set the event map and theme. Blackout all. Export/import the event |
-| **Moderator** | Tablet or laptop | Home page → type the **event code** → **pick their room** from the list → type the room's **moderator password** *if one is set* | Everything for **their room only**: run the timer, edit sessions, stage messages, create/push/moderate interactions, manage the room's screens. Cannot see or change other rooms |
+| **Moderator** | Tablet or laptop | Home page → type the **event code** → **pick their room** from the list → type the room's **moderator password** *if one is set* | **Run and Audience** for **their room only**: run the timer, edit and import sessions, stage messages, create/push/moderate interactions. Screens, layouts and themes are the SuperOperator's (2026-10-06). Cannot see or change other rooms |
 | **Audience** | Own phone or tablet (iPhone, Android) | Scan the room's QR code (`/a/<code>`). No login, no app | Vote, answer, ask, upvote, submit words/ideas, but only on what is pushed to Audience |
-| **Screen** | TV, projector, kiosk | Open `/d/` and get captured by a moderator or the SuperOperator | Nothing. Shows its layout |
+| **Screen** | TV, projector, kiosk | Open `/d/` and get captured by the SuperOperator | Nothing. Shows its layout |
 
 **Rules**
 
@@ -219,6 +219,7 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-06 | Pairing: unpaired boxes show a pairing code; pairing works on the cloud or on `timerpi.local` (offline too). Boxes release 4 h after the event's end date/time, or when the event is deleted. |
 | 2026-10-06 | UI round (STATUS U1–U29): displays never show the event code; room names on displays read "Room: <name>" when the event has several rooms; walk-in schedule lines are `hh:mm  Title - Speaker` (24 h); no tap-for-full-screen on displays; built-in layouts are templates, edited as named copies; moderators work only in Run and Audience and can import running orders and interaction lists; only the SuperOperator changes themes; the Setup tab goes. |
 | 2026-10-06 | Layout editor (STATUS U8, U10, U11): an almost-full-screen modal; handles follow common editor practice. Built-in templates appear in the same Layout list labelled **[built-in]** and are never edited: editing one makes a **named copy that belongs to the event** (usable by every room). After naming it, a list offers every screen **of the same display type across the event**, grouped by room, with the starting screen ticked. The built-in templates themselves get reworked later. |
+| 2026-10-06 | Displays on devices that report their orientation (phones, tablets) follow it; the screen's "Mounted" rotation setting is ignored there (STATUS U1). Breaks can carry a location (e.g. "Great Hall") that shows on the schedule (U14). Import column matching (U26, U27) is deferred. Setup tab removed: Import moves to Run, Duplicate room to the SuperOperator dashboard, day start and room notes to Run; moderators get no theme picker (U25, U28, U29). |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

@@ -101,11 +101,12 @@ func TestScreensFlowF1(t *testing.T) {
 		t.Error("forgotten screen survived")
 	}
 
-	// The dashboard ships the panel.
-	_, dash := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	for _, sub := range []string{`id="screens-panel"`, `id="tp-screens"`, `id="tp-preset-save"`, `id="tp-preset-import"`} {
-		if !strings.Contains(string(dash), sub) {
-			t.Errorf("dashboard missing %q", sub)
+	// Presets live on the Screens page (the room page's Setup tab is gone,
+	// STATUS U29).
+	_, page := ts.call("GET", "/screens/"+ts.showCode, nil, "")
+	for _, sub := range []string{`id="tp-presets"`, `id="tp-preset-save"`, `id="tp-preset-import"`} {
+		if !strings.Contains(string(page), sub) {
+			t.Errorf("Screens page missing %q", sub)
 		}
 	}
 }

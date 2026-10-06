@@ -159,8 +159,8 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown show code"})
 		return
 	}
-	if !d.canModerate(c, sid) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "you can only capture screens into a room you moderate"})
+	if !d.superOfShow(c, sid) { // screens: SuperOperator only (STATUS U25)
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "only the SuperOperator sets up screens"})
 		return
 	}
 	if !timerpi.ValidScreenKind(body.Kind) || !timerpi.ValidRotation(body.Rotation) {

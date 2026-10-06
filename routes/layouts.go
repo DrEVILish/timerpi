@@ -59,7 +59,7 @@ func (d *Deps) eventRoomsFor(c *gin.Context, showID int64) []timerpi.Show {
 }
 
 func (d *Deps) apiLayoutTargets(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
@@ -85,7 +85,7 @@ func (d *Deps) apiLayoutTargets(c *gin.Context) {
 }
 
 func (d *Deps) apiLayoutCopy(c *gin.Context) {
-	id, ok := d.requireShowGated(c)
+	id, ok := d.requireSuperOfShow(c)
 	if !ok {
 		return
 	}
