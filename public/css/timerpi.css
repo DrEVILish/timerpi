@@ -37,7 +37,17 @@
 .tp-dash-main { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .tp-dash-main .tp-runorder { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .tp-dash-main .tp-cuelist-wrap { flex: 1 1 auto; min-height: 12rem; overflow: auto; }
-.tp-transport-bar { justify-content: flex-start; }
+/* Transport: ftl buttons with borders (touch screens get no hover, so the
+   edge is what shows a button). GO is 25% taller than its neighbours. */
+.tp-transport-bar { --tp-tbtn: 2.75rem; justify-content: flex-start; }
+.tp-transport-bar .btn-icon { --btn-icon-size: var(--tp-tbtn); font-size: 1.05rem; }
+.tp-transport-bar #tp-blank { block-size: var(--tp-tbtn); padding-block: 0; }
+.tp-transport-bar .btn-go {
+  block-size: calc(var(--tp-tbtn) * 1.25);
+  padding-block: 0;
+  font-size: 1.35rem;
+  min-inline-size: 6.5rem;
+}
 
 /* Now panel (left rail). A size container so the readout scales with the
    rail's width, not the window's (U33: "0:09.4" lost its tenths off the
@@ -328,7 +338,7 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .tp-blanked p { color: #666; letter-spacing: .35em; font-size: clamp(.8rem, 2vh, 1.2rem); }
 
 /* E3: blackout toggle pressed = displays are dark right now. */
-#tp-blank[aria-pressed="true"] { outline: 2px solid var(--danger, #ff4444); color: var(--danger-text, var(--danger, #ff4444)); }
+#tp-blank[aria-pressed="true"] { outline: 3px solid var(--danger, #ff4444); outline-offset: 3px; }
 
 /* F1: screens panel rows (operator dashboard — rem sizing is intentional;
    this is not a display surface, the 44px touch floors apply). */
@@ -390,10 +400,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
    recolor; both buttons keep their core paint (.btn-primary/.btn-go accent).
    -------------------------------------------------------------------------- */
 .tp-btn-lg { font-size: 1.15em; padding-inline: 2em; }
-.transport .btn-go {
-  font-size: clamp(1.4rem, 3vh, 2.2rem);
-  min-inline-size: 7rem;
-}
 
 /* --------------------------------------------------------------------------
    Fix-3[O4]: HELD vs IDLE distinction. Engine already emits all eight states
@@ -407,10 +413,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
    in the base block above (same specificity, source order decides).
    -------------------------------------------------------------------------- */
 .tp-clock[data-state="held"] { color: var(--warning-text, var(--warning, inherit)); }
-#tp-now[data-state="held"] #tp-state-chip {
-  color: var(--warning-text, var(--warning, inherit));
-  font-weight: 700;
-}
 .tp-display-stage[data-state="held"],
 .tp-display-stage[data-state="paused"] {
   box-shadow: inset 0 0 0 .3vmin var(--warning);
@@ -953,7 +955,7 @@ body[data-editing] .b-overlap {
    ========================================================================== */
 
 /* --- U1: quick-adjust row (frag-current) ----------------------------------
-   Four one-tap length nudges for the cue on the clock. Buttons stay
+   One-tap length nudges for the cue on the clock. Buttons stay
    merely normal .btn paint (disabled = core's disabled look); no purple
    beyond the GO (the loud thing stays the transport). */
 .tp-adjust-row .btn { font-variant-numeric: tabular-nums; min-inline-size: 3.2em; }
@@ -1003,18 +1005,6 @@ tr.tp-row-active .tp-cue-pos { color: var(--accent-text, var(--accent-2, var(--a
 
 /* Day-bar segment labels already hide ≤760px (supervisor block); the
    needle keeps its supervisor-pinned geometry. Nothing else appends. */
-
-/* --- A2: live over/under vs plan -----------------------------------------
-   A quiet chip in the current-cue cluster: on-plan is muted ink; late goes
-   warning, early stays muted-positive. Reads in one glance, adds no new
-   colour to the palette (state-color exception discipline). */
-.tp-delta {
-  font-size: var(--text-md, .9rem);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted, inherit);
-}
-.tp-delta[data-state="over"] { color: var(--warning-text, var(--warning, inherit)); }
-.tp-delta[data-state="over"][data-overtime="1"] { color: var(--danger-text, var(--danger, inherit)); }
 
 /* --- A3: cue filter rides the running-order header ---------------------- */
 .tp-dash-main .panel-header { flex-wrap: wrap; row-gap: .35rem; }
@@ -1097,10 +1087,6 @@ body[data-waiting] .tp-waiting { display: grid; }
    JS crashes are fixed in board.js/timerpi.js). Append-only per the banner
    discipline above. */
 
-/* BLANK painted outside the rail panel: .transport is a nowrap row and the
-   5-button + BLANK set exceeds the ~24rem #tp-now column — wrap it (the
-   lcars theme ships exactly this override for its own transport). */
-#tp-now .transport { flex-wrap: wrap; row-gap: .4rem; }
 
 /* Stage status line: --muted is contract-certified on SURFACES; the stage
    paints it directly on --bg (win95 teal: 2.09:1 — invisible). Primary text

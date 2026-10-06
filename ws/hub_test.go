@@ -495,8 +495,8 @@ func TestScheduleFrameOnStructureAndAnchorChange(t *testing.T) {
 	} else if rows := m["snapshot"].(map[string]any)["cues"].([]any); len(rows) != 3 {
 		t.Fatalf("cueEdit changed the cue count: %d", len(rows))
 	}
-	// cuesSignature ignores `notes` → structure unchanged → the NEXT update
-	// must come from a real structure change; emit one and expect schedule.
+	// A notes edit leaves the schedule alone → no schedule frame; the NEXT
+	// one must come from a real schedule change; emit one and expect it.
 	a.send(t, map[string]any{"t": "cmd", "action": "cueDel", "args": map[string]any{"pos": 3}})
 	sched4 := a.readUntil(t, "schedule")
 	if rows := sched4["rows"].([]any); len(rows) != 2 {

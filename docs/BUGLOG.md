@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 60 | 0 |
+| Warning | 62 | 0 |
 | Suggestion | 41 | 2 |
 
 ## Critical
@@ -115,6 +115,8 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RW58 | `public/src/moderate.js:95`; `public/src/timerpi.js:838-840`; `timerpi/polls.go:672-682` | Every poll frame (up to 2.5/s per moderator) reloads `ModeratorItems` (2–3 queries per item for every item ever, with all entries) and rebuilds the whole panel DOM. A click landing during the swap is lost. | On `poll` frames refresh only the on-air tally; diff the DOM instead of replacing it. | Fixed 2026-10-06 (c404e93) |
 | RW59 | `timerpi/engine.go` (`startLocked`) | With no day start set, the first GO anchored the day at local midnight, so planned times read 00:00-based and the dashboard said "+21:50 vs plan". Found 2026-10-06 while checking the room page. | Anchor so the started cue is on plan. | Fixed 2026-10-06 (b5d055d) |
 | RW60 | `ws/hub.go` (`broadcast`) | The running order fragment was re-rendered only when cues changed, so after the first GO (or "Day starts now") a live room page kept "+0:10" offsets instead of clock times until it was reloaded. Found 2026-10-06. | Include the day start in the fragment signature. | Fixed 2026-10-06 (76c31af) |
+| RW61 | `ws/commands.go` (`cuesSignature`), `ws/hub.go` (`broadcast`), `public/src/timerpi.js` | Editing Speaker/Where, At zero, an alert, its colour or Notes saved but the running order kept the old text until a reload: the change check only compared title, duration, type and timer. In Messages, a queued message vanished from the list: the state frame carries only on-stage messages and the page rebuilt the list from it, and the server compared that list with the full one, so it redrew the panel on every update. Found 2026-10-06. | Compare every row field; compare and draw the full message list on the server; drop the page's own rebuild. | Fixed 2026-10-06 |
+| RW62 | `public/src/timerpi.js` (`initCommandButtons`) | The quick-adjust buttons under the readout did nothing: they carry `data-adjust` but no `data-cmd`, and the click handler returned before reaching the adjust code. Found 2026-10-06. | Handle `data-adjust` before the `data-cmd` lookup. | Fixed 2026-10-06 |
 
 ## Suggestion
 

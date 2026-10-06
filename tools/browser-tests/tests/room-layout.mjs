@@ -24,9 +24,9 @@ export async function run(t) {
   t.check(`transport: ${cmds.join(',')}`, cmds.join(',') === 'prev,go,pause,next,tp-blank');
   t.check('no Stop/Reset button anywhere', (await pg.$$('[data-cmd="reset"]')).length === 0);
 
-  // U32: adjust right under the readout.
-  const after = await pg.$eval('#tp-clock', (c) => c.nextElementSibling?.className || '');
-  t.check(`the adjust row follows the readout (${after})`, after.includes('tp-adjust-row'));
+  // U32, revised 2026-10-06: readout, then its progress bar, then adjust.
+  const after = await pg.$eval('#tp-clock', (c) => [c.nextElementSibling?.className, c.nextElementSibling?.nextElementSibling?.className].join(' '));
+  t.check(`progress, then the adjust row, follow the readout (${after})`, /^tp-progress .*tp-adjust-row/.test(after));
 
   // U34: time of day at the top centre of the header bar.
   const tod = await box('.app-bar #tp-tod');

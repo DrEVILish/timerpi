@@ -202,6 +202,7 @@ Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as 
 | **U42** | ✅ Done 2026-10-06: Removed as behaviour too: nothing starts by itself, holds move nothing, Normalize drops them on every write. |
 | **U43** | ✅ Done 2026-10-06: Breaks wear the theme's `--accent-2`. |
 | **U44** | ✅ Done 2026-10-06: Forget is ftl's `.btn-close` (the theme's own close button), tinted danger. Browser test `screen-forget`. |
+| **U45** | ✅ Done 2026-10-06: Current cue reads title/speaker, readout, progress bar, then adjust (−1m −30s +30s +1m +5m) and Rate; the state lamp, chip and "vs plan" line are gone. Transport: GO is 25% taller than its neighbours, Prev/Next are bordered ftl buttons, BLANK is `.btn-danger`. Browser test `room-current-transport`. |
 
 ### 4.3 Cleanup (hanging leftovers)
 

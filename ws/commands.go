@@ -507,13 +507,14 @@ func (h *Hub) signal(s *session, to string, data json.RawMessage) {
 func cuesSignature(cues []timerpi.Cue) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "n%d;", len(cues))
+	// Every field a row shows: the table used to keep a stale Speaker,
+	// At zero, alert or note until a reload because only the title,
+	// duration, type and timer were compared.
 	for _, c := range cues {
-		fmt.Fprintf(&b, "%d|%d|%s|%d|%s|%s|%s|%t;",
+		fmt.Fprintf(&b, "%d|%d|%q|%d|%s|%s|%q|%q|%d|%d|%s|%s|%s|%q|%q|%q;",
 			c.Pos, c.ID, c.Label, c.DurationMS, c.Kind, c.TimerKind,
-			c.Speaker, c.AutoContinue)
-		if c.HoldMS > 0 {
-			fmt.Fprintf(&b, "h%d;", c.HoldMS)
-		}
+			c.Speaker, c.Location, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
+			c.EndAction, c.Notes, c.Tags, c.Color)
 	}
 	return b.String()
 }
@@ -536,7 +537,11 @@ func messagesSignature(msgs []views.MessageVM) string {
 // client's needle/next-start refresh (REVIEW-3 D3 fix-checklist #6).
 func scheduleSignature(snap timerpi.Snapshot) string {
 	rt := snap.Runtime
-	return fmt.Sprintf("%s|d%d;r%g", cuesSignature(snap.Cues), rt.DayStartTS, rt.Rate)
+	var b strings.Builder
+	for _, c := range snap.Cues {
+		fmt.Fprintf(&b, "%d|%d|%q|%d|%s|%s|%q;", c.Pos, c.ID, c.Label, c.DurationMS, c.Kind, c.TimerKind, c.Speaker)
+	}
+	return fmt.Sprintf("%s|d%d;r%g", b.String(), rt.DayStartTS, rt.Rate)
 }
 
 // currentSignature fingerprints the now/next text labels — the only part

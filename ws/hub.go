@@ -457,13 +457,14 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 		}
 		sh.sigs.cues = sig
 	}
-	if sig := messagesSignature(data.Messages); sig != sh.sigs.msgs {
-		if h.msgsFn != nil {
-			if msgs, err := h.msgsFn(showID); err == nil {
-				data.SetMessages(msgs)
-				sig = messagesSignature(data.Messages) // diff on the FULL list
-			}
+	// The snapshot carries only the messages on stage; the panel lists the
+	// queued ones too, so compare and draw the full list (BUGLOG RW61).
+	if h.msgsFn != nil {
+		if msgs, err := h.msgsFn(showID); err == nil {
+			data.SetMessages(msgs)
 		}
+	}
+	if sig := messagesSignature(data.Messages); sig != sh.sigs.msgs {
 		if html, err := h.render("frag-messages", data); err == nil {
 			oobs = append(oobs, oobFrame("#messages-panel", html))
 		}

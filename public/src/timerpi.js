@@ -153,14 +153,12 @@ class ClockUI {
   _collect() {
     this.el = {
       // dashboard
-      clock: $('#tp-clock'), stateChip: $('#tp-state-chip'),
+      clock: $('#tp-clock'),
       meter: $('#tp-meter'), nowPanel: $('#tp-now'),
-      delta: $('#tp-delta'),
       tod: $('#tp-tod'),
       cueLabel: $('#tp-cue-label'), cueSpeaker: $('#tp-cue-speaker'),
       daybar: $('#tp-daybar'), needle: $('#tp-daybar-needle'),
       rows: () => $$('#cuelist tbody tr[data-pos]'),
-      lampRun: $('#tp-lamp-run'),
       rateSlider: $('#tp-rate'), rateOut: $('#tp-rate-out'),
       // display
       stage: $('#d-stage'), dClock: $('#d-clock'), dLabel: $('#d-label'),
@@ -287,92 +285,6 @@ class ClockUI {
       seg.classList.toggle('is-done', e <= nowMS);
       seg.classList.toggle('is-active', s <= nowMS && nowMS < e);
     }
-  }
-
-  /**
-   * C2: mirror the server's frag-messages markup from snap. Runs on every
-   * renderMessage; when the DOM already matches (server oob drew it), this
-   * is a single signature compare. Everything the operator can tap rides
-   * the same data-cmd contracts, so the document-level handlers keep
-   * working with zero special cases.
-   */
-  renderMessagesList() {
-    const panel = $('#messages-panel');
-    if (!panel) return;
-    const msgs = this.snap?.messages || [];
-    const sig = `${msgs.length}|${msgs.map(m => `${m.id}:${!!m.shownAt}`).join(',')}`;
-    if (panel.dataset.tpMsgSig === sig) return; // server frag already matches
-    // A server oob for this fragment will land with ITS OWN identical
-    // markup; the signature guard above makes both paths converge instead
-    // of fighting (last writer wins, both render the same truth).
-    panel.dataset.tpMsgSig = sig;
-    const badge = panel.querySelector('.badge.push');
-    if (badge) setText(badge, String(msgs.length));
-    let list = panel.querySelector('ul.list');
-    const empty = panel.querySelector('.empty-state');
-    if (!msgs.length) {
-      if (list) list.remove();
-      if (!empty && !panel.querySelector('.tp-wrapup')) return;
-      if (empty) return;
-      return this.messagesEmptyState(panel);
-    }
-    if (empty) empty.remove();
-    if (!list) {
-      list = document.createElement('ul');
-      list.className = 'list';
-      // Insert after the compose form (server markup order).
-      const form = panel.querySelector('form[data-cmd="addMsg"]');
-      form?.after(list);
-    }
-    // Rebuild items (id-keyed; server order = DB order).
-    list.replaceChildren(...msgs.map((m) => {
-      const li = document.createElement('li');
-      li.className = 'list-item' + (m.shownAt ? ' is-active' : '');
-      const title = document.createElement('span');
-      title.className = 'list-item-title';
-      setText(title, m.text);
-      const meta = document.createElement('span');
-      meta.className = 'list-item-meta';
-      const status = document.createElement('span');
-      if (m.shownAt) {
-        status.className = 'status status-warn';
-        setText(status, 'ON STAGE');
-      } else {
-        status.className = 'status';
-        setText(status, 'queued');
-      }
-      const cluster = document.createElement('span');
-      cluster.className = 'cluster is-gap-2xs';
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-sm' + (m.shownAt ? '' : ' btn-go');
-      btn.dataset.cmd = m.shownAt ? 'hideMsg' : 'showMsg';
-      btn.dataset.id = String(m.id);
-      setText(btn, m.shownAt ? 'Hide' : 'Show');
-      cluster.appendChild(btn);
-      meta.append(status, cluster);
-      li.append(title, meta);
-      return li;
-    }));
-    let clear = panel.querySelector('button[data-cmd="clearMsgs"]');
-    if (!clear) {
-      clear = document.createElement('button');
-      clear.className = 'btn btn-sm btn-ghost';
-      clear.dataset.cmd = 'clearMsgs';
-      setText(clear, 'Clear all');
-      list.after(clear);
-    }
-  }
-
-  messagesEmptyState(panel) {
-    // Mirror the server's empty-state block (frag-messages).
-    const wrap = document.createElement('div');
-    wrap.className = 'empty-state';
-    const mk = (cls, text) => { const s = document.createElement('span'); s.className = cls; setText(s, text); return s; };
-    wrap.append(mk('empty-state-icon', '💬'), mk('empty-state-title', 'No messages'),
-      mk('empty-state-hint', 'One tap on WRAP UP! puts it on every display — or type your own above and Add.'));
-    const wrapup = panel.querySelector('.tp-wrapup');
-    const form = panel.querySelector('form[data-cmd="addMsg"]');
-    (form || wrapup)?.after(wrap);
   }
 
   /**
@@ -536,7 +448,6 @@ class ClockUI {
 
   renderMessage() {
     const shown = (this.snap?.messages || []).filter(m => m.shownAt).sort((a, b) => b.shownAt - a.shownAt)[0];
-    this.renderMessagesList();
     const el = this.el.dMessage;
     if (el) {
       if (shown) {
@@ -601,18 +512,6 @@ class ClockUI {
       if (slowKey === this._slowKey) return;
       this._slowKey = slowKey;
       setState(this.el.nowPanel, view.state);
-      setText(this.el.stateChip, {
-        idle: 'READY', armed: 'ARMED', running: 'RUNNING', overtime: 'OVERTIME',
-        paused: 'PAUSED', held: 'HELD', blank: 'BLANK',
-        alert1: 'ALERT 1', alert2: 'ALERT 2',
-      }[view.state] || view.state.toUpperCase());
-      const lamp = this.el.lampRun;
-      if (lamp) {
-        lamp.classList.toggle('is-on', view.state === 'running');
-        lamp.classList.toggle('is-warn', view.state === 'paused' || view.state === 'held' || view.state === 'alert1');
-        lamp.classList.toggle('is-error', view.state === 'overtime' || view.state === 'alert2');
-      }
-      this.paintDelta(view);
       setText(this.el.tod, fmtTimeOfDay(this.serverNow()));
       // keep rate control in step with the (possibly server/mesh-applied) rate
       // — paused while the inline editor owns the readout (double-click).
@@ -674,40 +573,6 @@ class ClockUI {
         setText(st, bits.filter(Boolean).join('  ·  '));
       }
     }
-  }
-
-  /** A2: the live over/under chip ("+0:35 vs plan") — recomputed each frame
-     from the schedule rows + the projected real end, exactly mirroring the
-     server's ComputeScheduleRuntime math (views.DeltaMS is the first paint;
-     this keeps it honest between oob swaps). Countdown cues only: CLOCK /
-     COUNTSTOP have no scheduled-duration meaning to drift from. */
-  paintDelta(view) {
-    const d = this.el.delta;
-    if (!d) return;
-    const snap = this.snap;
-    const cue = activeCue(snap);
-    const kind = cue?.timerKind || 'COUNTDOWN';
-    const onClock = !!snap.runtime.activePos && (cue?.durationMS || 0) > 0
-      && kind === 'COUNTDOWN' && view.remaining != null
-      && ['running', 'paused', 'held', 'overtime', 'alert1', 'alert2'].includes(view.state);
-    const row = onClock ? this.schedule?.rows?.find(r => r.pos === snap.runtime.activePos) : null;
-    let delta = null;
-    if (row && snap.runtime.dayStartTS && row.endMS != null) {
-      const endTS = snap.runtime.dayStartTS + row.endMS;
-      const rate = snap.runtime.rate > 0 ? snap.runtime.rate : 1;
-      const actualEnd = view.remaining > 0 ? this.serverNow() + view.remaining / rate : this.serverNow();
-      delta = actualEnd - endTS;
-    }
-    if (delta == null) { d.hidden = true; return; }
-    const sec = Math.round(delta / 1000) * 1000;
-    if (Math.abs(sec) < 30000) {
-      d.textContent = 'on plan';
-      d.dataset.state = 'ontime';
-    } else {
-      d.textContent = (sec > 0 ? '+' : '−') + fmtDuration(Math.abs(sec)) + ' vs plan';
-      d.dataset.state = sec > 0 ? 'over' : 'under';
-    }
-    d.hidden = false;
   }
 
   start() {
@@ -1003,6 +868,14 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     // undo inverse resolving against the next real row. The submit handler
     // below is the only sender for forms.
     if (e.target.closest('form[data-cmd]')) return;
+    // U1: quick adjust never reaches the wire here — it accumulates. The
+    // buttons carry data-adjust only, so this has to come before the
+    // data-cmd lookup (it sat after it, and the buttons did nothing).
+    const adj = e.target.closest('[data-adjust]');
+    if (adj) {
+      if (!adj.disabled) queueAdjust(Number(adj.dataset.adjust));
+      return;
+    }
     const btn = e.target.closest('[data-cmd]');
     if (!btn) {
       // E3 blackout toggle (lives in the oob-swapped frag-current, so it
@@ -1032,11 +905,6 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
       return;
     }
     const action = btn.dataset.cmd;
-    // U1: quick adjust never reaches the wire here — it accumulates.
-    if (btn.dataset.adjust) {
-      queueAdjust(Number(btn.dataset.adjust));
-      return;
-    }
     // U1: destructive deletes need the two-tap arming first.
     if (action === 'cueDel' && !confirmDelete(btn)) return;
     const args = {};

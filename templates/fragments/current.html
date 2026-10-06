@@ -3,28 +3,12 @@
 <section class="panel tp-now" id="tp-now" data-state="idle" aria-label="Current cue">
   <div class="panel-header">Current cue</div>
   <div class="stack is-gap-s">
+    <div class="stack is-gap-2xs">
+      <div class="tp-cue-label" id="tp-cue-label">{{if .Current.Label}}{{.Current.Label}}{{else}}—{{end}}</div>
+      <div class="text-muted" id="tp-cue-speaker">{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}</div>
+    </div>
+
     <span class="readout tp-clock tp-clock-xl" id="tp-clock" data-state="idle">--:--</span>
-
-    <!-- U1/U32: one-tap length adjust for the cue ON THE CLOCK, right under
-         the readout. Every tap is one cueEdit over the existing WS protocol
-         (CONTRACT-UI §4); JS supplies pos/duration. Rendered disabled;
-         timerpi.js releases the row once a cue is active. -->
-    <div class="cluster is-gap-2xs tp-adjust-row" role="group" aria-label="Quick adjust the current cue">
-      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue by 1 minute" aria-label="Shorten current cue by 1 minute">−1m</button>
-      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue by 30 seconds" aria-label="Shorten current cue by 30 seconds">−30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue by 30 seconds" aria-label="Lengthen current cue by 30 seconds">+30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue by 1 minute" aria-label="Lengthen current cue by 1 minute">+1m</button>
-    </div>
-
-    <div class="cluster is-gap-s">
-      <span class="lamp" id="tp-lamp-run"></span>
-      <span class="status" id="tp-state-chip">READY</span>
-      {{- /* A2: live over/under vs plan (timerpi.js keeps this fresh each
-             frame; server value is the honest first paint). data-state:
-             over|under|ontime. */ -}}
-      <span class="tp-delta" id="tp-delta" hidden data-state="ontime"
-            title="This cue's projected end vs its scheduled end">{{if and .Current.DeltaFmt (ne .Current.DeltaFmt "0")}}{{.Current.DeltaFmt}} vs plan{{end}}</span>
-    </div>
 
     <div class="tp-progress">
       <div class="meter tp-progress-meter" id="tp-meter" style="--meter-level:0%">
@@ -32,9 +16,16 @@
       </div>
     </div>
 
-    <div class="stack is-gap-2xs">
-      <div class="tp-cue-label" id="tp-cue-label">{{if .Current.Label}}{{.Current.Label}}{{else}}—{{end}}</div>
-      <div class="text-muted" id="tp-cue-speaker">{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}</div>
+    <!-- U1/U32: one-tap length adjust for the cue ON THE CLOCK, under the
+         readout. Every tap is one cueEdit over the existing WS protocol
+         (CONTRACT-UI §4); JS supplies pos/duration. Rendered disabled;
+         timerpi.js releases the row once a cue is active. -->
+    <div class="cluster is-gap-2xs tp-adjust-row" role="group" aria-label="Quick adjust the current cue">
+      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue by 1 minute" aria-label="Shorten current cue by 1 minute">−1m</button>
+      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue by 30 seconds" aria-label="Shorten current cue by 30 seconds">−30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue by 30 seconds" aria-label="Lengthen current cue by 30 seconds">+30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue by 1 minute" aria-label="Lengthen current cue by 1 minute">+1m</button>
+      <button class="btn btn-sm" type="button" data-adjust="300000" disabled title="Lengthen the current cue by 5 minutes" aria-label="Lengthen current cue by 5 minutes">+5m</button>
     </div>
 
     <div class="tp-rate">
