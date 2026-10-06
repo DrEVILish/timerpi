@@ -180,7 +180,7 @@
         </div>
         <form id="ev-pw" class="field">
           <label class="label" for="ev-pw-new">{{if .Event.HasSuperPW}}Change supervisor password{{else}}Set supervisor password{{end}}</label>
-          <div class="row is-gap-xs"><input class="input" id="ev-pw-new" type="password" minlength="4" autocomplete="new-password" required><button class="btn" type="submit">Save</button></div>
+          <div class="row is-gap-xs"><input class="input" id="ev-pw-new" type="password" minlength="6" autocomplete="new-password" required><button class="btn" type="submit">Save</button></div>
           <span class="field-hint">Signs every other SuperOperator session out.</span>
         </form>
       </div>

@@ -72,16 +72,19 @@ func TestEventCreateAndLobby(t *testing.T) {
 	ts := newAPITest(t)
 	boss := newPersona(ts)
 
-	code, body := boss.do("POST", "/api/events", `{"name":"Conf 2026","password":"chief","rooms":["Room A","Room B",""]}`)
+	code, body := boss.do("POST", "/api/events", `{"name":"Conf 2026","password":"chief1","rooms":["Room A","Room B",""]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create event: %d %s", code, body)
 	}
 	var created struct{ Code, Admin string }
 	_ = json.Unmarshal([]byte(body), &created)
 
-	// Weak or missing supervisor passwords are refused.
+	// Weak or missing supervisor passwords are refused (6+ characters).
 	if code, _ := boss.do("POST", "/api/events", `{"name":"X","password":"","rooms":["A"]}`); code != 400 {
 		t.Errorf("event without supervisor password: %d, want 400", code)
+	}
+	if code, _ := boss.do("POST", "/api/events", `{"name":"X","password":"chief","rooms":["A"]}`); code != 400 {
+		t.Errorf("5-character supervisor password: %d, want 400", code)
 	}
 
 	// The creator is SuperOperator immediately.
@@ -108,7 +111,7 @@ func TestEventCreateAndLobby(t *testing.T) {
 	if code, _ := stranger.do("POST", "/api/events/"+created.Code+"/login", `{"pw":"nope"}`); code != 401 {
 		t.Errorf("wrong supervisor password: %d", code)
 	}
-	if code, _ := stranger.do("POST", "/api/events/"+created.Code+"/login", `{"pw":"chief"}`); code != 200 {
+	if code, _ := stranger.do("POST", "/api/events/"+created.Code+"/login", `{"pw":"chief1"}`); code != 200 {
 		t.Errorf("right supervisor password: %d", code)
 	}
 	if code, _ := stranger.do("PATCH", "/api/events/"+created.Code, `{"name":"Conf 2026 (day 1)"}`); code != 200 {

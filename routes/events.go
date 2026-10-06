@@ -29,6 +29,7 @@ package routes
 import (
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -233,8 +234,8 @@ func (d *Deps) apiCreateEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Give the event a name"})
 		return
 	}
-	if len(strings.TrimSpace(body.Password)) < 4 {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The supervisor password needs at least 4 characters"})
+	if !validSuperPassword(body.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
 		return
 	}
 	if len(body.Rooms) > 50 {
@@ -373,8 +374,8 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		}
 	}
 	if body.Password != nil {
-		if len(strings.TrimSpace(*body.Password)) < 4 {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The supervisor password needs at least 4 characters"})
+		if !validSuperPassword(*body.Password) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
 			return
 		}
 		if err := d.Store.SetEventSuperPassword(ev.ID, *body.Password); err != nil {
@@ -749,4 +750,16 @@ func (d *Deps) forgetRoom(id int64) {
 	if h, ok := d.Hub.(interface{ Forget(int64) }); d.Hub != nil && ok {
 		h.Forget(id)
 	}
+}
+
+// Supervisor passwords need 6+ characters (owner decision 2026-10-06,
+// BUGLOG RW12); existing shorter ones keep working. Room passwords may be
+// anything: they are a light gate, and sign-in is rate limited.
+const (
+	minSuperPasswordLen = 6
+	superPasswordRule   = "The supervisor password needs at least 6 characters"
+)
+
+func validSuperPassword(pw string) bool {
+	return utf8.RuneCountInString(strings.TrimSpace(pw)) >= minSuperPasswordLen
 }

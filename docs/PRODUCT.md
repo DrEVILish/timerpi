@@ -57,7 +57,7 @@ Every screen is styled by **ftl-themes** and animates items in and out.
 
 - Each room has exactly **one moderator role**. Several devices may log in as it, for example a tablet plus a backup laptop.
 - The moderator password is **optional, per room**, and set by the SuperOperator. With no password, the event code plus the room pick is enough.
-- The supervisor password is **required** at event creation.
+- The supervisor password is **required** at event creation and needs at least 6 characters. Room (moderator) passwords can be anything.
 - No personal accounts and no personal data. Codes and passwords are the credentials.
 - Box-level settings (hostname, network, OSC, default theme) need the **box password**, which is set the first time someone opens box settings. Event passwords never unlock them, because anyone on the network can create an event.
 
@@ -209,6 +209,9 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-05 | Passwords: **one supervisor password per event** (SuperOperator/admin) and **one optional password per room** (moderator). |
 | 2026-10-05 | ~~No separate appliance password: box settings need any event's supervisor password.~~ Superseded 2026-10-06. |
 | 2026-10-06 | **Box password** (review BUGLOG RC5): anyone on the network can create an event, so event passwords no longer unlock box settings. A separate box password, set the first time someone opens box settings (`/box`), guards hostname, network, OSC and the default theme. |
+| 2026-10-06 | Supervisor passwords need at least 6 characters; room passwords can be anything (minimum security). Sign-in attempts are rate limited. |
+| 2026-10-06 | OSC input stays as is (room code in the address, off by default). Accepted risk when switched on. |
+| 2026-10-06 | Captured screens get a key: only keyed screens receive presenter items and the running order. |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |
