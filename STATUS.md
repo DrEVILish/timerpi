@@ -211,12 +211,12 @@ Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as 
 | **C2** | ✅ Done: ftl-themes is a submodule pinned to an upstream commit. The local `timerpi` theme is shelved (branch `timerpi-theme-local` in the old clone), so it is no longer in the picker. |
 | **C3** | ✅ Done: dead `displayPage`, the stale registration guard, `htmx-ext-ws.js` and the `/frag/shows` comments are removed. (`screen` is a valid join role, so the `mesh.js` check stays.) |
 | **C4** | ✅ Done: one scheme, the `asset` template func with a content-hash path segment (ARCHITECTURE §12). The versioned copies and `bump-assets.sh` are deleted. |
-| **C5** | 🟡 Template presets now come from the server catalog. `board.js` still carries a `FACTORY_DEFAULT` copy for "Reset". |
+| **C5** | ✅ Done 2026-10-06: template presets and the factory layout ("Reset layout") come from the server (`/api/board-templates`: `catalog`, `templates`, `default`). |
 | **C6** | ✅ References to files that never existed are removed. Citations of `PLAN §…`, `CONTRACT-UI`, `NOTES-board` resolve via `docs/archive/README.md`. |
 | **C7** | ✅ Done. |
 | **C8** | ✅ `docs/UI-CONTRACT.md`. |
 | **C9** | ✅ Done 2026-10-06: `templates/` and `public/` are embedded in the binary (`-dev` still reads disk). ftl-themes stay on disk (pinned submodule, 48 MB, independent of TimerPi's code). |
-| **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; `/api/shows/:ident/zone` and `/api/zone-map` are gone; zone maps were migrated to event maps at adoption. Left: the unused `shows.zone` column and the bundle's legacy zone/map fields. |
+| **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; the zone API and zone maps are gone; room bundles carry the event map (`mapIndex`) and read a legacy `zone`/`zoneMapIndex` only to fill an event without a map. `shows.zone` stays for adopting pre-event databases. |
 
 ### 4.4 Hardware / field proof
 
