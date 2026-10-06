@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 58 | 40 |
+| Warning | 58 | 37 |
 | Suggestion | 41 | 40 |
 
 ## Critical
@@ -66,8 +66,8 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RW17 | `timerpi/polls.go:547-563` (`itemView`) | Public views always include `counts` and `total`. Verified: an open quiz sent `"counts":[0,1]` to phones over WS and REST, so the crowd's answer is visible before the reveal. Tallies are only hidden by the phone's UI. | When `!moderator && State != results`, omit `Counts` (and `Total` if needed). | Open |
-| RW18 | `ws/hub.go:757-762`; `ws/session.go:199` | If `pollsFn` errors (for example `SQLITE_BUSY` after the 5 s busy timeout), `poll:null` is broadcast. Every phone and screen drops to "waiting for the room" mid-vote. A join that hits an error gets null too. | On error, skip the broadcast or resend the last good frame. | Open |
+| RW17 | `timerpi/polls.go:547-563` (`itemView`) | Public views always include `counts` and `total`. Verified: an open quiz sent `"counts":[0,1]` to phones over WS and REST, so the crowd's answer is visible before the reveal. Tallies are only hidden by the phone's UI. | When `!moderator && State != results`, omit `Counts` (and `Total` if needed). | Fixed 2026-10-06 `b4156fb` |
+| RW18 | `ws/hub.go:757-762`; `ws/session.go:199` | If `pollsFn` errors (for example `SQLITE_BUSY` after the 5 s busy timeout), `poll:null` is broadcast. Every phone and screen drops to "waiting for the room" mid-vote. A join that hits an error gets null too. | On error, skip the broadcast or resend the last good frame. | Fixed 2026-10-06 `b4156fb` |
 | RW19 | `timerpi/polls.go:530-533` (`Submit`) | Approving a word-cloud word doesn't carry to later submissions of it. Each new "ai" after approving "AI" arrives pending again, so its weight stops growing until re-approved. Dismissed words come back the same way. | For word clouds, copy the state of an existing approved or dismissed identical word in the same item. | Open |
 | RW20 | `timerpi/polls.go:409` vs `:607` | `Moderate` matches words with SQLite `lower()`, which only folds A–Z. Views group with Go `strings.ToLower`. Verified: approving "Été" left "été" pending although the moderator sees one word. | Store a key column normalised in Go (lowercase, NFC) and match on it. | Open |
 | RW21 | `timerpi/polls.go:226-237` | Votes are stored as option indexes and kept when options are edited. Verified: reordering moved a "b" vote onto "a". Removing an option leaves its votes in `Total`, so bars and percentages are wrong. Editing an on-air quiz corrupts it. | Refuse option changes once votes exist, or clear votes when options change. | Open |
@@ -108,7 +108,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
 | RW53 | `timerpi/polls.go:584-640`; `ws/hub.go:756-788`; `public/src/audience.js:66-88` | Every poll frame carries all approved Q&A/ideas entries and cloud words, and goes to every phone up to 4 times a second. At ~300 entries and 1,000 phones that is tens of MB/s over venue Wi-Fi, and each phone rebuilds its DOM on every frame. | Send the top N entries plus spotlight and the phone's own, or deltas. | Open |
-| RW54 | `ws/session.go:197-200`; `routes/audience.go:191, 221`; `public/src/audience.js:251`; `ws/hub.go:394-407` | `OnAirNow` is never cached. It is rebuilt on every phone join, REST read, `/ask` and 4 s fallback poll, all on the single DB connection, so a reconnect storm means 1,000+ rebuilds. `broadcast()` also calls it inline on the 250 ms tick before checking for sessions, so timer ticks for every room wait behind vote inserts. | Cache on-air per show, invalidate in `pollsChanged`; return early when a show has no sessions. | Open |
+| RW54 | `ws/session.go:197-200`; `routes/audience.go:191, 221`; `public/src/audience.js:251`; `ws/hub.go:394-407` | `OnAirNow` is never cached. It is rebuilt on every phone join, REST read, `/ask` and 4 s fallback poll, all on the single DB connection, so a reconnect storm means 1,000+ rebuilds. `broadcast()` also calls it inline on the 250 ms tick before checking for sessions, so timer ticks for every room wait behind vote inserts. | Cache on-air per show, invalidate in `pollsChanged`; return early when a show has no sessions. | Fixed 2026-10-06 `b4156fb` |
 | RW55 | `timerpi/engine.go:312`; `timerpi/db.go:42`; `ws/hub.go:311-330` | Every engine ever loaded runs `SELECT * FROM cues` every 250 ms while holding its mutex, on `SetMaxOpenConns(1)`. 20 idle rooms is ~80 queries/s, and any long transaction (a big import) stalls every room's zero crossing. | Cache the cue list in the engine (invalidate on mutation); tick only running engines or those with pending `startAt`. | Open |
 | RW56 | `timerpi/engine.go:385-386`; `main.go:58-74`; `oscbridge/oscbridge.go:315-335` | `OnStart` runs synchronously in the hub's single tick goroutine, doing `AllSettings()` and `ResolveUDPAddr` each time. With `osc.out.host` set to a hostname and slow or no DNS, every room's ticks stall. | Send via a buffered channel and worker; cache the resolved address. | Open |
 | RW57 | `routes/walkin.go:63-66`; `public/src/board.js:407` | Each walk-in screen polls every 5 s, and each request runs `engineFor` + `Snapshot()` for every room (mutex plus 3+ queries), creating engines for idle rooms. 20 screens × 10 rooms ≈ 150 queries/s on a Pi. | Cache the feed per event for ~2 s (singleflight), or push it over WS on change. | Open |
