@@ -883,10 +883,13 @@ func (h *Hub) broadcastPollNow(showID int64) {
 // pollFrame builds the {t:"poll"} frame: "poll" is the audience-target item,
 // "presenter" (screens/operators only) the presenter-target item.
 func pollFrame(on timerpi.OnAir, withPresenter bool, ts int64) []byte {
+	// Phones and screens see at most MaxPublicEntries entries (RW53);
+	// moderators read the full list over REST.
+	aud := on.Audience.Trimmed(timerpi.MaxPublicEntries)
 	if withPresenter {
-		return marshalFrame("v", 1, "t", "poll", "poll", on.Audience, "presenter", on.Presenter, "ts", ts)
+		return marshalFrame("v", 1, "t", "poll", "poll", aud, "presenter", on.Presenter.Trimmed(timerpi.MaxPublicEntries), "ts", ts)
 	}
-	return marshalFrame("v", 1, "t", "poll", "poll", on.Audience, "ts", ts)
+	return marshalFrame("v", 1, "t", "poll", "poll", aud, "ts", ts)
 }
 
 // SessionsByRole counts live connections per role (health detail).

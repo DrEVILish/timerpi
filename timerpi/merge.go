@@ -204,6 +204,7 @@ func MergeCues(serverCues, incomingCues []Cue, tombstones []CueTombstone) (merge
 // across syncs, so a retried or second push is recognised instead of being
 // re-added as "offline adds". All other writers keep ReplaceCues.
 func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
+	defer d.cuesChanged(showID)
 	tx, err := d.Beginx()
 	if err != nil {
 		return err

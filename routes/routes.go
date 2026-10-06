@@ -64,6 +64,9 @@ type Deps struct {
 	// Public is the public/ tree to serve (STATUS C9: the binary's embedded
 	// copy in production). Nil = public/ on disk (tests, -dev).
 	Public fs.FS
+
+	// walkin caches each event's walk-in feed (walkin.go, BUGLOG RW57).
+	walkin walkinCache
 }
 
 // bodyCeiling bounds every request body: 8 MiB for plain JSON/form posts,

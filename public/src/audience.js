@@ -210,7 +210,9 @@ function renderWall(box, formSlot) {
   const sent = store.get(`tp.aud.sent.${item.id}`, []).filter((s) => !onWall.has(s.id));
   if (sent.length) {
     const mineBox = el('div', 'tp-aud-mine');
-    mineBox.append(el('p', 'label', 'Waiting for review'));
+    // A long wall is trimmed to its top entries (BUGLOG RW53), so a sent
+    // question missing from it may be approved but further down.
+    mineBox.append(el('p', 'label', item.more ? 'Your questions' : 'Waiting for review'));
     for (const s of sent.slice(-3)) mineBox.append(el('p', 'text-muted', s.text));
     box.appendChild(mineBox);
   }

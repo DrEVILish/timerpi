@@ -4,7 +4,9 @@
 package oscbridge
 
 import (
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -202,5 +204,37 @@ func TestHandlePacketRecoversDispatchPanic(t *testing.T) {
 	handlePacket(raw, func(Message) { panic("boom") }, func(e error) { reported = e })
 	if reported == nil {
 		t.Fatal("dispatch panic was not reported")
+	}
+}
+
+// BUGLOG RW56: FireOut only queues. A slow settings read (or DNS lookup)
+// in the sender never stalls the caller — the hub's tick loop.
+func TestFireOutNeverBlocksTheCaller(t *testing.T) {
+	srv, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	addr := srv.LocalAddr().String()
+	backup := Target
+	Target = func() string { time.Sleep(300 * time.Millisecond); return addr }
+	defer func() { Target = backup }()
+	start := time.Now()
+	for i := int64(1); i <= 3; i++ {
+		FireOut("cue", i)
+	}
+	if d := time.Since(start); d > 50*time.Millisecond {
+		t.Fatalf("FireOut blocked the caller for %v", d)
+	}
+	var cues []string // delivered in order by the worker
+	for len(cues) < 3 {
+		if got := readPacket(t, srv); strings.HasPrefix(got, "/cue/") { // skip an earlier test's leftovers
+			cues = append(cues, got)
+		}
+	}
+	for i, got := range cues {
+		if want := fmt.Sprintf("/cue/%d/start", i+1); got != want {
+			t.Fatalf("packet %d = %q, want %q", i+1, got, want)
+		}
 	}
 }

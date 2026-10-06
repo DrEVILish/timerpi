@@ -20,7 +20,32 @@ import (
 // truth (PLAN §1): shows, cues, messages, settings kv and per-show runtime.
 type DB struct {
 	*sqlx.DB
-	air airCache // on-air interaction per room (polls.go OnAirNow)
+	air  airCache // on-air interaction per room (polls.go OnAirNow)
+	cueG cueGens  // per-show cue write generation (engine cue cache, RW55)
+}
+
+type cueGens struct {
+	mu  sync.Mutex
+	gen map[int64]uint64
+}
+
+// CueGen is the show's cue write generation: it changes after every cue
+// write, so an engine can keep its cue list until then (BUGLOG RW55).
+func (d *DB) CueGen(showID int64) uint64 {
+	d.cueG.mu.Lock()
+	defer d.cueG.mu.Unlock()
+	return d.cueG.gen[showID]
+}
+
+// cuesChanged bumps the show's cue generation. Write paths defer it, so it
+// also runs on failure: a spurious bump only costs one re-read.
+func (d *DB) cuesChanged(showID int64) {
+	d.cueG.mu.Lock()
+	defer d.cueG.mu.Unlock()
+	if d.cueG.gen == nil {
+		d.cueG.gen = map[int64]uint64{}
+	}
+	d.cueG.gen[showID]++
 }
 
 type airCache struct {
@@ -380,6 +405,7 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 	if err != nil {
 		return Show{}, err
 	}
+	defer d.cuesChanged(dst.ID)
 	// Any later failure removes the half-made room instead of leaving an
 	// empty one in the event (BUGLOG RW31).
 	ok := false
@@ -586,6 +612,7 @@ func (d *DB) TouchShow(id int64) error {
 // DeleteShow removes a show; cues, messages and runtime go via ON DELETE
 // CASCADE (foreign_keys pragma must be on — see Open).
 func (d *DB) DeleteShow(id int64) error {
+	defer d.cuesChanged(id)
 	defer d.airDirty(id)
 	_, err := d.Exec(`DELETE FROM shows WHERE id = ?`, id)
 	return err
@@ -619,6 +646,7 @@ func (d *DB) GetCue(showID, pos int64) (Cue, error) {
 // CreateCue inserts a cue. c.Pos == 0 appends at the end; c.Pos = k inserts
 // at position k and shifts the rest down. Returns the stored cue.
 func (d *DB) CreateCue(showID int64, c Cue) (Cue, error) {
+	defer d.cuesChanged(showID)
 	c.ShowID = showID
 	c.Normalize()
 	if err := c.Validate(); err != nil {
@@ -665,6 +693,7 @@ func (d *DB) CreateCue(showID int64, c Cue) (Cue, error) {
 // caller explicitly wants a positional update; the stored Pos wins for
 // identity when both are set.
 func (d *DB) UpdateCue(showID int64, c Cue) (Cue, error) {
+	defer d.cuesChanged(showID)
 	c.ShowID = showID
 	c.Normalize()
 	if err := c.Validate(); err != nil {
@@ -714,6 +743,7 @@ func insertCue(tx *sqlx.Tx, showID, pos int64, c Cue, stamp int64) (sql.Result, 
 
 // DeleteCue removes the cue at pos and renumbers the rest 1..N.
 func (d *DB) DeleteCue(showID, pos int64) error {
+	defer d.cuesChanged(showID)
 	tx, err := d.Beginx()
 	if err != nil {
 		return err
@@ -738,6 +768,7 @@ func (d *DB) DeleteCue(showID, pos int64) error {
 // MoveCue moves the cue at position from to position to (1-based), shifting
 // the others; 1..N stays contiguous.
 func (d *DB) MoveCue(showID, from, to int64) error {
+	defer d.cuesChanged(showID)
 	if from == to {
 		return nil
 	}
@@ -775,6 +806,7 @@ func (d *DB) MoveCue(showID, from, to int64) error {
 
 // DuplicateCue copies the cue at pos, inserting the copy directly after it.
 func (d *DB) DuplicateCue(showID, pos int64) (Cue, error) {
+	defer d.cuesChanged(showID)
 	src, err := d.GetCue(showID, pos)
 	if err != nil {
 		return Cue{}, err
@@ -816,6 +848,7 @@ func (d *DB) DuplicateCue(showID, pos int64) (Cue, error) {
 // a UI drag-and-drop can send the full order safely). IDs not in the list
 // keep their relative order at the end; unknown IDs are ignored.
 func (d *DB) ReorderCues(showID int64, cueIDs []int64) error {
+	defer d.cuesChanged(showID)
 	tx, err := d.Beginx()
 	if err != nil {
 		return err
@@ -858,6 +891,7 @@ func (d *DB) ReorderCues(showID int64, cueIDs []int64) error {
 // ReplaceCues swaps the whole cue list (import / PUT /api/shows/:id/cues).
 // Cues keep their given order; Pos is renumbered 1..N. Runs in one tx.
 func (d *DB) ReplaceCues(showID int64, cues []Cue) error {
+	defer d.cuesChanged(showID)
 	tx, err := d.Beginx()
 	if err != nil {
 		return err

@@ -24,6 +24,9 @@ let host = null;
 let items = [];
 let pending = null;
 let lastRefresh = 0;
+let lastSig = '';
+let pointerBusy = false;
+let renderLater = 0;
 
 export function initModerate(roomCode) {
   host = document.getElementById('tp-aud-items');
@@ -31,20 +34,32 @@ export function initModerate(roomCode) {
   code = roomCode;
   document.getElementById('tp-aud-new')?.addEventListener('click', () => openEditor(null));
   initEditor();
-  refresh();
+  // A click that lands while the table is being replaced is lost (BUGLOG
+  // RW58): while a pointer is down in the panel, renders wait.
+  host.addEventListener('pointerdown', () => { pointerBusy = true; });
+  document.addEventListener('pointerup', () => { setTimeout(() => { pointerBusy = false; }, 250); });
+  refresh(true);
   setInterval(() => { if (Date.now() - lastRefresh > 8000) refresh(); }, 4000);
 }
 
-/** refresh — coalesces bursts (1000 votes → a few reads). */
-export function refresh() {
+/** refresh re-reads the item list. Live frames (a vote, a submission —
+    up to a few a second per room) coalesce to one read per 1.5 s; the
+    moderator's own actions pass soon=true for a quick read. An unchanged
+    list is not re-rendered (BUGLOG RW58). */
+export function refresh(soon = false) {
   if (!host) return;
-  if (pending) return;
-  const wait = Math.max(0, 400 - (Date.now() - lastRefresh));
+  if (pending && !soon) return;
+  clearTimeout(pending); // a moderator's own action never waits behind a live-frame read
+  const gap = soon ? 150 : 1500;
+  const wait = Math.max(0, gap - (Date.now() - lastRefresh));
   pending = setTimeout(async () => {
     pending = null;
     lastRefresh = Date.now();
     try {
       const out = await api('GET', `/api/shows/${code}/polls`);
+      const sig = JSON.stringify(out.items || []);
+      if (sig === lastSig) return;
+      lastSig = sig;
       items = out.items || [];
       render();
     } catch { /* offline: the next frame or tick retries */ }
@@ -56,8 +71,7 @@ async function act(path, body, okMsg) {
   try {
     await api('POST', `${base()}${path}`, body || {});
     if (okMsg) toast(okMsg, 'success');
-    lastRefresh = 0;
-    refresh();
+    refresh(true);
   } catch (e) {
     toast(e.message, 'danger');
   }
@@ -66,6 +80,11 @@ async function act(path, body, okMsg) {
 /* ---------------------------------------------------------------- render -- */
 
 function render() {
+  if (pointerBusy) {
+    clearTimeout(renderLater);
+    renderLater = setTimeout(render, 300);
+    return;
+  }
   const badge = document.getElementById('tp-aud-count');
   const totalPending = items.reduce((n, it) => n + (it.pending || 0), 0);
   if (badge) {
@@ -152,14 +171,14 @@ function rows(it, open) {
       it.pending ? el('span', { class: 'badge badge-accent', text: `${it.pending} to review` }) : null),
     el('td', {}, SUBMISSIONS.has(it.kind)
       ? switchCtl(`Approve submissions to "${q}" automatically`, it.autoApprove, async (on) => {
-        try { await api('PATCH', `${base()}/${it.id}`, { autoApprove: on }); refresh(); } catch (err) { toast(err.message, 'danger'); }
+        try { await api('PATCH', `${base()}/${it.id}`, { autoApprove: on }); refresh(true); } catch (err) { toast(err.message, 'danger'); }
       })
       : el('span', { class: 'text-muted', text: '—' })),
     el('td', { class: 'tp-aud-actions' },
       iconBtn('edit', `Edit "${q}"`, 'btn-ghost', () => openEditor(it)),
       iconBtn('trash', `Delete "${q}"`, 'btn-ghost btn-danger', async () => {
         if (!(await tpConfirm(`"${q}" and all its votes and submissions are deleted.`, { title: 'Delete item?', ok: 'Delete', danger: true }))) return;
-        try { await api('DELETE', `${base()}/${it.id}`); refresh(); } catch (e) { toast(e.message, 'danger'); }
+        try { await api('DELETE', `${base()}/${it.id}`); refresh(true); } catch (e) { toast(e.message, 'danger'); }
       })),
   );
   const out = [tr];
@@ -264,7 +283,7 @@ function initEditor() {
       else await api('POST', base(), body);
       dlg.close();
       toast(editing ? 'Saved' : 'Created — hidden until you show it', 'success');
-      refresh();
+      refresh(true);
     } catch (err) {
       const p = dlg.querySelector('.field-error');
       p.textContent = err.message;

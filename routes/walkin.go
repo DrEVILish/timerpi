@@ -12,6 +12,7 @@ package routes
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,69 @@ type walkinRoom struct {
 	Now         *walkinRow  `json:"now,omitempty"`
 	Next        *walkinRow  `json:"next,omitempty"`
 	Schedule    []walkinRow `json:"schedule"`
+	id          int64       // the room's show id (sets Here per request)
+}
+
+// walkinCache holds each event's feed for walkinTTL. Every walk-in screen
+// polls every 5 s and each build snapshots every room of the event, so
+// 20 screens x 10 rooms used to cost ~150 queries a second on a Pi
+// (BUGLOG RW57). One build per event at a time: concurrent requests wait
+// for it and share the result.
+const walkinTTL = 2 * time.Second
+
+type walkinFeed struct {
+	mu    sync.Mutex
+	at    time.Time
+	now   int64
+	ev    timerpi.Event
+	rooms []walkinRoom
+}
+
+type walkinCache struct {
+	mu sync.Mutex
+	m  map[int64]*walkinFeed
+}
+
+// walkinFeedOf returns the event's cached feed, rebuilding it when older
+// than walkinTTL.
+func (d *Deps) walkinFeedOf(eventID int64) (*walkinFeed, error) {
+	d.walkin.mu.Lock()
+	if d.walkin.m == nil {
+		d.walkin.m = map[int64]*walkinFeed{}
+	}
+	f := d.walkin.m[eventID]
+	if f == nil {
+		f = &walkinFeed{}
+		d.walkin.m[eventID] = f
+	}
+	d.walkin.mu.Unlock()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.at.IsZero() && time.Since(f.at) < walkinTTL {
+		return f, nil
+	}
+	ev, err := d.Store.GetEvent(eventID)
+	if err != nil {
+		return nil, err
+	}
+	rooms, err := d.Store.ListRooms(ev.ID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UnixMilli()
+	out := make([]walkinRoom, 0, len(rooms))
+	for _, r := range rooms {
+		wr := d.walkinRoomOf(r, false, now)
+		wr.id = r.ID
+		wr.Label = wr.Name
+		if len(rooms) > 1 {
+			wr.Label = "Room: " + wr.Name
+		}
+		out = append(out, wr)
+	}
+	f.ev, f.rooms, f.now, f.at = ev, out, now, time.Now()
+	return f, nil
 }
 
 func (d *Deps) apiWalkin(c *gin.Context) {
@@ -51,30 +115,24 @@ func (d *Deps) apiWalkin(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false})
 		return
 	}
-	ev, err := d.Store.GetEvent(here.EventID)
+	f, err := d.walkinFeedOf(here.EventID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false})
 		return
 	}
-	rooms, err := d.Store.ListRooms(ev.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false})
-		return
-	}
-	now := time.Now().UnixMilli()
-	out := make([]walkinRoom, 0, len(rooms))
-	for _, r := range rooms {
-		wr := d.walkinRoomOf(r, r.ID == id, now)
-		wr.Label = wr.Name
-		if len(rooms) > 1 {
-			wr.Label = "Room: " + wr.Name
-		}
-		out = append(out, wr)
+	f.mu.Lock()
+	ev, now := f.ev, f.now
+	out := make([]walkinRoom, len(f.rooms))
+	copy(out, f.rooms)
+	f.mu.Unlock()
+	for i := range out {
+		out[i].Here = out[i].id == id
 	}
 	mapURL := ""
 	if ev.MapAsset > 0 {
 		mapURL = assetURL(ev.MapAsset)
 	}
+	// serverTime is when the feed was built, so remainingMS stays exact.
 	c.JSON(http.StatusOK, gin.H{"ok": true, "serverTime": now,
 		"event": gin.H{"name": ev.Name, "map": mapURL}, "rooms": out})
 }

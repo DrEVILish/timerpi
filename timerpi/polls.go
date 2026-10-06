@@ -150,6 +150,45 @@ type PollView struct {
 	Children    []PollView `json:"children,omitempty"`  // wall / cloud entries
 	Spotlight   *PollView  `json:"spotlight,omitempty"` // Q&A: the question in focus
 	Pending     int        `json:"pending,omitempty"`   // moderator view: submissions waiting
+	More        int        `json:"more,omitempty"`      // entries left out of a trimmed public view
+}
+
+// MaxPublicEntries caps the entries a phone or screen frame carries.
+const MaxPublicEntries = 50
+
+// Trimmed returns a copy of v carrying at most max entries: the most
+// upvoted (newest first on ties), kept in their original order, with More
+// counting the rest. The spotlight always stays. Every phone used to get
+// every entry up to four times a second — tens of MB/s at 1,000 phones
+// (BUGLOG RW53).
+func (v *PollView) Trimmed(max int) *PollView {
+	if v == nil || len(v.Children) <= max {
+		return v
+	}
+	idx := make([]int, len(v.Children))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool {
+		ca, cb := v.Children[idx[a]], v.Children[idx[b]]
+		if ca.Upvotes != cb.Upvotes {
+			return ca.Upvotes > cb.Upvotes
+		}
+		return ca.ID > cb.ID
+	})
+	keep := make(map[int]bool, max)
+	for _, i := range idx[:max] {
+		keep[i] = true
+	}
+	out := *v
+	out.Children = make([]PollView, 0, max+1)
+	for i, c := range v.Children {
+		if keep[i] || (v.Spotlight != nil && c.ID == v.Spotlight.ID) {
+			out.Children = append(out.Children, c)
+		}
+	}
+	out.More = len(v.Children) - len(out.Children)
+	return &out
 }
 
 // OnAir is what is showing in one room right now, per target.
@@ -841,7 +880,7 @@ func (d *DB) AudienceRead(showID int64) (*AudienceVisible, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &AudienceVisible{Poll: active}, nil
+	return &AudienceVisible{Poll: active.Trimmed(MaxPublicEntries)}, nil // RW53
 }
 
 func atoi64(s string) (int64, error) {

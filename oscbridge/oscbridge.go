@@ -20,11 +20,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const bundleAddr = "#bundle"
@@ -250,7 +252,7 @@ func (in *Inbound) SetInbound(addr string, dispatch func(m Message), report func
 	if addr == "" {
 		return nil
 	}
-	ua, err := net.ResolveUDPAddr("udp", addr)
+	ua, err := resolveUDP(addr)
 	if err != nil {
 		return fmt.Errorf("oscbridge: resolve %s: %w", addr, err)
 	}
@@ -280,20 +282,80 @@ func (in *Inbound) SetInbound(addr string, dispatch func(m Message), report func
 var Target func() string
 
 // FireOut routes one transport event to the configured outbound peer.
-// kind: "cue" (pos = cue position), "panic", "go".
+// kind: "cue" (pos = cue position), "panic", "go". It only queues: one
+// worker reads the settings, resolves the address and sends, so a slow
+// settings read or DNS lookup never stalls the caller (the hub's tick
+// loop calls this for every start; BUGLOG RW56). Order is kept; when the
+// queue is full the event is dropped and logged.
 func FireOut(kind string, pos int64) {
 	if Target == nil || kind == "" {
 		return
 	}
-	host := Target()
-	if host == "" {
-		return
+	outOnce.Do(func() { go outWorker() })
+	select {
+	case outQueue <- outEvent{kind, pos}:
+	default:
+		log.Printf("oscbridge: out queue full, dropped %s %d", kind, pos)
 	}
-	a := OutAddress(kind, pos)
-	if a == "" {
-		return
+}
+
+type outEvent struct {
+	kind string
+	pos  int64
+}
+
+var (
+	outQueue = make(chan outEvent, 64)
+	outOnce  sync.Once
+)
+
+func outWorker() {
+	for ev := range outQueue {
+		target := Target
+		if target == nil {
+			continue
+		}
+		host := target()
+		if host == "" {
+			continue
+		}
+		a := OutAddress(ev.kind, ev.pos)
+		if a == "" {
+			continue
+		}
+		if err := Send(host, a); err != nil {
+			log.Printf("oscbridge: %v", err)
+		}
 	}
-	_ = Send(host, a)
+}
+
+// resolveCache keeps resolved UDP addresses for a minute, so a hostname
+// target costs one DNS lookup a minute, not one per cue.
+var resolveCache = struct {
+	sync.Mutex
+	m map[string]resolved
+}{m: map[string]resolved{}}
+
+type resolved struct {
+	addr *net.UDPAddr
+	at   time.Time
+}
+
+func resolveUDP(addr string) (*net.UDPAddr, error) {
+	resolveCache.Lock()
+	r, ok := resolveCache.m[addr]
+	resolveCache.Unlock()
+	if ok && time.Since(r.at) < time.Minute {
+		return r.addr, nil
+	}
+	ua, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	resolveCache.Lock()
+	resolveCache.m[addr] = resolved{ua, time.Now()}
+	resolveCache.Unlock()
+	return ua, nil
 }
 
 // OutAddress returns the QLab grammar for a cue fire / transport event.

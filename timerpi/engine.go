@@ -36,6 +36,12 @@ type Engine struct {
 	// invoked after a mutation leaves a cue RUNNING, with the running pos.
 	onFire func(pos int64)
 
+	// cueCache is the last cue list read, valid while the DB's cue
+	// generation for the show is still cueCacheGen (RW55).
+	cueCache    []Cue
+	cueCacheGen uint64
+	cueCacheOK  bool
+
 	// retired: a newer engine is taking over (a sync rewrote the DB). A
 	// retired engine never saves its runtime again, so it can't write
 	// stale state over the sync (BUGLOG RW32).
@@ -64,6 +70,9 @@ type EngineDeps struct {
 	Stamp    func() int64                  // updatedAt max stamp (0 → use Now)
 	Load     func() (Runtime, bool, error) // initial runtime
 	Save     func(Runtime) error           // persist runtime after mutations
+	// CueGen (optional) changes whenever the show's cues are written; with
+	// it the engine re-reads Cues only after a change (BUGLOG RW55).
+	CueGen func() uint64
 }
 
 // Engine errors. ErrNoNextCue is a normal GO at the end of the list; the hub
@@ -814,6 +823,23 @@ func cueAtPos(cues []Cue, pos int64) *Cue {
 // (or the new last cue) is armed; an empty list goes idle. Returns whether
 // the runtime changed, via e.rtDirty, so Tick commits the repair.
 func (e *Engine) cuesLocked() ([]Cue, error) {
+	// With a cue generation wired (production), the list is read from the
+	// DB only after a cue write: every engine used to run SELECT * FROM
+	// cues four times a second under its lock (BUGLOG RW55). The caller
+	// gets its own copy, so nothing can scribble on the cache.
+	if e.deps.CueGen != nil {
+		g := e.deps.CueGen()
+		if !e.cueCacheOK || g != e.cueCacheGen {
+			cues, err := e.deps.Cues()
+			if err != nil {
+				return nil, err
+			}
+			e.cueCache, e.cueCacheGen, e.cueCacheOK = cues, g, true
+		}
+		cues := append([]Cue(nil), e.cueCache...)
+		e.reconcileLocked(cues)
+		return cues, nil
+	}
 	cues, err := e.deps.Cues()
 	if err != nil {
 		return nil, err
@@ -995,6 +1021,7 @@ func (d *DB) EngineDeps(showID int64) EngineDeps {
 		Now:      nowMS,
 		Show:     func() (Show, error) { return d.GetShow(showID) },
 		Cues:     func() ([]Cue, error) { return d.ListCues(showID) },
+		CueGen:   func() uint64 { return d.CueGen(showID) },
 		Messages: func() ([]Message, error) { return d.ListMessages(showID) },
 		Stamp:    func() int64 { return d.UpdatedStamp(showID) },
 		Load:     func() (Runtime, bool, error) { return d.LoadRuntime(showID) },
