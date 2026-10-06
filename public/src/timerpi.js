@@ -1247,15 +1247,17 @@ function initRateDelegation() {
 
 /** "30" (minutes) | "30s" (seconds) | "1:30" (h:mm) | "1:00:05" (h:mm:ss)
     → milliseconds, or null. Mirrors Go views.ParseDuration (owner
-    decision 2026-10-05: bare = minutes, two-part = hours:minutes). */
-function parseDur(text) {
+    decision 2026-10-05: bare = minutes, two-part = hours:minutes).
+    unit 'ms' is for alerts and hold, whose fields say m:ss: there a
+    two-part value is minutes:seconds ("5:00" = 5 minutes, not 5 hours). */
+function parseDur(text, unit = 'hm') {
   const s = String(text).trim();
   const secm = /^(\d+)[sS]$/.exec(s);
   if (secm) return Number(secm[1]) * 1000;
   if (/^-?\d+$/.test(s)) return Number(s) * 60000;
   const parts = s.split(':').map(Number);
   if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
-  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 60000;
+  if (parts.length === 2) return unit === 'ms' ? (parts[0] * 60 + parts[1]) * 1000 : (parts[0] * 60 + parts[1]) * 60000;
   if (parts.length === 3) return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000;
   return null;
 }
@@ -1974,7 +1976,7 @@ function startCellEdit(td) {
     }
     if (field === 'durationMS') {
       const ms = parseDur(v);
-      if (ms == null || ms < 0) { toast('That is not a duration — try 5:30', 'danger'); flushPendingSwap(); return; }
+      if (ms == null || ms < 0) { toast('That is not a duration — try 30 (minutes) or 1:30 (h:mm)', 'danger'); flushPendingSwap(); return; }
       sendCommand('cueEdit', { pos, durationMS: ms });
     } else {
       if (field === 'label' && v === '') { toast('Cue label cannot be empty', 'danger'); flushPendingSwap(); return; }
@@ -1993,11 +1995,16 @@ function startCellEdit(td) {
 }
 
 /** milliseconds → "m:ss" / "h:mm:ss" for the duration editor's initial text. */
-function fmtDurText(ms) {
+/** milliseconds → text that parseDur(text, unit) reads back to the same
+    value: 'hm' (durations) "0:30" / "1:30" / "1:30:05"; 'ms' (alerts,
+    hold) "5:00" / "1:00:00". Round-trip matters: the details panel used
+    to show 30 minutes as "30:00" and save it back as 30 hours. */
+function fmtDurText(ms, unit = 'hm') {
   const total = Math.round(ms / 1000);
   const h = Math.floor(total / 3600), m = (total % 3600) / 60 | 0, s = total % 60;
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${m}:${String(s).padStart(2, '0')}`;
+  const p2 = (n) => String(n).padStart(2, '0');
+  if (unit === 'ms') return h > 0 ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
+  return s ? `${h}:${p2(m)}:${p2(s)}` : `${h}:${p2(m)}`;
 }
 
 /* -------------------------------------------------------- day controls -- */
@@ -2071,15 +2078,15 @@ function initInspector() {
     field('tp-insp-label').value = cue.label || '';
     field('tp-insp-speaker').value = cue.speaker || '';
     field('tp-insp-duration').value = fmtDurText(cue.durationMS || 0);
-    field('tp-insp-hold').value = cue.holdMS ? fmtDurText(cue.holdMS) : '';
+    field('tp-insp-hold').value = cue.holdMS ? fmtDurText(cue.holdMS, 'ms') : '';
     field('tp-insp-tags').value = cue.tags || '';
     field('tp-insp-kind').value = cue.kind === 'break' ? 'break' : 'session';
     field('tp-insp-timerKind').value = cue.timerKind || 'COUNTDOWN';
     field('tp-insp-endAction').value = cue.endAction || 'HOLD';
     field('tp-insp-autoContinue').checked = !!cue.autoContinue;
-    field('tp-insp-alert1').value = cue.alert1MS ? fmtDurText(cue.alert1MS) : '';
+    field('tp-insp-alert1').value = cue.alert1MS ? fmtDurText(cue.alert1MS, 'ms') : '';
     field('tp-insp-alert1Color').value = cue.alertColor1 || '';
-    field('tp-insp-alert2').value = cue.alert2MS ? fmtDurText(cue.alert2MS) : '';
+    field('tp-insp-alert2').value = cue.alert2MS ? fmtDurText(cue.alert2MS, 'ms') : '';
     field('tp-insp-alert2Color').value = cue.alertColor2 || '';
     field('tp-insp-color').value = cue.color || '';
     field('tp-insp-startAt').value = cue.startAt || '';
@@ -2110,11 +2117,11 @@ function initInspector() {
     args.label = label;
     args.speaker = field('tp-insp-speaker').value.trim();
     const dur = parseDur(field('tp-insp-duration').value);
-    if (dur == null || dur < 0) return fail('Duration is not a time — try 5:30');
+    if (dur == null || dur < 0) return fail('Duration is not a time — try 30 (minutes) or 1:30 (h:mm)');
     args.durationMS = dur;
     const hold = field('tp-insp-hold').value.trim();
     if (hold) {
-      const ms = parseDur(hold);
+      const ms = parseDur(hold, 'ms');
       if (ms == null || ms < 0) return fail('Hold is not a time — try 1:00');
       args.holdMS = ms;
     } else {
@@ -2131,7 +2138,7 @@ function initInspector() {
     ]) {
       const txt = field(msKey).value.trim();
       if (txt) {
-        const ms = parseDur(txt);
+        const ms = parseDur(txt, 'ms');
         if (ms == null || ms < 0) return fail(`${labelTxt} is not a time — try 5:00`);
         args[{ 'tp-insp-alert1': 'alert1MS', 'tp-insp-alert2': 'alert2MS' }[msKey]] = ms;
       } else {

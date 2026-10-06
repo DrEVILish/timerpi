@@ -22,7 +22,7 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(bin, [], {
   cwd: work, // no templates/public here: proves the embedded copy is served
-  env: { ...process.env, TIMERPI_DATA_DIR: join(work, 'data'), TIMERPI_HTTP_PORT: String(port), TIMERPI_DISPLAY: 'off' },
+  env: { ...process.env, TIMERPI_DATA_DIR: join(work, 'data'), TIMERPI_HTTP_PORT: String(port), TIMERPI_DISPLAY: 'off', TIMERPI_MESH: 'off' },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 let serverErr = '';

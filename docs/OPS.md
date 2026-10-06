@@ -161,6 +161,12 @@ systemctl enable --now timerpi-healthcheck.timer   # every 5 min
 | bin/timerpi 0-byte / wrong arch, service looks healthy | `file bin/timerpi`; note uptime | NEVER `cp` into `bin/timerpi` while it serves (a truncating cp followed by a restart → exec failure); replace via temp + `mv` — update.sh does exactly this; recovery: re-run `make update` |
 | health flags at 03:1x–03:3x daily | backup window | expected: backup is hot, but disk IO spikes; a single FAIL inside the window is non-alarming unless persistent |
 
+## Test and dev servers
+
+Run extra TimerPi instances (dev loops, `make browser-test`) with
+`TIMERPI_MESH=off`: they then never announce themselves over mDNS, so the
+venue's boxes can't react to them. The browser test runner sets it.
+
 ## Passwords and sign-in
 
 Access is per event, plus one box password for the box's own settings:

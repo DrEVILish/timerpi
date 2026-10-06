@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -122,11 +123,17 @@ func main() {
 	// Device mesh (Agent H): mDNS announce/browse + PRIMARY claim/takeover.
 	// Degrades to 503 identity endpoints if mesh fails to start — the
 	// appliance must keep serving even with mesh persistence off.
-	meshYB, meshErr := mesh.New(mesh.Options{
-		Port:    config.HTTPPort(),
-		Version: "v1",
-		DBPath:  filepath.Join(dataDir, "timerpi.db"),
-	})
+	// TIMERPI_MESH=off keeps a test or dev server off the network: no mDNS
+	// announcements another box could react to.
+	var meshYB *mesh.Device
+	meshErr := fmt.Errorf("disabled by TIMERPI_MESH=off")
+	if !strings.EqualFold(os.Getenv("TIMERPI_MESH"), "off") {
+		meshYB, meshErr = mesh.New(mesh.Options{
+			Port:    config.HTTPPort(),
+			Version: "v1",
+			DBPath:  filepath.Join(dataDir, "timerpi.db"),
+		})
+	}
 	if meshErr != nil {
 		log.Printf("timerpi: mesh device off: %v", meshErr)
 	} else {
