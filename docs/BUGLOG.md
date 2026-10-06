@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 58 | 15 |
+| Warning | 59 | 15 |
 | Suggestion | 41 | 34 |
 
 ## Critical
@@ -113,6 +113,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RW56 | `timerpi/engine.go:385-386`; `main.go:58-74`; `oscbridge/oscbridge.go:315-335` | `OnStart` runs synchronously in the hub's single tick goroutine, doing `AllSettings()` and `ResolveUDPAddr` each time. With `osc.out.host` set to a hostname and slow or no DNS, every room's ticks stall. | Send via a buffered channel and worker; cache the resolved address. | Open |
 | RW57 | `routes/walkin.go:63-66`; `public/src/board.js:407` | Each walk-in screen polls every 5 s, and each request runs `engineFor` + `Snapshot()` for every room (mutex plus 3+ queries), creating engines for idle rooms. 20 screens × 10 rooms ≈ 150 queries/s on a Pi. | Cache the feed per event for ~2 s (singleflight), or push it over WS on change. | Open |
 | RW58 | `public/src/moderate.js:95`; `public/src/timerpi.js:838-840`; `timerpi/polls.go:672-682` | Every poll frame (up to 2.5/s per moderator) reloads `ModeratorItems` (2–3 queries per item for every item ever, with all entries) and rebuilds the whole panel DOM. A click landing during the swap is lost. | On `poll` frames refresh only the on-air tally; diff the DOM instead of replacing it. | Open |
+| RW59 | `timerpi/engine.go` (`startLocked`) | With no day start set, the first GO anchored the day at local midnight, so planned times read 00:00-based and the dashboard said "+21:50 vs plan". Found 2026-10-06 while checking the room page. | Anchor so the started cue is on plan. | Fixed 2026-10-06 (b5d055d) |
 
 ## Suggestion
 

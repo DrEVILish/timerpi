@@ -187,20 +187,20 @@ Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as 
 
 | ID | To do |
 |---|---|
-| **U30** | Alert colours use the ftl-themes colour picker (details panel and inline table). |
-| **U31** | Transport (GO, Prev, Next, Pause, Blank) moves above the Running order. Stop/Reset is removed. |
-| **U32** | The adjust buttons move under the countdown readout. |
-| **U33** | The readout fits its pane when it shows m:ss.xx (the hundredths no longer fall off the side). |
-| **U34** | The time-of-day clock moves to the top centre of the header bar. |
-| **U35** | Remove the "Space GO · ← → cue · P pause · R reset · ? more" hint from the room page. |
-| **U36** | Remove the cue filter and the undo button; Cmd/Ctrl+Z still undoes. |
-| **U37** | Messages pane sits below the Current cue pane; Import running order below Messages. |
-| **U38** | No "Next up" section in the Current cue pane. |
-| **U39** | Running order: new cues are added from an inline row in the table, with the columns above. |
-| **U40** | Remove the up/down arrows (rows drag by the handle on the left). |
-| **U41** | Duplicate moves from a row icon to a right-click / long-press row menu. |
-| **U42** | Remove auto-continue, auto-start and Hold after (controls and behaviour). |
-| **U43** | Breaks have a different accent colour from sessions. |
+| **U30** | ✅ Done 2026-10-06: Alert colours (details panel, add row, row dots) use ftl `.swatches` plus a native colour input. |
+| **U31** | ✅ Done 2026-10-06: Transport above the running order; Stop/Reset and the R key are gone. |
+| **U32** | ✅ Done 2026-10-06: Adjust buttons sit right under the readout. |
+| **U33** | ✅ Done 2026-10-06: The readout scales with the rail (container units); "0:09.4" fits at any width. |
+| **U34** | ✅ Done 2026-10-06: The time of day sits at the top centre of the header bar. |
+| **U35** | ✅ Done 2026-10-06: The key hint line and its popover are gone. |
+| **U36** | ✅ Done 2026-10-06: Filter and undo button gone; Cmd/Ctrl+Z still undoes. |
+| **U37** | ✅ Done 2026-10-06: Left column: Current cue, Messages, Import. |
+| **U38** | ✅ Done 2026-10-06: No Next up in the Current cue pane. |
+| **U39** | ✅ Done 2026-10-06: One table with the agreed columns; every cell edits inline; a footer row adds a cue (typed values survive live updates). |
+| **U40** | ✅ Done 2026-10-06: Rows drag by the grip; no arrows. |
+| **U41** | ✅ Done 2026-10-06: Duplicate is in the right-click / long-press row menu (ftl `.context-menu`). |
+| **U42** | ✅ Done 2026-10-06: Removed as behaviour too: nothing starts by itself, holds move nothing, Normalize drops them on every write. |
+| **U43** | ✅ Done 2026-10-06: Breaks wear the theme's `--accent-2`. |
 | **U44** | The Screens page's remove X is a proper ftl-themes element. |
 
 ### 4.3 Cleanup (hanging leftovers)
