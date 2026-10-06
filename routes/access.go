@@ -4,8 +4,8 @@ package routes
 //
 //	isSuper(c, event)      — SuperOperator of that event (supervisor session)
 //	canModerate(c, room)   — moderator of that room, or SuperOperator of its event
-//	isBoxAdmin(c)          — may change box settings: a SuperOperator of ANY
-//	                         protected event; open while no event is protected
+//	isBoxAdmin(c)          — may change box settings: holds a box session
+//	                         (box password, box.go); event passwords never do
 //
 // Sessions are HttpOnly cookies holding an HMAC over the code(s) and the
 // stored password hash (timerpi.SignSession), so a password change signs
@@ -13,6 +13,7 @@ package routes
 //
 //	tp_ev_<EVENTCODE>  supervisor session
 //	tp_rm_<ROOMCODE>   moderator session for one room
+//	tp_box             box settings session
 //
 // Screens (/d/), audience pages (/a/), the event walk-in and static assets
 // are open: they never carry operator controls.
@@ -20,6 +21,7 @@ package routes
 import (
 	"crypto/subtle"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -115,29 +117,10 @@ func (d *Deps) hasAnySession(c *gin.Context) bool {
 	return false
 }
 
-// isBoxAdmin: box settings belong to the SuperOperators on this box. While
-// no event carries a supervisor password (fresh box) they are open.
+// isBoxAdmin: box settings need the box password (box.go). Until one is
+// set nobody is box admin; /box offers the first-time setup.
 func (d *Deps) isBoxAdmin(c *gin.Context) bool {
-	if d.Store == nil {
-		return true
-	}
-	n, err := d.Store.CountProtectedEvents()
-	if err != nil {
-		return false // fail closed
-	}
-	if n == 0 {
-		return true
-	}
-	cookies := cookieMap(c.Request)
-	for name := range cookies {
-		if !strings.HasPrefix(name, "tp_ev_") {
-			continue
-		}
-		if ev, ok := d.Store.ResolveEvent(strings.TrimPrefix(name, "tp_ev_")); ok && ev.HasSuperPassword() && SuperFromCookies(d.Store, cookies, ev) {
-			return true
-		}
-	}
-	return false
+	return d.boxSigned(c)
 }
 
 // requireShowGated resolves :ident and demands moderator access to it.
@@ -161,10 +144,11 @@ func (d *Deps) requireBoxAdmin(c *gin.Context) bool {
 		return true
 	}
 	if wantsHTML(c) {
-		d.renderAccessDenied(c, "Box settings need a SuperOperator", "Open your event from the home page and sign in as SuperOperator first.")
+		c.Redirect(http.StatusSeeOther, "/box?next="+url.QueryEscape(c.Request.URL.RequestURI()))
+		c.Abort()
 		return false
 	}
-	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "SuperOperator sign-in required"})
+	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "box password required — sign in at /box"})
 	c.Abort()
 	return false
 }
@@ -221,7 +205,7 @@ func (d *Deps) setRoomSession(c *gin.Context, ev timerpi.Event, room timerpi.Sho
 func clearSessions(c *gin.Context) {
 	for _, ck := range c.Request.Cookies() {
 		if strings.HasPrefix(ck.Name, "tp_ev_") || strings.HasPrefix(ck.Name, "tp_rm_") ||
-			strings.HasPrefix(ck.Name, "tp_show_") || ck.Name == "tp_auth" {
+			strings.HasPrefix(ck.Name, "tp_show_") || ck.Name == "tp_auth" || ck.Name == boxCookieName {
 			c.SetCookie(ck.Name, "", -1, "/", "", false, true)
 		}
 	}

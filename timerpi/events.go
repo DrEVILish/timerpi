@@ -218,14 +218,19 @@ func (d *DB) ListEvents() ([]Event, error) {
 	return out, err
 }
 
-// CountProtectedEvents reports how many events carry a supervisor
-// password (box settings stay open while there are none).
-// A query error is returned, never read as "none" (BUGLOG RW6: that
-// opened box settings to everyone whenever the database was busy).
-func (d *DB) CountProtectedEvents() (int, error) {
-	var n int
-	err := d.Get(&n, `SELECT COUNT(*) FROM events WHERE super_hash != ''`)
-	return n, err
+// boxPasswordKey holds the box password hash (PBKDF2, like event
+// passwords). The box password guards box settings only (hostname,
+// network role, OSC, default theme); event passwords never unlock them.
+const boxPasswordKey = "box.pw_hash"
+
+// BoxPasswordHash returns the stored box password hash ("" = not set yet).
+func (d *DB) BoxPasswordHash() (string, error) {
+	return d.GetSetting(boxPasswordKey)
+}
+
+// SetBoxPassword stores a new box password.
+func (d *DB) SetBoxPassword(pw string) error {
+	return d.SetSetting(boxPasswordKey, HashPassword(pw))
 }
 
 // ListRooms returns the event's rooms in room order.

@@ -22,7 +22,8 @@
 | `GET /e/:code/admin` | super | SuperOperator dashboard (live rooms, rooms admin, event settings). No session → 302 to the lobby |
 | `GET /c/:ident` | mod | Room dashboard: running order, transport, messages, Audience panel, audience join QR |
 | `GET /screens/:ident` | mod | Screens gallery: capture, preview, theme/layout, layout editor |
-| `GET /settings` | box | Box settings: device identity, default theme, OSC |
+| `GET /settings` | box | Box settings: device identity, default theme, OSC. No box session → 303 to `/box?next=/settings` |
+| `GET /box` | anyone | Box password: first-time setup, sign-in, or (signed in) change password / sign out |
 | `GET /logout` | — | Drops every TimerPi session cookie on this browser |
 | `GET /super`, `GET /setup` | — | Retired; 302 to `/` |
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
@@ -35,6 +36,14 @@
 Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`), `/assets/:id` (uploaded blobs, public).
 
 ## 2. REST API
+
+### Box password (`routes/box.go`)
+| Method & path | Notes |
+|---|---|
+| `POST /api/box/setup` | `{password}` (≥ 8 chars). Only while no box password exists (409 after); signs this browser in (`tp_box`) |
+| `POST /api/box/login` | `{password}` → `tp_box` session. 401 wrong password, 409 none set |
+| `POST /api/box/password` | `{current, password}`; needs a box session. Signs every other box session out |
+| `POST /api/box/logout` | Drops `tp_box` |
 
 ### Events (`routes/events.go`)
 | Method & path | Notes |

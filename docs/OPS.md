@@ -163,16 +163,21 @@ systemctl enable --now timerpi-healthcheck.timer   # every 5 min
 
 ## Passwords and sign-in
 
-There is no appliance password. Access is per event:
+Access is per event, plus one box password for the box's own settings:
 
 - **Supervisor password** (set when the event is created) signs the
   SuperOperator in at `/e/<event code>`. Change it on the SuperOperator
   dashboard; every other supervisor session is signed out.
 - **Room password** (optional, set by the SuperOperator per room) protects
   one room's moderator view.
-- **Box settings** (`/settings`: hostname, network, OSC, default theme)
-  need a SuperOperator session of any protected event on the box. They stay
-  open while no event has a supervisor password.
+- **Box password** guards box settings (`/settings`: hostname, network,
+  OSC, default theme). It is set the first time someone opens `/box` (or is
+  sent there from `/settings`), and changed or signed out on the same page.
+  Changing it signs every other box session out. Event passwords never
+  unlock box settings.
+- **Lost box password:** stop the service and clear it with
+  `sqlite3 /var/lib/timerpi/timerpi.db "DELETE FROM settings WHERE key='box.pw_hash';"`.
+  The next visitor to `/box` then sets a new one, so do this on a closed network.
 - Screens (`/d/`), audience phones (`/a/`) and `/health` never sign in.
 - **Lost supervisor password:** stop the service and clear it with
   `sqlite3 /var/lib/timerpi/timerpi.db "UPDATE events SET super_hash='' WHERE code='<CODE>';"`.

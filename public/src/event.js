@@ -3,6 +3,7 @@
  *   home         join an event by code · create an event · recent events
  *   event        lobby: moderator room sign-in · SuperOperator sign-in
  *   event-admin  SuperOperator dashboard: live rooms, room admin, settings
+ *   box          box password: first-time setup, sign-in, change, sign out
  */
 import {
   api, toast, showError, normalizeCode, fmtCode, fmtRemaining, el,
@@ -17,6 +18,7 @@ const EV = body.dataset.event || '';
 if (page === 'home') initHome();
 if (page === 'event') initLobby();
 if (page === 'event-admin') initAdmin();
+if (page === 'box') initBox();
 
 /* ------------------------------------------------------------------ home -- */
 function initHome() {
@@ -284,5 +286,39 @@ function initAdmin() {
       forgetEvent(EV);
       location.href = '/';
     } catch (ex) { toast(ex.message, 'danger'); }
+  });
+}
+
+/* ------------------------------------------------------------------- box -- */
+function initBox() {
+  const next = body.dataset.next || '/settings';
+  const val = (id) => document.getElementById(id)?.value || '';
+  const wire = (id, send) => {
+    const form = document.getElementById(id);
+    if (!form) return;
+    const btn = form.querySelector('[type=submit]');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = form.querySelector('.field-error');
+      if (document.getElementById('box-new2') && val('box-new') !== val('box-new2')) {
+        showError(err, 'The two passwords don\'t match.');
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await send();
+        location.href = next;
+      } catch (ex) {
+        showError(err, ex.message);
+        btn.disabled = false;
+      }
+    });
+  };
+  wire('box-setup', () => api('POST', '/api/box/setup', { password: val('box-new') }));
+  wire('box-login', () => api('POST', '/api/box/login', { password: val('box-pw') }));
+  wire('box-change', () => api('POST', '/api/box/password', { current: val('box-cur'), password: val('box-new') }));
+  document.getElementById('box-logout')?.addEventListener('click', async () => {
+    try { await api('POST', '/api/box/logout'); } catch { /* signed out either way */ }
+    location.href = '/';
   });
 }

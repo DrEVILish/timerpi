@@ -59,7 +59,7 @@ Every screen is styled by **ftl-themes** and animates items in and out.
 - The moderator password is **optional, per room**, and set by the SuperOperator. With no password, the event code plus the room pick is enough.
 - The supervisor password is **required** at event creation.
 - No personal accounts and no personal data. Codes and passwords are the credentials.
-- Box-level settings (hostname, network, OSC, default theme) need the SuperOperator password of any event on the box. They are open while no event exists.
+- Box-level settings (hostname, network, OSC, default theme) need the **box password**, which is set the first time someone opens box settings. Event passwords never unlock them, because anyone on the network can create an event.
 
 ### 3.2 Display types
 
@@ -207,7 +207,8 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-05 | Three display types: Audience, Walk-in (portrait, rotation setting), Presenter. Device classes: audience = phones/tablets, moderator = tablet/laptop, SuperOperator = laptop. |
 
 | 2026-10-05 | Passwords: **one supervisor password per event** (SuperOperator/admin) and **one optional password per room** (moderator). |
-| 2026-10-05 | **No separate appliance password.** Box settings (hostname, network, OSC, default theme) need the SuperOperator password of any event on the box, and stay open while the box holds no events. |
+| 2026-10-05 | ~~No separate appliance password: box settings need any event's supervisor password.~~ Superseded 2026-10-06. |
+| 2026-10-06 | **Box password** (review BUGLOG RC5): anyone on the network can create an event, so event passwords no longer unlock box settings. A separate box password, set the first time someone opens box settings (`/box`), guards hostname, network, OSC and the default theme. |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

@@ -67,7 +67,21 @@ func newAPITest(t *testing.T) *apiTest {
 	})
 	ts := &apiTest{t: t, srv: srv, db: db, engines: engines, showID: show.ID, showCode: show.Code, eventCode: ev.Code}
 	ts.signInSuper()
+	ts.signInBox()
 	return ts
+}
+
+// testBoxPW is every test box's password (box settings, routes/box.go).
+const testBoxPW = "box-password"
+
+// signInBox sets the test box's password, which signs the shared client in
+// to box settings.
+func (ts *apiTest) signInBox() {
+	ts.t.Helper()
+	code, body := ts.call("POST", "/api/box/setup", []byte(`{"password":"`+testBoxPW+`"}`), "application/json")
+	if code != 200 {
+		ts.t.Fatalf("box setup: %d %s", code, body)
+	}
 }
 
 // testSuperPW is every test event's supervisor password.

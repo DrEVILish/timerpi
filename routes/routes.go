@@ -109,6 +109,7 @@ func New(d *Deps) *gin.Engine {
 	registerOscRoutes(r, d)
 	registerAssetRoutes(r, d)
 	registerEvents(r, d) // /e/:code lobby + admin, /api/events/*
+	registerBox(r, d)    // /box + /api/box/* — the box password (settings)
 	if d.Store != nil {
 		if oserr := d.oscSync(); oserr != nil {
 			log.Printf("routes: osc listener boot: %v", oserr)

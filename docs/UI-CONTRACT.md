@@ -19,7 +19,8 @@
 | `/d/:room?view=next\|daysheet\|clock` | `display_variants.html` | inline module + `engine.js` | |
 | `/d/:room?view=board` | `display_board.html` + `fragments/b-*.html` | `board.js` (+ `timerpi.js`) | Layout canvas; `?edit=1&preview=1` = editor (moderators only) |
 | `/a/:room` phone | `audience.html` | `audience.js` | Audience lane WS + REST fallback |
-| `/settings` | `settings.html` | inline | Box settings (SuperOperator) |
+| `/settings` | `settings.html` | inline | Box settings (box password) |
+| `/box` | `event.html` → `box` | `event.js` | Box password: setup, sign-in, change, sign out |
 
 All templates share `head` (`base.html`): theme bootstrap, `timerpi.css`, `app.css`, favicon.
 JS/CSS URLs always go through `{{asset "/src/x.js"}}` (`views/assets.go`).

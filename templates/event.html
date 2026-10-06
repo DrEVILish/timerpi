@@ -221,3 +221,74 @@
 </body>
 </html>
 {{end}}
+
+{{- /* box — the box password page (GET /box, routes/box.go): first-time
+  setup, sign-in, or (signed in) change password / sign out. Box settings
+  need it; event passwords never unlock them. Driven by /src/event.js. */ -}}
+{{define "box"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+</head>
+<body class="app tp-shell" data-page="box" data-next="{{.Next}}">
+<header class="app-bar">
+  <a class="nav-brand tp-brand" href="/" title="Home"><img src="/img/timerpi.svg" alt="TimerPi"></a>
+</header>
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+  <div class="tp-page tp-narrow stack is-gap-m">
+    <h1 class="tp-hero-title">Box settings</h1>
+    {{if .Setup}}
+    <p>This box has no password yet. Choose one to protect the box settings: hostname, network, OSC and the default theme. Event passwords don't open these settings.</p>
+    <form class="panel stack is-gap-s" id="box-setup">
+      <div class="field">
+        <label class="label" for="box-new">New box password</label>
+        <input class="input" type="password" id="box-new" autocomplete="new-password" minlength="{{.MinLen}}" required>
+      </div>
+      <div class="field">
+        <label class="label" for="box-new2">Type it again</label>
+        <input class="input" type="password" id="box-new2" autocomplete="new-password" minlength="{{.MinLen}}" required>
+        <span class="field-hint">At least {{.MinLen}} characters. Write it down: whoever looks after this box needs it.</span>
+      </div>
+      <p class="field-error" role="alert" hidden></p>
+      <button class="btn btn-primary" type="submit">Set box password</button>
+    </form>
+    {{else if .SignedIn}}
+    <div class="row is-gap-s is-wrap">
+      <a class="btn btn-primary" href="{{.Next}}">Open box settings</a>
+      <button class="btn" type="button" id="box-logout">Sign out</button>
+    </div>
+    <form class="panel stack is-gap-s" id="box-change">
+      <div class="panel-header">Change the box password</div>
+      <div class="field">
+        <label class="label" for="box-cur">Current password</label>
+        <input class="input" type="password" id="box-cur" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label class="label" for="box-new">New password</label>
+        <input class="input" type="password" id="box-new" autocomplete="new-password" minlength="{{.MinLen}}" required>
+      </div>
+      <div class="field">
+        <label class="label" for="box-new2">Type it again</label>
+        <input class="input" type="password" id="box-new2" autocomplete="new-password" minlength="{{.MinLen}}" required>
+      </div>
+      <p class="field-error" role="alert" hidden></p>
+      <button class="btn" type="submit">Change password</button>
+    </form>
+    {{else}}
+    <form class="panel stack is-gap-s" id="box-login">
+      <div class="field">
+        <label class="label" for="box-pw">Box password</label>
+        <input class="input" type="password" id="box-pw" autocomplete="current-password" required autofocus>
+      </div>
+      <p class="field-error" role="alert" hidden></p>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+    {{end}}
+  </div>
+</main>
+<script type="module" src="{{asset "/src/event.js"}}"></script>
+</body>
+</html>
+{{end}}

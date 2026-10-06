@@ -220,7 +220,7 @@ func TestSuperOperatorEventControl(t *testing.T) {
 	if code, _ := ts.call("DELETE", "/api/events/"+ts.eventCode+"/rooms/"+c.Code, nil, ""); code != 200 {
 		t.Errorf("delete room: %d", code)
 	}
-	// Box settings belong to SuperOperators once any event is protected.
+	// Box settings need the box password (box_test.go covers it fully).
 	if code, _ := ts.anon("POST", "/api/theme", []byte(`{"theme":"tron"}`), "application/json"); code != 401 {
 		t.Errorf("anon theme change: %d, want 401", code)
 	}
