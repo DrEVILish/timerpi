@@ -29,39 +29,9 @@ const (
 	audMintWindow = 10 * time.Minute
 )
 
-// audMintPerIP new device ids per client IP per audMintWindow. A phone
-// needs one; a family on one hotspot a few. A var so tests can lift it.
-var audMintPerIP = 20
-
-var audMint struct {
-	sync.Mutex
-	win  map[string]audMintWin
-	seen int64
-}
-
-type audMintWin struct {
-	start time.Time
-	n     int
-}
-
-// audMintAllowed spends one mint from ip's budget.
-func audMintAllowed(ip string, now time.Time) bool {
-	audMint.Lock()
-	defer audMint.Unlock()
-	if audMint.win == nil || len(audMint.win) > 50_000 {
-		audMint.win = map[string]audMintWin{}
-	}
-	w := audMint.win[ip]
-	if now.Sub(w.start) > audMintWindow {
-		w = audMintWin{start: now}
-	}
-	if w.n >= audMintPerIP {
-		return false
-	}
-	w.n++
-	audMint.win[ip] = w
-	return true
-}
+// audMint: new device ids per client IP per window. A phone needs one; a
+// family on one hotspot a few.
+var audMint = &windowLimiter{max: 20, window: audMintWindow, bound: 50_000}
 
 func audToken(secret []byte, id string) string {
 	return id + "." + timerpi.SignSession(secret, "aud", id)
@@ -77,7 +47,7 @@ func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
 			return id, true
 		}
 	}
-	if !audMintAllowed(c.ClientIP(), time.Now()) {
+	if !audMint.allow(c.ClientIP(), time.Now()) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many new devices from this network — try again in a few minutes"})
 		return "", false
 	}

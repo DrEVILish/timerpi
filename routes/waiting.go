@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -33,6 +34,10 @@ func registerWaitingRoutes(g *gin.RouterGroup, d *Deps) {
 }
 
 // POST /api/waiting/register {name, host}
+// waitingLimit: registrations per client IP per minute (BUGLOG RW16). A
+// waiting screen registers once per page load, so this only bites a loop.
+var waitingLimit = &windowLimiter{max: 30, window: time.Minute, bound: 20_000}
+
 func (d *Deps) apiWaitingRegister(c *gin.Context) {
 	if d.Store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
@@ -51,8 +56,16 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "screen name required"})
 		return
 	}
+	if !waitingLimit.allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "too many screens registering from this address"})
+		return
+	}
 	if err := d.Store.RegisterWaiting(body.Name, body.Host); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, timerpi.ErrWaitingFull) {
+			status = http.StatusTooManyRequests
+		}
+		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

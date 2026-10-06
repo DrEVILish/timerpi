@@ -123,11 +123,23 @@ func (h *Hub) readJoin(s *session) bool {
 	s.role = j.Role
 	s.screen = timerpi.SanitizeScreenName(j.Screen)
 	s.showID = showID
-	s.joinedAt = j.JoinedAt
-	if s.joinedAt <= 0 {
-		s.joinedAt = h.nowFn()
-	}
+	s.joinedAt = clampJoinedAt(j.Role, j.JoinedAt, h.nowFn())
 	return true
+}
+
+// clampJoinedAt bounds the client's claimed join time (BUGLOG RW11). It
+// orders the browser-mesh master election, so it must never be in the
+// future, and only operators carry seniority across reconnects (up to a
+// day back); screens and phones always join "now", so a display can't
+// claim to be the oldest peer.
+func clampJoinedAt(role string, claimed, now int64) int64 {
+	if role != "controls" || claimed <= 0 || claimed > now {
+		return now
+	}
+	if claimed < now-24*3600*1000 {
+		return now - 24*3600*1000
+	}
+	return claimed
 }
 
 // resolveJoinShow decodes the join frame's `show` field: ONLY the share
@@ -155,15 +167,28 @@ func resolveJoinShow(store *timerpi.DB, raw json.RawMessage) (int64, string, err
 	return id, code, nil
 }
 
-// orGenID fills an empty peerId (a provided one wins; mesh code treats ids
-// as client identity).
+// orGenID fills an empty or malformed peerId (a provided well-formed one
+// wins; mesh code treats ids as client identity). Ids are short and plain
+// so they can't bloat peers frames (BUGLOG RW11).
 func orGenID(peerID string) string {
-	if peerID != "" {
+	if validPeerID(peerID) {
 		return peerID
 	}
 	var b [4]byte
 	_, _ = randRead(b[:])
 	return fmt.Sprintf("s-%x", b)
+}
+
+func validPeerID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r == '-' || r == '_' || r == '.' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // register validates the show, attaches the session to its show hub, sends
@@ -219,10 +244,32 @@ func (h *Hub) register(s *session) bool {
 		s.sendErr("too many connections for this show")
 		return false
 	}
+	// One live session per peer id (BUGLOG RW11). The same id in the same
+	// role is a reconnect: the stale session is replaced. The same id in
+	// another role is an impersonation attempt (a display taking an
+	// operator's id to receive its signals): refused.
+	var stale []*session
+	for other := range sh.sessions {
+		if other.id != s.id {
+			continue
+		}
+		if other.role != s.role {
+			h.mu.Unlock()
+			s.sendErr("peer id already in use in this room")
+			return false
+		}
+		stale = append(stale, other)
+	}
+	for _, o := range stale {
+		delete(sh.sessions, o)
+	}
 	sh.sessions[s] = struct{}{}
 	others := peersFromLocked(sh, s)
 	everyone := peersFromLocked(sh, nil)
 	h.mu.Unlock()
+	for _, o := range stale {
+		o.kill()
+	}
 
 	// Join reply first (client builds its peer table from it).
 	s.sendFrame("t", "joined",

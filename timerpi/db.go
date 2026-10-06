@@ -2,6 +2,7 @@ package timerpi
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -1072,16 +1073,34 @@ type ClientError struct {
 // LogClientError appends one report (truncated) and prunes past the cap.
 // Like LogAction it never fails the caller.
 func (d *DB) LogClientError(showID int64, kind, message, source string) {
-	kind = ClipUTF8(kind, 40)
-	message = ClipUTF8(message, 500)
-	source = ClipUTF8(source, 160)
-	if _, err := d.Exec(`INSERT INTO client_errors (show_id, ts, kind, message, source) VALUES (?, ?, ?, ?, ?)`,
-		showID, nowMS(), kind, message, source); err != nil {
+	d.LogClientErrors(showID, []ClientError{{Kind: kind, Message: message, Source: source}})
+}
+
+// LogClientErrors appends a batch of reports in one transaction with one
+// prune (BUGLOG RW16: it used to be an insert plus a prune per entry, all
+// on the connection the timers need). Never fails the caller.
+func (d *DB) LogClientErrors(showID int64, entries []ClientError) {
+	if len(entries) == 0 {
 		return
 	}
-	_, _ = d.Exec(`DELETE FROM client_errors WHERE show_id = ? AND id NOT IN (
+	tx, err := d.Beginx()
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	now := nowMS()
+	for _, e := range entries {
+		if _, err := tx.Exec(`INSERT INTO client_errors (show_id, ts, kind, message, source) VALUES (?, ?, ?, ?, ?)`,
+			showID, now, ClipUTF8(e.Kind, 40), ClipUTF8(e.Message, 500), ClipUTF8(e.Source, 160)); err != nil {
+			return
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM client_errors WHERE show_id = ? AND id NOT IN (
 		SELECT id FROM client_errors WHERE show_id = ? ORDER BY id DESC LIMIT ?)`,
-		showID, showID, MaxClientErrorsPerShow)
+		showID, showID, MaxClientErrorsPerShow); err != nil {
+		return
+	}
+	_ = tx.Commit()
 }
 
 // ListClientErrors returns the newest-first tail (limit clamped [1, 200]).
@@ -1307,6 +1326,13 @@ type WaitingScreen struct {
 
 const waitingStaleAfterMS = 10 * 60 * 1000
 
+// maxWaitingRows caps unassigned waiting screens (BUGLOG RW16): a loop of
+// random names can't flood every operator's "Waiting" list.
+const maxWaitingRows = 200
+
+// ErrWaitingFull: the waiting list is at maxWaitingRows.
+var ErrWaitingFull = errors.New("timerpi: too many screens waiting to be set up")
+
 // RegisterWaiting upserts a waiting display (name sanitized; host free text,
 // bounded). Empty name after sanitizing is refused.
 func (d *DB) RegisterWaiting(name, host string) error {
@@ -1316,6 +1342,18 @@ func (d *DB) RegisterWaiting(name, host string) error {
 	}
 	host = ClipUTF8(strings.TrimSpace(host), 80)
 	now := nowMS()
+	var fresh, known int64
+	if err := d.Get(&fresh, `SELECT COUNT(*) FROM waiting_screens WHERE assigned = '' AND last_seen >= ?`, now-waitingStaleAfterMS); err != nil {
+		return fmt.Errorf("timerpi: register waiting: %w", err)
+	}
+	if fresh >= maxWaitingRows {
+		if err := d.Get(&known, `SELECT COUNT(*) FROM waiting_screens WHERE name = ? AND host = ?`, name, host); err != nil {
+			return fmt.Errorf("timerpi: register waiting: %w", err)
+		}
+		if known == 0 {
+			return ErrWaitingFull
+		}
+	}
 	_, err := d.Exec(`INSERT INTO waiting_screens (name, host, last_seen) VALUES (?, ?, ?)
 		ON CONFLICT (name, host) DO UPDATE SET last_seen = ?`, name, host, now, now)
 	if err != nil {

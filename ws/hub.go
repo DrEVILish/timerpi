@@ -635,6 +635,43 @@ func (h *Hub) KickSession(showID int64, peerID string) int {
 	return len(victims)
 }
 
+// RecheckControls re-validates every operator ("controls") session of a
+// show against its upgrade cookies and drops the ones that no longer pass
+// (BUGLOG RW10): after a supervisor or room password change, an already
+// open socket must not keep command rights until it happens to reconnect.
+// Returns the count dropped.
+func (h *Hub) RecheckControls(showID int64) int {
+	if h.store == nil {
+		return 0
+	}
+	h.mu.Lock()
+	var all []*session
+	if sh, ok := h.byShow[showID]; ok {
+		for ses := range sh.sessions {
+			if ses.role == "controls" {
+				all = append(all, ses)
+			}
+		}
+	}
+	h.mu.Unlock()
+	var victims []*session
+	for _, s := range all {
+		if !routes.ModerateFromCookies(h.store, s.httpCookies, showID) {
+			victims = append(victims, s)
+		}
+	}
+	for _, s := range victims {
+		s.sendErr("signed out: the password changed (reload the page to sign in again)")
+	}
+	if len(victims) > 0 {
+		time.Sleep(150 * time.Millisecond) // let writers drain the frame
+		for _, s := range victims {
+			s.kill()
+		}
+	}
+	return len(victims)
+}
+
 // ScreenPeers lists [peerId, role] pairs per registered screen name — the
 // per-session disconnect list for the panel/gallery.
 func (h *Hub) ScreenPeers(showID int64) map[string][][2]string {

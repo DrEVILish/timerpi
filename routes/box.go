@@ -142,7 +142,12 @@ func (d *Deps) apiBoxLogin(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box has no password yet. Set one first."})
 		return
 	}
-	if !timerpi.CheckPassword(hash, b.Password) {
+	if !loginAllowed(c, "box") {
+		return
+	}
+	ok = timerpi.CheckPassword(hash, b.Password)
+	loginResult(c, "box", ok)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong box password"})
 		return
 	}
@@ -160,7 +165,16 @@ func (d *Deps) apiBoxPassword(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box has no password yet. Set one first."})
 		return
 	}
-	if !d.boxSigned(c) || !timerpi.CheckPassword(hash, b.Current) {
+	if !d.boxSigned(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Sign in to box settings first"})
+		return
+	}
+	if !loginAllowed(c, "box") {
+		return
+	}
+	ok = timerpi.CheckPassword(hash, b.Current)
+	loginResult(c, "box", ok)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong current box password"})
 		return
 	}

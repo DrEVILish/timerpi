@@ -4,11 +4,10 @@ package routes
 
 // SetAudienceMintBudget sets the per-IP device mint budget and clears the
 // spent counters; it returns the old budget.
-func SetAudienceMintBudget(n int) int {
-	audMint.Lock()
-	defer audMint.Unlock()
-	old := audMintPerIP
-	audMintPerIP = n
-	audMint.win = nil
-	return old
+func SetAudienceMintBudget(n int) int { return audMint.setMax(n) }
+
+// SetOpenEndpointBudgets lifts (or restores) the per-IP budgets of the
+// screen register and client-log endpoints; returns the old values.
+func SetOpenEndpointBudgets(register, clientLog int) (int, int) {
+	return waitingLimit.setMax(register), clientLogLimit.setMax(clientLog)
 }

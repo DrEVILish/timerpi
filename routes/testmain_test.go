@@ -5,6 +5,7 @@ import (
 	"net/http/cookiejar"
 
 	"timerpi/routes"
+	"timerpi/timerpi"
 )
 
 // Every test request goes through one cookie-carrying client, like a real
@@ -18,4 +19,7 @@ func init() {
 	// fresh cookie-less clients; lift the per-IP device mint budget
 	// (TestAudienceDeviceMintBudget checks the real one).
 	routes.SetAudienceMintBudget(1 << 30)
+	routes.SetOpenEndpointBudgets(1<<30, 1<<30)
+	// Production hashes cost ~0.5 s on a Pi; tests hash hundreds of times.
+	timerpi.SetPasswordHashIterations(1000)
 }

@@ -1,6 +1,10 @@
 package timerpi
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
 
 // RegisterWaiting upserts per (name, host): one row for re-registers, name
 // sanitized, host clipped to 80.
@@ -75,5 +79,21 @@ func TestClaimWaitingConsumesOnce(t *testing.T) {
 	}
 	if code, _, _ := d.ClaimWaiting("nobody", "nowhere"); code != "" {
 		t.Errorf("unknown pair claimed %q", code)
+	}
+}
+
+// BUGLOG RW16: the waiting list is capped; a known screen still refreshes.
+func TestRegisterWaitingCap(t *testing.T) {
+	d := openTestDB(t)
+	for i := 0; i < maxWaitingRows; i++ {
+		if err := d.RegisterWaiting(fmt.Sprintf("S%d", i), "h"); err != nil {
+			t.Fatalf("register %d: %v", i, err)
+		}
+	}
+	if err := d.RegisterWaiting("One-too-many", "h"); !errors.Is(err, ErrWaitingFull) {
+		t.Fatalf("over cap: %v, want ErrWaitingFull", err)
+	}
+	if err := d.RegisterWaiting("S0", "h"); err != nil {
+		t.Fatalf("known screen refresh at cap: %v", err)
 	}
 }

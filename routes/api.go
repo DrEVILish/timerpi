@@ -337,12 +337,7 @@ func (d *Deps) apiDeleteShow(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	d.Engines.Drop(id)
-	if d.Hub != nil {
-		if h, forge := d.Hub.(interface{ Forget(int64) }); forge {
-			h.Forget(id)
-		}
-	}
+	d.forgetRoom(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -470,6 +465,10 @@ func (d *Deps) apiSessionDelete(c *gin.Context) {
 // client-side). Show-gated (reports may quote cue labels = show content).
 // Each entry is stored (capped tail) AND journaled (journal survives even
 // DB trouble). At most 25 entries per request.
+// clientLogLimit: error reports per client IP per minute (BUGLOG RW16). A
+// healthy screen sends a handful; a loop gets 429.
+var clientLogLimit = &windowLimiter{max: 30, window: time.Minute, bound: 20_000}
+
 func (d *Deps) apiClientLog(c *gin.Context) {
 	// Open: screens report errors without signing in (stored capped).
 	id, ok := d.requireShow(c)
@@ -487,8 +486,13 @@ func (d *Deps) apiClientLog(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {\"entries\":[{kind,message,source}]}"})
 		return
 	}
+	if !clientLogLimit.allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "too many reports"})
+		return
+	}
 	n := 0
 	var first string
+	batch := make([]timerpi.ClientError, 0, 25)
 	for _, e := range body.Entries {
 		if n >= 25 {
 			break
@@ -496,7 +500,7 @@ func (d *Deps) apiClientLog(c *gin.Context) {
 		if strings.TrimSpace(e.Message) == "" {
 			continue
 		}
-		d.Store.LogClientError(id, e.Kind, e.Message, e.Source)
+		batch = append(batch, timerpi.ClientError{Kind: e.Kind, Message: e.Message, Source: e.Source})
 		if n == 0 {
 			// Flatten before journalling: attacker-controlled text must not
 			// forge extra journal lines (or ANSI) via CR/LF.
@@ -504,6 +508,7 @@ func (d *Deps) apiClientLog(c *gin.Context) {
 		}
 		n++
 	}
+	d.Store.LogClientErrors(id, batch)
 	if n > 0 {
 		log.Printf("routes: %d client error(s) [show %d] first=%s", n, id, first)
 	}

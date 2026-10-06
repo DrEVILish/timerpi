@@ -275,11 +275,24 @@ func (d *Deps) apiEventLogin(c *gin.Context) {
 	if !okb {
 		return
 	}
-	// Legacy events migrated without a password let anyone holding the
-	// code in (and the admin page then asks them to set one).
-	if ev.HasSuperPassword() && !timerpi.CheckPassword(ev.SuperHash, pw) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong supervisor password"})
+	// Legacy events migrated without a password: only whoever holds the
+	// box password may claim them (BUGLOG RW14). Every moderator has the
+	// event code, so the code alone must not make anyone SuperOperator.
+	if !ev.HasSuperPassword() && !d.isBoxAdmin(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "This event has no supervisor password yet. Sign in to box settings first (/box), then set one."})
 		return
+	}
+	if ev.HasSuperPassword() {
+		target := "ev:" + ev.Code
+		if !loginAllowed(c, target) {
+			return
+		}
+		ok := timerpi.CheckPassword(ev.SuperHash, pw)
+		loginResult(c, target, ok)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong supervisor password"})
+			return
+		}
 	}
 	d.setSuperSession(c, ev)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "admin": "/e/" + ev.Code + "/admin"})
@@ -298,9 +311,17 @@ func (d *Deps) apiRoomLogin(c *gin.Context) {
 	if !okb {
 		return
 	}
-	if room.RoomPW != "" && !timerpi.CheckPassword(room.RoomPW, pw) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong room password"})
-		return
+	if room.RoomPW != "" {
+		target := "rm:" + room.Code
+		if !loginAllowed(c, target) {
+			return
+		}
+		ok := timerpi.CheckPassword(room.RoomPW, pw)
+		loginResult(c, target, ok)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong room password"})
+			return
+		}
 	}
 	d.setRoomSession(c, ev, room)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "room": "/c/" + room.Code})
@@ -361,10 +382,12 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 			return
 		}
 		// Re-issue this browser's session against the new hash; every
-		// other holder of the old password is signed out.
+		// other holder of the old password is signed out, open sockets
+		// included.
 		if ev2, err := d.Store.GetEvent(ev.ID); err == nil {
 			d.setSuperSession(c, ev2)
 		}
+		d.recheckControls(d.eventRoomIDs(ev.ID)...)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -374,15 +397,17 @@ func (d *Deps) apiEventDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rooms, _ := d.Store.ListRooms(ev.ID)
+	rooms, err := d.Store.ListRooms(ev.ID)
+	if err != nil { // without the list, live engines would outlive the event
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
 	if err := d.Store.DeleteEvent(ev.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	for _, r := range rooms {
-		if d.Engines != nil {
-			d.Engines.Drop(r.ID)
-		}
+		d.forgetRoom(r.ID)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -566,12 +591,17 @@ func (d *Deps) apiEventPatchRoom(c *gin.Context) {
 		}
 	}
 	if body.ClearPassword {
-		_ = d.Store.SetRoomPassword(room.ID, "")
+		if err := d.Store.SetRoomPassword(room.ID, ""); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		d.recheckControls(room.ID)
 	} else if body.Password != nil && strings.TrimSpace(*body.Password) != "" {
 		if err := d.Store.SetRoomPassword(room.ID, *body.Password); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		d.recheckControls(room.ID)
 	}
 	if body.Pos != nil {
 		if err := d.Store.MoveRoom(ev.ID, room.ID, *body.Pos); err != nil {
@@ -598,9 +628,7 @@ func (d *Deps) apiEventDeleteRoom(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	if d.Engines != nil {
-		d.Engines.Drop(room.ID)
-	}
+	d.forgetRoom(room.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -626,6 +654,7 @@ func (d *Deps) apiEventRoomPasswordAll(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		d.recheckControls(r.ID)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "rooms": len(rooms), "enabled": strings.TrimSpace(body.Password) != ""})
 }
@@ -683,4 +712,40 @@ func sanitizeTheme(t string) string {
 		}
 	}
 	return b.String()
+}
+
+// recheckControls drops open operator sockets of the rooms whose cookies a
+// password change just invalidated (BUGLOG RW10).
+func (d *Deps) recheckControls(roomIDs ...int64) {
+	h, ok := d.Hub.(interface{ RecheckControls(int64) int })
+	if d.Hub == nil || !ok {
+		return
+	}
+	for _, id := range roomIDs {
+		h.RecheckControls(id)
+	}
+}
+
+// eventRoomIDs lists the event's room ids (best effort: empty on error).
+func (d *Deps) eventRoomIDs(eventID int64) []int64 {
+	rooms, err := d.Store.ListRooms(eventID)
+	if err != nil {
+		return nil
+	}
+	ids := make([]int64, len(rooms))
+	for i, r := range rooms {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
+// forgetRoom drops a deleted room's engine and its hub entry (BUGLOG
+// RW52: event and room delete used to leave the hub bucket behind).
+func (d *Deps) forgetRoom(id int64) {
+	if d.Engines != nil {
+		d.Engines.Drop(id)
+	}
+	if h, ok := d.Hub.(interface{ Forget(int64) }); d.Hub != nil && ok {
+		h.Forget(id)
+	}
 }

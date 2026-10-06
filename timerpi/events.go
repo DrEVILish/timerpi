@@ -324,7 +324,18 @@ func (d *DB) DeleteEvent(id int64) error {
 // ---------------------------------------------------------------------------
 // Password hashing + session secret
 
-const pbkdf2Iter = 60000
+// pbkdf2Iter is the cost for NEW hashes; CheckPassword reads the count
+// stored in each hash, so older 60k hashes keep working. 300k is ~0.5 s on
+// a Pi 4 (BUGLOG RW12; sign-in attempts are also rate limited, routes).
+var pbkdf2Iter = 300_000
+
+// SetPasswordHashIterations changes the cost of new hashes and returns the
+// old value. Tests lower it; production never calls it.
+func SetPasswordHashIterations(n int) int {
+	old := pbkdf2Iter
+	pbkdf2Iter = n
+	return old
+}
 
 // HashPassword returns a salted PBKDF2-SHA256 hash string.
 func HashPassword(pw string) string {
