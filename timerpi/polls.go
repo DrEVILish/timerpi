@@ -228,6 +228,17 @@ func (d *DB) UpdatePoll(showID, id int64, question string, options []string, cor
 	p.Question = question
 	if options != nil {
 		b, _ := json.Marshal(options)
+		// Votes are stored by option position: changing the options under
+		// existing votes moves them to other answers (BUGLOG RW21).
+		if string(b) != p.Options {
+			var n int64
+			if err := d.Get(&n, `SELECT COUNT(*) FROM votes WHERE poll_id = ?`, id); err != nil {
+				return err
+			}
+			if n > 0 {
+				return fmt.Errorf("timerpi: this item already has votes; its answers can't change (duplicate it instead)")
+			}
+		}
 		p.Options = string(b)
 	}
 	p.Correct = correct
@@ -412,8 +423,18 @@ func (d *DB) Moderate(showID, childID int64, status string) error {
 	}
 	now := nowMS()
 	if parent.Kind == KindWordCloud {
-		_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE show_id = ? AND parent = ? AND lower(question) = lower(?)`,
-			status, now, showID, c.Parent, c.Question)
+		// Every copy of the word, matched exactly like the views group
+		// them (Go's Unicode lowercase; SQLite lower() is ASCII-only, so
+		// "Été" and "été" used to be split, BUGLOG RW20).
+		ids, serr := d.sameWordIDs(c.Parent, c.Question)
+		if serr != nil {
+			return serr
+		}
+		for _, sid := range ids {
+			if _, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, status, now, sid); err != nil {
+				return err
+			}
+		}
 	} else {
 		_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, status, now, childID)
 	}
@@ -540,9 +561,62 @@ func (d *DB) Submit(showID, itemID int64, text, peer string) (Poll, error) {
 	if item.AutoApprove {
 		state = StateOpen
 	}
+	if item.Kind == KindWordCloud {
+		// A word the moderator already approved (or dismissed) keeps that
+		// decision for every later copy (BUGLOG RW19).
+		if st, ok := d.decidedWordState(itemID, text); ok {
+			state = st
+		}
+	}
 	now := nowMS()
 	return d.insertPoll(Poll{ShowID: showID, Kind: "submission", Question: text, Options: "[]", Correct: -1,
 		State: state, Parent: itemID, Author: peer, Ts: now, Updated: now})
+}
+
+// wordKey is how word-cloud words are matched and grouped.
+func wordKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// sameWordIDs lists the item's submissions equal to word (wordKey).
+func (d *DB) sameWordIDs(itemID int64, word string) ([]int64, error) {
+	var rows []struct {
+		ID       int64  `db:"id"`
+		Question string `db:"question"`
+	}
+	if err := d.Select(&rows, `SELECT id, question FROM polls WHERE parent = ?`, itemID); err != nil {
+		return nil, err
+	}
+	key := wordKey(word)
+	var ids []int64
+	for _, r := range rows {
+		if wordKey(r.Question) == key {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
+}
+
+// decidedWordState is the moderator's decision on an earlier copy of the
+// word: approved wins over dismissed; ok=false when none was decided.
+func (d *DB) decidedWordState(itemID int64, word string) (string, bool) {
+	var rows []struct {
+		Question string `db:"question"`
+		State    string `db:"state"`
+	}
+	if err := d.Select(&rows, `SELECT question, state FROM polls WHERE parent = ? AND state IN (?, ?)`,
+		itemID, StateOpen, StateDismissed); err != nil {
+		return "", false
+	}
+	key, found := wordKey(word), ""
+	for _, r := range rows {
+		if wordKey(r.Question) != key {
+			continue
+		}
+		if r.State == StateOpen {
+			return StateOpen, true
+		}
+		found = r.State
+	}
+	return found, found != ""
 }
 
 // ---------------------------------------------------------------------------
@@ -620,7 +694,7 @@ func (d *DB) childViews(p Poll, moderator bool) []PollView {
 			if !moderator && r.State != StateOpen {
 				continue
 			}
-			key := strings.ToLower(r.Question) + "|" + r.State
+			key := wordKey(r.Question) + "|" + r.State
 			if a, ok := words[key]; ok {
 				a.n++
 				continue

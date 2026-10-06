@@ -296,3 +296,51 @@ func TestOnAirCache(t *testing.T) {
 		t.Fatalf("failed rebuild dropped the item: %+v %v", on.Audience, err)
 	}
 }
+
+// BUGLOG RW19/RW20: approving a cloud word covers every copy, case- and
+// accent-insensitive like the views, and later copies inherit it.
+func TestWordCloudDecisionsStick(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Cloud")
+	w := mustItem(t, d, show.ID, KindWordCloud, "One word?", `[]`, -1)
+	_ = d.ShowTo(show.ID, w.ID, TargetAudience, true)
+	first, err := d.Submit(show.ID, w.ID, "Été", "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _ := d.Submit(show.ID, w.ID, "été", "p2")
+	if err := d.Moderate(show.ID, first.ID, StateOpen); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.GetPoll(show.ID, second.ID); got.State != StateOpen {
+		t.Errorf("accented copy not approved with the first: %s", got.State)
+	}
+	third, _ := d.Submit(show.ID, w.ID, "ÉTÉ", "p3")
+	if third.State != StateOpen {
+		t.Errorf("later copy of an approved word arrived %s", third.State)
+	}
+	spam, _ := d.Submit(show.ID, w.ID, "spam", "p1")
+	_ = d.Moderate(show.ID, spam.ID, StateDismissed)
+	if again, _ := d.Submit(show.ID, w.ID, "Spam", "p4"); again.State != StateDismissed {
+		t.Errorf("dismissed word came back as %s", again.State)
+	}
+}
+
+// BUGLOG RW21: once an item has votes its answers can't change (votes are
+// stored by position); the question still can.
+func TestPollOptionsLockedOnceVoted(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Lock")
+	p := mustItem(t, d, show.ID, KindPoll, "Q?", `["a","b"]`, -1)
+	if err := d.UpdatePoll(show.ID, p.ID, "Q?", []string{"b", "a"}, -1, false); err != nil {
+		t.Fatalf("reorder before votes: %v", err)
+	}
+	_ = d.ShowTo(show.ID, p.ID, TargetAudience, true)
+	_ = d.Vote(show.ID, p.ID, "ph1", "0")
+	if err := d.UpdatePoll(show.ID, p.ID, "Q?", []string{"a", "b"}, -1, false); err == nil {
+		t.Fatal("options changed under a vote")
+	}
+	if err := d.UpdatePoll(show.ID, p.ID, "Q2?", []string{"b", "a"}, -1, false); err != nil {
+		t.Fatalf("question edit with same options: %v", err)
+	}
+}
