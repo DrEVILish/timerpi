@@ -12,7 +12,9 @@ node run.mjs keys    # tests whose file name contains "keys"
 ```
 
 `run.mjs` builds TimerPi, starts it on a free port with a throwaway data
-dir, runs every `tests/*.mjs`, and exits non-zero on any failure.
+dir and `TIMERPI_MESH=off` (from the checkout, so ftl-themes are found;
+pages and scripts come from the binary), runs every `tests/*.mjs`, and
+exits non-zero on any failure.
 
 A test file exports `name` and `async function run(t)`; `t` gives
 `browser`, `base`, `newEvent()` (an event + room, signed in as its

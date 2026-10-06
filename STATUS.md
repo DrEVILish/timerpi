@@ -150,7 +150,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 |---|---|
 | **U13** | ✅ Fixed 2026-10-06: while a cue cell was being edited, the client's row check saw the cell empty and rebuilt the table, destroying the input, so the next keys hit the shortcuts (Space = GO, R = reset). The rebuild now waits for the edit; the Screens page skips its redraw while a field is in use. Browser test `keys-while-typing`. |
 | **U14** | Adding a cue: pick **Session (speaker)** or **Break**; a break can have a location, e.g. where lunch is served ("Great Hall"). |
-| **U15** | Dragging or reordering the running order never interrupts the running cue (engine side fixed in BUGLOG RC2; verify in the UI). |
+| **U15** | ✅ Verified 2026-10-06: dragging a row above the running cue, or dragging the running cue itself, keeps it running with the same anchor (engine fix BUGLOG RC2). Browser test `reorder-running`. |
 | **U16** | ✅ Fixed 2026-10-06: the reset came from U13 (an "r" or space typed into a title reached the shortcuts). Also fixed: the details panel showed 30 minutes as "30:00" and saved it back as 30 hours, and alert/hold fields labelled m:ss were read as h:mm. Durations stay h:mm (2026-10-05 decision); alerts and hold are m:ss. Browser test `edit-running-cue`. |
 
 **Audience**

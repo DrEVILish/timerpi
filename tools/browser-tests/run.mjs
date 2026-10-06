@@ -21,7 +21,9 @@ execFileSync('go', ['build', '-o', bin, '.'], { cwd: repo, stdio: 'inherit' });
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(bin, [], {
-  cwd: work, // no templates/public here: proves the embedded copy is served
+  // Run from the checkout so ftl-themes (on disk by design) are found; the
+  // pages and scripts still come from the binary's embedded copy.
+  cwd: repo,
   env: { ...process.env, TIMERPI_DATA_DIR: join(work, 'data'), TIMERPI_HTTP_PORT: String(port), TIMERPI_DISPLAY: 'off', TIMERPI_MESH: 'off' },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
