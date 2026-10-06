@@ -65,6 +65,12 @@ func NewCode(d *DB) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// An all-digit code would read as a legacy numeric address and be
+		// refused by ResolveShowID: about 1 in 11,000 codes ((10/32)^8),
+		// an unreachable room (BUGLOG RS9). Draw again.
+		if _, numeric := ParseNumericID(code); numeric {
+			continue
+		}
 		inUse, err := codeInUse(d, code)
 		if err != nil {
 			return "", err
@@ -159,10 +165,8 @@ func ValidCode(s string) bool {
 //     4-4 dash/spaces strip), then must be a full 8-char code present in
 //     `shows.code`; success → that show's internal row id.
 //   - ALL-DIGIT idents are refused outright (found=false): digits are the
-//     legacy numeric-id world and must NOT resolve — a show whose code
-//     happens to be all digits is a deliberate, astronomically unlikely
-//     corner (10^-7 per show realistically) that the missed lookup
-//     otherwise covers; the refusal rules the contract, not the corner.
+//     legacy numeric-id world and must NOT resolve. NewCode never issues
+//     an all-digit code (1 in ~11,000 draws would be one, BUGLOG RS9).
 //   - `shows.id` remains the internal FK/JSON bookkeeping key — it is
 //     simply no longer an address.
 //

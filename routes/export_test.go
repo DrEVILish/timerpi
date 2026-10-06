@@ -11,3 +11,7 @@ func SetAudienceMintBudget(n int) int { return audMint.setMax(n) }
 func SetOpenEndpointBudgets(register, clientLog int) (int, int) {
 	return waitingLimit.setMax(register), clientLogLimit.setMax(clientLog)
 }
+
+// SetEventCreateBudget changes the per-IP event creation budget (BUGLOG
+// RS7) and returns the old one.
+func SetEventCreateBudget(n int) int { return eventCreateLimit.setMax(n) }

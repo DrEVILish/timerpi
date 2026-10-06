@@ -361,7 +361,7 @@ func (d *DB) CreateShow(title string) (Show, error) {
 // its rooms, in ONE statement: a crash can never leave a room created but
 // not attached (BUGLOG RW31).
 func (d *DB) createShow(title string, eventID int64) (Show, error) {
-	s := Show{Title: strings.TrimSpace(title)}
+	s := Show{Title: ClipUTF8(strings.TrimSpace(title), MaxNameLen)}
 	if err := s.Validate(); err != nil {
 		return Show{}, err
 	}
@@ -597,7 +597,7 @@ func (d *DB) SetShowDayStart(id int64, hhmm string) error {
 
 // RenameShow updates the title and bumps updated_at.
 func (d *DB) RenameShow(id int64, title string) error {
-	title = strings.TrimSpace(title)
+	title = ClipUTF8(strings.TrimSpace(title), MaxNameLen)
 	if err := (Show{Title: title}).Validate(); err != nil {
 		return err
 	}
@@ -1126,6 +1126,11 @@ func (d *DB) DeleteMessage(showID, id int64) error {
 
 // ClipUTF8 truncates s to at most n BYTES without splitting a multi-byte
 // rune (byte-slicing stored text produced invalid UTF-8 / U+FFFD tails).
+// MaxNameLen caps event and room names (bytes, cut on a character
+// boundary by ClipUTF8): they used to be
+// only trimmed, so an 8 MiB name was stored (BUGLOG RS7).
+const MaxNameLen = 120
+
 func ClipUTF8(s string, n int) string {
 	if len(s) <= n {
 		return s

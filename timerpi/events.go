@@ -118,7 +118,7 @@ func (d *DB) adoptOrphanShows() error {
 }
 
 func (d *DB) insertEvent(name, superHash string) (Event, error) {
-	name = strings.TrimSpace(name)
+	name = ClipUTF8(strings.TrimSpace(name), MaxNameLen)
 	if name == "" {
 		return Event{}, fmt.Errorf("timerpi: event name must not be empty")
 	}
@@ -175,6 +175,13 @@ func (d *DB) CreateEvent(name, superPassword string, rooms []string) (Event, []S
 // CreateRoom adds a room (a show) at the end of the event's room list.
 func (d *DB) CreateRoom(eventID int64, name string) (Show, error) {
 	return d.createShow(name, eventID) // created and attached in one insert (RW31)
+}
+
+// CountEvents is how many events the box holds.
+func (d *DB) CountEvents() (int, error) {
+	var n int
+	err := d.Get(&n, `SELECT COUNT(*) FROM events`)
+	return n, err
 }
 
 // GetEvent fetches one event by id.
@@ -236,7 +243,7 @@ func (d *DB) ListRooms(eventID int64) ([]Show, error) {
 
 // RenameEvent sets the event name.
 func (d *DB) RenameEvent(id int64, name string) error {
-	name = strings.TrimSpace(name)
+	name = ClipUTF8(strings.TrimSpace(name), MaxNameLen)
 	if name == "" {
 		return fmt.Errorf("timerpi: event name must not be empty")
 	}

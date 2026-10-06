@@ -3,7 +3,10 @@
 package routes
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -259,7 +262,20 @@ func (d *Deps) apiShowCmd(c *gin.Context) {
 	}
 	args := map[string]any{}
 	if strings.HasPrefix(c.ContentType(), "application/json") {
-		_ = c.ShouldBindJSON(&args)
+		// An empty body means no args; a malformed one is refused, not
+		// read as "no args" (BUGLOG RS8: it started the armed or first
+		// session).
+		raw, rerr := io.ReadAll(c.Request.Body)
+		if rerr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unreadable body"})
+			return
+		}
+		if len(bytes.TrimSpace(raw)) > 0 {
+			if jerr := json.Unmarshal(raw, &args); jerr != nil || args == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "body must be a JSON object"})
+				return
+			}
+		}
 	}
 	if action == "rate" {
 		rate, _ := args["rate"].(float64)
@@ -367,6 +383,11 @@ func (d *Deps) apiCloneShow(c *gin.Context) {
 	}
 	if strings.HasPrefix(c.ContentType(), "application/json") {
 		_ = c.ShouldBindJSON(&body)
+	}
+	if sh, serr := d.Store.GetShow(id); serr == nil {
+		if ev, eerr := d.Store.GetEvent(sh.EventID); eerr == nil && !d.roomRoomLeft(c, ev) {
+			return
+		}
 	}
 	dst, err := d.Store.CloneShow(id, body.Title)
 	if err != nil {

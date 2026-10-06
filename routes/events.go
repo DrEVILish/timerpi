@@ -29,6 +29,7 @@ package routes
 import (
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -255,6 +256,16 @@ func (d *Deps) apiCreateEvent(c *gin.Context) {
 	}
 	if len(body.Rooms) > 50 {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "At most 50 rooms"})
+		return
+	}
+	// Anyone on the network may create an event: bound it per device and
+	// per box (BUGLOG RS7).
+	if !eventCreateLimit.allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many new events from this device — try again in a few minutes"})
+		return
+	}
+	if n, cerr := d.Store.CountEvents(); cerr == nil && n >= maxEventsPerBox {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box is full of events — delete old ones first"})
 		return
 	}
 	ev, rooms, err := d.Store.CreateEvent(body.Name, body.Password, body.Rooms)
@@ -571,6 +582,9 @@ func (d *Deps) apiEventAddRoom(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !d.roomRoomLeft(c, ev) {
+		return
+	}
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -722,6 +736,9 @@ func (d *Deps) apiEventImportRoom(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !d.roomRoomLeft(c, ev) {
+		return
+	}
 	raw, name := bundleBody(c)
 	if raw == nil {
 		return
@@ -781,6 +798,23 @@ func (d *Deps) forgetRoom(id int64) {
 	if h, ok := d.Hub.(interface{ Forget(int64) }); d.Hub != nil && ok {
 		h.Forget(id)
 	}
+}
+
+// Limits on open creation (BUGLOG RS7).
+const (
+	maxEventsPerBox  = 1000
+	maxRoomsPerEvent = 100
+)
+
+var eventCreateLimit = &windowLimiter{max: 60, window: 10 * time.Minute, bound: 20_000}
+
+// roomRoomLeft answers 409 when the event already has maxRoomsPerEvent rooms.
+func (d *Deps) roomRoomLeft(c *gin.Context, ev timerpi.Event) bool {
+	if rooms, err := d.Store.ListRooms(ev.ID); err == nil && len(rooms) >= maxRoomsPerEvent {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "An event holds at most 100 rooms"})
+		return false
+	}
+	return true
 }
 
 // Supervisor passwords need 6+ characters (owner decision 2026-10-06,

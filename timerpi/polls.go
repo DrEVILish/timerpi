@@ -702,7 +702,14 @@ func (d *DB) itemView(p Poll, moderator bool) PollView {
 			}
 		}
 		var total int64
-		_ = d.Get(&total, `SELECT COUNT(*) FROM polls WHERE parent = ?`, p.ID)
+		if moderator {
+			_ = d.Get(&total, `SELECT COUNT(*) FROM polls WHERE parent = ?`, p.ID)
+		} else {
+			// Phones and screens count what they can see: pending and
+			// dismissed entries must not show up in the number either
+			// (BUGLOG RS12).
+			_ = d.Get(&total, `SELECT COUNT(*) FROM polls WHERE parent = ? AND state IN (?, ?)`, p.ID, StateOpen, StateAnswered)
+		}
 		v.Total = total
 	}
 	return v
