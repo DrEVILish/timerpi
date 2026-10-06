@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 18 |
+| Suggestion | 41 | 13 |
 
 ## Critical
 
@@ -145,17 +145,17 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS17 | `routes/screens.go:154-160` | "Forget" on a connected screen looks like a no-op: the card is re-added from live sessions with an empty config. | Mark live-only cards, or disconnect on forget. | Fixed 2026-10-06 (4d7356a) |
 | RS18 | `public/src/screens.js:284-285` | "Edit layout" on a screen with `boardId 0` opens the shared default board, so edits change every unassigned screen. | Create the screen's own board first, or warn. | Fixed 2026-10-06 (a376310, U11: Edit layout on a screen without one makes a named copy first) |
 | RS19 | `routes/screens.go:714-723`; `public/src/screens.js:104-122` | Picking a portrait template on a card keeps rotation 0, stretching a 9:16 layout across a landscape TV (only the capture dialog syncs them). | Set 90 when the template is portrait and rotation is 0, or show a mismatch badge. | Fixed 2026-10-06 (4d7356a) |
-| RS20 | `public/src/theme.js:30-32` (`safeSlug`) | Strips characters outside `[a-z0-9_-]` before lowercasing, so "Blue-Future" becomes "lue-uture" and loads a missing bundle. | Lowercase first, then strip. | Open |
-| RS21 | `boards/boards.go:396, 558, 603`; `public/src/board.js:1148` | `v[:256]` and `name[:64]` cut by bytes and can split UTF-8; the board.js comment claims the server clip is rune-safe. | Use `timerpi.ClipUTF8`. | Open |
-| RS22 | `routes/oscapi.go:50, 181-199`; `mesh/device.go:754-763` | `host+":"+port` and `fmt.Sprintf("http://%s:%d")` break on IPv6; peer addresses sort lexically so IPv6 can come first. `osc.out.host` isn't validated, and one event's blackout fires `/panic` at the box-wide target, reaching other events' desks. | `net.JoinHostPort`, prefer IPv4, validate the host; consider per-event OSC targets. | Open |
+| RS20 | `public/src/theme.js:30-32` (`safeSlug`) | Strips characters outside `[a-z0-9_-]` before lowercasing, so "Blue-Future" becomes "lue-uture" and loads a missing bundle. | Lowercase first, then strip. | Fixed 2026-10-06 (803cac8) |
+| RS21 | `boards/boards.go:396, 558, 603`; `public/src/board.js:1148` | `v[:256]` and `name[:64]` cut by bytes and can split UTF-8; the board.js comment claims the server clip is rune-safe. | Use `timerpi.ClipUTF8`. | Fixed 2026-10-06 (803cac8) |
+| RS22 | `routes/oscapi.go:50, 181-199`; `mesh/device.go:754-763` | `host+":"+port` and `fmt.Sprintf("http://%s:%d")` break on IPv6; peer addresses sort lexically so IPv6 can come first. `osc.out.host` isn't validated, and one event's blackout fires `/panic` at the box-wide target, reaching other events' desks. | `net.JoinHostPort`, prefer IPv4, validate the host; consider per-event OSC targets. | Fixed 2026-10-06 (803cac8; per-event OSC targets left for VENUE-CLOUD pairing) |
 | RS23 | `timerpi/engine.go:296-300`, reached from `routes/api.go:254` | The day-start command accepts any `ts`; `{"ts":1}` anchors the day in 1970. | Require `ts` within ±1 day of now. | Fixed 2026-10-06 `a8d77d2` |
-| RS24 | `public/src/timerpi.js:2311-2328`; `public/src/event.js:47-63` | Create-show and create-event submits only add a CSS class, so pressing Enter twice creates two. | Set `btn.disabled = true` while in flight. | Open |
+| RS24 | `public/src/timerpi.js:2311-2328`; `public/src/event.js:47-63` | Create-show and create-event submits only add a CSS class, so pressing Enter twice creates two. | Set `btn.disabled = true` while in flight. | Fixed 2026-10-06 (803cac8) |
 
 ### Error handling
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RS25 | `routes/showfile.go:293-294, 408, 423, 430, 473, 481, 485, 490`; `routes/api.go:722, 731`; `timerpi/db.go:1051` | Ignored errors: export silently loses messages and schedule when `ListMessages`/`LoadRuntime` fail; restore writes use `_ =`; `LastActionID` returns 0 on a DB error. | Return or log the errors. | Open |
+| RS25 | `routes/showfile.go:293-294, 408, 423, 430, 473, 481, 485, 490`; `routes/api.go:722, 731`; `timerpi/db.go:1051` | Ignored errors: export silently loses messages and schedule when `ListMessages`/`LoadRuntime` fail; restore writes use `_ =`; `LastActionID` returns 0 on a DB error. | Return or log the errors. | Fixed 2026-10-06 (803cac8) |
 | RS26 | `main.go:120-122, 186-190` | `log.Fatalf` on a serve error skips every defer (no DB close, mDNS goodbye or DRM release). `meshCancel` runs after the goodbye, so the poll loop can re-announce. The hub is never stopped, and hijacked sockets aren't closed by `srv.Shutdown`. | Return an error from a `run()` function; cancel the mesh first; add `hub.Stop()`. | Open |
 | RS27 | `timerpi/db.go:195-258`; `timerpi/events.go:73-117` | Startup migrations aren't transactional. A crash mid-`adoptOrphanShows` leaves empty events and re-adopts the show into a duplicate event next boot. | Run the adopt loop and code backfill in one transaction. | Open |
 
