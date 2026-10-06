@@ -174,16 +174,7 @@ func (d *DB) CreateEvent(name, superPassword string, rooms []string) (Event, []S
 
 // CreateRoom adds a room (a show) at the end of the event's room list.
 func (d *DB) CreateRoom(eventID int64, name string) (Show, error) {
-	sh, err := d.CreateShow(name)
-	if err != nil {
-		return Show{}, err
-	}
-	var pos int64
-	_ = d.Get(&pos, `SELECT COALESCE(MAX(room_pos), 0) + 1 FROM shows WHERE event_id = ?`, eventID)
-	if _, err := d.Exec(`UPDATE shows SET event_id = ?, room_pos = ? WHERE id = ?`, eventID, pos, sh.ID); err != nil {
-		return Show{}, fmt.Errorf("timerpi: attach room: %w", err)
-	}
-	return d.GetShow(sh.ID)
+	return d.createShow(name, eventID) // created and attached in one insert (RW31)
 }
 
 // GetEvent fetches one event by id.
@@ -313,12 +304,35 @@ func (d *DB) MoveRoom(eventID, showID, to int64) error {
 }
 
 // DeleteEvent removes the event and every room in it.
+// It is one transaction, and it also removes the event's uploaded assets
+// (venue map, images): they used to stay in the database forever (BUGLOG
+// RW31).
 func (d *DB) DeleteEvent(id int64) error {
-	if _, err := d.Exec(`DELETE FROM shows WHERE event_id = ?`, id); err != nil {
+	var rooms []int64
+	if err := d.Select(&rooms, `SELECT id FROM shows WHERE event_id = ?`, id); err != nil {
 		return err
 	}
-	_, err := d.Exec(`DELETE FROM events WHERE id = ?`, id)
-	return err
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM shows WHERE event_id = ?`,
+		`DELETE FROM assets WHERE event_id = ?`,
+		`DELETE FROM events WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, r := range rooms {
+		d.airDirty(r)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

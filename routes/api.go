@@ -646,19 +646,17 @@ func (d *Deps) apiSync(c *gin.Context) {
 		return
 	}
 
+	// Retire the live engine first: between these writes and the hub
+	// reload it would otherwise save its stale runtime over the sync
+	// (BUGLOG RW32).
+	d.Engines.Retire(id)
 	if err := d.applySync(id, &payload); err != nil {
+		d.reloadShow(id) // the room keeps running on what was written
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	// Fresh engine loads the new DB state (runtime + cues) cleanly.
-	d.Engines.Drop(id)
-	if d.Hub != nil {
-		if h, forge := d.Hub.(interface{ Reload(int64) error }); forge {
-			if rerr := h.Reload(id); rerr != nil {
-				log.Printf("routes: hub reload after sync: %v", rerr)
-			}
-		}
-	}
+	d.reloadShow(id)
 	eng, gerr := d.engineFor(id)
 	if gerr != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such show"})
@@ -682,29 +680,26 @@ func (d *Deps) apiSyncMerge(c *gin.Context, id int64, p *syncPayload) {
 		return
 	}
 	merged, remote := timerpi.MergeCues(serverCues, p.Cues, p.Tombstones)
+	d.Engines.Retire(id) // no stale save over the merge (RW32)
 	if err := d.Store.ReplaceCuesStamped(id, merged); err != nil {
+		d.reloadShow(id)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if p.UpdatedAt >= cur {
 		if err := d.applySyncMeta(id, p); err != nil {
+			d.reloadShow(id)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	} else if err := d.Store.TouchShow(id); err != nil {
+		d.reloadShow(id)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	// Fresh engine loads the merged DB state, then the existing oob/state
 	// fanout carries it to every connected page (no new protocol frames).
-	d.Engines.Drop(id)
-	if d.Hub != nil {
-		if h, forge := d.Hub.(interface{ Reload(int64) error }); forge {
-			if rerr := h.Reload(id); rerr != nil {
-				log.Printf("routes: hub reload after merge: %v", rerr)
-			}
-		}
-	}
+	d.reloadShow(id)
 	eng, gerr := d.engineFor(id)
 	if gerr != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such show"})
@@ -712,6 +707,59 @@ func (d *Deps) apiSyncMerge(c *gin.Context, id int64, p *syncPayload) {
 	}
 	snap, _ := eng.Snapshot()
 	c.JSON(http.StatusOK, gin.H{"ok": true, "merged": remote > 0, "mergedCues": remote, "snapshot": snap})
+}
+
+// reloadShow drops the show's engine and has the hub load a fresh one
+// from the DB (after a sync rewrote it).
+func (d *Deps) reloadShow(id int64) {
+	d.Engines.Drop(id)
+	if d.Hub != nil {
+		if h, ok := d.Hub.(interface{ Reload(int64) error }); ok {
+			if rerr := h.Reload(id); rerr != nil {
+				log.Printf("routes: hub reload after sync: %v", rerr)
+			}
+		}
+	}
+}
+
+// storedPositions lists the show's cue positions (for runtime checks).
+func (d *Deps) storedPositions(id int64) map[int64]bool {
+	out := map[int64]bool{}
+	if cues, err := d.Store.ListCues(id); err == nil {
+		for _, c := range cues {
+			out[c.Pos] = true
+		}
+	}
+	return out
+}
+
+// sanitizeSyncRuntime makes a pushed runtime safe to store: positions must
+// name stored cues (else 0, idle), the rate stays inside ×0.5–×2.0, and
+// negative or impossible times reset.
+func sanitizeSyncRuntime(rt timerpi.Runtime, id int64, pos map[int64]bool) timerpi.Runtime {
+	rt.ShowID = id
+	if !(rt.Rate > 0) {
+		rt.Rate = timerpi.DefaultRate
+	}
+	rt.Rate = timerpi.ClampRate(rt.Rate)
+	for _, p := range []*int64{&rt.ActivePos, &rt.PrevPos, &rt.NextPos} {
+		if *p != 0 && !pos[*p] {
+			*p = 0
+		}
+	}
+	if rt.ActivePos == 0 {
+		rt.Running, rt.Paused, rt.AnchorTS, rt.PausedElapsedMS = false, false, 0, 0
+	}
+	if rt.AnchorTS < 0 {
+		rt.AnchorTS = 0
+	}
+	if rt.PausedElapsedMS < 0 || rt.PausedElapsedMS > timerpi.MaxDurationMS {
+		rt.PausedElapsedMS = 0
+	}
+	if rt.DayStartTS < 0 {
+		rt.DayStartTS = 0
+	}
+	return rt
 }
 
 // applySync writes the pushed snapshot into the DB (show title, cues,
@@ -739,32 +787,19 @@ func (d *Deps) applySyncMeta(id int64, p *syncPayload) error {
 			}
 		}
 	}
-	// Runtime: preserve the schema identity; overwrite everything else.
+	// Runtime: preserve the schema identity; overwrite everything else,
+	// after checking it against the cues now stored (BUGLOG RW32: any
+	// activePos and any rate used to be accepted).
 	if p.Runtime.ShowID == 0 || p.Runtime.ShowID == id {
-		rt := p.Runtime
-		rt.ShowID = id
-		if rt.Rate <= 0 {
-			rt.Rate = timerpi.DefaultRate
-		}
+		rt := sanitizeSyncRuntime(p.Runtime, id, d.storedPositions(id))
 		if serr := d.Store.SaveRuntime(rt); serr != nil {
 			return serr
 		}
 	}
-	// Messages: re-create the listing; restore shown state where the
-	// master had overlays up (shownAt survives the round trip).
-	if msgs, gerr := d.Store.ListMessages(id); gerr == nil {
-		for _, m := range msgs {
-			_ = d.Store.DeleteMessage(id, m.ID)
-		}
-	}
-	for _, m := range p.Messages {
-		nm, cerr := d.Store.CreateMessage(id, m.Text, m.Color)
-		if cerr != nil {
-			continue
-		}
-		if m.ShownAt > 0 {
-			_ = d.Store.ShowMessage(id, nm.ID, m.ShownAt)
-		}
+	// Messages: replace the listing in one transaction; shown state
+	// survives the round trip.
+	if merr := d.Store.ReplaceMessages(id, p.Messages); merr != nil {
+		return merr
 	}
 	// Bump the show stamp so future pushes compare against a fresh world.
 	return d.Store.TouchShow(id)

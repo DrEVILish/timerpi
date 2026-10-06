@@ -21,6 +21,8 @@ import {
 } from './engine.js';
 
 const SIGNALING_CHANNEL = 'timerpi';
+// A display whose room is gone re-checks this often (BUGLOG RW45).
+const BADSHOW_RETRY_MS = 60_000;
 
 /**
  * Screen name for THIS browser window (F1, owner refinement 2026-10-05):
@@ -79,6 +81,7 @@ export class Mesh {
     this._zeroTimer = null;
     this._closed = false;
     this._deleted = false; // operator "delete session" — stand down until reload
+    this._badshow = false; // the room is unknown (deleted): wait, re-check slowly
     this._advancedOffline = false;
   }
 
@@ -237,6 +240,7 @@ export class Mesh {
       try { m = JSON.parse(event.data); } catch { return; }
       switch (m.t) {
         case 'joined': {
+          this._badshow = false;
           this.joinedAt = m.you?.joinedAt ?? Date.now();
           this.clockOffset = (m.snapshot?.serverTime ?? m.serverTime ?? 0)
             ? (m.snapshot?.serverTime ?? m.serverTime) - Date.now() : this.clockOffset;
@@ -304,6 +308,11 @@ export class Mesh {
             return;
           }
           if (/unknown (show|session code)/i.test(m.message || '')) {
+            // The room is gone. Stay in the waiting state: _wsDown keeps
+            // 'badshow' and only re-checks once a minute (BUGLOG RW45: it
+            // used to flip to offline and reconnect every 1–8 s, flickering
+            // the overlay and restarting the waiting registration).
+            this._badshow = true;
             this._setStatus('badshow');
             try { this._ws.close(); } catch { /* */ }
           }
@@ -325,6 +334,11 @@ export class Mesh {
   _wsDown(ws) {
     if (this._ws !== ws || this._closed) return;
     this._ws = null; // detach: the paired close/error of THIS socket must not re-penalize
+    clearTimeout(this._wsReconnectTimer);
+    if (this._badshow) {
+      this._wsReconnectTimer = setTimeout(() => this._wsConnect(), BADSHOW_RETRY_MS);
+      return;
+    }
     this._setStatus('offline');
     clearTimeout(this._wsReconnectTimer);
     this._wsBackoff = Math.min(this._wsBackoff * 1.5, 8000);
@@ -426,10 +440,7 @@ export class Mesh {
       if (e.candidate) this._signal(peerId, { candidate: e.candidate.toJSON() });
     };
     pc.onconnectionstatechange = () => {
-      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-        this.connections.delete(peerId);
-        this._reElect();
-      }
+      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) this._dropConnection(peerId, pc);
     };
 
     // The newer joiner initiates toward older peers (older peer answers).
@@ -467,10 +478,7 @@ export class Mesh {
           this._attachDataChannel(e.channel, fromId);
         };
         pc.onconnectionstatechange = () => {
-          if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-            this.connections.delete(fromId);
-            this._reElect();
-          }
+          if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) this._dropConnection(fromId, pc);
         };
       }
       try {
@@ -488,6 +496,22 @@ export class Mesh {
     }
   }
 
+  /** Close and forget the connection to peerId, but only if it is still
+      `pc`: a late event from an older connection must not remove a newer
+      one, and a dropped one must be closed or browsers leak it (Chrome
+      caps RTCPeerConnections around 500; stage TVs run for days; BUGLOG
+      RW46). */
+  _dropConnection(peerId, pc) {
+    const entry = this.connections.get(peerId);
+    if (!entry || entry.pc !== pc) {
+      try { pc.close(); } catch { /* already closed */ }
+      return;
+    }
+    this.connections.delete(peerId);
+    try { pc.close(); } catch { /* already closed */ }
+    this._reElect();
+  }
+
   _attachDataChannel(dc, peerId) {
     dc.onopen = () => {
       dc.send(JSON.stringify({
@@ -497,8 +521,8 @@ export class Mesh {
       this._reElect();
     };
     dc.onclose = () => {
-      this.connections.delete(peerId);
-      this._reElect();
+      const entry = [...this.connections.values()].find((x) => x.dc === dc);
+      if (entry) this._dropConnection(peerId, entry.pc);
     };
     dc.onmessage = (event) => {
       let m;

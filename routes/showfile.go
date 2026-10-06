@@ -399,7 +399,9 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		sf.Cues[i].ShowID = 0
 	}
 	if err := d.Store.ReplaceCues(show.ID, sf.Cues); err != nil {
-		return show, 0, fmt.Errorf("cues: %w", err)
+		// No empty room left behind in the event (BUGLOG RW31).
+		_ = d.Store.DeleteShow(show.ID)
+		return timerpi.Show{}, 0, fmt.Errorf("cues: %w", err)
 	}
 	for _, m := range sf.Messages {
 		m.ShowID = 0
@@ -421,7 +423,8 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		rt.Rate = timerpi.DefaultRate
 	}
 	if err := d.Store.SaveRuntime(rt); err != nil {
-		return show, len(sf.Cues), fmt.Errorf("runtime: %w", err)
+		_ = d.Store.DeleteShow(show.ID)
+		return timerpi.Show{}, 0, fmt.Errorf("runtime: %w", err)
 	}
 	_ = d.Store.TouchShow(show.ID)
 

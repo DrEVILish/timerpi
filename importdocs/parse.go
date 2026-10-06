@@ -1,7 +1,7 @@
 // Package importdocs imports and exports cue-list documents for TimerPi
 // (PLAN §6.5 / PROTOCOL.md §REST). Supported formats: XLSX (first-class,
 // excelize), CSV (header row required), JSON (array of cue objects, with or
-// without show/cues wrapping) and legacy XLS (tealeg/xlsx, best-effort).
+// without show/cues wrapping) and legacy .xls (refused with a "re-save as .xlsx" message).
 //
 // The package is deliberately self-contained: it parses into a small mirror
 // Cue struct whose JSON keys match the PROTOCOL wire cue object, so routes/
@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tealeg/xlsx/v3"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -555,13 +554,20 @@ func parseUnitChunksMS(s string) (int64, error) {
 // sheet that yields at least one cue wins, so a README/intro sheet in front
 // of the cue table is fine.
 func ParseXLSX(data []byte) ([]Cue, error) {
-	f, err := excelize.OpenReader(bytes.NewReader(data))
+	// A small file can unzip to gigabytes (BUGLOG RW29): cap what excelize
+	// may inflate, and read rows through the streaming iterator with a row
+	// and column cap, so one cell at XFD1048576 can't build a 1.7e10-cell
+	// grid on the Pi.
+	f, err := excelize.OpenReader(bytes.NewReader(data), excelize.Options{
+		UnzipSizeLimit:    64 << 20,
+		UnzipXMLSizeLimit: 16 << 20,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("importdocs: not a readable xlsx document: %w", err)
 	}
 	defer f.Close()
 	for _, sheet := range f.GetSheetList() {
-		rows, err := f.GetRows(sheet)
+		rows, err := sheetGrid(f, sheet)
 		if err != nil {
 			continue
 		}
@@ -581,51 +587,54 @@ func ParseXLSX(data []byte) ([]Cue, error) {
 	return nil, fmt.Errorf("importdocs: no cue rows found in the workbook (need a sheet whose first data row is a header with Label/Name and Duration/Time columns)")
 }
 
-// ---------------------------------------------------------------------------
-// Legacy XLS (tealeg/xlsx, best-effort).
+// Spreadsheet read limits: a running order is a few hundred rows of a
+// dozen columns; anything past these is ignored.
+const (
+	maxSheetRows = 2000
+	maxSheetCols = 64
+)
 
-// ParseXLS parses a legacy .xls (BIFF) workbook. tealeg/xlsx covers plain
-// cells only: formula cache and formatted numbers degrade to their shown
-// text, complex sheets may not open at all — users should re-save legacy
-// files as XLSX or CSV (PLAN §8.2 documents this limit).
-func ParseXLS(data []byte) ([]Cue, error) {
-	f, err := xlsx.OpenBinary(data)
+// sheetGrid streams one sheet into a string grid, at most maxSheetRows
+// rows of maxSheetCols cells.
+func sheetGrid(f *excelize.File, sheet string) ([][]string, error) {
+	it, err := f.Rows(sheet)
 	if err != nil {
-		return nil, fmt.Errorf("importdocs: not a readable xls document: %w", err)
+		return nil, err
 	}
-	for _, sheet := range f.Sheets {
-		rows := gridFromTealeg(sheet)
-		cues, perr := parseGrid(rows)
-		if errors.Is(perr, errNoTable) {
-			continue
+	defer it.Close()
+	var grid [][]string
+	for len(grid) < maxSheetRows && it.Next() {
+		cols, cerr := it.Columns()
+		if cerr != nil {
+			return grid, cerr
 		}
-		if perr != nil {
-			return cues, perr // salvage what parsed
+		if len(cols) > maxSheetCols {
+			cols = cols[:maxSheetCols]
 		}
-		if len(cues) > 0 {
-			return cues, nil
-		}
+		grid = append(grid, cols)
 	}
-	return nil, fmt.Errorf("importdocs: no cue rows found in the legacy xls (need a header row with Label/Name and Duration/Time columns) — or re-save as XLSX/CSV")
+	return grid, it.Error()
 }
 
-// gridFromTealeg converts one legacy sheet to a plain string grid.
-func gridFromTealeg(sheet *xlsx.Sheet) [][]string {
-	grid := make([][]string, sheet.MaxRow)
-	for r := 0; r < sheet.MaxRow; r++ {
-		row, err := sheet.Row(r)
-		if err != nil || row == nil {
-			grid[r] = nil
-			continue
-		}
-		rec := make([]string, sheet.MaxCol)
-		for c := 0; c < sheet.MaxCol; c++ {
-			rec[c] = row.GetCell(c).String()
-		}
-		grid[r] = rec
+// ---------------------------------------------------------------------------
+// Legacy XLS.
+
+// ParseXLS handles a file named .xls. Real legacy Excel files (BIFF in an
+// OLE2 container) can't be read: the operator is asked to re-save them as
+// .xlsx or .csv (BUGLOG RW29: the old reader only understood XLSX anyway,
+// so they always failed with "not a valid zip file"). An XLSX that merely
+// carries an .xls name is read as XLSX.
+func ParseXLS(data []byte) ([]Cue, error) {
+	if len(data) >= 2 && data[0] == 'P' && data[1] == 'K' {
+		return ParseXLSX(data)
 	}
-	return grid
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte{0xd0, 0xcf, 0x11, 0xe0}) {
+		return nil, errLegacyXLS
+	}
+	return nil, fmt.Errorf("importdocs: not a readable spreadsheet — save it as .xlsx or .csv and import that")
 }
+
+var errLegacyXLS = errors.New("importdocs: this is an old Excel .xls file, which TimerPi can't read — open it in Excel or Numbers, save it as .xlsx (or .csv) and import that")
 
 // ---------------------------------------------------------------------------
 // CSV / TSV.

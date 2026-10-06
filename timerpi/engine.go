@@ -35,6 +35,23 @@ type Engine struct {
 	// onFire is the outbound media hook (OSCbridge wiring, proposal #8):
 	// invoked after a mutation leaves a cue RUNNING, with the running pos.
 	onFire func(pos int64)
+
+	// retired: a newer engine is taking over (a sync rewrote the DB). A
+	// retired engine never saves its runtime again, so it can't write
+	// stale state over the sync (BUGLOG RW32).
+	retired bool
+}
+
+// ErrEngineRetired: the engine was replaced; the caller should fetch the
+// current one from the registry.
+var ErrEngineRetired = errors.New("timerpi: engine replaced, try again")
+
+// Retire stops this engine from saving runtime state; ticks become no-ops.
+// Call it before rewriting the show's rows behind the engine's back.
+func (e *Engine) Retire() {
+	e.mu.Lock()
+	e.retired = true
+	e.mu.Unlock()
 }
 
 // EngineDeps inject the edges. Nil entries get defaults; see DB.EngineDeps
@@ -346,6 +363,10 @@ func (e *Engine) SetDayStart(ts int64) error {
 
 func (e *Engine) Tick(nowMS int64) error {
 	e.mu.Lock()
+	if e.retired {
+		e.mu.Unlock()
+		return nil
+	}
 	changed := false
 	cues, err := e.cuesLocked()
 	if err != nil {
@@ -499,6 +520,9 @@ func (e *Engine) runMutation(mut func() error) error {
 
 // commitLocked persists the runtime and builds the snapshot.
 func (e *Engine) commitLocked() (Snapshot, error) {
+	if e.retired {
+		return Snapshot{}, ErrEngineRetired
+	}
 	snap, err := e.snapshotLocked()
 	e.rtDirty = false
 	if serr := e.deps.Save(e.rt); err == nil {
@@ -714,9 +738,12 @@ func (e *Engine) jumpRelLocked(dir int64) error {
 //	after:  anchor = now, pausedElapsed = displayed(now), rate = newRate
 //	→ displayed stays identical at the change instant, then scales by newRate.
 func (e *Engine) setRateLocked(rate float64) error {
-	if rate <= 0 {
+	if !(rate > 0) { // also NaN
 		return ErrBadRate
 	}
+	// A huge rate overflowed the elapsed maths (BUGLOG RW32): hold every
+	// path to the ×0.5–×2.0 contract the dashboard offers.
+	rate = ClampRate(rate)
 	if e.rt.Running && !e.rt.Paused && e.rt.AnchorTS > 0 {
 		e.rt.PausedElapsedMS = cueElapsedMS(nil, e.rt, e.now())
 		e.rt.AnchorTS = e.now()
@@ -947,6 +974,19 @@ func (r *Engines) Drop(showID int64) {
 	r.mu.Lock()
 	delete(r.byShow, showID)
 	r.mu.Unlock()
+}
+
+// Retire retires the show's live engine (if any) and drops it from the
+// registry: the next Get loads a fresh engine from the DB. Use it BEFORE
+// rewriting a show's rows (sync), so the old engine can't save over them.
+func (r *Engines) Retire(showID int64) {
+	r.mu.Lock()
+	e := r.byShow[showID]
+	delete(r.byShow, showID)
+	r.mu.Unlock()
+	if e != nil {
+		e.Retire()
+	}
 }
 
 // EngineDeps wires the engine to this DB's show data (production wiring).

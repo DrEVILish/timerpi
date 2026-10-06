@@ -326,6 +326,13 @@ func (d *DB) migrateShowCodes() error {
 // unlikely — 32^8 space, and the pre-check in NewCode above) retries the
 // whole insert.
 func (d *DB) CreateShow(title string) (Show, error) {
+	return d.createShow(title, 0)
+}
+
+// createShow inserts a show, attached to eventID (0 = none) at the end of
+// its rooms, in ONE statement: a crash can never leave a room created but
+// not attached (BUGLOG RW31).
+func (d *DB) createShow(title string, eventID int64) (Show, error) {
 	s := Show{Title: strings.TrimSpace(title)}
 	if err := s.Validate(); err != nil {
 		return Show{}, err
@@ -336,8 +343,9 @@ func (d *DB) CreateShow(title string) (Show, error) {
 		if cerr != nil {
 			return Show{}, cerr
 		}
-		res, err := d.Exec(`INSERT INTO shows (title, code, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-			s.Title, code, now, now)
+		res, err := d.Exec(`INSERT INTO shows (title, code, created_at, updated_at, event_id, room_pos)
+			VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 0 THEN 0 ELSE (SELECT COALESCE(MAX(room_pos), 0) + 1 FROM shows WHERE event_id = ?) END)`,
+			s.Title, code, now, now, eventID, eventID, eventID)
 		if err != nil {
 			// UNIQUE (idx_shows_code) lost a race → retry with a fresh code;
 			// anything else is a real failure.
@@ -372,6 +380,14 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 	if err != nil {
 		return Show{}, err
 	}
+	// Any later failure removes the half-made room instead of leaving an
+	// empty one in the event (BUGLOG RW31).
+	ok := false
+	defer func() {
+		if !ok {
+			_ = d.DeleteShow(dst.ID)
+		}
+	}()
 	if src.Notes != "" {
 		if err := d.SetShowNotes(dst.ID, src.Notes); err != nil {
 			return Show{}, err
@@ -417,6 +433,7 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 	if err := tx.Commit(); err != nil {
 		return Show{}, fmt.Errorf("timerpi: clone commit: %w", err)
 	}
+	ok = true
 	return d.GetShow(dst.ID)
 }
 
@@ -1006,6 +1023,40 @@ func (d *DB) ShowMessage(showID, id, shownAt int64) error {
 	_, err := d.Exec(`UPDATE messages SET shown_at = ?, updated_at = ? WHERE show_id = ? AND id = ?`,
 		shownAt, nowMS(), showID, id)
 	return err
+}
+
+// ReplaceMessages swaps the show's whole message list in one transaction
+// (a mesh sync push), keeping each message's shownAt. Invalid messages are
+// skipped (BUGLOG RW32: this was delete-all then create-each, unwrapped,
+// errors ignored).
+func (d *DB) ReplaceMessages(showID int64, msgs []Message) error {
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM messages WHERE show_id = ?`, showID); err != nil {
+		return err
+	}
+	now := nowMS()
+	for _, m := range msgs {
+		m.Normalize()
+		if m.Validate() != nil {
+			continue
+		}
+		shown := m.ShownAt
+		if shown < 0 {
+			shown = 0
+		}
+		if _, err := tx.Exec(`INSERT INTO messages (show_id, text, color, shown_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			showID, m.Text, m.Color, shown, now); err != nil {
+			return err
+		}
+	}
+	if err := bumpStamp(tx, showID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ClearMessage hides a message (ShownAt = 0); it stays in the list.

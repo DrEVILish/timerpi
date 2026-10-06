@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -161,21 +162,37 @@ func (h *Hub) SetNowFn(fn func() int64) { h.nowFn = fn }
 // ---------------------------------------------------------------------------
 // Gin wiring + loops.
 
-// Forget drops a show's hub state after DELETE /api/shows/:id — the
+// Forget drops a show's hub state after the show is deleted — the
 // registry engine is gone; ticking a deleted show would just error-spam.
-// Sessions of that show stay attached (their engine already errors on
-// next use) but the fanout entry goes.
+// Its open sessions are told "unknown show" and closed, so screens go
+// straight to the waiting state (ready to be captured by another room)
+// instead of showing a dead room until their next reconnect (BUGLOG RW45).
 func (h *Hub) Forget(showID int64) {
 	h.mu.Lock()
 	sh, ok := h.byShow[showID]
+	var victims []*session
 	if ok {
-		if sh.cancel != nil && len(sh.sessions) == 0 {
+		if sh.cancel != nil {
 			sh.cancel()
 			sh.cancel = nil
+		}
+		for ses := range sh.sessions {
+			victims = append(victims, ses)
 		}
 		delete(h.byShow, showID)
 	}
 	h.mu.Unlock()
+	for _, s := range victims {
+		s.sendErr("unknown show " + strconv.FormatInt(showID, 10))
+	}
+	if len(victims) > 0 {
+		go func() {
+			time.Sleep(150 * time.Millisecond) // let writers drain the frame
+			for _, s := range victims {
+				s.kill()
+			}
+		}()
+	}
 }
 
 // Reload re-arms a show after a wholesale DB swap (mesh sync): fresh
