@@ -221,4 +221,4 @@ After the 2026-10-06 review: BUGLOG RC1–RC8 come before everything above, and 
 
 ## 5. Open questions
 
-See [docs/VENUE-CLOUD.md](docs/VENUE-CLOUD.md) §7: cloud edits while the event is at the venue (locked or forwarded?), multi-venue events, creating an event offline at the venue.
+None open. VENUE-CLOUD §7 records the sync rules (2026-10-06); confirm the "stable link" time and offline-created events when N15 starts.

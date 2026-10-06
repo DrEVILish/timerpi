@@ -185,7 +185,7 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 ## 6. Out of scope (v2)
 
 - Personal user accounts and SSO.
-- Multi-venue events (open question, VENUE-CLOUD §7).
+- Multi-venue events (one event per venue, 2026-10-06).
 - Audio alerts. Alerts are visual only.
 - Multi-day *UI*. The data model is still designed for days (§4.7).
 
@@ -220,6 +220,7 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-06 | UI round (STATUS U1–U29): displays never show the event code; room names on displays read "Room: <name>" when the event has several rooms; walk-in schedule lines are `hh:mm  Title - Speaker` (24 h); no tap-for-full-screen on displays; built-in layouts are templates, edited as named copies; moderators work only in Run and Audience and can import running orders and interaction lists; only the SuperOperator changes themes; the Setup tab goes. |
 | 2026-10-06 | Layout editor (STATUS U8, U10, U11): an almost-full-screen modal; handles follow common editor practice. Built-in templates appear in the same Layout list labelled **[built-in]** and are never edited: editing one makes a **named copy that belongs to the event** (usable by every room). After naming it, a list offers every screen **of the same display type across the event**, grouped by room, with the starting screen ticked. The built-in templates themselves get reworked later. |
 | 2026-10-06 | Displays on devices that report their orientation (phones, tablets) follow it; the screen's "Mounted" rotation setting is ignored there (STATUS U1). Breaks can carry a location (e.g. "Great Hall") that shows on the schedule (U14). Import column matching (U26, U27) is deferred. Setup tab removed: Import moves to Run, Duplicate room to the SuperOperator dashboard, day start and room notes to Run; moderators get no theme picker (U25, U28, U29). |
+| 2026-10-06 | Cloud/venue sync ([VENUE-CLOUD.md](VENUE-CLOUD.md) §7): seamless whether offline, local or remote; one event per venue; venue changes overwrite earlier cloud changes; while the link flaps the venue only uploads; cloud changes reach the venue only over a stable link. |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

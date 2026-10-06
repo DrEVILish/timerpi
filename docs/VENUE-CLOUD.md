@@ -1,6 +1,6 @@
 # TimerPi — Venue boxes, pairing and the cloud
 
-> **Status: design, owner-confirmed decisions (2026-10-06), not built yet.**
+> **Status: design, owner-confirmed decisions and sync rules (2026-10-06), not built yet.**
 > Work items are STATUS N12–N16. This replaces the "isolated venue LAN only"
 > assumption (PRODUCT H2, before 2026-10-06) and closes BUGLOG RW15
 > (unauthenticated device mesh) by design.
@@ -59,11 +59,16 @@
 - Internet down: the cloud shows "audience paused" on phones; screens and timers at the venue carry on.
 - The primary streams a read-only copy of the event to the cloud during the show; at release the final copy is stored on the cloud.
 
-## 7. Open questions (owner)
+## 7. Sync rules (owner, 2026-10-06)
 
-1. While the event is at the venue, are edits on the cloud **locked** (read-only copy), or forwarded to the venue?
-2. Can one event span **several venues** (several primaries), or is it always one venue?
-3. Can an event be **created at the venue** with no internet, and uploaded to the cloud later?
+1. **Seamless.** Moderators and the SuperOperator work the same way whether they are on the venue network offline, on it with internet, or remote through the cloud. Nobody chooses a mode.
+2. **One event per venue** (one primary box holds it).
+3. **Venue changes win.** A change made at the venue overwrites earlier cloud changes to the same thing.
+4. **Flapping link: upload only.** While the cloud link keeps dropping and returning, the venue keeps pushing its changes to the cloud and takes nothing back.
+5. **Stable link: both ways.** Cloud changes (for example a remote SuperOperator editing) reach the venue only while the link has been up without a drop for a while (proposed: 2 minutes; tunable).
+6. **Created offline:** an event made at the venue with no internet is uploaded to the cloud when the link first becomes stable (follows from rule 1; confirm when N15 starts).
+
+Merging uses the per-session last-writer-wins merge that already exists for offline browser edits (`timerpi/merge.go`), with the venue's copy as the writer that wins ties.
 
 ## 8. Build order (STATUS)
 
