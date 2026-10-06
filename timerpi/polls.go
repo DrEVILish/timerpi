@@ -201,6 +201,7 @@ func (d *DB) CreatePoll(p Poll) (Poll, error) {
 }
 
 func (d *DB) insertPoll(p Poll) (Poll, error) {
+	defer d.airDirty(p.ShowID)
 	res, err := d.Exec(`INSERT INTO polls (show_id, kind, question, options, correct, state, parent, author, ts, updated,
 		to_audience, to_presenter, spot, auto_approve)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -216,6 +217,7 @@ func (d *DB) insertPoll(p Poll) (Poll, error) {
 // UpdatePoll edits an item's text/options/correct/auto-approve (not its
 // air state). Editing an item that has votes keeps the votes.
 func (d *DB) UpdatePoll(showID, id int64, question string, options []string, correct int64, autoApprove bool) error {
+	defer d.airDirty(showID)
 	p, err := d.GetPoll(showID, id)
 	if err != nil {
 		return err
@@ -286,6 +288,7 @@ func targetCol(target string) (string, error) {
 // on takes every other item of the room off that target. An item on no
 // target is hidden; an item coming on air from hidden opens for voting.
 func (d *DB) ShowTo(showID, id int64, target string, on bool) error {
+	defer d.airDirty(showID)
 	col, err := targetCol(target)
 	if err != nil {
 		return err
@@ -327,6 +330,7 @@ func (d *DB) ShowTo(showID, id int64, target string, on bool) error {
 // SetResults reveals (on) or re-closes (off) an item's results wherever it
 // is shown. Results close voting.
 func (d *DB) SetResults(showID, id int64, on bool) error {
+	defer d.airDirty(showID)
 	p, err := d.GetPoll(showID, id)
 	if err != nil {
 		return err
@@ -347,6 +351,7 @@ func (d *DB) SetResults(showID, id int64, on bool) error {
 
 // HidePoll takes an item off every target.
 func (d *DB) HidePoll(showID, id int64) error {
+	defer d.airDirty(showID)
 	p, err := d.GetPoll(showID, id)
 	if err != nil {
 		return err
@@ -388,6 +393,7 @@ func (d *DB) SetPollState(showID, id int64, state string) error {
 // answered, dismissed. Approving a cloud word approves every identical
 // word under the same item (one decision per word, not per submitter).
 func (d *DB) Moderate(showID, childID int64, status string) error {
+	defer d.airDirty(showID)
 	switch status {
 	case StateHidden, StateOpen, StateAnswered, StateDismissed:
 	default:
@@ -423,6 +429,7 @@ func (d *DB) Moderate(showID, childID int64, status string) error {
 
 // Spotlight puts one approved question of a Q&A item in focus (0 clears).
 func (d *DB) Spotlight(showID, itemID, childID int64) error {
+	defer d.airDirty(showID)
 	item, err := d.GetPoll(showID, itemID)
 	if err != nil {
 		return err
@@ -450,6 +457,7 @@ func (d *DB) Spotlight(showID, itemID, childID int64) error {
 
 // DeletePoll removes one row (votes and children cascade).
 func (d *DB) DeletePoll(showID, id int64) error {
+	defer d.airDirty(showID)
 	res, err := d.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id)
 	if err != nil {
 		return fmt.Errorf("timerpi: delete poll: %w", err)
@@ -465,6 +473,7 @@ func (d *DB) DeletePoll(showID, id int64) error {
 // vote — devices may change their mind until results), or an upvote
 // (choice "1") on an approved Q&A question / idea.
 func (d *DB) Vote(showID, pollID int64, peer, choice string) error {
+	defer d.airDirty(showID)
 	if strings.TrimSpace(peer) == "" {
 		return fmt.Errorf("timerpi: vote needs a device id")
 	}
@@ -561,6 +570,13 @@ func (d *DB) itemView(p Poll, moderator bool) PollView {
 				v.Counts[idx] += r.N
 			}
 		}
+		// Phones and screens see the vote total while voting runs, but the
+		// per-option tally only once results are shown (BUGLOG RW17): the
+		// frame used to carry it, so anyone reading it saw the crowd's
+		// (or the quiz's) answer before the reveal.
+		if !moderator && p.State != StateResults {
+			v.Counts = nil
+		}
 	default:
 		v.Children = d.childViews(p, moderator)
 		for _, c := range v.Children {
@@ -639,8 +655,57 @@ func (d *DB) childViews(p Poll, moderator bool) []PollView {
 	return out
 }
 
-// OnAirNow returns what is showing on each target in the room.
+// OnAirNow returns what is showing on each target in the room. It is
+// cached per room and rebuilt only after a poll write (airDirty), so a
+// reconnect storm of phones and the hub's 250 ms broadcasts no longer
+// rebuild it from the database every time (BUGLOG RW54). If a rebuild
+// fails, the last good value is served instead of "nothing on air", so a
+// busy database never drops the vote off every phone (RW18).
 func (d *DB) OnAirNow(showID int64) (OnAir, error) {
+	d.air.mu.Lock()
+	e := d.air.m[showID]
+	if e != nil && e.valid {
+		v := e.v
+		d.air.mu.Unlock()
+		return v, nil
+	}
+	gen := d.air.gen[showID]
+	d.air.mu.Unlock()
+
+	v, err := d.onAirQuery(showID)
+
+	d.air.mu.Lock()
+	defer d.air.mu.Unlock()
+	if err != nil {
+		if e != nil && e.have {
+			return e.v, nil // stale but real beats a false "nothing on air"
+		}
+		return v, err
+	}
+	if d.air.gen[showID] == gen { // no write landed while we read
+		if d.air.m == nil {
+			d.air.m = map[int64]*airEntry{}
+		}
+		d.air.m[showID] = &airEntry{v: v, valid: true, have: true}
+	}
+	return v, nil
+}
+
+// airDirty marks a room's on-air cache stale after a poll write.
+func (d *DB) airDirty(showID int64) {
+	d.air.mu.Lock()
+	defer d.air.mu.Unlock()
+	if d.air.gen == nil {
+		d.air.gen = map[int64]uint64{}
+	}
+	d.air.gen[showID]++
+	if e := d.air.m[showID]; e != nil {
+		e.valid = false
+	}
+}
+
+// onAirQuery builds the on-air view from the database.
+func (d *DB) onAirQuery(showID int64) (OnAir, error) {
 	var out OnAir
 	var items []Poll
 	err := d.Select(&items, `SELECT `+pollCols+` FROM polls WHERE show_id = ? AND parent = 0 AND (to_audience = 1 OR to_presenter = 1)`, showID)

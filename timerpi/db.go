@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -19,6 +20,19 @@ import (
 // truth (PLAN §1): shows, cues, messages, settings kv and per-show runtime.
 type DB struct {
 	*sqlx.DB
+	air airCache // on-air interaction per room (polls.go OnAirNow)
+}
+
+type airCache struct {
+	mu  sync.Mutex
+	m   map[int64]*airEntry
+	gen map[int64]uint64 // bumped by every poll write
+}
+
+type airEntry struct {
+	v     OnAir
+	valid bool // false after a write: rebuild on next read
+	have  bool // v is a real (possibly stale) value
 }
 
 // dbPragmas are driver-level DSN pragmas, set per-connection (CuTePi style).
@@ -565,6 +579,7 @@ func (d *DB) TouchShow(id int64) error {
 // DeleteShow removes a show; cues, messages and runtime go via ON DELETE
 // CASCADE (foreign_keys pragma must be on — see Open).
 func (d *DB) DeleteShow(id int64) error {
+	defer d.airDirty(id)
 	_, err := d.Exec(`DELETE FROM shows WHERE id = ?`, id)
 	return err
 }
@@ -1719,13 +1734,23 @@ func (d *DB) CreatePollRaw(p Poll) (Poll, error) {
 
 // SetPollSpotRaw restores a Q&A spotlight pointer (import path only).
 func (d *DB) SetPollSpotRaw(itemID, childID int64) error {
+	defer d.airDirtyPoll(itemID)
 	_, err := d.Exec(`UPDATE polls SET spot = ? WHERE id = ?`, childID, itemID)
 	return err
+}
+
+// airDirtyPoll marks the on-air cache of the poll's room stale.
+func (d *DB) airDirtyPoll(pollID int64) {
+	var showID int64
+	if err := d.Get(&showID, `SELECT show_id FROM polls WHERE id = ?`, pollID); err == nil {
+		d.airDirty(showID)
+	}
 }
 
 // VoteRaw restores one vote row verbatim (dedupe by (poll_id,peer) — the
 // UNIQUE absorbs duplicates from a double import).
 func (d *DB) VoteRaw(pollID int64, peer, choice string, ts int64) error {
+	defer d.airDirtyPoll(pollID)
 	if peer == "" {
 		return fmt.Errorf("timerpi: vote needs a device id")
 	}

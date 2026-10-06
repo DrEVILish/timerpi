@@ -393,13 +393,6 @@ func (h *Hub) getShowHub(showID int64) *showHub {
 // renders; digits never), then the full state frame LAST (clients adopt
 // the snapshot after their DOM is swapped).
 func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
-	// Audience-layer merge: the poll carried into EVERY frame (schedule
-	// lead, oobs and state) below — one reader, none stale.
-	if fn := h.pollsFnFor(); fn != nil {
-		if on, err := fn(showID); err == nil {
-			snap.Poll, snap.Presenter = on.Audience, on.Presenter
-		}
-	}
 	h.mu.Lock()
 	sh := h.byShow[showID]
 	n := 0
@@ -408,7 +401,15 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 	}
 	h.mu.Unlock()
 	if sh == nil || n == 0 {
-		return
+		return // nobody listening: no database work on the tick path
+	}
+	// Audience-layer merge: the poll carried into EVERY frame (schedule
+	// lead, oobs and state) below — one reader, none stale. OnAirNow is
+	// cached per room (RW54), so this is a map read on most ticks.
+	if fn := h.pollsFnFor(); fn != nil {
+		if on, err := fn(showID); err == nil {
+			snap.Poll, snap.Presenter = on.Audience, on.Presenter
+		}
 	}
 	sh.bmu.Lock()
 	defer sh.bmu.Unlock()
@@ -822,9 +823,14 @@ func (h *Hub) BroadcastPoll(showID int64) {
 func (h *Hub) broadcastPollNow(showID int64) {
 	var on timerpi.OnAir
 	if fn := h.pollsFnFor(); fn != nil {
-		if v, err := fn(showID); err == nil {
-			on = v
+		v, err := fn(showID)
+		if err != nil {
+			// Never broadcast "nothing on air" because a read failed: every
+			// phone would drop the vote mid-question (BUGLOG RW18).
+			h.logf("ws: poll broadcast for show %d skipped: %v", showID, err)
+			return
 		}
+		on = v
 	}
 	// Phones get the audience target only (hidden by absence); screens and
 	// operators get both targets.

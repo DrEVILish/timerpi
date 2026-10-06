@@ -75,11 +75,19 @@ func TestAudienceGateAndFlow(t *testing.T) {
 		t.Fatalf("vote2: %d", code)
 	}
 	d = audienceRead(t, ts)
-	if counts := gjsonArr(d, "poll", "counts"); len(counts) != 2 || counts[0] != 1 || counts[1] != 1 {
-		t.Fatalf("counts: %s", d)
+	// While voting runs phones get the total, not the tally (RW17).
+	if counts := gjsonArr(d, "poll", "counts"); len(counts) != 0 {
+		t.Fatalf("tally leaked before results: %s", d)
 	}
 	if gjsonNum(d, "poll", "total") != 2 {
 		t.Fatalf("total: %s", d)
+	}
+	if code, b := ts.call("POST", fmt.Sprintf("%s/%d/results", codeBase, pid), []byte(`{"on":true}`), ""); code != 200 {
+		t.Fatalf("results: %d %s", code, b)
+	}
+	d = audienceRead(t, ts)
+	if counts := gjsonArr(d, "poll", "counts"); len(counts) != 2 || counts[0] != 1 || counts[1] != 1 {
+		t.Fatalf("counts after results: %s", d)
 	}
 
 	// Questions: a Q&A must be shown to the audience first; submissions

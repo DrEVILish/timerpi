@@ -99,6 +99,14 @@ func TestVotingAndResults(t *testing.T) {
 	if err := d.Vote(show.ID, p.ID, "", "0"); err == nil {
 		t.Error("anonymous vote accepted")
 	}
+	// BUGLOG RW17: while voting runs, the public view has the total but
+	// not the per-option tally.
+	if on, _ := d.OnAirNow(show.ID); on.Audience == nil || on.Audience.Counts != nil || on.Audience.Total != 3 {
+		t.Fatalf("open poll public view leaks the tally: %+v", on.Audience)
+	}
+	if items, _ := d.ModeratorItems(show.ID); len(items[0].Counts) != 3 || items[0].Counts[1] != 3 {
+		t.Fatalf("moderator must see the live tally: %+v", items[0])
+	}
 	if err := d.SetResults(show.ID, p.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -260,5 +268,31 @@ func TestDeleteItemAndEntries(t *testing.T) {
 	}
 	if err := d.DeletePoll(show.ID, 99999); err == nil {
 		t.Error("deleting a missing item succeeded")
+	}
+}
+
+// BUGLOG RW54/RW18: the on-air view is cached per room, rebuilt after
+// every poll write, and a failed rebuild serves the last good value.
+func TestOnAirCache(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Cache")
+	p := mustItem(t, d, show.ID, KindPoll, "Q?", `["a","b"]`, -1)
+	_ = d.ShowTo(show.ID, p.ID, TargetAudience, true)
+	on, err := d.OnAirNow(show.ID)
+	if err != nil || on.Audience == nil || on.Audience.Total != 0 {
+		t.Fatalf("first read: %+v %v", on.Audience, err)
+	}
+	_ = d.Vote(show.ID, p.ID, "ph1", "0")
+	if on, _ = d.OnAirNow(show.ID); on.Audience.Total != 1 {
+		t.Fatalf("vote not reflected: total %d", on.Audience.Total)
+	}
+	// Break the database read: the last good view is served, not "none".
+	_ = d.Vote(show.ID, p.ID, "ph2", "1") // marks the cache stale
+	if _, err := d.Exec(`ALTER TABLE polls RENAME TO polls_gone`); err != nil {
+		t.Fatal(err)
+	}
+	on, err = d.OnAirNow(show.ID)
+	if err != nil || on.Audience == nil || on.Audience.ID != p.ID {
+		t.Fatalf("failed rebuild dropped the item: %+v %v", on.Audience, err)
 	}
 }

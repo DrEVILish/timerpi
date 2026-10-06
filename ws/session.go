@@ -236,11 +236,11 @@ func (h *Hub) register(s *session) bool {
 		}
 		sh.aud[s] = struct{}{}
 		h.mu.Unlock()
-		var on timerpi.OnAir
 		if pollsFn != nil {
-			on, _ = pollsFn(s.showID)
+			if on, err := pollsFn(s.showID); err == nil { // RW18: no false null
+				s.offer(pollFrame(on, false, h.nowFn()))
+			}
 		}
-		s.offer(pollFrame(on, false, h.nowFn()))
 		h.logf("ws: audience joined show %d (%d on the lane)", s.showID, h.AudSessions())
 		return true
 	}
