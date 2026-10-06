@@ -366,10 +366,10 @@ function paintBars(box, p) {
     if (results) head.append(mk('span', 'mono', `${counts[i] || 0} · ${pct}%`));
     row.append(head);
     if (results) {
-      const bar = mk('div', 'b-poll-bar');
-      const fill = mk('i');
-      fill.style.width = `${pct}%`;
-      bar.appendChild(fill);
+      const bar = mk('progress', 'progress b-poll-bar'); // ftl progress (U17)
+      bar.max = 100;
+      bar.value = pct;
+      bar.setAttribute('aria-label', `${label}: ${pct}%`);
       row.append(bar);
     }
     box.appendChild(row);
@@ -379,7 +379,7 @@ function paintBars(box, p) {
 function paintWall(box, p, w) {
   const kids = p.children || [];
   if (p.spotlight) {
-    const spot = mk('div', 'b-qa-spot');
+    const spot = mk('div', 'alert alert-info b-qa-spot');
     spot.append(mk('div', 'b-qa-spot-text', p.spotlight.question));
     if (p.spotlight.upvotes) spot.append(mk('div', 'b-poll-meta', `▲ ${p.spotlight.upvotes}`));
     box.appendChild(spot);
@@ -390,9 +390,9 @@ function paintWall(box, p, w) {
     return;
   }
   const limit = Number(w?.opts?.count) || (p.spotlight ? 4 : 8);
-  const list = mk('ol', 'b-qa-wall');
+  const list = mk('ol', 'list b-qa-wall');
   for (const c of rest.slice(0, limit)) {
-    const li = mk('li', 'b-qa-item' + (c.state === 'answered' ? ' is-answered' : ''));
+    const li = mk('li', 'list-item b-qa-item' + (c.state === 'answered' ? ' is-answered' : ''));
     li.append(mk('span', 'b-qa-votes mono', `▲ ${c.upvotes || 0}`), mk('span', 'b-qa-text', c.question));
     list.appendChild(li);
   }
@@ -408,7 +408,7 @@ function paintCloud(box, p) {
   const cloud = mk('div', 'b-cloud');
   const max = Math.max(1, ...words.map((c) => c.upvotes || 0));
   for (const c of words) {
-    const t = mk('span', 'b-cloud-tile', c.question);
+    const t = mk('span', 'badge b-cloud-tile', c.question);
     const rel = (c.upvotes || 0) / max; // 0..1 — size by how many sent it
     t.style.fontSize = `${(0.9 + rel * 1.6).toFixed(2)}em`;
     if (rel >= 0.999) t.classList.add('is-top');

@@ -57,48 +57,43 @@
 body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: center; align-items: flex-start;
   background: var(--bg); color: var(--text); padding: 1rem; box-sizing: border-box; font-family: var(--font); }
 .tp-aud-card { width: 100%; max-width: 34rem; display: flex; flex-direction: column; gap: 1rem;
-  background: var(--surface); border: 1px solid var(--border); border-radius: max(var(--radius, 8px), 8px);
-  padding: 1.25rem 1.1rem; box-sizing: border-box; }
+  padding: 1.25rem 1.1rem; box-sizing: border-box; } /* the surface is ftl .panel (U17) */
 .tp-aud-head { display: flex; align-items: center; gap: .6rem; }
 .tp-aud-head img { height: 2rem; width: auto; opacity: .85; }
 .tp-aud-head h1 { font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.tp-aud-wait { text-align: center; padding: 2.5rem 0; }
-.tp-aud-wait-title { font-weight: 700; letter-spacing: .12em; margin: 0 0 .5rem; }
+.tp-aud-wait { padding: 2.5rem 0; }
 .tp-aud-q { font-size: 1.3rem; margin: .1rem 0 .9rem; overflow-wrap: anywhere; }
+/* U17: options are ftl .btn (chosen = .btn-primary), tallies ftl
+   <progress class="progress">, the wall an ftl .list, the spotlight and
+   the quiz verdict ftl .alert, cloud words ftl .badge. Only layout here. */
 .tp-aud-opts { display: grid; gap: .55rem; }
-.tp-aud-opt { display: block; width: 100%; min-height: 3.2rem; text-align: left; padding: .75rem .9rem;
-  border: 2px solid var(--border); border-radius: max(var(--radius, 8px), 8px); background: var(--surface-2);
-  color: var(--text); font: inherit; font-size: 1.05rem; cursor: pointer; }
-.tp-aud-opt[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; font-weight: 700; }
+.tp-aud-opt { display: block; width: 100%; min-height: 3.2rem; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .tp-aud-hint { margin: .6rem 0 0; }
 .tp-aud-res { margin-bottom: .8rem; }
 .tp-aud-res-head { display: flex; justify-content: space-between; gap: .6rem; }
 .tp-aud-res.is-mine .tp-aud-res-head { font-weight: 700; }
 .tp-aud-res.is-correct .tp-aud-res-head { color: var(--success-text, var(--success)); font-weight: 700; }
-.tp-aud-bar { height: .7rem; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: .3rem; }
-.tp-aud-bar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease-out; }
-.tp-aud-res.is-correct .tp-aud-bar i { background: var(--success); }
-.tp-aud-verdict { font-weight: 700; text-align: center; margin: .5rem 0 0; }
+.tp-aud-bar { margin-top: .3rem; --progress-height: .7rem; }
+.tp-aud-res.is-correct .tp-aud-bar { --progress-fill: var(--success); }
+.tp-aud-verdict { text-align: center; margin: .5rem 0 0; }
 .tp-aud-ask { display: flex; gap: .5rem; align-items: flex-end; }
 .tp-aud-ask .textarea, .tp-aud-ask .input { flex: 1; min-width: 0; font-size: 1rem; }
 .tp-aud-ask .btn { min-height: 2.75rem; }
 .tp-aud-mine { margin-top: .5rem; }
 .tp-aud-mine p { margin: .15rem 0; }
-.tp-aud-spot { margin: .8rem 0 .4rem; padding: .7rem .9rem; border-left: 4px solid var(--accent); background: var(--surface-2); }
+.tp-aud-spot { margin: .8rem 0 .4rem; }
 .tp-aud-spot p { margin: .2rem 0 0; font-weight: 600; }
-.tp-aud-wall { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.tp-aud-wall { margin: .8rem 0 0; }
 .tp-aud-entry { display: flex; gap: .6rem; align-items: flex-start; overflow-wrap: anywhere; }
 .tp-aud-entry.is-answered { opacity: .55; }
 .tp-aud-up { min-width: 3.6rem; min-height: 2.5rem; }
-.tp-aud-cloud { display: flex; flex-wrap: wrap; gap: .4rem .7rem; margin-top: .9rem; align-items: baseline; }
-.tp-aud-word { color: var(--accent); font-weight: 600; }
+.tp-aud-cloud { display: flex; flex-wrap: wrap; gap: .4rem .5rem; margin-top: .9rem; align-items: center; }
 .tp-aud-foot { display: flex; align-items: center; gap: .4rem; font-size: .8rem; }
 .tp-aud-in { animation: tp-aud-in .35s ease-out; }
 @keyframes tp-aud-in { from { opacity: 0; transform: translateY(.6rem); } to { opacity: 1; transform: none; } }
 /* Reduced motion is honoured on phones only (PRODUCT L4). */
 @media (prefers-reduced-motion: reduce) {
   .tp-aud-in { animation: none; }
-  .tp-aud-bar i { transition: none; }
 }
 
 /* ------------------------------------------- moderator Audience panel */

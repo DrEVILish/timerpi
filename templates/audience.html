@@ -13,12 +13,12 @@
 {{template "head" .}}
 </head>
 <body class="tp-aud" data-page="audience" data-show-code="{{.Show.Code}}">
-<main class="tp-aud-card" id="tp-aud-card">
+<main class="panel tp-aud-card" id="tp-aud-card">
   <header class="tp-aud-head"><img src="/img/timerpi.svg" alt=""><h1>{{.Show.Title}}</h1></header>
   <section id="tp-aud-main" aria-live="polite">
-    <div class="tp-aud-wait">
-      <p class="tp-aud-wait-title">WAITING FOR THE ROOM</p>
-      <p class="text-muted">Keep this page open — questions and polls appear here when the presenter starts them.</p>
+    <div class="empty-state tp-aud-wait">
+      <span class="empty-state-title">Waiting for the room</span>
+      <span class="empty-state-hint">Keep this page open — questions and polls appear here when the presenter starts them.</span>
     </div>
   </section>
   <footer class="tp-aud-foot"><span class="lamp" id="tp-aud-lamp"></span> <span id="tp-aud-note" class="text-muted">connecting…</span></footer>

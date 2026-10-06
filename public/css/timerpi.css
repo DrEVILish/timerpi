@@ -1137,18 +1137,16 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 .b-poll-opt { margin-bottom: .55rem; }
 .b-poll-opt-head { display: flex; justify-content: space-between; gap: .8rem; font-size: .95em; }
 .b-poll-opt.is-correct .b-poll-opt-head { color: var(--success, #22C55E); font-weight: 600; }
-.b-poll-bar { height: .55rem; margin-top: .25rem; border-radius: 4px;
-  background: var(--surface-2, #26262f); overflow: hidden; }
-.b-poll-bar i { display: block; height: 100%; width: 0;
-  background: var(--accent, #7C3AED); transition: width .5s ease; }
-.b-poll-opt.is-correct .b-poll-bar i { background: var(--success, #22C55E); }
+/* U17: tallies are ftl <progress class="progress">, the spotlight ftl
+   .alert, the wall ftl .list, cloud words ftl .badge — sizing only here. */
+.b-poll-bar { margin-top: .25rem; --progress-height: .55rem; }
+.b-poll-opt.is-correct .b-poll-bar { --progress-fill: var(--success); }
 
 .b-qa .b-poll-q { font-size: clamp(1.1rem, 2.6vw, 2rem); }
 
 .b-cloud { display: flex; flex-wrap: wrap; gap: .5rem; align-content: flex-start; }
-.b-cloud-tile { padding: .25rem .7rem; border: 1px solid var(--border, #3a3a45);
-  border-radius: 999px; background: var(--surface-2, #1d1d27); overflow-wrap: anywhere; }
-.b-cloud-tile.is-top { border-color: var(--accent, #7C3AED); color: var(--accent, #7C3AED); }
+.b-cloud-tile { padding: .25rem .7rem; overflow-wrap: anywhere; white-space: normal; }
+.b-cloud-tile.is-top { --badge-fg: var(--accent-text, var(--accent)); outline: 1px solid var(--accent); }
 
 .b-w-map .b-w-body, .b-w-joinqr .b-w-body { display: flex; flex-direction: column;
   align-items: center; justify-content: center; height: 100%; }
@@ -1160,10 +1158,9 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 
 /* Tile entrance/exit — the operator picks the mode per tile (anim/animMS). */
 /* Q&A / ideas wall + spotlight (PRODUCT A7). */
-.b-qa-spot { margin: .4rem 0 .8rem; padding: .8rem 1rem; border-left: 4px solid var(--accent, #7C3AED);
-  background: var(--surface-2, rgba(255,255,255,.04)); border-radius: var(--radius, 4px); }
+.b-qa-spot { margin: .4rem 0 .8rem; }
 .b-qa-spot-text { font-size: clamp(1.2rem, 3vw, 2.4rem); font-weight: 600; overflow-wrap: anywhere; }
-.b-qa-wall { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.b-qa-wall { margin: 0; }
 .b-qa-item { display: flex; gap: .8rem; align-items: baseline; font-size: clamp(.95rem, 1.8vw, 1.4rem); }
 .b-qa-item.is-answered { opacity: .55; }
 .b-qa-item.is-answered .b-qa-text { text-decoration: line-through; text-decoration-thickness: 1px; }

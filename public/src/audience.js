@@ -85,8 +85,11 @@ function render() {
   const box = el('div', 'tp-aud-item');
   liveSlot = null;
   if (!item) {
-    box.append(el('p', 'tp-aud-wait-title', 'WAITING FOR THE ROOM'),
-      el('p', 'text-muted', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
+    // ftl .empty-state (STATUS U17), same as the server's first paint.
+    const wait = el('div', 'empty-state tp-aud-wait');
+    wait.append(el('span', 'empty-state-title', 'Waiting for the room'),
+      el('span', 'empty-state-hint', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
+    box.append(wait);
   } else {
     box.append(el('h2', 'tp-aud-q', item.question));
     const formSlot = el('div', 'tp-aud-formslot');
@@ -113,7 +116,8 @@ function renderVote(box) {
   if (!results) {
     const list = el('div', 'tp-aud-opts');
     opts.forEach((label, i) => {
-      const b = el('button', 'tp-aud-opt', label);
+      // ftl buttons (U17): the chosen answer is the primary one.
+      const b = el('button', `btn tp-aud-opt${mine === i ? ' btn-primary' : ''}`, label);
       b.type = 'button';
       b.setAttribute('aria-pressed', String(mine === i));
       b.addEventListener('click', async () => {
@@ -145,15 +149,16 @@ function renderVote(box) {
     const row = el('div', 'tp-aud-res' + (correct ? ' is-correct' : '') + (mine === i ? ' is-mine' : ''));
     const head = el('div', 'tp-aud-res-head');
     head.append(el('span', '', (correct ? '✔ ' : '') + label + (mine === i ? ' (you)' : '')), el('span', 'mono', `${pct}%`));
-    const bar = el('div', 'tp-aud-bar');
-    const fill = el('i');
-    fill.style.width = `${pct}%`;
-    bar.appendChild(fill);
+    const bar = el('progress', 'progress tp-aud-bar'); // ftl progress (U17)
+    bar.max = 100;
+    bar.value = pct;
+    bar.setAttribute('aria-label', `${label}: ${pct}%`);
     row.append(head, bar);
     box.appendChild(row);
   });
   if (item.kind === 'quiz' && mine !== null && item.correct >= 0) {
-    box.append(el('p', 'tp-aud-verdict', mine === item.correct ? 'You got it right!' : `The answer was: ${opts[item.correct]}`));
+    const right = mine === item.correct;
+    box.append(el('p', `alert ${right ? 'alert-success' : 'alert-warning'} tp-aud-verdict`, right ? 'You got it right!' : `The answer was: ${opts[item.correct]}`));
   }
 }
 
@@ -210,15 +215,15 @@ function renderWall(box, formSlot) {
     box.appendChild(mineBox);
   }
   if (item.spotlight) {
-    const spot = el('div', 'tp-aud-spot');
+    const spot = el('div', 'alert alert-info tp-aud-spot');
     spot.append(el('span', 'label', 'Now answering'), el('p', '', item.spotlight.question));
     box.appendChild(spot);
   }
   const ups = new Set(store.get('tp.aud.up', []));
-  const list = el('ul', 'tp-aud-wall');
+  const list = el('ul', 'list tp-aud-wall');
   for (const k of kids) {
     if (item.spotlight && k.id === item.spotlight.id) continue;
-    const li = el('li', 'tp-aud-entry' + (k.state === 'answered' ? ' is-answered' : ''));
+    const li = el('li', 'list-item tp-aud-entry' + (k.state === 'answered' ? ' is-answered' : ''));
     const up = el('button', 'btn btn-sm tp-aud-up', `▲ ${k.upvotes || 0}`);
     up.type = 'button';
     up.setAttribute('aria-pressed', String(ups.has(k.id)));
@@ -251,7 +256,7 @@ function renderCloud(box, formSlot) {
   const max = Math.max(1, ...words.map((w) => w.upvotes || 0));
   const cloud = el('div', 'tp-aud-cloud');
   for (const w of words) {
-    const t = el('span', 'tp-aud-word', w.question);
+    const t = el('span', 'badge badge-accent tp-aud-word', w.question); // ftl badge (U17)
     t.style.fontSize = `${(0.9 + ((w.upvotes || 0) / max) * 1.1).toFixed(2)}rem`;
     cloud.appendChild(t);
   }
