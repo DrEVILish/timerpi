@@ -179,6 +179,9 @@ type Cue struct {
 	// is running or paused (hand operation always wins; no yanking live
 	// cues, no refires — firing advances ActivePos past the cue).
 	StartAt string `db:"start_at" json:"startAt,omitempty"`
+	// Location is where a break happens ("Great Hall": coffee, lunch); it
+	// shows on schedules (STATUS U14). Free text, 80 chars.
+	Location string `db:"location" json:"location,omitempty"`
 	// UpdatedAt is the row's last-write stamp. It rides the wire cue object
 	// (docs/OFFLINE-EDIT.md) so an offline mesh master can merge per cue on
 	// reconnect; snapshot readers that predate it simply ignore the field.
@@ -196,6 +199,7 @@ func (c *Cue) Normalize() {
 	if c.Kind == "" {
 		c.Kind = KindSession
 	}
+	c.Location = ClipUTF8(strings.TrimSpace(c.Location), 80)
 	if c.TimerKind == "" {
 		c.TimerKind = TimerCountdown
 	}

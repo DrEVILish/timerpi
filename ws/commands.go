@@ -226,7 +226,12 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		if dur <= 0 { // dashboard quick-add sends m:ss text as `mss`
 			dur = views.ParseDuration(str(args, "mss"))
 		}
-		cue := timerpi.Cue{Label: label, DurationMS: dur, Kind: str(args, "kind")}
+		cue := timerpi.Cue{Label: label, DurationMS: dur, Kind: str(args, "kind"), Speaker: str(args, "speaker"), Location: str(args, "location")}
+		if cue.Kind == timerpi.KindBreak {
+			cue.Speaker = "" // a break has a place, not a speaker (U14)
+		} else {
+			cue.Location = ""
+		}
 		cue.Normalize()
 		if _, cerr := h.store.CreateCue(s.showID, cue); cerr != nil {
 			errOf(cerr)
@@ -384,6 +389,9 @@ func (h *Hub) commandCueEdit(s *session, eng *timerpi.Engine, args map[string]an
 	}
 	if v, ok := stringArg(args, "speaker"); ok {
 		cue.Speaker = v
+	}
+	if v, ok := stringArg(args, "location"); ok {
+		cue.Location = v
 	}
 	if v, ok := int64Arg(args, "holdMS"); ok {
 		cue.HoldMS = v

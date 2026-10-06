@@ -20,12 +20,13 @@ import (
 )
 
 type walkinRow struct {
-	Label   string `json:"label"`
-	Speaker string `json:"speaker,omitempty"`
-	StartTS int64  `json:"startTS,omitempty"` // 0 = the day has no start time yet
-	EndTS   int64  `json:"endTS,omitempty"`
-	Break   bool   `json:"break,omitempty"`
-	State   string `json:"state"` // done | now | next | later
+	Label    string `json:"label"`
+	Speaker  string `json:"speaker,omitempty"`
+	Location string `json:"location,omitempty"` // a break's place (U14)
+	StartTS  int64  `json:"startTS,omitempty"`  // 0 = the day has no start time yet
+	EndTS    int64  `json:"endTS,omitempty"`
+	Break    bool   `json:"break,omitempty"`
+	State    string `json:"state"` // done | now | next | later
 }
 
 type walkinRoom struct {
@@ -105,7 +106,7 @@ func (d *Deps) walkinRoomOf(r timerpi.Show, here bool, now int64) walkinRoom {
 		nextPos = sched.Rows[0].Pos // nothing started yet: the first session is next
 	}
 	for _, row := range sched.Rows {
-		w := walkinRow{Label: row.Label, Speaker: row.Speaker, Break: row.Break, State: "later"}
+		w := walkinRow{Label: row.Label, Speaker: row.Speaker, Location: row.Location, Break: row.Break, State: "later"}
 		if dayStart > 0 {
 			w.StartTS, w.EndTS = row.StartTS, row.EndTS
 		}

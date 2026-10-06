@@ -147,7 +147,7 @@
   <div class="b-w-body">
     <ul class="b-sched b-js-sched">
 {{- range .P.Cues}}
-      <li data-pos="{{.Pos}}"><span class="mono b-js-rowstart">{{.StartHM}}</span>&#8194;<span class="b-js-rowlabel">{{.Label}}{{if .Speaker}} - {{.Speaker}}{{end}}</span></li>
+      <li data-pos="{{.Pos}}"><span class="mono b-js-rowstart">{{.StartHM}}</span>&#8194;<span class="b-js-rowlabel">{{.Label}}{{if .IsBreak}}{{if .Location}} — {{.Location}}{{end}}{{else if .Speaker}} - {{.Speaker}}{{end}}</span></li>
 {{- else}}
       <li>No cues yet — build the running order in the control room.</li>
 {{- end}}

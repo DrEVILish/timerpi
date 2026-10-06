@@ -108,6 +108,7 @@ type CueVM struct {
 	IsBreak      bool
 	Tags         []string
 	Speaker      string
+	Location     string // a break's place ("Great Hall", U14)
 	Notes        string
 	Color        string
 	TimerKind    string
@@ -538,6 +539,7 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 			AlertColor2:  c.AlertColor2,
 			AutoContinue: c.AutoContinue,
 			Speaker:      c.Speaker,
+			Location:     c.Location,
 			Notes:        c.Notes,
 			Color:        c.Color,
 			StartAt:      c.StartAt,

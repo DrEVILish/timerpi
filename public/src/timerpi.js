@@ -535,8 +535,14 @@ class ClockUI {
       cueTd.appendChild(n);
     }
     // Speaker.
+    // Speaker (a break shows its location instead, STATUS U14).
     const speaker = td('text-truncate');
-    if (c.speaker) {
+    if (c.kind === 'break') {
+      if (c.location) {
+        speaker.appendChild(this.icon('icon-map-pin'));
+        speaker.appendChild(document.createTextNode(' ' + c.location));
+      }
+    } else if (c.speaker) {
       speaker.appendChild(this.icon('icon-microphone'));
       speaker.appendChild(document.createTextNode(' ' + c.speaker));
     }
@@ -1853,6 +1859,26 @@ function applyOOB(m) {
   }
 }
 
+/** Quick add (STATUS U14): Session shows the Speaker box, Break the
+    "Where" box; after adding, the label and the active box clear. */
+function initQuickAdd() {
+  const form = document.querySelector('.tp-quick-add');
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = '1';
+  const sync = () => {
+    const isBreak = form.querySelector('input[name="kind"]:checked')?.value === 'break';
+    const sp = form.querySelector('.tp-qa-speaker');
+    const loc = form.querySelector('.tp-qa-location');
+    if (sp) { sp.hidden = isBreak; sp.disabled = isBreak; }
+    if (loc) { loc.hidden = !isBreak; loc.disabled = !isBreak; }
+    const label = form.querySelector('input[name="label"]');
+    if (label) label.placeholder = isBreak ? 'Break name (e.g. Coffee)' : 'Session title';
+  };
+  form.addEventListener('change', (e) => { if (e.target.name === 'kind') sync(); });
+  form.addEventListener('reset', () => setTimeout(sync));
+  sync();
+}
+
 function initInlineEdit() {
   // A-requests: every editable table cell (cue label, speaker, duration)
   // edits inline — dblclick with a mouse, two taps with touch. Computed
@@ -1891,7 +1917,8 @@ function startCellEdit(td) {
   } else if (td.classList.contains('tp-cue-dur')) {
     field = 'durationMS'; value = cue.durationMS || 0; text = 'Duration (H:MM — 30 = 30 min, 30s = seconds)';
   } else if ([...td.parentElement.children].indexOf(td) === 2) {
-    field = 'speaker'; value = cue.speaker || ''; text = 'Speaker';
+    if (cue.kind === 'break') { field = 'location'; value = cue.location || ''; text = 'Where (e.g. Great Hall)'; }
+    else { field = 'speaker'; value = cue.speaker || ''; text = 'Speaker'; }
   } else {
     return; // # / start / end / buttons: not operator-owned
   }
@@ -2033,6 +2060,7 @@ function initInspector() {
     field('tp-insp-pos').textContent = `${String(cue.pos).padStart(2, '0')} — ${label}`;
     field('tp-insp-label').value = cue.label || '';
     field('tp-insp-speaker').value = cue.speaker || '';
+    field('tp-insp-location').value = cue.location || '';
     field('tp-insp-duration').value = fmtDurText(cue.durationMS || 0);
     field('tp-insp-hold').value = cue.holdMS ? fmtDurText(cue.holdMS, 'ms') : '';
     field('tp-insp-tags').value = cue.tags || '';
@@ -2072,6 +2100,7 @@ function initInspector() {
     if (!label) return fail('Cue label cannot be empty');
     args.label = label;
     args.speaker = field('tp-insp-speaker').value.trim();
+    args.location = field('tp-insp-location').value.trim();
     const dur = parseDur(field('tp-insp-duration').value);
     if (dur == null || dur < 0) return fail('Duration is not a time — try 30 (minutes) or 1:30 (h:mm)');
     args.durationMS = dur;
@@ -2402,7 +2431,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initQuickAdd(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
   if (page === 'display') initDisplayExtras();
 
   // Offline indicator toggling (display + dashboard)

@@ -37,7 +37,7 @@
           </div>
           {{if .Notes}}<div class="tp-cue-notes">{{.Notes}}</div>{{end}}
         </td>
-        <td class="text-truncate">{{if .Speaker}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-microphone"/></svg> {{.Speaker}}{{end}}</td>
+        <td class="text-truncate">{{if .IsBreak}}{{if .Location}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-map-pin"/></svg> {{.Location}}{{end}}{{else if .Speaker}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-microphone"/></svg> {{.Speaker}}{{end}}</td>
         <td class="tp-cue-dur">{{.DurFmt}}{{if .HoldFmt}} <span class="tp-cue-notes">+{{.HoldFmt}} hold</span>{{end}}</td>
         <td class="tp-cue-start mono">{{.StartFmt}}</td>
         <td class="tp-cue-end mono">{{.EndFmt}}</td>

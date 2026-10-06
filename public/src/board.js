@@ -456,10 +456,11 @@ function renderNowNext(tile, cue, plan) {
     if (!facts) return;
     const row = c && rows.find((x) => x.pos === c.pos);
     const start = row && r.dayStartTS ? hhmm(r.dayStartTS + row.startMS) : '';
-    if (unchanged(facts, JSON.stringify(c ? [start, c.durationMS, c.speaker] : null))) return;
+    if (unchanged(facts, JSON.stringify(c ? [start, c.durationMS, c.speaker, c.location, c.kind] : null))) return;
     facts.textContent = '';
     if (!c) return;
-    for (const [k, v] of [['Start Time', start], ['Duration', nnDur(c.durationMS)], ['Speaker', c.speaker || '']]) {
+    const who = c.kind === 'break' ? ['Location', c.location || ''] : ['Speaker', c.speaker || ''];
+    for (const [k, v] of [['Start Time', start], ['Duration', nnDur(c.durationMS)], who]) {
       if (!v) continue;
       const f = mk('span', 'b-nn-fact');
       f.append(mk('span', 'b-nn-k', `${k}: `), mk('span', 'b-nn-v', v));
@@ -471,18 +472,26 @@ function renderNowNext(tile, cue, plan) {
   fill($('.b-js-nn-now', tile), live);
   fill($('.b-js-nn-next', tile), plan.cue && plan.cue !== live ? plan.cue : null);
 }
+// A schedule line's text (STATUS U3/U14): "Title - Speaker" for a
+// session, "Coffee — Great Hall" for a break with a location. Works for
+// cues and walk-in feed rows alike.
+function schedLabel(c) {
+  const isBreak = c.kind === 'break' || c.break === true;
+  if (isBreak) return c.location ? `${c.label} — ${c.location}` : c.label;
+  return c.speaker ? `${c.label} - ${c.speaker}` : c.label;
+}
 function renderRooms(tile) {
   const box = $('.b-js-rooms', tile);
   const rooms = walkin.data?.rooms;
   if (!box || !rooms) return;
-  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.here, r.now?.label, r.now?.speaker, r.next?.label, r.next?.startTS])))) return;
+  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.here, r.now && schedLabel(r.now), r.now?.speaker, r.next && schedLabel(r.next), r.next?.startTS])))) return;
   box.textContent = '';
   for (const r of rooms) {
     const card = mk('div', 'b-room' + (r.now ? ' is-live' : '') + (r.here ? ' is-here' : ''));
     card.append(mk('div', 'b-room-name', r.label || r.name));
-    card.append(mk('div', 'b-room-now', r.now ? r.now.label : (r.next ? 'Next session soon' : 'No more sessions today')));
+    card.append(mk('div', 'b-room-now', r.now ? schedLabel(r.now) : (r.next ? 'Next session soon' : 'No more sessions today')));
     if (r.now?.speaker) card.append(mk('div', 'b-room-meta', r.now.speaker));
-    if (r.next) card.append(mk('div', 'b-room-meta', `Next${r.next.startTS ? ' ' + hhmm(r.next.startTS) : ''}: ${r.next.label}`));
+    if (r.next) card.append(mk('div', 'b-room-meta', `Next${r.next.startTS ? ' ' + hhmm(r.next.startTS) : ''}: ${schedLabel(r.next)}`));
     box.appendChild(card);
   }
 }
@@ -490,7 +499,7 @@ function renderEventSchedule(tile) {
   const box = $('.b-js-evsched', tile);
   const rooms = walkin.data?.rooms;
   if (!box || !rooms) return;
-  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.schedule.map((x) => [x.label, x.startTS, x.state])])))) return;
+  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.schedule.map((x) => [schedLabel(x), x.startTS, x.state])])))) return;
   box.textContent = '';
   for (const r of rooms) {
     const col = mk('div', 'b-evsched-col');
@@ -499,7 +508,7 @@ function renderEventSchedule(tile) {
     const rows = r.schedule.filter((x) => x.state !== 'done');
     for (const s of (rows.length ? rows : r.schedule)) {
       const row = mk('div', `b-evsched-row is-${s.state}`);
-      row.append(mk('span', 'b-evsched-time', hhmm(s.startTS)), mk('span', '', s.label));
+      row.append(mk('span', 'b-evsched-time', hhmm(s.startTS)), mk('span', '', schedLabel(s)));
       col.appendChild(row);
     }
     box.appendChild(col);
@@ -655,7 +664,7 @@ function renderStaticBody() {
         const want = w?.opts?.count || '5';
         const list = want === 'all' ? snap.cues : snap.cues.slice(0, Number(want) || 5);
         const key = JSON.stringify([snap.runtime.dayStartTS, snap.runtime.activePos,
-          list.map((c) => [c.pos, c.label, c.speaker, byPos.get(c.pos)?.startMS])]);
+          list.map((c) => [c.pos, schedLabel(c), byPos.get(c.pos)?.startMS])]);
         if (ul && !unchanged(ul, key)) {
           ul.textContent = '';
           if (!list.length) {
@@ -673,7 +682,7 @@ function renderStaticBody() {
             st.className = 'mono';
             st.textContent = planRow && snap.runtime.dayStartTS ? hhmm(base + planRow.startMS) : '';
             const lb = document.createElement('span');
-            lb.textContent = c.speaker ? `${c.label} - ${c.speaker}` : c.label;
+            lb.textContent = schedLabel(c);
             li.append(st, document.createTextNode('\u2002'), lb);
             ul.appendChild(li);
           }

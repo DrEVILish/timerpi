@@ -81,3 +81,33 @@ func TestEngineFollowsActiveCueThroughEdits(t *testing.T) {
 		t.Fatalf("GO started %q", got)
 	}
 }
+
+// STATUS U14 + BUGLOG RS35: a break's location is stored, survives
+// duplicate/clone/replace with the session's day, and reaches schedules.
+func TestCueLocationAndDayRoundTrip(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Loc")
+	c, err := d.CreateCue(show.ID, Cue{Label: "Coffee", Kind: KindBreak, DurationMS: 900_000, Location: "  Great Hall  ", Day: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Location != "Great Hall" || c.Day != 2 {
+		t.Fatalf("stored: location %q day %d", c.Location, c.Day)
+	}
+	dup, err := d.DuplicateCue(show.ID, c.Pos)
+	if err != nil || dup.Location != "Great Hall" || dup.Day != 2 {
+		t.Fatalf("duplicate lost location/day: %+v %v", dup, err)
+	}
+	clone, err := d.CloneShow(show.ID, "Loc copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cues, _ := d.ListCues(clone.ID)
+	if len(cues) != 2 || cues[0].Location != "Great Hall" || cues[0].Day != 2 {
+		t.Fatalf("clone lost location/day: %+v", cues)
+	}
+	s := ComputeSchedule(cues, 0, 1)
+	if s.Rows[0].Location != "Great Hall" {
+		t.Errorf("schedule row has no location: %+v", s.Rows[0])
+	}
+}

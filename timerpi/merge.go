@@ -250,26 +250,19 @@ func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 				label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 				timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
 				end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, day = ?,
-				updated_at = ?
+				location = ?, updated_at = ?
 				WHERE id = ? AND show_id = ?`,
 				c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 				c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
 				c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Day,
-				stamp, c.ID, showID); err != nil {
+				c.Location, stamp, c.ID, showID); err != nil {
 				return err
 			}
 			delete(keep, c.ID) // a duplicate ID later in cues is inserted fresh
 			ids = append(ids, c.ID)
 			continue
 		}
-		res, err := tx.Exec(`INSERT INTO cues
-			(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
-			 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-			 end_action, autocontinue, notes, color, start_at, day, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			showID, -(i + 1), c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
-			c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Day, stamp)
+		res, err := insertCue(tx, showID, int64(-(i + 1)), c, stamp)
 		if err != nil {
 			return err
 		}
@@ -316,5 +309,6 @@ func cuesEqualContent(a, b Cue) bool {
 		a.Notes == b.Notes &&
 		a.Color == b.Color &&
 		a.StartAt == b.StartAt &&
+		a.Location == b.Location &&
 		a.Pos == b.Pos
 }

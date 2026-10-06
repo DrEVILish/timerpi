@@ -226,6 +226,7 @@ func (d *DB) migrate() error {
 			{"timer_kind", "TEXT NOT NULL DEFAULT 'COUNTDOWN'"},
 			{"start_at", "TEXT NOT NULL DEFAULT ''"},
 			{"day", "INTEGER NOT NULL DEFAULT 1"},
+			{"location", "TEXT NOT NULL DEFAULT ''"},
 		},
 		"messages": {
 			{"updated_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -404,14 +405,7 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 			return Show{}, fmt.Errorf("timerpi: clone cue %q: %w", c.Label, err)
 		}
 		now := nowMS()
-		res, err := tx.Exec(`INSERT INTO cues
-			(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
-			 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-			 end_action, autocontinue, notes, color, start_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			dst.ID, 0, c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
-			c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, now)
+		res, err := insertCue(tx, dst.ID, 0, c, now)
 		if err != nil {
 			return Show{}, fmt.Errorf("timerpi: clone cue: %w", err)
 		}
@@ -624,14 +618,7 @@ func (d *DB) CreateCue(showID int64, c Cue) (Cue, error) {
 	}
 	defer tx.Rollback()
 	now := nowMS()
-	res, err := tx.Exec(`INSERT INTO cues
-		(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
-		 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-		 end_action, autocontinue, notes, color, start_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		showID, 0, c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
-		c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, now)
+	res, err := insertCue(tx, showID, 0, c, now)
 	if err != nil {
 		return Cue{}, fmt.Errorf("timerpi: create cue: %w", err)
 	}
@@ -684,15 +671,33 @@ func (d *DB) UpdateCue(showID int64, c Cue) (Cue, error) {
 	_, err = d.Exec(`UPDATE cues SET
 		label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 		timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
-		end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, updated_at = ?
+		end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, location = ?, updated_at = ?
 		WHERE id = ?`,
 		c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 		c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, nowMS(), cur.ID)
+		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Location, nowMS(), cur.ID)
 	if err != nil {
 		return Cue{}, fmt.Errorf("timerpi: update cue %d: %w", cur.ID, err)
 	}
 	return d.GetCue(showID, cur.Pos)
+}
+
+// insertCue is the one cue INSERT (BUGLOG RS35: it was copy-pasted five
+// times and none of the copies wrote day, so clone, duplicate and replace
+// reset every session to day 1). Day < 1 is stored as 1.
+func insertCue(tx *sqlx.Tx, showID, pos int64, c Cue, stamp int64) (sql.Result, error) {
+	day := c.Day
+	if day < 1 {
+		day = 1
+	}
+	return tx.Exec(`INSERT INTO cues
+		(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
+		 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
+		 end_action, autocontinue, notes, color, start_at, day, location, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		showID, pos, c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
+		c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
+		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, day, c.Location, stamp)
 }
 
 // DeleteCue removes the cue at pos and renumbers the rest 1..N.
@@ -763,14 +768,7 @@ func (d *DB) DuplicateCue(showID, pos int64) (Cue, error) {
 	}
 	defer tx.Rollback()
 	now := nowMS()
-	res, err := tx.Exec(`INSERT INTO cues
-		(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
-		 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-		 end_action, autocontinue, notes, color, start_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		showID, 0, src.Label, src.DurationMS, src.Kind, src.Tags, src.Speaker, src.HoldMS,
-		src.TimerKind, src.Alert1MS, src.Alert2MS, src.AlertColor1, src.AlertColor2,
-		src.EndAction, b2i(src.AutoContinue), src.Notes, src.Color, src.StartAt, now)
+	res, err := insertCue(tx, showID, 0, src, now)
 	if err != nil {
 		return Cue{}, err
 	}
@@ -857,14 +855,7 @@ func (d *DB) ReplaceCues(showID int64, cues []Cue) error {
 		}
 		// Distinct temp positions (negative, below nothing else) so the
 		// UNIQUE (show_id,pos) constraint holds while rows land unsorted.
-		res, err := tx.Exec(`INSERT INTO cues
-			(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
-			 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-			 end_action, autocontinue, notes, color, start_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			showID, -(i + 1), c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
-			c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-			c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, now)
+		res, err := insertCue(tx, showID, int64(-(i + 1)), c, now)
 		if err != nil {
 			return fmt.Errorf("timerpi: replace cues: %w", err)
 		}

@@ -44,8 +44,15 @@
             </button>
           </div>
         </div>
-        <form class="cluster is-gap-s" data-cmd="cueAdd">
+        <form class="cluster is-gap-s tp-quick-add" data-cmd="cueAdd">
+          {{- /* U14: Session (speaker) or Break (with where it is served). */}}
+          <div class="segmented" role="radiogroup" aria-label="Add a">
+            <label><input type="radio" name="kind" value="session" checked> Session</label>
+            <label><input type="radio" name="kind" value="break"> Break</label>
+          </div>
           <input class="input input-sm" type="text" name="label" placeholder="New cue label" aria-label="New cue label" required style="max-width:22rem">
+          <input class="input input-sm tp-qa-speaker" type="text" name="speaker" placeholder="Speaker" aria-label="Speaker" style="max-width:14rem">
+          <input class="input input-sm tp-qa-location" type="text" name="location" placeholder="Where (e.g. Great Hall)" aria-label="Where the break is served" maxlength="80" style="max-width:14rem" hidden>
           <input class="input input-sm mono" type="text" name="mss" placeholder="H:MM" aria-label="Duration (30 = 30 min, 1:30 = 1 h 30 m, 30s = seconds)" size="6">
           <!-- E6: one-tap durations for long days — fills the input, operator
                still names the row and hits Add (no surprise rows). Values
@@ -191,6 +198,10 @@
       <div class="field" style="flex:1">
         <label class="label" for="tp-insp-speaker">Speaker</label>
         <input class="input" id="tp-insp-speaker" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="tp-insp-location">Location (breaks: where it's served)</label>
+        <input class="input" id="tp-insp-location" type="text" maxlength="80" autocomplete="off" placeholder="Great Hall">
       </div>
       <div class="field">
         <label class="label" for="tp-insp-duration">Duration (H:MM — 30 = 30 min, 30s = seconds)</label>

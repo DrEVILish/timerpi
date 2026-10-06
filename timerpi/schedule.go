@@ -14,6 +14,7 @@ type ScheduleRow struct {
 	Label      string `json:"label"`
 	Kind       string `json:"kind"`
 	Speaker    string `json:"speaker"`
+	Location   string `json:"location,omitempty"` // a break's place (U14)
 	Tags       string `json:"tags"`
 	Color      string `json:"color"`
 	DurationMS int64  `json:"durationMS"`
@@ -59,6 +60,7 @@ func ComputeSchedule(cues []Cue, dayStartTS int64, rate float64) Schedule {
 			Label:      c.Label,
 			Kind:       c.Kind,
 			Speaker:    c.Speaker,
+			Location:   c.Location,
 			Tags:       c.Tags,
 			Color:      c.Color,
 			DurationMS: c.DurationMS,
