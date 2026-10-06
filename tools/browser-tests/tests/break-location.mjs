@@ -7,20 +7,21 @@ export async function run(t) {
   await ctx.request.post(`${t.base}/api/shows/${room}/daystart`, { data: { hhmm: '09:00' }, headers: H });
   const pg = await ctx.newPage();
   await pg.goto(`${t.base}/c/${room}`);
-  await pg.waitForSelector('.tp-quick-add');
-  // A session first, then a break.
-  await pg.fill('.tp-quick-add input[name="label"]', 'Keynote');
-  await pg.fill('.tp-quick-add input[name="speaker"]', 'Ada Lovelace');
-  await pg.fill('.tp-quick-add input[name="mss"]', '30');
-  await pg.click('.tp-quick-add button[type=submit]');
+  const f = (n) => `[form="tp-add-form"][name="${n}"]`;
+  await pg.waitForSelector(f('label'));
+  // A session first, then a break, from the running order's add row (U39).
+  await pg.fill(f('label'), 'Keynote');
+  await pg.fill(f('who'), 'Ada Lovelace');
+  await pg.fill(f('mss'), '30');
+  await pg.click('#cuelist tfoot button[type=submit]');
   await pg.waitForTimeout(700);
-  await pg.check('.tp-quick-add input[name="kind"][value="break"]');
-  t.check('Break shows the "Where" box instead of Speaker',
-    await pg.isVisible('.tp-quick-add input[name="location"]') && !(await pg.isVisible('.tp-quick-add input[name="speaker"]')));
-  await pg.fill('.tp-quick-add input[name="label"]', 'Coffee');
-  await pg.fill('.tp-quick-add input[name="location"]', 'Great Hall');
-  await pg.fill('.tp-quick-add input[name="mss"]', '15');
-  await pg.click('.tp-quick-add button[type=submit]');
+  await pg.selectOption(f('kind'), 'break');
+  t.check('Break turns the Speaker box into "Where"',
+    (await pg.getAttribute(f('who'), 'placeholder')).startsWith('Where'));
+  await pg.fill(f('label'), 'Coffee');
+  await pg.fill(f('who'), 'Great Hall');
+  await pg.fill(f('mss'), '15');
+  await pg.press(f('mss'), 'Enter');
   await pg.waitForTimeout(900);
   const snap = await (await ctx.request.get(`${t.base}/api/shows/${room}`)).json();
   const coffee = snap.cues.find((c) => c.label === 'Coffee');

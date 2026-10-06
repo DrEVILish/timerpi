@@ -30,8 +30,8 @@ func mustCreateShow(t *testing.T, d *DB, title string) Show {
 
 func sampleCue(pos int64, label string) Cue {
 	c := Cue{Label: label, DurationMS: 60_000, Kind: KindSession, Tags: "VT",
-		Speaker: "Leslie", HoldMS: 5_000, TimerKind: TimerCountdown,
-		Alert1MS: 30_000, Alert2MS: 10_000, EndAction: EndHold, AutoContinue: true,
+		Speaker: "Leslie", TimerKind: TimerCountdown,
+		Alert1MS: 30_000, Alert2MS: 10_000, EndAction: EndHold,
 		Notes: "n", Color: "#00ff00"}
 	c.Pos = pos
 	return c

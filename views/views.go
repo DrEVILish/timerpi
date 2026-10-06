@@ -112,6 +112,7 @@ type CueVM struct {
 	Notes        string
 	Color        string
 	TimerKind    string
+	EndAction    string
 	Alert1Fmt    string
 	Alert2Fmt    string
 	AlertColor1  string
@@ -535,6 +536,7 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 			Kind:         c.Kind,
 			IsBreak:      c.Kind == timerpi.KindBreak,
 			TimerKind:    c.TimerKind,
+			EndAction:    c.EndAction,
 			AlertColor1:  c.AlertColor1,
 			AlertColor2:  c.AlertColor2,
 			AutoContinue: c.AutoContinue,

@@ -333,16 +333,14 @@ func TestScheduleEdgeHugeAndCumulative(t *testing.T) {
 		{ID: 2, ShowID: 1, Pos: 2, DurationMS: int64(23) * 3600_000, Kind: KindBreak},
 	}
 	s := ComputeSchedule(cues, day, 1.0)
-	if s.TotalMS != 33*3600_000+300_000 {
+	// Hold after moves nothing any more (STATUS U42).
+	if s.TotalMS != 33*3600_000 {
 		t.Fatalf("multi-hour total: %d", s.TotalMS)
 	}
-	if s.HoldsMS != 300_000 || s.BreaksMS != 23*3600_000 {
+	if s.HoldsMS != 0 || s.BreaksMS != 23*3600_000 {
 		t.Fatalf("multi-hour holds/breaks: %d/%d", s.HoldsMS, s.BreaksMS)
 	}
-	// CumHoldMS accumulates BEFORE this row's additions are added to the
-	// running totals... verify against the Monday-reorder: row2 sees row1's
-	// hold in its cumulative.
-	if s.Rows[1].CumHoldMS != 5*60_000 {
-		t.Fatalf("row2 cumhold = %d, want 300000", s.Rows[1].CumHoldMS)
+	if s.Rows[1].StartMS != 10*3600_000 || s.Rows[1].CumHoldMS != 0 {
+		t.Fatalf("row2 = %+v", s.Rows[1])
 	}
 }

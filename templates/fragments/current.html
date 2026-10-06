@@ -5,6 +5,17 @@
   <div class="stack is-gap-s">
     <span class="readout tp-clock tp-clock-xl" id="tp-clock" data-state="idle">--:--</span>
 
+    <!-- U1/U32: one-tap length adjust for the cue ON THE CLOCK, right under
+         the readout. Every tap is one cueEdit over the existing WS protocol
+         (CONTRACT-UI §4); JS supplies pos/duration. Rendered disabled;
+         timerpi.js releases the row once a cue is active. -->
+    <div class="cluster is-gap-2xs tp-adjust-row" role="group" aria-label="Quick adjust the current cue">
+      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue by 1 minute" aria-label="Shorten current cue by 1 minute">−1m</button>
+      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue by 30 seconds" aria-label="Shorten current cue by 30 seconds">−30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue by 30 seconds" aria-label="Lengthen current cue by 30 seconds">+30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue by 1 minute" aria-label="Lengthen current cue by 1 minute">+1m</button>
+    </div>
+
     <div class="cluster is-gap-s">
       <span class="lamp" id="tp-lamp-run"></span>
       <span class="status" id="tp-state-chip">READY</span>
@@ -26,74 +37,10 @@
       <div class="text-muted" id="tp-cue-speaker">{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}</div>
     </div>
 
-    <hr class="divider">
-
-    <div class="stack is-gap-2xs">
-      <span class="label">Next up</span>
-      <div><strong id="tp-next-label">{{if .Next.Label}}{{.Next.Label}}{{else}}—{{end}}</strong></div>
-      <div class="text-muted">
-        <span id="tp-next-dur">{{if .Next.Label}}{{.Next.DurFmt}}{{end}}</span>
-        · planned <span id="tp-next-start">{{if .Next.Label}}{{.Next.StartFmt}}{{end}}</span>
-      </div>
-    </div>
-
-    <hr class="divider">
-
-    <div class="row is-items-center is-gap-s">
-      <span class="label">Clock</span>
-      <span class="readout readout-sm mono push" id="tp-tod">--:--:--</span>
-    </div>
-
     <div class="tp-rate">
       <span class="label">Rate</span>
       <input class="slider" type="range" id="tp-rate" min="50" max="200" step="5" value="{{if .Runtime}}{{.Runtime.RatePct}}{{else}}100{{end}}" aria-label="Rate multiplier">
       <span class="readout readout-sm" id="tp-rate-out">×1.00</span>
-    </div>
-
-    <!-- Fix-3 (a11y pass): sprite-only buttons get explicit aria-label (title is not a name);
-         decorative <svg class="icon"> gets aria-hidden. Structure/dates untouched. -->
-    <div class="transport">
-      <button class="btn btn-ghost btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
-      <!-- Fix-3: btn-lg does not exist in core (verified xbmc.css) — token deleted;
-           size comes from .transport .btn-go glue in timerpi.css (Fix-3 block). -->
-      <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
-      <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
-      <button class="btn btn-ghost btn-icon" data-cmd="reset" title="Reset current cue (R)" aria-label="Reset current cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-stop"/></svg></button>
-      <button class="btn btn-ghost btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
-      <!-- E3: global display blackout — kills every display to STANDBY until
-           released. Pressed state follows snapshot show.blanked. -->
-      <button class="btn btn-ghost" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
-    </div>
-    <!-- U1: one-tap length adjust for the cue ON THE CLOCK — every tap is
-         one cueEdit over the existing WS protocol (CONTRACT-UI §4); JS
-         supplies pos/duration. Rendered disabled; timerpi.js releases
-         the row once a cue is active. -->
-    <div class="cluster is-gap-2xs tp-adjust-row" role="group" aria-label="Quick adjust the current cue">
-      <span class="label">Adjust</span>
-      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue by 1 minute" aria-label="Shorten current cue by 1 minute">−1m</button>
-      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue by 30 seconds" aria-label="Shorten current cue by 30 seconds">−30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue by 30 seconds" aria-label="Lengthen current cue by 30 seconds">+30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue by 1 minute" aria-label="Lengthen current cue by 1 minute">+1m</button>
-    </div>
-
-    <!-- U1: keyboard map — the hint line itself is the button; the native
-         popover carries the full map. popovertarget is declarative (no JS
-         dependency); the `?` key toggles the same popover in timerpi.js. -->
-    <div class="cluster is-gap-s">
-      <button class="tp-kbd-hint" type="button" popovertarget="tp-kbd-help" title="Open the full operator key map" aria-label="Keyboard shortcuts: Space GO, arrows cue, P pause, R reset, question mark opens this map">Space GO · ← → cue · P pause · R reset · ? more</button>
-    </div>
-    <div id="tp-kbd-help" class="tp-kbd-help" popover>
-      <strong>Operator keys</strong>
-      <dl>
-        <div><dt><kbd>Space</kbd></dt><dd>GO — start the next cue</dd></div>
-        <div><dt><kbd>←</kbd> <kbd>↑</kbd></dt><dd>previous cue</dd></div>
-        <div><dt><kbd>→</kbd> <kbd>↓</kbd></dt><dd>next cue</dd></div>
-        <div><dt><kbd>P</kbd></dt><dd>pause / resume</dd></div>
-        <div><dt><kbd>R</kbd></dt><dd>reset the current cue</dd></div>
-        <div><dt><kbd>/</kbd></dt><dd>filter the running order (Esc clears)</dd></div>
-        <div><dt><kbd>?</kbd></dt><dd>open / close this panel</dd></div>
-      </dl>
-      <p class="text-muted">Keys wait while you type in a field. GO on a cue row starts that exact cue.</p>
     </div>
   </div>
 </section>

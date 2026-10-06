@@ -123,13 +123,22 @@ func TestCloneFormShipsE1(t *testing.T) {
 	}
 }
 
-// E6 presets ride the quick-add form (fill m:ss, operator still Adds).
-func TestQuickAddPresetsShipE6(t *testing.T) {
+// STATUS U39: new cues are added from the running order's footer row,
+// with the table's columns, tied to #tp-add-form outside the swapped list.
+func TestAddRowShipsU39(t *testing.T) {
 	ts := newAPITest(t)
 	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	for _, sub := range []string{`data-preset-mss="1"`, `data-preset-mss="5"`, `data-preset-mss="10"`} {
+	for _, sub := range []string{`<form id="tp-add-form"`, `<tfoot class="tp-cue-add">`} {
 		if !strings.Contains(string(body), sub) {
-			t.Errorf("dashboard missing preset %q", sub)
+			t.Errorf("dashboard missing %q", sub)
 		}
+	}
+	for _, name := range []string{"kind", "label", "who", "mss", "timerKind", "endAction", "alert1", "alertColor1", "alert2", "alertColor2", "notes"} {
+		if !strings.Contains(string(body), `name="`+name+`" form="tp-add-form"`) {
+			t.Errorf("add row missing the %s field", name)
+		}
+	}
+	if strings.Contains(string(body), "tp-quick-add") {
+		t.Error("the old quick-add form is still in the header")
 	}
 }

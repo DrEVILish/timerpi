@@ -44,8 +44,10 @@ type Schedule struct {
 }
 
 // ComputeSchedule is the pure scheduler: each row starts where the previous
-// one ended plus its HoldMS (break rows are ordinary cues whose duration is
-// the gap). Day bar = 0:00 → TotalMS from DayStartTS.
+// one ended (break rows are ordinary cues whose duration is the gap). Day
+// bar = 0:00 → TotalMS from DayStartTS. Hold after is gone (owner,
+// 2026-10-06, STATUS U42): a stored HoldMS no longer moves anything, and
+// HoldMS/HoldsMS stay 0 on the wire.
 func ComputeSchedule(cues []Cue, dayStartTS int64, rate float64) Schedule {
 	s := Schedule{
 		DayStartTS: dayStartTS,
@@ -64,7 +66,6 @@ func ComputeSchedule(cues []Cue, dayStartTS int64, rate float64) Schedule {
 			Tags:       c.Tags,
 			Color:      c.Color,
 			DurationMS: c.DurationMS,
-			HoldMS:     c.HoldMS,
 			Break:      brk,
 			StartMS:    cur,
 			EndMS:      cur + c.DurationMS,
@@ -74,10 +75,6 @@ func ComputeSchedule(cues []Cue, dayStartTS int64, rate float64) Schedule {
 		row.EndTS = dayStartTS + row.EndMS
 		s.Rows = append(s.Rows, row)
 		cur += c.DurationMS
-		// Every row's deliberate changeover buffer follows it (break rows
-		// too); break durations additionally count as break time.
-		s.HoldsMS += c.HoldMS
-		cur += c.HoldMS
 		if brk {
 			s.BreaksMS += c.DurationMS
 		}

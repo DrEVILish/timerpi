@@ -1,74 +1,101 @@
-{{- /* frag-cuelist — fragments/cuelist.html (see CONTRACT-UI.md) */ -}}
+{{- /* frag-cuelist — fragments/cuelist.html (see CONTRACT-UI.md)
+
+  STATUS U39–U43 (owner, 2026-10-06): one table. Every cell edits inline
+  (double-click, or two taps on touch); the last row adds a cue with the
+  same columns. Rows drag by the handle cell on the left (no arrows);
+  Duplicate lives in the right-click / long-press row menu. Breaks carry
+  their own accent. timerpi.js cueRow() mirrors this markup for offline
+  renders — change both together.
+*/ -}}
 {{define "frag-cuelist"}}
 <div id="cuelist" class="scroll tp-cuelist-wrap tp-fragment">
-  {{if .Cues}}
-  <table class="table is-sticky is-striped">
+  <table class="table is-sticky tp-cuetable">
     <thead>
       <tr>
-        <th>#</th><th>Cue</th><th>Speaker</th>
-        <th class="tp-cue-dur">Dur</th>
-        <th class="tp-cue-start">Start</th>
-        <th class="tp-cue-end">End</th>
-        <th></th>
+        <th class="tp-cue-pos" scope="col"><span class="visually-hidden">Drag to reorder, </span>#</th>
+        <th class="tp-cue-kind" scope="col">Type</th>
+        <th class="tp-cue-title" scope="col">Title</th>
+        <th class="tp-cue-who" scope="col">Speaker / Where</th>
+        <th class="tp-cue-dur" scope="col">Duration</th>
+        <th class="tp-cue-start" scope="col">Start</th>
+        <th class="tp-cue-end" scope="col">End</th>
+        <th class="tp-cue-timer" scope="col">Timer</th>
+        <th class="tp-cue-atzero" scope="col">At zero</th>
+        <th class="tp-cue-alert1" scope="col">Alert 1</th>
+        <th class="tp-cue-alert2" scope="col">Alert 2</th>
+        <th class="tp-cue-notes" scope="col">Notes</th>
+        <th class="tp-cue-rowbtns" scope="col"><span class="visually-hidden">Actions</span></th>
       </tr>
     </thead>
     <tbody>
       {{range .Cues}}
-      <tr data-pos="{{.Pos}}">
-        <td class="tp-cue-pos">
-          {{- /* U1: plain number — the old draggable/grab-cursor span was a
-                 dead affordance (no drag handlers exist; reorder is the
-                 ▲ ▼ buttons), so the fake handle is gone. */ -}}
-          <span class="mono">{{printf "%02d" .Pos}}</span>
-        </td>
-        <td>
-          <div class="tp-cue-label">
-            {{if .IsBreak}}<span class="badge badge-accent">{{if eq .Kind "break"}}BREAK{{else}}HOLD{{end}}</span> {{end}}
-            {{.Label}}
-            <span class="badge tp-alert-badge" hidden></span>
-            {{if .AutoContinue}}<span class="badge" title="Auto-continues to the next cue at zero">AUTO</span>{{end}}
-            {{if .StartAt}}<span class="badge" title="Auto-starts at {{.StartAt}} while nothing runs">⏰ {{.StartAt}}</span>{{end}}
-          </div>
-          <div class="cluster is-gap-2xs">
-            {{range .Tags}}<span class="badge badge-accent">{{.}}</span>{{end}}
-            {{if .Alert1Fmt}}<span class="badge" title="Alert 1 threshold" data-alert1="{{.AlertColor1}}">⚠1 {{.Alert1Fmt}}</span>{{end}}
-            {{if .Alert2Fmt}}<span class="badge" title="Alert 2 threshold" data-alert2="{{.AlertColor2}}">⚠2 {{.Alert2Fmt}}</span>{{end}}
-            {{if ne .TimerKind "COUNTDOWN"}}<span class="badge">{{.TimerKind}}</span>{{end}}
-          </div>
-          {{if .Notes}}<div class="tp-cue-notes">{{.Notes}}</div>{{end}}
-        </td>
-        <td class="text-truncate">{{if .IsBreak}}{{if .Location}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-map-pin"/></svg> {{.Location}}{{end}}{{else if .Speaker}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-microphone"/></svg> {{.Speaker}}{{end}}</td>
-        <td class="tp-cue-dur">{{.DurFmt}}{{if .HoldFmt}} <span class="tp-cue-notes">+{{.HoldFmt}} hold</span>{{end}}</td>
+      <tr data-pos="{{.Pos}}" class="{{if .IsBreak}}tp-row-break{{else}}tp-row-session{{end}}">
+        <td class="tp-cue-pos" title="Drag to reorder · right-click for more"><span class="tp-grip" aria-hidden="true">⠿</span><span class="mono">{{printf "%02d" .Pos}}</span></td>
+        <td class="tp-cue-kind" data-edit="kind">{{if .IsBreak}}<span class="badge tp-badge-break">Break</span>{{else}}<span class="badge badge-accent">Session</span>{{end}}</td>
+        <td class="tp-cue-title" data-edit="label"><span class="tp-cue-label">{{.Label}}</span><span class="badge tp-alert-badge" hidden></span>{{range .Tags}} <span class="badge">{{.}}</span>{{end}}</td>
+        <td class="tp-cue-who text-truncate" data-edit="{{if .IsBreak}}location{{else}}speaker{{end}}">{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}</td>
+        <td class="tp-cue-dur mono" data-edit="durationMS">{{.DurFmt}}</td>
         <td class="tp-cue-start mono">{{.StartFmt}}</td>
         <td class="tp-cue-end mono">{{.EndFmt}}</td>
-        {{- /* Row transport (U1): sprite icons + aria-labels (Fix-3).
-               The row carries ONLY row-scoped actions now: GO, arm-here,
-               reorder, duplicate (A4), delete. Pause/Reset moved out — they
-               act on the ACTIVE cue, not this row, so having them here
-               invited mis-taps (the transport owns them). */ -}}
+        <td class="tp-cue-timer" data-edit="timerKind">{{if eq .TimerKind "COUNTSTOP"}}Count up{{else if eq .TimerKind "CLOCK"}}Clock{{else}}Countdown{{end}}</td>
+        <td class="tp-cue-atzero" data-edit="endAction">{{if eq .EndAction "OVERTIME"}}Overtime{{else if eq .EndAction "BLANK"}}Blank{{else}}Hold{{end}}</td>
+        <td class="tp-cue-alert1 mono" data-edit="alert1MS"><span class="tp-alert-dot" style="--swatch: {{.AlertColor1}}" title="Alert 1 colour" data-color="alertColor1"></span>{{if .Alert1Fmt}}{{.Alert1Fmt}}{{else}}—{{end}}</td>
+        <td class="tp-cue-alert2 mono" data-edit="alert2MS"><span class="tp-alert-dot" style="--swatch: {{.AlertColor2}}" title="Alert 2 colour" data-color="alertColor2"></span>{{if .Alert2Fmt}}{{.Alert2Fmt}}{{else}}—{{end}}</td>
+        <td class="tp-cue-notes text-truncate" data-edit="notes">{{.Notes}}</td>
         <td class="tp-cue-rowbtns">
           <div class="btn-group">
             <button class="btn btn-sm btn-go" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>
-            <button class="btn btn-sm btn-ghost" data-cmd="jump" data-pos="{{.Pos}}" data-start="false" title="Cue it up (playhead here, don't start yet)" aria-label="Cue up cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-right"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueMove" data-pos="{{.Pos}}" data-dir="up" title="Move up" aria-label="Move cue up"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-up"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueMove" data-pos="{{.Pos}}" data-dir="down" title="Move down" aria-label="Move cue down"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-down"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="Open cue inspector (all fields)" aria-label="Edit cue {{printf "%02d" .Pos}} — full inspector"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueDup" data-pos="{{.Pos}}" title="Duplicate cue — copy lands right after this row" aria-label="Duplicate cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-copy"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-danger" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue" aria-label="Delete cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
+            <button class="btn btn-sm btn-ghost btn-icon" data-cmd="jump" data-pos="{{.Pos}}" data-start="false" title="Cue it up (playhead here, don't start yet)" aria-label="Cue up cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-right"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="All details (tags, row colour)" aria-label="Edit cue {{printf "%02d" .Pos}} — all details"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-danger" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue" aria-label="Delete cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
           </div>
         </td>
       </tr>
+      {{else}}
+      <tr class="tp-cue-empty"><td colspan="13" class="text-muted">No cues yet. Add the first one in the row below, or import a running order.</td></tr>
       {{end}}
     </tbody>
+    {{template "cue-add-row"}}
   </table>
-  <!-- A3: shown (client-side) when a filter matches nothing. -->
-  <p id="tp-cue-no-match" class="text-muted" hidden style="padding:.75rem">No cue matches this filter — <kbd>Esc</kbd> in the box clears it.</p>
-  {{else}}
-  <div class="empty-state">
-    <span class="empty-state-icon">∅</span>
-    <span class="empty-state-title">No cues yet</span>
-    <span class="empty-state-hint">Add one above, or drag an .xlsx / .csv / .json file onto the Import panel on the right — it attaches itself for you.</span>
-  </div>
-  {{end}}
 </div>
+{{end}}
+
+{{- /* The add row (U39). Its fields belong to #tp-add-form, which lives
+     outside #cuelist so a server swap never resets the form; timerpi.js
+     carries typed values across a swap of this row. */ -}}
+{{define "cue-add-row"}}
+<tfoot class="tp-cue-add">
+  <tr>
+    <td class="tp-cue-pos"><span class="mono text-muted">+</span></td>
+    <td class="tp-cue-kind">
+      <select class="select input-sm" name="kind" form="tp-add-form" aria-label="New cue type">
+        <option value="session">Session</option>
+        <option value="break">Break</option>
+      </select>
+    </td>
+    <td class="tp-cue-title"><input class="input input-sm" name="label" form="tp-add-form" placeholder="Session title" aria-label="New cue title" required autocomplete="off"></td>
+    <td class="tp-cue-who"><input class="input input-sm" name="who" form="tp-add-form" placeholder="Speaker" aria-label="Speaker" maxlength="80" autocomplete="off"></td>
+    <td class="tp-cue-dur"><input class="input input-sm mono" name="mss" form="tp-add-form" placeholder="H:MM" size="5" aria-label="Duration (30 = 30 min, 1:30 = 1 h 30 m, 30s = seconds)" autocomplete="off"></td>
+    <td class="tp-cue-start"></td>
+    <td class="tp-cue-end"></td>
+    <td class="tp-cue-timer">
+      <select class="select input-sm" name="timerKind" form="tp-add-form" aria-label="New cue timer">
+        <option value="COUNTDOWN">Countdown</option>
+        <option value="COUNTSTOP">Count up</option>
+        <option value="CLOCK">Clock</option>
+      </select>
+    </td>
+    <td class="tp-cue-atzero">
+      <select class="select input-sm" name="endAction" form="tp-add-form" aria-label="New cue at zero">
+        <option value="HOLD">Hold</option>
+        <option value="OVERTIME">Overtime</option>
+        <option value="BLANK">Blank</option>
+      </select>
+    </td>
+    <td class="tp-cue-alert1"><span class="tp-alert-field"><button type="button" class="tp-alert-dot" data-pick="alertColor1" style="--swatch: #ffaa00" title="Alert 1 colour" aria-label="Alert 1 colour"></button><input class="input input-sm mono" name="alert1" form="tp-add-form" placeholder="m:ss" size="4" aria-label="Alert 1 (m:ss before zero)" autocomplete="off"></span><input type="hidden" name="alertColor1" form="tp-add-form" value=""></td>
+    <td class="tp-cue-alert2"><span class="tp-alert-field"><button type="button" class="tp-alert-dot" data-pick="alertColor2" style="--swatch: #ff4444" title="Alert 2 colour" aria-label="Alert 2 colour"></button><input class="input input-sm mono" name="alert2" form="tp-add-form" placeholder="m:ss" size="4" aria-label="Alert 2 (m:ss before zero)" autocomplete="off"></span><input type="hidden" name="alertColor2" form="tp-add-form" value=""></td>
+    <td class="tp-cue-notes"><input class="input input-sm" name="notes" form="tp-add-form" placeholder="Notes" aria-label="Notes" autocomplete="off"></td>
+    <td class="tp-cue-rowbtns"><button class="btn btn-sm btn-primary" type="submit" form="tp-add-form"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-plus"/></svg> Add</button></td>
+  </tr>
+</tfoot>
 {{end}}

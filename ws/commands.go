@@ -226,13 +226,22 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		if dur <= 0 { // dashboard quick-add sends m:ss text as `mss`
 			dur = views.ParseDuration(str(args, "mss"))
 		}
-		cue := timerpi.Cue{Label: label, DurationMS: dur, Kind: str(args, "kind"), Speaker: str(args, "speaker"), Location: str(args, "location")}
+		// The running order's add row (STATUS U39) sends every column;
+		// older clients send label/duration/kind/speaker/location only.
+		cue := timerpi.Cue{Label: label, DurationMS: dur, Kind: str(args, "kind"), Speaker: str(args, "speaker"), Location: str(args, "location"),
+			TimerKind: str(args, "timerKind"), EndAction: str(args, "endAction"), Notes: str(args, "notes"),
+			Alert1MS: argInt(args, "alert1MS"), Alert2MS: argInt(args, "alert2MS"),
+			AlertColor1: str(args, "alertColor1"), AlertColor2: str(args, "alertColor2")}
 		if cue.Kind == timerpi.KindBreak {
 			cue.Speaker = "" // a break has a place, not a speaker (U14)
 		} else {
 			cue.Location = ""
 		}
 		cue.Normalize()
+		if verr := cue.Validate(); verr != nil {
+			s.sendErr(strings.TrimPrefix(verr.Error(), "timerpi: "))
+			return
+		}
 		if _, cerr := h.store.CreateCue(s.showID, cue); cerr != nil {
 			errOf(cerr)
 			return

@@ -18,7 +18,8 @@
    -------------------------------------------------------------------------- */
 .tp-dash {
   display: grid;
-  grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr) minmax(17rem, 20rem);
+  /* U37: left = Current cue, Messages, Import; right = transport + running order. */
+  grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr);
   gap: var(--space-m, 1rem);
   align-items: start;
   height: 100%;
@@ -28,18 +29,27 @@
 
 @media (max-width: 1200px) {
   .tp-dash { grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr); }
-  .tp-dash-right { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
   .tp-dash { grid-template-columns: 1fr; height: auto; }
-  .tp-dash-right { grid-column: auto; }
 }
 
 .tp-dash-main { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.tp-dash-main .tp-runorder { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .tp-dash-main .tp-cuelist-wrap { flex: 1 1 auto; min-height: 12rem; overflow: auto; }
+.tp-transport-bar { justify-content: flex-start; }
 
-/* Now panel (left rail) */
-.tp-now { display: flex; flex-direction: column; gap: var(--space-s, .75rem); }
+/* Now panel (left rail). A size container so the readout scales with the
+   rail's width, not the window's (U33: "0:09.4" lost its tenths off the
+   right edge of a narrow rail). */
+.tp-now { display: flex; flex-direction: column; gap: var(--space-s, .75rem); container-type: inline-size; }
+
+/* U34: the time of day sits at the top centre of the header bar. */
+.app-bar { position: relative; }
+.tp-bar-clock { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; }
+@media (max-width: 900px) {
+  .tp-bar-clock { position: static; transform: none; }
+}
 
 /* --------------------------------------------------------------------------
    Clocks. Base look is .readout from the theme; this only sizes and states.
@@ -70,11 +80,12 @@
    cluster + meter + cue label below the fold. Give the rail its own
    ceiling and forbid wrapping — the whole stack must fit one viewport. */
 .tp-now .tp-clock {
-  font-size: clamp(3.2rem, 11vh, 7rem);
+  font-size: min(clamp(3.2rem, 11vh, 7rem), 17cqi);
   white-space: nowrap;
+  max-width: 100%;
 }
 @media (max-width: 760px) {
-  .tp-now .tp-clock { font-size: clamp(3.4rem, 17vw, 6rem); }
+  .tp-now .tp-clock { font-size: min(clamp(3.4rem, 17vw, 6rem), 17cqi); }
 }
 
 @keyframes tp-overtime-pulse {
@@ -349,7 +360,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .tp-cuelist-wrap.htmx-settling { opacity: .6; }
 
 /* Transport keyboard hint chips */
-.tp-kbd-hint { color: var(--muted); font-size: .8rem; }
 
 /* Rate control row */
 .tp-rate { display: flex; align-items: center; gap: .6rem; }
@@ -951,45 +961,6 @@ body[data-editing] .b-overlap {
   .tp-adjust-row .btn { min-block-size: 44px; }
 }
 
-/* --- U1: keyboard hint = real button opening #tp-kbd-help ---------------- */
-.tp-kbd-hint {
-  font: inherit;
-  background: none; border: 0; padding: .2em 0;
-  color: var(--muted); text-align: start; cursor: pointer;
-}
-.tp-kbd-hint:hover { color: var(--text); text-decoration: underline dotted; }
-.tp-kbd-hint:focus-visible { outline: 2px solid var(--focus, var(--accent-2, var(--accent))); outline-offset: 2px; }
-@media (pointer: coarse) { .tp-kbd-hint { min-block-size: 44px; } }
-
-/* The key-map popover: surface paint only (UA popover ink is light-theme,
-   and base.html declares color-scheme "dark light"). Popover ink is
-   neutral chrome — the brand purple is NOT spent on a help panel. */
-.tp-kbd-help {
-  background: var(--surface, #14161A);
-  color: var(--text, inherit);
-  border: 1px solid var(--border, #2E3542);
-  border-radius: var(--radius, .3rem);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .6);
-  padding: .8rem 1rem 1rem;
-  inline-size: min(24rem, 90vw);
-}
-.tp-kbd-help dl { margin: .5rem 0 0; display: grid; gap: .25rem; }
-.tp-kbd-help dl > div { display: flex; gap: .8rem; align-items: baseline; }
-.tp-kbd-help dt {
-  flex: none; inline-size: 7em;
-  font-family: var(--font-mono, monospace);
-  font-variant-numeric: tabular-nums;
-  font-size: .8rem; color: var(--text);
-}
-.tp-kbd-help dd { margin: 0; color: var(--muted); font-size: .85rem; }
-.tp-kbd-help kbd {
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: .25rem;
-  padding: 0 .35em;
-  font: inherit;
-}
-
 /* --- U1: two-tap delete arming (cue table) --------------------------------
    First tap on the bin arms it; second tap inside the rollback window
    sends cueDel. Static double outline — no animation, so no
@@ -1047,10 +1018,6 @@ tr.tp-row-active .tp-cue-pos { color: var(--accent-text, var(--accent-2, var(--a
 
 /* --- A3: cue filter rides the running-order header ---------------------- */
 .tp-dash-main .panel-header { flex-wrap: wrap; row-gap: .35rem; }
-.tp-dash-main #tp-cue-filter { max-width: 13rem; }
-@media (max-width: 760px) {
-  .tp-dash-main #tp-cue-filter { flex: 1 1 8rem; max-width: none; }
-}
 /* --- current-cue rail: rate row must not wrap in the narrow column ------- */
 .tp-now .tp-rate { align-items: center; }
 .tp-now .tp-rate > .label, .tp-now .tp-rate .readout { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1258,3 +1225,38 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
   border-radius: 6px; pointer-events: none; }
 .b-palette-list { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 60rem; }
 .b-palette-list button { flex: 0 0 auto; }
+
+/* --- Running order table (STATUS U39–U43) -------------------------------- */
+.tp-cuetable { font-size: .9rem; }
+.tp-cuetable :is(th, td) { padding-inline: .45rem; vertical-align: middle; }
+.tp-cuetable .tp-cue-title { min-width: 12rem; }
+.tp-cuetable .tp-cue-who { max-width: 12rem; }
+.tp-cuetable .tp-cue-notes { max-width: 14rem; color: var(--muted); font-size: inherit; }
+.tp-cuetable :is(.tp-cue-timer, .tp-cue-atzero, .tp-cue-kind) { white-space: nowrap; }
+.tp-cuetable :is(.tp-cue-alert1, .tp-cue-alert2) { white-space: nowrap; }
+.tp-cuetable td[data-edit] { cursor: text; }
+.tp-cuetable td[data-edit]:is(.tp-cue-kind, .tp-cue-timer, .tp-cue-atzero) { cursor: pointer; }
+/* The drag handle (U40): the grip and number together. */
+.tp-cue-pos .tp-grip { margin-inline-end: .3rem; opacity: .55; }
+.tp-cue-pos:hover .tp-grip { opacity: 1; }
+/* The add row (U39): a quiet footer with the same columns. */
+.tp-cue-add td { padding-block: .4rem; border-top: 1px solid var(--hairline, var(--border)); background: var(--surface-2, transparent); }
+.tp-cue-add :is(.input, .select) { width: 100%; min-width: 0; }
+.tp-cue-add .tp-cue-dur .input { min-width: 4.5rem; }
+.tp-alert-field { display: flex; align-items: center; gap: .3rem; }
+.tp-alert-field .input { min-width: 3.6rem; }
+/* Alert colour dots (U30): a swatch the operator clicks to change. */
+.tp-alert-dot {
+  display: inline-block; inline-size: .85rem; block-size: .85rem; flex: none;
+  margin-inline-end: .35rem; vertical-align: -.1em; border-radius: 50%;
+  background: var(--swatch, var(--accent)); border: 1px solid rgb(128 128 128 / .5);
+  padding: 0; cursor: pointer;
+}
+button.tp-alert-dot { inline-size: 1.1rem; block-size: 1.1rem; margin: 0; }
+.tp-color-pop { padding: .6rem; }
+.tp-swatches { flex-wrap: wrap; max-width: 15rem; }
+.tp-swatch-custom.is-selected { outline: 2px solid var(--text); outline-offset: 2px; }
+/* Breaks wear their own accent (U43): sessions keep the theme accent. */
+.tp-cuetable tr.tp-row-break { --tp-row-accent: var(--accent-2, var(--warning)); background: color-mix(in srgb, var(--tp-row-accent) 7%, transparent); }
+.tp-cuetable tr.tp-row-break > td:first-child { box-shadow: inset 3px 0 0 var(--tp-row-accent); }
+.tp-badge-break { --badge-bg: color-mix(in srgb, var(--accent-2, var(--warning)) 22%, var(--surface)); --badge-fg: var(--accent-2, var(--warning-text, var(--warning))); }

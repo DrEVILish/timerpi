@@ -322,7 +322,7 @@ func TestAdapter(t *testing.T) {
 	}
 	if tc.Label != "Talk" || tc.DurationMS != 60000 || tc.Kind != "break" ||
 		tc.Alert1MS != 30000 || tc.Alert2MS != 5000 || tc.Color != "#ff0000" ||
-		!tc.AutoContinue {
+		tc.AutoContinue { // auto-continue is gone (STATUS U42): imports drop it
 		t.Fatalf("adapter field mismatch: %#v", tc)
 	}
 	// Domain Normalize fills defaults for empty fields.
@@ -346,7 +346,7 @@ func TestAdapter(t *testing.T) {
 	wantRound := Cue{
 		Label: "Talk", DurationMS: 60000, Kind: "break", TimerKind: "COUNTDOWN",
 		Alert1MS: 30000, Alert2MS: 5000, AlertColor1: "#ffaa00",
-		AlertColor2: "#ff4444", EndAction: "HOLD", AutoContinue: true,
+		AlertColor2: "#ff4444", EndAction: "HOLD",
 		Color: "#ff0000",
 	}
 	if !reflect.DeepEqual(round, wantRound) {

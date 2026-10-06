@@ -21,6 +21,7 @@ import { createUndo } from './undo.js';
 import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.js';
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
+import { swatchPicker } from './swatches.js';
 import { initModerate, refresh as moderateRefresh } from './moderate.js';
 import { initScreens as initScreensPage, pull as screensPull } from './screens.js';
 
@@ -51,6 +52,10 @@ function setText(el, text) {
 function setState(el, state) {
   if (el && el.dataset.state !== state) el.dataset.state = state;
 }
+
+// Running-order cell labels (cuelist.html prints the same words).
+const TIMER_LABELS = { COUNTDOWN: 'Countdown', COUNTSTOP: 'Count up', CLOCK: 'Clock' };
+const END_LABELS = { HOLD: 'Hold', OVERTIME: 'Overtime', BLANK: 'Blank' };
 
 function debounce(fn, ms) {
   let t;
@@ -151,8 +156,7 @@ class ClockUI {
       clock: $('#tp-clock'), stateChip: $('#tp-state-chip'),
       meter: $('#tp-meter'), nowPanel: $('#tp-now'),
       delta: $('#tp-delta'),
-      nextLabel: $('#tp-next-label'), nextDur: $('#tp-next-dur'),
-      nextStart: $('#tp-next-start'), tod: $('#tp-tod'),
+      tod: $('#tp-tod'),
       cueLabel: $('#tp-cue-label'), cueSpeaker: $('#tp-cue-speaker'),
       daybar: $('#tp-daybar'), needle: $('#tp-daybar-needle'),
       rows: () => $$('#cuelist tbody tr[data-pos]'),
@@ -187,7 +191,6 @@ class ClockUI {
       recordRecent(snap.show?.code || '', snap.show?.title || '');
       // B3: resolve a queued add-inverse once the appended row lands.
       undo.observe(snap);
-      updateUndoButton();
     }
     this.renderStatic();
   }
@@ -220,11 +223,6 @@ class ClockUI {
       // C2 layout: while nothing is on the clock, park the dead meter and
       // dim the placeholder (the --:-- at rail scale read as broken blocks).
       this.el.nowPanel?.classList.toggle('tp-idle-cue', !cue);
-      setText(this.el.nextLabel, next ? next.label : '—');
-      setText(this.el.nextDur, next ? fmtDuration(next.durationMS) : '');
-      setText(this.el.nextStart, next && this.schedule
-        ? fmtTimeOfDay((snap.runtime.dayStartTS || this.serverNow()) + (this.schedule.rows.find(r => r.pos === next.pos)?.startMS ?? 0))
-        : '');
       this.renderRows();
       // U1: release/park the quick-adjust row with the active cue.
       const canAdjust = !!cue;
@@ -252,20 +250,6 @@ class ClockUI {
     // server IS online its oob frame lands microseconds later and this
     // becomes a no-op.
     this.rebuildRowsIfNeeded();
-    // A3: the operator's filter hides non-matching rows. Applied HERE (this
-    // runs after every snapshot repaint and oob swap) so live cue edits
-    // stay filtered instead of flashing the full table back.
-    const filterInput = $('#tp-cue-filter');
-    const q = (filterInput?.value || '').trim().toLowerCase();
-    let visible = 0;
-    for (const tr of this.el.rows()) {
-      tr.hidden = !!q && !tr.textContent.toLowerCase().includes(q);
-      if (!tr.hidden) visible++;
-    }
-    const noMatch = $('#tp-cue-no-match');
-    if (noMatch) noMatch.hidden = !q || visible > 0;
-    const count = $('#tp-cue-filter-count');
-    if (count) count.textContent = q ? `${visible} / ${this.el.rows().length}` : '';
     let activeTr = null;
     for (const tr of this.el.rows()) {
       const pos = Number(tr.dataset.pos);
@@ -279,8 +263,7 @@ class ClockUI {
     }
     // U1: the running cue walks down the table all day — chase it so it is
     // in view without the operator hunting (nearest = no jump if visible).
-    // Never chase while filtered: a hidden row would yank the scrollport.
-    if (activeTr && !activeTr.hidden && act !== this._chasedPos) {
+    if (activeTr && act !== this._chasedPos) {
       this._chasedPos = act;
       activeTr.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
@@ -407,11 +390,11 @@ class ClockUI {
     if (!tbody) return;
     // A cell editor is open: its cell reads empty, so the signature below
     // would mismatch and the rebuild would rip the input out mid-typing,
-    // sending the next keys to the shortcuts (Space = GO, R = reset; STATUS
-    // U13). finish() re-renders once the edit ends.
-    if (tbody.querySelector('input')) return;
+    // sending the next keys to the shortcuts (Space = GO; STATUS U13).
+    // finish() re-renders once the edit ends.
+    if (tbody.querySelector('input, select')) return;
     const domSig = [...tbody.querySelectorAll('tr[data-pos]')].map(tr =>
-      `${tr.dataset.pos}:${tr.querySelector('.tp-cue-label')?.childNodes[0]?.textContent ?? ''}`).join(',');
+      `${tr.dataset.pos}:${tr.querySelector('.tp-cue-label')?.textContent ?? ''}`).join(',');
     const snapSig = (snap.cues || []).map(c =>
       `${c.pos}:${c.label ?? ''}`).join(',');
     if (domSig === snapSig) return; // server oob owns the DOM and it's true
@@ -421,187 +404,111 @@ class ClockUI {
   rebuildCueRows(tbody, snap) {
     const scheduleByPos = new Map((this.schedule?.rows || []).map(r => [r.pos, r]));
     const rows = snap.cues || [];
-    const wrap = tbody.parentElement; // table
-    const list = wrap?.parentElement; // #cuelist
-    if (!rows.length) {
-      // Mirror the server's empty-state block; the table itself goes away.
-      wrap?.remove();
-      if (list && !list.querySelector('.empty-state')) {
-        const empty = document.createElement('div');
-        empty.className = 'empty-state';
-        const mk = (cls, text) => { const s = document.createElement('span'); s.className = cls; setText(s, text); return s; };
-        empty.append(mk('empty-state-icon', '∅'), mk('empty-state-title', 'No cues yet'),
-          mk('empty-state-hint', 'Add one above, or drag an .xlsx / .csv / .json file onto the Import panel on the right — it attaches itself for you.'));
-        list.appendChild(empty);
-      }
-      return;
-    }
-    if (!wrap) {
-      // Server rendered the empty state; restore the table skeleton.
-      list?.querySelector('.empty-state')?.remove();
-      const table = document.createElement('table');
-      table.className = 'table is-sticky is-striped';
-      const thead = document.createElement('thead');
-      const hr = document.createElement('tr');
-      for (const h of ['#', 'Cue', 'Speaker', 'Dur', 'Start', 'End', '']) {
-        const th = document.createElement('th');
-        setText(th, h);
-        hr.appendChild(th);
-      }
-      thead.appendChild(hr);
-      const tb = document.createElement('tbody');
-      table.append(thead, tb);
-      list?.appendChild(table);
-      tbody = tb;
-    }
     const fragment = document.createDocumentFragment();
+    if (!rows.length) {
+      // Mirror the server's empty row; the add row in the footer stays.
+      const tr = document.createElement('tr');
+      tr.className = 'tp-cue-empty';
+      const td = document.createElement('td');
+      td.colSpan = 13;
+      td.className = 'text-muted';
+      setText(td, 'No cues yet. Add the first one in the row below, or import a running order.');
+      tr.appendChild(td);
+      fragment.appendChild(tr);
+    }
     for (const c of rows) fragment.appendChild(this.cueRow(c, scheduleByPos.get(c.pos)));
     tbody.replaceChildren(fragment);
     this.reiconRows();
     this._cueSig = ''; // force the schedule refresh on the next setSnapshot
   }
 
+  /** One running-order row: mirrors templates/fragments/cuelist.html. */
   cueRow(c, schedRow) {
+    const isBreak = c.kind === 'break';
     const tr = document.createElement('tr');
     tr.dataset.pos = String(c.pos);
-    const td = (cls) => { const t = document.createElement('td'); if (cls) t.className = cls; return t; };
-    // # — the A3/U1 plain number (reorder lives in the ▲▼ buttons).
+    tr.className = isBreak ? 'tp-row-break' : 'tp-row-session';
+    const td = (cls, edit) => {
+      const t = document.createElement('td');
+      if (cls) t.className = cls;
+      if (edit) t.dataset.edit = edit;
+      return t;
+    };
+    const span = (cls, text) => { const s = document.createElement('span'); s.className = cls; setText(s, text); return s; };
+    const ariaPos = String(c.pos).padStart(2, '0');
+
     const pos = td('tp-cue-pos');
-    const num = document.createElement('span');
-    num.className = 'mono';
-    setText(num, String(c.pos).padStart(2, '0'));
-    pos.appendChild(num);
-    // Cue label + badges + notes.
-    const cueTd = td();
-    const labelWrap = document.createElement('div');
-    labelWrap.className = 'tp-cue-label';
-    if (c.kind === 'break' || c.kind === 'hold') {
-      const b = document.createElement('span');
-      b.className = 'badge badge-accent';
-      setText(b, c.kind === 'break' ? 'BREAK' : 'HOLD');
-      labelWrap.appendChild(b);
-      labelWrap.appendChild(document.createTextNode(' '));
-    }
-    labelWrap.appendChild(document.createTextNode(c.label ?? ''));
-    const alertBadge = document.createElement('span');
-    alertBadge.className = 'badge tp-alert-badge';
+    pos.title = 'Drag to reorder · right-click for more';
+    const grip = span('tp-grip', '⠿');
+    grip.setAttribute('aria-hidden', 'true');
+    pos.append(grip, span('mono', ariaPos));
+
+    const kind = td('tp-cue-kind', 'kind');
+    kind.appendChild(isBreak ? span('badge tp-badge-break', 'Break') : span('badge badge-accent', 'Session'));
+
+    const title = td('tp-cue-title', 'label');
+    title.appendChild(span('tp-cue-label', c.label ?? ''));
+    const alertBadge = span('badge tp-alert-badge', '');
     alertBadge.hidden = true;
-    labelWrap.appendChild(alertBadge);
-    if (c.autoContinue) {
-      const b = document.createElement('span');
-      b.className = 'badge';
-      b.title = 'Auto-continues to the next cue at zero';
-      setText(b, 'AUTO');
-      labelWrap.appendChild(b);
-    }
-    cueTd.appendChild(labelWrap);
-    const tags = document.createElement('div');
-    tags.className = 'cluster is-gap-2xs';
-    // tags arrive as the raw string (server stores "VT GFX"); split to match
-    // views.tagsOf — for..of over the string painted one badge per LETTER.
+    title.appendChild(alertBadge);
     for (const t of String(c.tags || '').split(/\s+/).filter(Boolean)) {
-      const b = document.createElement('span');
-      b.className = 'badge badge-accent';
-      setText(b, t);
-      tags.appendChild(b);
+      title.appendChild(document.createTextNode(' '));
+      title.appendChild(span('badge', t));
     }
-    if (c.alert1MS > 0) {
-      const b = document.createElement('span');
-      b.className = 'badge';
-      b.title = 'Alert 1 threshold';
-      b.dataset.alert1 = c.alertColor1 || '';
-      setText(b, `⚠1 ${fmtDuration(c.alert1MS)}`);
-      tags.appendChild(b);
-    }
-    if (c.alert2MS > 0) {
-      const b = document.createElement('span');
-      b.className = 'badge';
-      b.title = 'Alert 2 threshold';
-      b.dataset.alert2 = c.alertColor2 || '';
-      setText(b, `⚠2 ${fmtDuration(c.alert2MS)}`);
-      tags.appendChild(b);
-    }
-    if (c.timerKind && c.timerKind !== 'COUNTDOWN') {
-      const b = document.createElement('span');
-      b.className = 'badge';
-      setText(b, c.timerKind);
-      tags.appendChild(b);
-    }
-    cueTd.appendChild(tags);
-    if (c.notes) {
-      const n = document.createElement('div');
-      n.className = 'tp-cue-notes';
-      setText(n, c.notes);
-      cueTd.appendChild(n);
-    }
-    // Speaker.
-    // Speaker (a break shows its location instead, STATUS U14).
-    const speaker = td('text-truncate');
-    if (c.kind === 'break') {
-      if (c.location) {
-        speaker.appendChild(this.icon('icon-map-pin'));
-        speaker.appendChild(document.createTextNode(' ' + c.location));
-      }
-    } else if (c.speaker) {
-      speaker.appendChild(this.icon('icon-microphone'));
-      speaker.appendChild(document.createTextNode(' ' + c.speaker));
-    }
-    // Dur (+hold).
-    const dur = td('tp-cue-dur');
-    dur.appendChild(document.createTextNode(fmtDuration(c.durationMS)));
-    if (c.holdMS > 0) {
-      const hold = document.createElement('span');
-      hold.className = 'tp-cue-notes';
-      setText(hold, ` +${fmtDuration(c.holdMS)} hold`);
-      dur.appendChild(hold);
-    }
-    // Start/End from the computed schedule (same math as the server frag).
+
+    const who = td('tp-cue-who text-truncate', isBreak ? 'location' : 'speaker');
+    setText(who, isBreak ? (c.location || '') : (c.speaker || ''));
+
+    const dur = td('tp-cue-dur mono', 'durationMS');
+    setText(dur, fmtDuration(c.durationMS));
+
     const start = td('tp-cue-start mono');
     const end = td('tp-cue-end mono');
     if (schedRow) {
       const anchor = this.snap?.runtime?.dayStartTS || this.serverNow();
       setText(start, fmtTimeOfDay(anchor + (schedRow.startMS || 0)));
       setText(end, fmtTimeOfDay(anchor + (schedRow.endMS || 0)));
-    } else {
-      setText(start, '—');
-      setText(end, '—');
     }
+
+    const timer = td('tp-cue-timer', 'timerKind');
+    setText(timer, TIMER_LABELS[c.timerKind] || 'Countdown');
+    const atZero = td('tp-cue-atzero', 'endAction');
+    setText(atZero, END_LABELS[c.endAction] || 'Hold');
+
+    const alertCell = (n) => {
+      const cell = td(`tp-cue-alert${n} mono`, `alert${n}MS`);
+      const dot = span('tp-alert-dot', '');
+      dot.style.setProperty('--swatch', c[`alertColor${n}`] || '');
+      dot.title = `Alert ${n} colour`;
+      dot.dataset.color = `alertColor${n}`;
+      cell.appendChild(dot);
+      cell.appendChild(document.createTextNode(c[`alert${n}MS`] > 0 ? fmtDuration(c[`alert${n}MS`]) : '—'));
+      return cell;
+    };
+
+    const notes = td('tp-cue-notes text-truncate', 'notes');
+    setText(notes, c.notes || '');
+
     // Row actions — same data-cmd contracts as the server frag.
     const btns = td('tp-cue-rowbtns');
     const group = document.createElement('div');
     group.className = 'btn-group';
-    const mkBtn = (cmd, cls, title, text, iconId, extra = {}) => {
+    const mkBtn = (cls, title, text, iconId, data) => {
       const b = document.createElement('button');
       b.className = `btn btn-sm ${cls}`;
-      b.dataset.cmd = cmd;
-      b.dataset.pos = String(c.pos);
-      for (const [k, v] of Object.entries(extra)) b.dataset[k] = v;
+      for (const [k, v] of Object.entries(data)) b.dataset[k] = v;
       b.title = title;
       b.setAttribute('aria-label', title);
-      if (iconId) {
-        b.appendChild(this.icon(iconId));
-      } else if (text) {
-        setText(b, text);
-      }
+      if (iconId) b.appendChild(this.icon(iconId));
+      else setText(b, text);
       group.appendChild(b);
     };
-    const ariaPos = String(c.pos).padStart(2, '0');
-    mkBtn('go', 'btn-go', `GO — start cue ${ariaPos}`, 'Go');
-    mkBtn('jump', 'btn-ghost', "Cue it up (playhead here, don't start yet)", null, 'icon-chevron-right', { start: 'false' });
-    mkBtn('cueMove', 'btn-icon btn-ghost', 'Move up', null, 'icon-chevron-up', { dir: 'up' });
-    mkBtn('cueMove', 'btn-icon btn-ghost', 'Move down', null, 'icon-chevron-down', { dir: 'down' });
-    // Inspector (data-insp, not a data-cmd button — initInspector owns it).
-    const insp = document.createElement('button');
-    insp.className = 'btn btn-sm btn-icon btn-ghost';
-    insp.dataset.insp = String(c.pos);
-    insp.title = 'Open cue inspector (all fields)';
-    insp.setAttribute('aria-label', `Edit cue ${ariaPos} — full inspector`);
-    insp.appendChild(this.icon('icon-edit'));
-    group.appendChild(insp);
-    mkBtn('cueDup', 'btn-icon btn-ghost', 'Duplicate cue — copy lands right after this row', null, 'icon-copy');
-    mkBtn('cueDel', 'btn-icon btn-danger', 'Delete cue', null, 'icon-trash');
+    mkBtn('btn-go', `GO — start cue ${ariaPos}`, 'Go', null, { cmd: 'go', pos: String(c.pos) });
+    mkBtn('btn-ghost btn-icon', "Cue it up (playhead here, don't start yet)", null, 'icon-chevron-right', { cmd: 'jump', pos: String(c.pos), start: 'false' });
+    mkBtn('btn-icon btn-ghost', `Edit cue ${ariaPos} — all details`, null, 'icon-edit', { insp: String(c.pos) });
+    mkBtn('btn-icon btn-danger', `Delete cue ${ariaPos}`, null, 'icon-trash', { cmd: 'cueDel', pos: String(c.pos) });
     btns.appendChild(group);
-    tr.append(pos, cueTd, speaker, dur, start, end, btns);
+    tr.append(pos, kind, title, who, dur, start, end, timer, atZero, alertCell(1), alertCell(2), notes, btns);
     return tr;
   }
 
@@ -967,22 +874,6 @@ function updateSharePanel(snap) {
   if (code) setText(code, fmtCode(snap?.show?.code ?? mesh.showId));
 }
 
-function initCueFilter() {
-  // A3: wire the running-order filter. The DOM update lives in
-  // renderRows; this only hooks the box (input → re-filter, Esc → clear).
-  const input = $('#tp-cue-filter');
-  if (!input) return;
-  input.addEventListener('input', () => clockUI?.renderRows());
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      input.value = '';
-      clockUI?.renderRows();
-      input.blur();
-      e.preventDefault();
-    }
-  });
-}
-
 function initSharePanel() {
   $('#share-copy')?.addEventListener('click', async () => {
     const input = $('#share-url-mirror');
@@ -1150,18 +1041,6 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     sendCommand(action, args);
   });
 
-  // E6: duration preset chips fill the quick-add input (operator still
-  // names the row and hits Add — chips never create rows by themselves).
-  document.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-preset-mss]');
-    if (!chip) return;
-    const form = chip.closest('form[data-cmd="cueAdd"]');
-    const mss = form?.querySelector('input[name="mss"]');
-    if (!mss) return;
-    mss.value = chip.dataset.presetMss || chip.getAttribute('data-preset-mss') || '';
-    form.querySelector('input[name="label"]')?.focus();
-  });
-
   // E3 blackout paint: one body flag drives the .tp-blanked overlay on
   // every page (dashboard + all display variants + board). Called from
   // setSnapshot so server oob swaps can never desync it.
@@ -1282,31 +1161,6 @@ function performUndo() {
   else toast('Nothing to undo', 'info');
 }
 
-/** B3: the UNDO button appears only while the ledger has effects; rides
-    every snapshot repaint and every capture. */
-function updateUndoButton() {
-  const btn = $('#tp-undo');
-  if (btn) btn.style.display = undo.depth() > 0 ? '' : 'none';
-}
-
-function initUndoButton() {
-  document.addEventListener('click', (e) => {
-    if (e.target.closest?.('[data-undo]')) {
-      e.preventDefault();
-      performUndo();
-    }
-  });
-  updateUndoButton();
-}
-
-/** U1: toggle the operator key-map popover (same panel the hint opens). */
-function toggleKbdHelp() {
-  const el = $('#tp-kbd-help');
-  if (!el) return;
-  if (typeof el.togglePopover === 'function') {
-    try { el.togglePopover(); } catch { /* display lock */ }
-  }
-}
 
 function initKeyboard() {
   document.addEventListener('keydown', (e) => {
@@ -1328,14 +1182,6 @@ function initKeyboard() {
       case 'ArrowRight': case 'ArrowDown': e.preventDefault(); sendCommand('next'); break;
       case 'ArrowLeft': case 'ArrowUp': e.preventDefault(); sendCommand('prev'); break;
       case 'p': case 'P': e.preventDefault(); sendCommand('pause'); break; // toggles
-      case 'r': case 'R': e.preventDefault(); sendCommand('reset'); break;
-      case '?': e.preventDefault(); toggleKbdHelp(); break; // open/close the key map
-      case '/': // A3: filter the running order
-        if (clockUI?.page === 'dashboard') {
-          e.preventDefault();
-          $('#tp-cue-filter')?.focus();
-        }
-        break;
       default: return;
     }
   });
@@ -1841,7 +1687,7 @@ function flushPendingSwap() {
 }
 
 function applyOOB(m) {
-  if (m.target === '#cuelist' && document.querySelector('#cuelist tbody input')) {
+  if (m.target === '#cuelist' && document.querySelector('#cuelist tbody :is(input, select)')) {
     pendingCuelistSwap = m;
     return;
   }
@@ -1851,7 +1697,11 @@ function applyOOB(m) {
   tpl.innerHTML = m.html;
   const frag = tpl.content.firstElementChild;
   if (frag) {
+    // U39: the add row lives in the swapped table; keep what is typed
+    // there (and the caret) across the swap.
+    const keep = m.target === '#cuelist' ? saveAddRow() : null;
     target.replaceWith(frag);
+    if (keep) restoreAddRow(keep);
     window.htmx?.process(frag);
     // The swap replaced #tp-now / #tp-daybar / #cuelist — every cached
     // reference inside them is detached. Re-collect so paint/render
@@ -1860,24 +1710,178 @@ function applyOOB(m) {
   }
 }
 
-/** Quick add (STATUS U14): Session shows the Speaker box, Break the
-    "Where" box; after adding, the label and the active box clear. */
-function initQuickAdd() {
-  const form = document.querySelector('.tp-quick-add');
-  if (!form || form.dataset.bound) return;
-  form.dataset.bound = '1';
-  const sync = () => {
-    const isBreak = form.querySelector('input[name="kind"]:checked')?.value === 'break';
-    const sp = form.querySelector('.tp-qa-speaker');
-    const loc = form.querySelector('.tp-qa-location');
-    if (sp) { sp.hidden = isBreak; sp.disabled = isBreak; }
-    if (loc) { loc.hidden = !isBreak; loc.disabled = !isBreak; }
-    const label = form.querySelector('input[name="label"]');
-    if (label) label.placeholder = isBreak ? 'Break name (e.g. Coffee)' : 'Session title';
+/* ------------------------------------------------ running order (U39) -- */
+
+const addRowFields = () => [...document.querySelectorAll('[form="tp-add-form"][name]')];
+
+/** saveAddRow / restoreAddRow carry the add row's typed values, the
+    focused field and its caret across a #cuelist swap. */
+function saveAddRow() {
+  const fields = addRowFields();
+  if (!fields.length) return null;
+  const focus = document.activeElement?.getAttribute?.('form') === 'tp-add-form' ? document.activeElement : null;
+  return {
+    values: Object.fromEntries(fields.map((f) => [f.name, f.value])),
+    focus: focus?.name || '',
+    sel: focus && 'selectionStart' in focus ? [focus.selectionStart, focus.selectionEnd] : null,
   };
-  form.addEventListener('change', (e) => { if (e.target.name === 'kind') sync(); });
-  form.addEventListener('reset', () => setTimeout(sync));
-  sync();
+}
+
+function restoreAddRow(keep) {
+  for (const f of addRowFields()) {
+    if (keep.values[f.name] !== undefined) f.value = keep.values[f.name];
+  }
+  syncAddRow();
+  if (keep.focus) {
+    const f = document.querySelector(`[form="tp-add-form"][name="${keep.focus}"]`);
+    f?.focus();
+    if (f && keep.sel) { try { f.setSelectionRange(keep.sel[0], keep.sel[1]); } catch { /* select */ } }
+  }
+}
+
+/** Session or Break: the Speaker / Where box and the title hint follow. */
+function syncAddRow() {
+  const get = (n) => document.querySelector(`[form="tp-add-form"][name="${n}"]`);
+  const isBreak = get('kind')?.value === 'break';
+  const who = get('who');
+  if (who) {
+    who.placeholder = isBreak ? 'Where (e.g. Great Hall)' : 'Speaker';
+    who.setAttribute('aria-label', isBreak ? 'Where the break is served' : 'Speaker');
+  }
+  const label = get('label');
+  if (label) label.placeholder = isBreak ? 'Break name (e.g. Coffee)' : 'Session title';
+  for (const n of [1, 2]) {
+    const dot = document.querySelector(`#cuelist tfoot [data-pick="alertColor${n}"]`);
+    const v = get(`alertColor${n}`)?.value;
+    if (dot) dot.style.setProperty('--swatch', v || (n === 1 ? DEFAULT_ALERT1 : DEFAULT_ALERT2));
+  }
+}
+
+const DEFAULT_ALERT1 = '#ffaa00';
+const DEFAULT_ALERT2 = '#ff4444';
+
+function initAddRow() {
+  const form = $('#tp-add-form');
+  if (!form) return;
+  document.addEventListener('change', (e) => {
+    if (e.target.matches?.('[form="tp-add-form"][name="kind"]')) syncAddRow();
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(form));
+    const label = String(v.label || '').trim();
+    if (!label) { toast('Give the cue a title', 'danger'); return; }
+    const args = { label, kind: v.kind === 'break' ? 'break' : 'session' };
+    const who = String(v.who || '').trim();
+    if (who) args[args.kind === 'break' ? 'location' : 'speaker'] = who;
+    const mss = String(v.mss || '').trim();
+    if (mss) {
+      const ms = parseDur(mss);
+      if (ms == null || ms < 0) { toast('Duration must be like 30, 1:30 or 30s', 'danger'); return; }
+      args.durationMS = ms;
+    }
+    args.timerKind = v.timerKind || 'COUNTDOWN';
+    args.endAction = v.endAction || 'HOLD';
+    for (const n of [1, 2]) {
+      const t = String(v[`alert${n}`] || '').trim();
+      if (t) {
+        const ms = parseDur(t, 'ms');
+        if (ms == null || ms < 0) { toast(`Alert ${n} must be like 5:00`, 'danger'); return; }
+        args[`alert${n}MS`] = ms;
+      }
+      if (v[`alertColor${n}`]) args[`alertColor${n}`] = v[`alertColor${n}`];
+    }
+    const notes = String(v.notes || '').trim();
+    if (notes) args.notes = notes;
+    sendCommand('cueAdd', args);
+    // Ready for the next one: title, who, duration, alerts and notes clear;
+    // type, timer and at-zero stay (rows usually come in runs).
+    for (const f of addRowFields()) {
+      if (['label', 'who', 'mss', 'alert1', 'alert2', 'notes'].includes(f.name)) f.value = '';
+    }
+    document.querySelector('[form="tp-add-form"][name="label"]')?.focus();
+  });
+  // Alert colour dots in the add row open the picker.
+  document.addEventListener('click', (e) => {
+    const dot = e.target.closest?.('#cuelist tfoot [data-pick]');
+    if (!dot) return;
+    const key = dot.dataset.pick;
+    const hidden = document.querySelector(`[form="tp-add-form"][name="${key}"]`);
+    openColorPop(dot, hidden?.value || '', key === 'alertColor1' ? DEFAULT_ALERT1 : DEFAULT_ALERT2, (val) => {
+      if (hidden) hidden.value = val;
+      syncAddRow();
+    });
+  });
+  syncAddRow();
+}
+
+/** The colour popover (U30): ftl `.popover` holding the swatch picker,
+    placed under the element that opened it. */
+function openColorPop(anchor, value, defaultColor, onPick) {
+  let pop = $('#tp-color-pop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'tp-color-pop';
+    pop.className = 'popover tp-color-pop';
+    pop.setAttribute('popover', '');
+    document.body.appendChild(pop);
+  }
+  pop.replaceChildren(swatchPicker({
+    value, defaultColor, label: anchor.getAttribute('aria-label') || anchor.title || 'Colour',
+    onChange: (v) => { onPick(v); try { pop.hidePopover(); } catch { /* closed */ } },
+  }));
+  try { pop.showPopover(); } catch { return; }
+  const r = anchor.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.inset = 'auto';
+  pop.style.margin = '0';
+  pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
+  pop.style.top = `${Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 8)}px`;
+  pop.querySelector('input:checked, input')?.focus();
+}
+
+/** U41: right-click (or a long press on touch) on a row opens its menu:
+    Duplicate and All details. ftl `.context-menu` at the pointer. */
+function initRowMenu() {
+  const menu = $('#tp-row-menu');
+  if (!menu) return;
+  let pos = 0;
+  const open = (tr, x, y) => {
+    pos = Number(tr.dataset.pos);
+    menu.style.setProperty('--x', `${Math.min(x, innerWidth - 200)}px`);
+    menu.style.setProperty('--y', `${Math.min(y, innerHeight - 120)}px`);
+    try { menu.showPopover(); } catch { return; }
+    menu.querySelector('button')?.focus();
+  };
+  document.addEventListener('contextmenu', (e) => {
+    const tr = e.target.closest?.('#cuelist tbody tr[data-pos]');
+    if (!tr || e.target.closest('input, select, textarea')) return;
+    e.preventDefault();
+    open(tr, e.clientX, e.clientY);
+  });
+  // Long press: 550 ms without moving.
+  let press = null;
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    const tr = e.target.closest?.('#cuelist tbody tr[data-pos]');
+    if (!tr || e.target.closest('button, input, select')) return;
+    const x = e.clientX, y = e.clientY;
+    press = { x, y, timer: setTimeout(() => { press = null; open(tr, x, y); }, 550) };
+  });
+  const cancel = (e) => {
+    if (!press) return;
+    if (e.type === 'pointermove' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
+    clearTimeout(press.timer);
+    press = null;
+  };
+  for (const t of ['pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, cancel);
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-row-act]');
+    if (!item || !pos) return;
+    try { menu.hidePopover(); } catch { /* closed */ }
+    if (item.dataset.rowAct === 'dup') sendCommand('cueDup', { pos });
+    if (item.dataset.rowAct === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
+  });
 }
 
 function initInlineEdit() {
@@ -1886,13 +1890,14 @@ function initInlineEdit() {
   // cells (# / start / end) and the button column are deliberately NOT
   // editable (server-computed truth).
   document.addEventListener('dblclick', (e) => {
-    const td = e.target.closest?.('#cuelist tbody td');
-    if (td) startCellEdit(td);
+    if (e.target.closest?.('[data-color]')) return;
+    const td = e.target.closest?.('#cuelist tbody td[data-edit]');
+    if (td) startCellEdit(td, { open: true });
   });
   let last = { t: 0, td: null };
   document.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return;
-    const td = e.target.closest?.('#cuelist tbody td');
+    const td = e.target.closest?.('#cuelist tbody td[data-edit]');
     if (!td) { last = { t: 0, td: null }; return; }
     const now = Date.now();
     if (td === last.td && now - last.t < 450) {
@@ -1904,70 +1909,106 @@ function initInlineEdit() {
   });
 }
 
-function startCellEdit(td) {
-  if (!td || td.querySelector('input')) return;
+// Inline cell editors (U39): text cells take an input, choice cells a
+// select. data-edit on the <td> names the cue field.
+const CELL_CHOICES = {
+  kind: [['session', 'Session'], ['break', 'Break']],
+  timerKind: Object.entries(TIMER_LABELS),
+  endAction: Object.entries(END_LABELS),
+};
+const CELL_HINTS = {
+  label: 'Title', speaker: 'Speaker', location: 'Where (e.g. Great Hall)', notes: 'Notes',
+  durationMS: 'Duration (H:MM — 30 = 30 min, 30s = seconds)',
+  alert1MS: 'Alert 1 (m:ss before zero, empty = off)', alert2MS: 'Alert 2 (m:ss before zero, empty = off)',
+};
+
+function startCellEdit(td, opts = {}) {
+  if (!td || td.querySelector('input, select')) return;
   const tr = td.closest('tr');
-  if (!tr || !clockUI?.snap) return;
+  const field = td.dataset.edit;
+  if (!tr || !field || !clockUI?.snap) return; // # / start / end / buttons: computed
   const pos = Number(tr.dataset.pos);
   const cue = clockUI.snap.cues.find((c) => c.pos === pos);
   if (!cue) return;
 
-  let field, value, host = td, text;
-  if (td.querySelector('.tp-cue-label')) {
-    field = 'label'; value = cue.label || ''; host = td.querySelector('.tp-cue-label'); text = 'Label';
-  } else if (td.classList.contains('tp-cue-dur')) {
-    field = 'durationMS'; value = cue.durationMS || 0; text = 'Duration (H:MM — 30 = 30 min, 30s = seconds)';
-  } else if ([...td.parentElement.children].indexOf(td) === 2) {
-    if (cue.kind === 'break') { field = 'location'; value = cue.location || ''; text = 'Where (e.g. Great Hall)'; }
-    else { field = 'speaker'; value = cue.speaker || ''; text = 'Speaker'; }
+  const choices = CELL_CHOICES[field];
+  const isMS = field === 'durationMS' || field === 'alert1MS' || field === 'alert2MS';
+  const unit = field === 'durationMS' ? 'hm' : 'ms';
+  let ctl;
+  if (choices) {
+    ctl = document.createElement('select');
+    ctl.className = 'select input-sm';
+    for (const [v, l] of choices) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = l;
+      ctl.appendChild(o);
+    }
+    ctl.value = cue[field] || choices[0][0];
   } else {
-    return; // # / start / end / buttons: not operator-owned
+    ctl = document.createElement('input');
+    ctl.type = 'text';
+    ctl.className = `input input-sm${isMS ? ' mono' : ''}`;
+    const v = cue[field];
+    ctl.value = isMS ? (v > 0 || field === 'durationMS' ? fmtDurText(v || 0, unit) : '') : (v || '');
   }
-
-  const oldHTML = host.innerHTML;
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'input input-sm mono';
-  input.style.width = '100%';
-  input.setAttribute('aria-label', `${text} for cue ${pos}`);
-  input.value = field === 'durationMS'
-    ? fmtDurText(value)   // round-trip in the format operators type
-    : value;
-  host.textContent = '';
-  host.appendChild(input);
-  input.focus();
-  input.select();
+  ctl.style.width = '100%';
+  ctl.setAttribute('aria-label', `${CELL_HINTS[field] || field} for cue ${pos}`);
+  const old = [...td.childNodes];
+  td.replaceChildren(ctl);
+  ctl.focus();
+  if (ctl.select) ctl.select();
+  if (opts.open && ctl.showPicker) { try { ctl.showPicker(); } catch { /* user gesture */ } }
 
   let ended = false;
   const finish = (commit) => {
     if (ended) return;
     ended = true;
-    const v = input.value.trim();
-    input.blur?.();
-    input.remove();
-    host.innerHTML = oldHTML; // the next oob repaint (or this) refills truth
-    if (!commit) {
-      flushPendingSwap();
-      return;
+    const v = ctl.value.trim();
+    ctl.remove();
+    td.replaceChildren(...old); // the next repaint brings the truth
+    const done = () => flushPendingSwap();
+    if (!commit) return done();
+    let val = v;
+    if (isMS) {
+      if (v === '' && field !== 'durationMS') val = 0;
+      else {
+        val = parseDur(v, unit);
+        if (val == null || val < 0) {
+          toast(field === 'durationMS' ? 'That is not a duration — try 30 (minutes) or 1:30 (h:mm)' : 'Alerts are m:ss, like 5:00', 'danger');
+          return done();
+        }
+      }
     }
-    if (field === 'durationMS') {
-      const ms = parseDur(v);
-      if (ms == null || ms < 0) { toast('That is not a duration — try 30 (minutes) or 1:30 (h:mm)', 'danger'); flushPendingSwap(); return; }
-      sendCommand('cueEdit', { pos, durationMS: ms });
-    } else {
-      if (field === 'label' && v === '') { toast('Cue label cannot be empty', 'danger'); flushPendingSwap(); return; }
-      sendCommand('cueEdit', { pos, [field]: v });
-    }
+    if (field === 'label' && v === '') { toast('Cue title cannot be empty', 'danger'); return done(); }
+    if (val !== (cue[field] ?? (isMS ? 0 : ''))) sendCommand('cueEdit', { pos, [field]: val });
     // Replay the cuelist swap deferred while the editor was open — make
     // sure the LAST state wins, not a stale one from before our own edit.
-    flushPendingSwap();
+    done();
   };
-  input.addEventListener('keydown', (e) => {
+  ctl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  input.addEventListener('blur', () => finish(true));
-  input.addEventListener('dblclick', (e) => e.stopPropagation());
+  if (choices) ctl.addEventListener('change', () => finish(true));
+  ctl.addEventListener('blur', () => finish(true));
+  ctl.addEventListener('dblclick', (e) => e.stopPropagation());
+}
+
+/** A row's alert colour dot opens the picker for that cue (U30). */
+function initAlertDots() {
+  document.addEventListener('click', (e) => {
+    const dot = e.target.closest?.('#cuelist tbody [data-color]');
+    if (!dot) return;
+    e.stopPropagation();
+    const pos = Number(dot.closest('tr')?.dataset.pos);
+    const cue = clockUI?.snap?.cues.find((c) => c.pos === pos);
+    if (!cue) return;
+    const key = dot.dataset.color;
+    openColorPop(dot, cue[key] || '', key === 'alertColor1' ? DEFAULT_ALERT1 : DEFAULT_ALERT2, (v) => {
+      sendCommand('cueEdit', { pos, [key]: v });
+    });
+  });
 }
 
 /** milliseconds → "m:ss" / "h:mm:ss" for the duration editor's initial text. */
@@ -2057,24 +2098,38 @@ function initInspector() {
 
   function field(id) { return dlg.querySelector('#' + id); }
 
+  // U30: colours are ftl swatches; each writes its hidden input.
+  const pickers = {};
+  for (const host of dlg.querySelectorAll('[data-swatches-for]')) {
+    const id = host.dataset.swatchesFor;
+    const def = { 'tp-insp-alert1Color': '#ffaa00', 'tp-insp-alert2Color': '#ff4444' }[id] || '';
+    pickers[id] = swatchPicker({
+      defaultColor: def, defaultLabel: host.dataset.defaultLabel || 'Default',
+      label: dlg.querySelector('#' + host.getAttribute('aria-labelledby'))?.textContent || 'Colour',
+      onChange: (v) => { field(id).value = v; },
+    });
+    host.appendChild(pickers[id]);
+  }
+  function setColor(id, v) {
+    field(id).value = v;
+    pickers[id]?.setValue(v);
+  }
+
   function fill(cue, label) {
     field('tp-insp-pos').textContent = `${String(cue.pos).padStart(2, '0')} — ${label}`;
     field('tp-insp-label').value = cue.label || '';
     field('tp-insp-speaker').value = cue.speaker || '';
     field('tp-insp-location').value = cue.location || '';
     field('tp-insp-duration').value = fmtDurText(cue.durationMS || 0);
-    field('tp-insp-hold').value = cue.holdMS ? fmtDurText(cue.holdMS, 'ms') : '';
     field('tp-insp-tags').value = cue.tags || '';
     field('tp-insp-kind').value = cue.kind === 'break' ? 'break' : 'session';
     field('tp-insp-timerKind').value = cue.timerKind || 'COUNTDOWN';
     field('tp-insp-endAction').value = cue.endAction || 'HOLD';
-    field('tp-insp-autoContinue').checked = !!cue.autoContinue;
     field('tp-insp-alert1').value = cue.alert1MS ? fmtDurText(cue.alert1MS, 'ms') : '';
-    field('tp-insp-alert1Color').value = cue.alertColor1 || '';
+    setColor('tp-insp-alert1Color', cue.alertColor1 || '');
     field('tp-insp-alert2').value = cue.alert2MS ? fmtDurText(cue.alert2MS, 'ms') : '';
-    field('tp-insp-alert2Color').value = cue.alertColor2 || '';
-    field('tp-insp-color').value = cue.color || '';
-    field('tp-insp-startAt').value = cue.startAt || '';
+    setColor('tp-insp-alert2Color', cue.alertColor2 || '');
+    setColor('tp-insp-color', cue.color || '');
     field('tp-insp-notes').value = cue.notes || '';
     const err = field('tp-insp-error');
     err.hidden = true;
@@ -2105,19 +2160,10 @@ function initInspector() {
     const dur = parseDur(field('tp-insp-duration').value);
     if (dur == null || dur < 0) return fail('Duration is not a time — try 30 (minutes) or 1:30 (h:mm)');
     args.durationMS = dur;
-    const hold = field('tp-insp-hold').value.trim();
-    if (hold) {
-      const ms = parseDur(hold, 'ms');
-      if (ms == null || ms < 0) return fail('Hold is not a time — try 1:00');
-      args.holdMS = ms;
-    } else {
-      args.holdMS = 0;
-    }
     args.tags = field('tp-insp-tags').value;
     args.kind = field('tp-insp-kind').value;
     args.timerKind = field('tp-insp-timerKind').value;
     args.endAction = field('tp-insp-endAction').value;
-    args.autoContinue = field('tp-insp-autoContinue').checked;
     for (const [msKey, colorKey, labelTxt] of [
       ['tp-insp-alert1', 'tp-insp-alert1Color', 'Alert 1'],
       ['tp-insp-alert2', 'tp-insp-alert2Color', 'Alert 2'],
@@ -2137,16 +2183,6 @@ function initInspector() {
     const rowColor = field('tp-insp-color').value.trim();
     if (!hexOK(rowColor)) return fail('Row accent must be a hex value like #7C3AED');
     args.color = rowColor || '';
-    // E5: wall-clock auto-start. Empty clears; otherwise strict HH:MM, and
-    // a time already past today asks first (it would fire at the next idle).
-    const startAt = field('tp-insp-startAt').value.trim();
-    if (startAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startAt)) return fail('Auto-start must be HH:MM (24-hour)');
-    if (startAt) {
-      const [hh, mm] = startAt.split(':').map(Number);
-      const occ = new Date(); occ.setHours(hh, mm, 0, 0);
-      if (occ.getTime() <= Date.now() && !window.confirm(`${startAt} already passed today — arm it to fire at the next idle moment?`)) return;
-    }
-    args.startAt = startAt;
     args.notes = field('tp-insp-notes').value;
 
     sendCommand('cueEdit', args);
@@ -2432,7 +2468,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initCueFilter(); initInlineEdit(); initRateExtras(); initRateDelegation(); initQuickAdd(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initUndoButton(); initDragReorder(); }
+  if (page === 'dashboard') { initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initDragReorder(); initAddRow(); initAlertDots(); initRowMenu(); }
   if (page === 'display') initDisplayExtras();
 
   // Offline indicator toggling (display + dashboard)

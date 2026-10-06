@@ -27,16 +27,34 @@ func TestClockAtCrossesMidnight(t *testing.T) {
 	}
 }
 
-// BUGLOG RW25: at 23:50 a session set for 00:15 must not start; it starts
-// at 00:15.
-func TestAutoStartAfterMidnight(t *testing.T) {
-	cues := []Cue{{Pos: 1, Label: "Evening"}, {Pos: 2, Label: "Late", StartAt: "00:15"}}
-	anchor := at(6, 18, 0)
-	if p := autoStartDue(cues, 1, anchor, at(6, 23, 50)); p != 0 {
-		t.Errorf("fired at 23:50 for 00:15: pos %d", p)
+// STATUS U42 (owner, 2026-10-06): no cue starts by itself. A cue with a
+// wall-clock time (even one stored before the change) and a cue set to
+// auto-continue both wait for the operator; Hold after moves nothing.
+func TestNothingStartsByItselfU42(t *testing.T) {
+	cues := []Cue{
+		{ID: 1, Pos: 1, Label: "A", DurationMS: 60_000, TimerKind: TimerCountdown, EndAction: EndHold, AutoContinue: true, HoldMS: 300_000},
+		{ID: 2, Pos: 2, Label: "B", DurationMS: 60_000, TimerKind: TimerCountdown, EndAction: EndHold, StartAt: "09:30"},
+		{ID: 3, Pos: 3, Label: "C", DurationMS: 60_000, TimerKind: TimerCountdown, EndAction: EndHold, StartAt: "09:31"},
 	}
-	if p := autoStartDue(cues, 1, anchor, at(7, 0, 16)); p != 2 {
-		t.Errorf("didn't fire at 00:16: pos %d", p)
+	now := at(6, 9, 0)
+	e := rolloverEngine(t, &now, "", cues)
+	if err := e.Start(1); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []int{1, 2, 31, 45} { // past A's end and past both times
+		now = at(6, 9, m)
+		_ = e.Tick(now)
+	}
+	if rt := e.Runtime(); rt.ActivePos != 1 || rt.Running {
+		t.Fatalf("a cue started by itself: %+v", rt)
+	}
+	if s := ComputeSchedule(cues, 0, 1); s.Rows[1].StartMS != 60_000 || s.TotalMS != 180_000 {
+		t.Errorf("Hold after still moves the schedule: B at %d, total %d", s.Rows[1].StartMS, s.TotalMS)
+	}
+	c := Cue{Label: "x", AutoContinue: true, StartAt: "10:00", HoldMS: 5}
+	c.Normalize()
+	if c.AutoContinue || c.StartAt != "" || c.HoldMS != 0 {
+		t.Errorf("Normalize kept a removed option: %+v", c)
 	}
 }
 
@@ -117,5 +135,23 @@ func TestDayStartValidated(t *testing.T) {
 	}
 	if err := e.ApplyCmd("daystart", map[string]any{"ts": float64(0)}); err != nil {
 		t.Errorf("clear refused: %v", err)
+	}
+}
+
+// BUGLOG RW59: with no day start set, the first GO starts the day so the
+// started cue is on plan (it used to anchor at midnight: every time read
+// 00:00-based and the dashboard said "+21:50 vs plan").
+func TestFirstGoAnchorsDayOnPlan(t *testing.T) {
+	cues := []Cue{
+		{ID: 1, Pos: 1, Label: "A", DurationMS: 600_000, TimerKind: TimerCountdown, EndAction: EndHold},
+		{ID: 2, Pos: 2, Label: "B", DurationMS: 600_000, TimerKind: TimerCountdown, EndAction: EndHold},
+	}
+	now := at(6, 21, 50)
+	e := rolloverEngine(t, &now, "", cues)
+	if err := e.Start(2); err != nil {
+		t.Fatal(err)
+	}
+	if rt := e.Runtime(); rt.DayStartTS != now-600_000 {
+		t.Errorf("day start %v, want %v (B planned to start now)", time.UnixMilli(rt.DayStartTS), time.UnixMilli(now-600_000))
 	}
 }

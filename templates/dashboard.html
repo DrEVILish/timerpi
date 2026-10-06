@@ -22,74 +22,10 @@
   </nav>
   <div class="tp-dash" data-panel="run">
 
-    {{template "frag-current" .}}
-
-    <section class="tp-dash-main panel">
-      <div class="panel-header tp-cuelist-head">
-        <div class="row is-items-center is-gap-s" style="gap:1rem">
-          <span class="tp-cuelist-title">Running order</span>
-          <span class="badge">{{len .Cues}} cues</span>
-          <span class="badge">Total {{.Schedule.TotalFmt}}</span>
-          <!-- A3: client-side filter for long days — the operator types, the
-               table hides non-matching rows (timerpi.js renderRows applies it
-               after every snapshot/frag swap, so live edits stay filtered). -->
-          <div class="cluster is-gap-2xs push">
-            <input id="tp-cue-filter" class="input input-sm" type="search" style="max-width:14rem"
-                   placeholder="Filter cues ( / )" aria-label="Filter cues by label, speaker, tag or notes"
-                   aria-controls="cuelist" autocomplete="off">
-            <span id="tp-cue-filter-count" class="text-muted" aria-live="polite"></span>
-            <button class="btn btn-sm btn-icon btn-ghost" id="tp-undo" data-undo type="button"
-                    title="Undo my last edit (Ctrl/Cmd+Z)" aria-label="Undo last edit" style="display:none">
-              <svg class="icon"><use href="/ftl/dist/icons/xbmc.svg#icon-refresh"/></svg>
-            </button>
-          </div>
-        </div>
-        <form class="cluster is-gap-s tp-quick-add" data-cmd="cueAdd">
-          {{- /* U14: Session (speaker) or Break (with where it is served). */}}
-          <div class="segmented" role="radiogroup" aria-label="Add a">
-            <label><input type="radio" name="kind" value="session" checked> Session</label>
-            <label><input type="radio" name="kind" value="break"> Break</label>
-          </div>
-          <input class="input input-sm" type="text" name="label" placeholder="New cue label" aria-label="New cue label" required style="max-width:22rem">
-          <input class="input input-sm tp-qa-speaker" type="text" name="speaker" placeholder="Speaker" aria-label="Speaker" style="max-width:14rem">
-          <input class="input input-sm tp-qa-location" type="text" name="location" placeholder="Where (e.g. Great Hall)" aria-label="Where the break is served" maxlength="80" style="max-width:14rem" hidden>
-          <input class="input input-sm mono" type="text" name="mss" placeholder="H:MM" aria-label="Duration (30 = 30 min, 1:30 = 1 h 30 m, 30s = seconds)" size="6">
-          <!-- E6: one-tap durations for long days — fills the input, operator
-               still names the row and hits Add (no surprise rows). Values
-               follow the quick-add rule (bare = minutes). -->
-          <span class="cluster is-gap-2xs" role="group" aria-label="Duration presets">
-            <button class="btn btn-sm btn-ghost" type="button" data-preset-mss="1" title="Fill 1 minute">+1m</button>
-            <button class="btn btn-sm btn-ghost" type="button" data-preset-mss="5" title="Fill 5 minutes">+5m</button>
-            <button class="btn btn-sm btn-ghost" type="button" data-preset-mss="10" title="Fill 10 minutes">+10m</button>
-          </span>
-          <button class="btn btn-sm btn-primary" type="submit"><svg class="icon"><use href="/ftl/dist/icons/xbmc.svg#icon-plus"/></svg> Add</button>
-        </form>
-      </div>
-      {{template "frag-cuelist" .}}
-      {{- /* C2 layout (owner note "UI layout requires improvement"): the day
-             bar lives UNDER the running order — the natural "timeline of the
-             day" is a glance below the cue columns, and the dead space under
-             a short cue list starts earning its pixels. This whole block is
-             OUTSIDE the #cuelist oob swap (only the fragment swaps); the
-             anchor controls (A6/B4) keep their document-level handling. */ -}}
-      <div class="stack is-gap-2xs tp-daybar-block">
-        <div class="row is-items-center is-gap-s">
-          <span class="label">Day bar</span>
-          <form id="tp-day-start-form" class="cluster is-gap-2xs">
-            <input class="input input-sm mono" type="text" id="tp-day-begins" size="6"
-                   placeholder="09:00" aria-label="Day begins at (HH:MM)" autocomplete="off"
-                   value="{{.DayStartHHMM}}">
-            <button class="btn btn-sm btn-ghost" type="submit" title="Persist the scheduled start and anchor today to it">Save</button>
-          </form>
-          <button class="btn btn-sm btn-ghost push" id="tp-day-start" type="button"
-                  title="Anchor the day clock to now — the bar starts filling and scheduled times pin to today">
-            Day starts now</button>
-        </div>
-        {{template "frag-daybar" .}}
-      </div>
-    </section>
-
-    <aside class="tp-dash-right stack">
+    {{- /* U37: the left column holds the Current cue, then Messages, then
+         Import; the running order has the rest of the width. */}}
+    <div class="tp-dash-left stack is-gap-s">
+      {{template "frag-current" .}}
       {{template "frag-messages" .}}
         <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
              on drop); the hint names the gesture so the affordance is obvious
@@ -127,11 +63,62 @@
           </form>
           <div id="import-result" class="tp-fragment" aria-live="polite"></div>
         </details>
+    </div>
 
+    <div class="tp-dash-main stack is-gap-s">
+      {{- /* U31: the transport sits above the running order. No Stop/Reset
+           (owner, 2026-10-06): GO on a row restarts that cue. Outside the
+           oob-swapped #tp-now, so these buttons are never re-rendered. */}}
+      <div class="transport tp-transport-bar">
+        <button class="btn btn-ghost btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
+        <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
+        <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
+        <button class="btn btn-ghost btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
+        <!-- E3: global display blackout — kills every display to STANDBY until
+             released. Pressed state follows snapshot show.blanked. -->
+        <button class="btn btn-ghost" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
+      </div>
 
-
-
-    </aside>
+      <section class="panel tp-runorder">
+        <div class="panel-header tp-cuelist-head">
+          <div class="row is-items-center is-gap-s" style="gap:1rem">
+            <span class="tp-cuelist-title">Running order</span>
+            <span class="badge">{{len .Cues}} cues</span>
+            <span class="badge">Total {{.Schedule.TotalFmt}}</span>
+          </div>
+        </div>
+        {{- /* U39: the add row's fields (in the table's footer) belong to
+             this form, which sits outside the swapped #cuelist. */}}
+        <form id="tp-add-form" hidden></form>
+        {{- /* U41: right-click / long-press row menu (ftl .context-menu). */}}
+        <div class="context-menu is-at-pointer" id="tp-row-menu" popover role="menu" aria-label="Cue actions">
+          <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
+          <button class="context-menu-item" type="button" role="menuitem" data-row-act="details">All details…</button>
+        </div>
+        {{template "frag-cuelist" .}}
+        {{- /* C2 layout (owner note "UI layout requires improvement"): the day
+               bar lives UNDER the running order — the natural "timeline of the
+               day" is a glance below the cue columns, and the dead space under
+               a short cue list starts earning its pixels. This whole block is
+               OUTSIDE the #cuelist oob swap (only the fragment swaps); the
+               anchor controls (A6/B4) keep their document-level handling. */ -}}
+        <div class="stack is-gap-2xs tp-daybar-block">
+          <div class="row is-items-center is-gap-s">
+            <span class="label">Day bar</span>
+            <form id="tp-day-start-form" class="cluster is-gap-2xs">
+              <input class="input input-sm mono" type="text" id="tp-day-begins" size="6"
+                     placeholder="09:00" aria-label="Day begins at (HH:MM)" autocomplete="off"
+                     value="{{.DayStartHHMM}}">
+              <button class="btn btn-sm btn-ghost" type="submit" title="Persist the scheduled start and anchor today to it">Save</button>
+            </form>
+            <button class="btn btn-sm btn-ghost push" id="tp-day-start" type="button"
+                    title="Anchor the day clock to now — the bar starts filling and scheduled times pin to today">
+              Day starts now</button>
+          </div>
+          {{template "frag-daybar" .}}
+        </div>
+      </section>
+    </div>
   </div>
 
   <div class="tp-aud-layout" data-panel="audience" hidden>
@@ -208,16 +195,9 @@
         <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off">
       </div>
     </div>
-    <div class="row is-gap-s">
-      <div class="field">
-        <label class="label" for="tp-insp-hold">Hold after (m:ss)</label>
-        <input class="input mono" id="tp-insp-hold" type="text" size="8" autocomplete="off">
-        <span class="field-hint">Changeover time this cue releases before the next starts.</span>
-      </div>
-      <div class="field">
-        <label class="label" for="tp-insp-tags">Tags (comma separated)</label>
-        <input class="input" id="tp-insp-tags" type="text" autocomplete="off">
-      </div>
+    <div class="field">
+      <label class="label" for="tp-insp-tags">Tags (space separated)</label>
+      <input class="input" id="tp-insp-tags" type="text" autocomplete="off">
     </div>
     <div class="row is-gap-s">
       <div class="field">
@@ -245,11 +225,6 @@
           <option value="BLANK">Blank the display</option>
         </select>
       </div>
-      <div class="field stack is-gap-2xs" style="justify-content:end">
-        <label class="row is-items-center is-gap-2xs" for="tp-insp-autoContinue">
-          <input type="checkbox" id="tp-insp-autoContinue" style="width:auto"> Auto-continue to next cue
-        </label>
-      </div>
     </div>
     <div class="row is-gap-s">
       <div class="field">
@@ -257,8 +232,9 @@
         <input class="input mono" id="tp-insp-alert1" type="text" size="7" autocomplete="off">
       </div>
       <div class="field">
-        <label class="label" for="tp-insp-alert1Color">Alert 1 colour</label>
-        <input class="input mono" id="tp-insp-alert1Color" type="text" size="8" placeholder="#RRGGBB / empty">
+        <span class="label" id="tp-insp-alert1Color-l">Alert 1 colour</span>
+        <input type="hidden" id="tp-insp-alert1Color">
+        <div data-swatches-for="tp-insp-alert1Color" aria-labelledby="tp-insp-alert1Color-l"></div>
       </div>
     </div>
     <div class="row is-gap-s">
@@ -267,18 +243,15 @@
         <input class="input mono" id="tp-insp-alert2" type="text" size="7" autocomplete="off">
       </div>
       <div class="field">
-        <label class="label" for="tp-insp-alert2Color">Alert 2 colour</label>
-        <input class="input mono" id="tp-insp-alert2Color" type="text" size="8" placeholder="#RRGGBB / empty">
+        <span class="label" id="tp-insp-alert2Color-l">Alert 2 colour</span>
+        <input type="hidden" id="tp-insp-alert2Color">
+        <div data-swatches-for="tp-insp-alert2Color" aria-labelledby="tp-insp-alert2Color-l"></div>
       </div>
     </div>
     <div class="field">
-      <label class="label" for="tp-insp-color">Row accent (hex, empty = theme)</label>
-      <input class="input mono" id="tp-insp-color" type="text" size="8" autocomplete="off">
-    </div>
-    <div class="field">
-      <label class="label" for="tp-insp-startAt">Auto-start at (HH:MM, empty = off)</label>
-      <input class="input mono" id="tp-insp-startAt" type="time" autocomplete="off">
-      <span class="field-hint">Fires this cue when the time comes — only while nothing runs or pauses. Jumping back before it re-arms it.</span>
+      <span class="label" id="tp-insp-color-l">Row colour</span>
+      <input type="hidden" id="tp-insp-color">
+      <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
     </div>
     <div class="field">
       <label class="label" for="tp-insp-notes">Cue notes</label>

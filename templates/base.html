@@ -70,6 +70,7 @@
     {{if eq .Nav "screens"}}<span class="nav-item is-active">Screens</span>{{end}}
     {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
   </nav>
+  {{if eq .Page "dashboard"}}{{/* U34: time of day, top centre */}}<span class="readout readout-sm mono tp-bar-clock" id="tp-tod" title="Time of day">--:--:--</span>{{end}}
   <div class="cluster push">
     {{if .Show.Code}}
     <!-- The one display affordance: same entity as the home page's Open

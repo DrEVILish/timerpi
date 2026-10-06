@@ -381,18 +381,20 @@ func TestInspectorTemplateShips(t *testing.T) {
 
 func TestDuplicateTemplateShips(t *testing.T) {
 	ts := newAPITest(t)
-	// A4: the server op has existed forever (ws cueDup) — the dashboard must
-	// also carry the per-row duplicate affordance that fires it.
+	// A4 + STATUS U41: Duplicate lives in the right-click / long-press row
+	// menu (ftl .context-menu), not a row icon.
 	if _, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "Dup Me", DurationMS: 120_000}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
 	for _, sub := range []string{
-		`data-cmd="cueDup"`, `data-pos="1"`,
-		`title="Duplicate cue`, `icon-copy`,
+		`id="tp-row-menu"`, `class="context-menu is-at-pointer"`, `data-row-act="dup"`, `data-pos="1"`,
 	} {
 		if !bytes.Contains(body, []byte(sub)) {
 			t.Errorf("duplicate affordance missing %q", sub)
 		}
+	}
+	if bytes.Contains(body, []byte(`data-cmd="cueDup"`)) || bytes.Contains(body, []byte(`data-dir="up"`)) {
+		t.Error("rows still carry the duplicate icon or the up/down arrows (U40, U41)")
 	}
 }

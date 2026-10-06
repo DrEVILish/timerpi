@@ -62,9 +62,9 @@ func TestEngineOnStartFires(t *testing.T) {
 	}
 }
 
-// Auto-advance (AutoContinue) and alert transitions: the media hook fires
-// for the AUTO-STARTED cue, and stays silent for pure alert flips.
-func TestEngineOnStartFiresOnAutoAdvance(t *testing.T) {
+// The media hook fires for hand starts only: alert flips and a zero
+// crossing (no auto-continue any more, STATUS U42) stay silent.
+func TestEngineOnStartSilentWithoutHandStart(t *testing.T) {
 	d := openTestDB(t)
 	show := mustCreateShow(t, d, "Auto Fire")
 	cues := []Cue{
@@ -93,11 +93,11 @@ func TestEngineOnStartFiresOnAutoAdvance(t *testing.T) {
 	if len(fired) != 1 {
 		t.Fatalf("alert transition fired the hook: %v", fired)
 	}
-	// Past cue 1's zero crossing: AutoContinue starts cue 2 → fires.
+	// Past cue 1's zero crossing: it holds; nothing starts, nothing fires.
 	if err := e.Tick(time.Now().UnixMilli() + 1500); err != nil {
-		t.Fatalf("tick advance: %v", err)
+		t.Fatalf("tick past zero: %v", err)
 	}
-	if len(fired) != 2 || fired[1] != 2 {
-		t.Fatalf("auto-advance did not fire for cue 2: %v", fired)
+	if len(fired) != 1 {
+		t.Fatalf("zero crossing fired the hook: %v", fired)
 	}
 }

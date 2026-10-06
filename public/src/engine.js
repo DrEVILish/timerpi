@@ -532,9 +532,10 @@ export function computeSchedule(snap) {
   const rows = [];
   let cum = 0;
   for (const c of snap?.cues || []) {
-    const isBreak = c.kind === 'break' || c.holdMS > 0;
-    rows.push({ pos: c.pos, startMS: cum, endMS: cum + c.durationMS, holdMS: c.holdMS || 0, isBreak });
-    cum += c.durationMS + (c.holdMS || 0);
+    // Hold after is gone (STATUS U42): a stored holdMS moves nothing.
+    const isBreak = c.kind === 'break';
+    rows.push({ pos: c.pos, startMS: cum, endMS: cum + c.durationMS, holdMS: 0, isBreak });
+    cum += c.durationMS;
   }
   return { rows, totalMS: cum };
 }

@@ -117,9 +117,9 @@ func TestClientLogJournalHygiene(t *testing.T) {
 	// here) is flattened by routes.journalSafe.
 }
 
-// CloneShow copies start_at — guard against a clone silently inheriting a
-// live day (clone dashboard must render unstarted).
-func TestCloneCarriesStartAtButIdle(t *testing.T) {
+// A clone never inherits a live day (the clone dashboard must render
+// unstarted).
+func TestCloneStaysIdle(t *testing.T) {
 	ts := newAPITest(t)
 	cue, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "Timed", DurationMS: 60_000})
 	if err != nil {
@@ -141,9 +141,6 @@ func TestCloneCarriesStartAtButIdle(t *testing.T) {
 	cues := snap["cues"].([]any)
 	if len(cues) != 1 {
 		t.Fatalf("clone cues: %v", cues)
-	}
-	if cues[0].(map[string]any)["startAt"] != "09:30" {
-		t.Errorf("startAt not carried: %v", cues[0])
 	}
 	if rt := snap["runtime"].(map[string]any); rt["running"] != false || rt["activePos"] != float64(0) {
 		t.Errorf("clone started running: %v", rt)

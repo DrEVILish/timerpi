@@ -216,6 +216,9 @@ type Cue struct {
 // session/COUNTDOWN/HOLD, alert colours to the defaults, negatives to 0.
 // Schedule math and the engine depend on these invariants holding.
 func (c *Cue) Normalize() {
+	// Auto-continue, auto-start and Hold after are gone (owner, 2026-10-06,
+	// STATUS U42): every write path drops them, so nothing hidden fires.
+	c.AutoContinue, c.StartAt, c.HoldMS = false, "", 0
 	if c.Kind == "" {
 		c.Kind = KindSession
 	}

@@ -268,38 +268,21 @@ func TestAlertTransitions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-advance (AutoContinue + HOLD)
+// No auto-advance (owner, 2026-10-06, STATUS U42)
 
-func TestAutoAdvance(t *testing.T) {
+func TestNoAutoAdvance(t *testing.T) {
 	t0 := int64(1_700_000_000_000)
+	// Cue 4 is stored with AutoContinue: it still holds at zero.
 	e, clk := newTestEngine(t, t0, nil)
-	if err := e.Start(4); err != nil { // 1 min autocontinue cue, 5 follows
+	if err := e.Start(4); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	clk.advance(60_000)
 	if err := e.Tick(clk.Now()); err != nil {
 		t.Fatalf("Tick: %v", err)
 	}
-	rt := e.Runtime()
-	tf := timerOf(t, e)
-	if rt.ActivePos != 5 || !rt.Running || rt.PrevPos != 4 || rt.NextPos != 0 {
-		t.Fatalf("auto-advance runtime: %+v", rt)
-	}
-	if tf.RemainingMS != 100_000 || rt.AnchorTS != clk.Now() {
-		t.Fatalf("auto-advanced cue not freshly anchored: tf=%+v", tf)
-	}
-
-	// OVERTIME cues never auto-advance, even with AutoContinue.
-	e2, clk2 := newTestEngine(t, t0, func(cues []Cue) { cues[1].AutoContinue = true })
-	if err := e2.Start(2); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	clk2.advance(1_210_000)
-	if err := e2.Tick(clk2.Now()); err != nil {
-		t.Fatalf("Tick: %v", err)
-	}
-	if rt := e2.Runtime(); rt.ActivePos != 2 || !rt.Running {
-		t.Fatalf("overtime auto-advanced: %+v", rt)
+	if rt := e.Runtime(); rt.ActivePos != 4 || rt.Running {
+		t.Fatalf("cue 4 advanced by itself: %+v", rt)
 	}
 }
 
@@ -639,9 +622,9 @@ func TestComputeSchedule(t *testing.T) {
 	}{
 		{1, 0, 600_000, 0, 0, false},
 		{2, 600_000, 1_800_000, 0, 0, false},
-		{3, 1_800_000, 2_100_000, 120_000, 0, true},
-		{4, 2_220_000, 2_280_000, 0, 420_000, false},
-		{5, 2_280_000, 2_380_000, 0, 420_000, false},
+		{3, 1_800_000, 2_100_000, 0, 0, true}, // stored hold 2 min moves nothing (U42)
+		{4, 2_100_000, 2_160_000, 0, 300_000, false},
+		{5, 2_160_000, 2_260_000, 0, 300_000, false},
 	}
 	if len(s.Rows) != len(want) {
 		t.Fatalf("rows = %d, want %d", len(s.Rows), len(want))
@@ -657,11 +640,11 @@ func TestComputeSchedule(t *testing.T) {
 			t.Fatalf("row %d ts: %d..%d", i, r.StartTS, r.EndTS)
 		}
 	}
-	if s.TotalMS != 2_380_000 || s.EndTS != day+2_380_000 {
+	if s.TotalMS != 2_260_000 || s.EndTS != day+2_260_000 {
 		t.Fatalf("total: %+v", s)
 	}
-	if s.HoldsMS != 120_000 || s.BreaksMS != 300_000 {
-		t.Fatalf("holds/breaks: %d/%d, want 120000/300000", s.HoldsMS, s.BreaksMS)
+	if s.HoldsMS != 0 || s.BreaksMS != 300_000 {
+		t.Fatalf("holds/breaks: %d/%d, want 0/300000", s.HoldsMS, s.BreaksMS)
 	}
 }
 

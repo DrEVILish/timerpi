@@ -8,10 +8,10 @@ import (
 	"timerpi/timerpi"
 )
 
-// BUGLOG RW28: a JSON export re-imports with its timer kind, auto-start
-// time and break location intact (stopwatch sessions used to come back as
-// countdowns).
-func TestJSONRoundTripKeepsTimerKindStartAndLocation(t *testing.T) {
+// BUGLOG RW28: a JSON export re-imports with its timer kind and break
+// location intact (stopwatch sessions used to come back as countdowns).
+// Auto-start times are dropped: the feature is gone (STATUS U42).
+func TestJSONRoundTripKeepsTimerKindAndLocation(t *testing.T) {
 	src := []timerpi.Cue{
 		{Label: "Stopwatch", DurationMS: 60000, TimerKind: timerpi.TimerCountStop, StartAt: "09:30"},
 		{Label: "Coffee", DurationMS: 900000, Kind: timerpi.KindBreak, TimerKind: timerpi.TimerClock, Location: "Great Hall"},
@@ -28,8 +28,8 @@ func TestJSONRoundTripKeepsTimerKindStartAndLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("convert: %v", err)
 	}
-	if got[0].TimerKind != timerpi.TimerCountStop || got[0].StartAt != "09:30" {
-		t.Errorf("cue 1 = kind %q start %q, want COUNTSTOP 09:30", got[0].TimerKind, got[0].StartAt)
+	if got[0].TimerKind != timerpi.TimerCountStop || got[0].StartAt != "" {
+		t.Errorf("cue 1 = kind %q start %q, want COUNTSTOP and no auto-start", got[0].TimerKind, got[0].StartAt)
 	}
 	if got[1].TimerKind != timerpi.TimerClock || got[1].Location != "Great Hall" {
 		t.Errorf("cue 2 = kind %q location %q, want CLOCK Great Hall", got[1].TimerKind, got[1].Location)

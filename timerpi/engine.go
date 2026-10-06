@@ -347,7 +347,6 @@ func (e *Engine) SetDayStart(ts int64) error {
 func (e *Engine) Tick(nowMS int64) error {
 	e.mu.Lock()
 	changed := false
-	startedPos := int64(0) // a cue auto-started this tick (media hook)
 	cues, err := e.cuesLocked()
 	if err != nil {
 		e.mu.Unlock()
@@ -373,17 +372,8 @@ func (e *Engine) Tick(nowMS int64) error {
 				// Keep counting up; remaining simply goes negative.
 			}
 			changed = true
-			// AutoContinue (v1): the next cue starts immediately at zero
-			// crossing; the exhausted cue's HoldMS is schedule-only.
-			if c.AutoContinue && c.EndAction == EndHold {
-				if next := nextPosOf(cues, e.rt.ActivePos); next > 0 {
-					if serr := e.startLocked(next); serr == nil {
-						e.lastCrossed = false
-						startedPos = next // PLAN §11.6: media hook hears auto-advance
-					}
-				}
-				// No next cue: hold at zero.
-			}
+			// No auto-continue: the operator starts the next cue (owner,
+			// 2026-10-06, STATUS U42).
 		}
 	}
 	// Alert transitions emit even when nothing else changed.
@@ -395,22 +385,7 @@ func (e *Engine) Tick(nowMS int64) error {
 		e.lastAlert = alert
 		changed = true
 	}
-	// E5 wall-clock auto-start: while nothing runs and nothing is paused,
-	// the first cue past the playhead whose startAt has come fires itself.
-	// Hand operation always wins (running/paused runtimes never yank),
-	// firing advances ActivePos so a cue never refires, and jumping back
-	// before a passed time re-arms it (clear startAt to stop that).
-	// ActivePos > 0 keeps the "day under way" promise: a brand-new (or
-	// freshly cloned) show with inherited startAt times must NOT auto-
-	// start cue 1 at 14:00 on a day nobody has begun.
-	if !e.rt.Running && !e.rt.Paused && e.rt.ActivePos > 0 {
-		if next := autoStartDue(cues, e.rt.ActivePos, e.rt.DayStartTS, nowMS); next > 0 {
-			if serr := e.startLocked(next); serr == nil {
-				changed = true
-				startedPos = next // E5 scheduled start fires the hook too
-			}
-		}
-	}
+	// No wall-clock auto-start either (STATUS U42): cues start by hand.
 	if e.rtDirty {
 		changed = true
 	}
@@ -419,18 +394,11 @@ func (e *Engine) Tick(nowMS int64) error {
 		return nil
 	}
 	snap, err := e.commitLocked()
-	// PLAN §11.6: auto-advance (AutoContinue) and E5 wall-clock auto-start
-	// started a cue under the lock — the outbound media hook must hear
-	// about them exactly like a hand GO. fireStart locks, so emit after
-	// the unlock.
 	e.mu.Unlock()
 	if err != nil {
 		return err
 	}
 	e.notify(snap)
-	if startedPos > 0 && e.onFire != nil {
-		e.onFire(startedPos)
-	}
 	return nil
 }
 
@@ -606,7 +574,16 @@ func (e *Engine) startLocked(pos int64) error {
 	e.rt.PausedElapsedMS = 0
 	e.rt.EndAction = c.EndAction
 	if e.rt.DayStartTS == 0 {
-		e.rt.DayStartTS = startOfDay(now)
+		// No day start set: the day starts now, placed so this cue is on
+		// plan. Anchoring at midnight made every planned time read
+		// 00:00-based and the dashboard say "+21:50 vs plan" (BUGLOG RW59).
+		e.rt.DayStartTS = now
+		for _, r := range ComputeSchedule(cues, 0, 1).Rows {
+			if r.Pos == c.Pos {
+				e.rt.DayStartTS = now - r.StartMS
+				break
+			}
+		}
 	}
 	e.lastAlert = 0
 	e.lastCrossed = false
@@ -792,27 +769,6 @@ func (e *Engine) rolloverLocked(cues []Cue, now int64) bool {
 
 // ---------------------------------------------------------------------------
 // Pure helpers shared with schedule.go / snapshot.go
-
-// autoStartDue returns the pos of the first cue past activePos whose
-// wall-clock startAt has come (0 when none). Cues at or before the playhead
-// are never re-armed by the clock — firing moves ActivePos forward, which
-// is also what stops refires.
-// Times resolve inside the room's day (ClockAt), so "00:15" in a day that
-// started at 18:00 means tonight after midnight, not this morning.
-func autoStartDue(cues []Cue, activePos, dayStartTS, nowMS int64) int64 {
-	for i := range cues {
-		if cues[i].Pos <= activePos {
-			continue
-		}
-		if cues[i].StartAt == "" {
-			continue
-		}
-		if ts := ClockAt(cues[i].StartAt, dayStartTS, nowMS); ts != 0 && ts <= nowMS {
-			return cues[i].Pos
-		}
-	}
-	return 0
-}
 
 // cueAtPos finds the cue at pos in an ordered list.
 func cueAtPos(cues []Cue, pos int64) *Cue {
