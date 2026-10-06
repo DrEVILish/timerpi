@@ -84,6 +84,8 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 ### 4.1 Bugs (fix first: small, independent of the new model)
 
+**Code review 2026-10-06:** 107 more issues (8 critical, 58 warnings, 41 suggestions) are logged with locations, fixes and status in [docs/BUGLOG.md](docs/BUGLOG.md). Fix RC1–RC8 first.
+
 | ID | Bug | Where |
 |---|---|---|
 | **B1** | ✅ Fixed 2026-10-05: there is no appliance password any more; audience and walk-in pages are open by design. | `routes/access.go` |
@@ -145,6 +147,8 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 5. **N4 → N7**: display types, rotation and portrait, then the live event walk-in.
 6. **N9, N11**: animation everywhere and the device-class UX pass.
 7. Remaining cleanup, then **H5**, then H1–H4 and H6 on hardware.
+
+After the 2026-10-06 review: BUGLOG RC1–RC8 come before everything above, and the security (RW1–RW16) and performance (RW53–RW58) warnings come before H5.
 
 ## 5. Open questions
 
