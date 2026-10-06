@@ -201,7 +201,7 @@ Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as 
 | **U41** | ✅ Done 2026-10-06: Duplicate is in the right-click / long-press row menu (ftl `.context-menu`). |
 | **U42** | ✅ Done 2026-10-06: Removed as behaviour too: nothing starts by itself, holds move nothing, Normalize drops them on every write. |
 | **U43** | ✅ Done 2026-10-06: Breaks wear the theme's `--accent-2`. |
-| **U44** | The Screens page's remove X is a proper ftl-themes element. |
+| **U44** | ✅ Done 2026-10-06: Forget is ftl's `.btn-close` (the theme's own close button), tinted danger. Browser test `screen-forget`. |
 
 ### 4.3 Cleanup (hanging leftovers)
 
