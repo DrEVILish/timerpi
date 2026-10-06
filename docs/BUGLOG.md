@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 28 |
+| Suggestion | 41 | 23 |
 
 ## Critical
 
@@ -126,18 +126,18 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS3 | `timerpi/events.go:352-362` (`SessionSecret`) | Two concurrent first requests can generate different secrets, silently invalidating one fresh cookie. If saving fails, every call makes a new key and nobody stays signed in. It is also read from SQLite on every check. | Create once at `Open` (`INSERT OR IGNORE`, read back) and cache in memory. | Fixed 2026-10-06 (a56be56) |
 | RS4 | `routes/access.go:98-117, 127-133` | One DB lookup per `tp_ev_`/`tp_rm_` cookie. One unauthenticated request with ~1 MB of fake cookie names triggers tens of thousands of queries. | Examine at most ~16 session cookies; skip duplicates. | Fixed 2026-10-06 (a56be56) |
 | RS5 | `main.go:150-154` | Only `ReadHeaderTimeout` is set, so slow-body POSTs (up to 32 MiB on `/import`) and idle keep-alives hold connections indefinitely. | Add `ReadTimeout` (~60 s), `WriteTimeout`, `IdleTimeout` (~120 s). | Fixed 2026-10-06 (a56be56) |
-| RS6 | `routes/access.go:226-245` (`accessGate`) | Gating re-encodes the route table as path prefixes; a new box-level route under another prefix would be silently open. | Mount box-admin routes in a `r.Group` with the gate middleware. | Open |
-| RS7 | `routes/events.go:223-244, 333-346`; `timerpi/events.go:240-247` | Event and room names are only trimmed (an 8 MiB name is accepted), and creation is open and unlimited (50 rooms per call). | Clip names with `ClipUTF8(…, 120)`; cap events per box and rate-limit creation. | Open |
+| RS6 | `routes/access.go:226-245` (`accessGate`) | Gating re-encodes the route table as path prefixes; a new box-level route under another prefix would be silently open. | Mount box-admin routes in a `r.Group` with the gate middleware. | Fixed 2026-10-06 (ada612c) |
+| RS7 | `routes/events.go:223-244, 333-346`; `timerpi/events.go:240-247` | Event and room names are only trimmed (an 8 MiB name is accepted), and creation is open and unlimited (50 rooms per call). | Clip names with `ClipUTF8(…, 120)`; cap events per box and rate-limit creation. | Fixed 2026-10-06 (ada612c) |
 
 ### Smaller bugs
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RS8 | `routes/api.go:261` | A malformed JSON body on `/cmd/start` is treated as empty args, starting the armed or first session. | Return 400 on bad JSON. | Open |
-| RS9 | `timerpi/gen.go:46-77, 176-178` | `ResolveShowID` refuses all-digit idents but `NewCode` can generate them, about 1 in 11,000 codes ((10/32)^8, not the "10^-7" in the comment). Such a room is unreachable. | Reject all-digit codes in `NewCode`; fix the comment. | Open |
+| RS8 | `routes/api.go:261` | A malformed JSON body on `/cmd/start` is treated as empty args, starting the armed or first session. | Return 400 on bad JSON. | Fixed 2026-10-06 (ada612c) |
+| RS9 | `timerpi/gen.go:46-77, 176-178` | `ResolveShowID` refuses all-digit idents but `NewCode` can generate them, about 1 in 11,000 codes ((10/32)^8, not the "10^-7" in the comment). Such a room is unreachable. | Reject all-digit codes in `NewCode`; fix the comment. | Fixed 2026-10-06 (ada612c) |
 | RS10 | `routes/audience.go:226-235, 260-273` | `voteRecent`/`voteMark` and `askRecent`/`askMark` are separated by the DB call, so concurrent requests from one peer all pass. | Reserve the slot atomically; release on validation failure. | Fixed 2026-10-06 `906bd8f` |
 | RS11 | `public/src/audience.js:102-109, 205-208` | The phone records "mine" and the upvote before the server accepts. On failure (429, voting closed) it still shows "(you)" or "You got it right!", and the upvote button stays disabled. | Roll back local state on failure. | Fixed 2026-10-06 `a8d77d2` |
-| RS12 | `timerpi/polls.go:575-577` | The public submission total counts pending and dismissed entries, revealing how many are held back. | Count only visible entries in public views. | Open |
+| RS12 | `timerpi/polls.go:575-577` | The public submission total counts pending and dismissed entries, revealing how many are held back. | Count only visible entries in public views. | Fixed 2026-10-06 (ada612c) |
 | RS13 | `timerpi/polls.go:452-461` (`DeletePoll`) | Two statements with no transaction, second error ignored. Deleting a spotlighted entry leaves `spot` pointing at a missing row. | One transaction plus `UPDATE polls SET spot=0 WHERE spot=?`. | Open |
 | RS14 | `routes/audience.go:385-393` (`apiPollEdit`) | Omitted `autoApprove` becomes false and omitted `correct` becomes -1, so a PATCH that changes only the question turns auto-approve off, and quiz edits without `correct` fail. | Pointer fields; keep stored values when absent. | Fixed 2026-10-06 `ffdf054` |
 | RS15 | `public/src/moderate.js:224-225` | `kept.indexOf(options[correct])` returns the first match, so duplicate option text can store the wrong quiz answer. | Compute the index while filtering empty options. | Fixed 2026-10-06 `ffdf054` |
