@@ -217,6 +217,7 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-06 | Captured screens get a key: only keyed screens receive presenter items and the running order. |
 | 2026-10-06 | **Cloud + venue boxes** ([VENUE-CLOUD.md](VENUE-CLOUD.md)): the cloud server holds many events; a box is one display attached to one event at a time; the venue box is home during the show and the cloud relays audience traffic; without internet audience features are off; moderators reach the control panel at `timerpi.local`. |
 | 2026-10-06 | Pairing: unpaired boxes show a pairing code; pairing works on the cloud or on `timerpi.local` (offline too). Boxes release 4 h after the event's end date/time, or when the event is deleted. |
+| 2026-10-06 | UI round (STATUS U1–U29): displays never show the event code; room names on displays read "Room: <name>" when the event has several rooms; walk-in schedule lines are `hh:mm  Title - Speaker` (24 h); no tap-for-full-screen on displays; built-in layouts are templates, edited as named copies; moderators work only in Run and Audience and can import running orders and interaction lists; only the SuperOperator changes themes; the Setup tab goes. |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

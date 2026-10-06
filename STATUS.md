@@ -95,6 +95,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **B5** | ✅ Fixed: audience tiles render edit chrome only in the editor. | |
 | **B6** | ✅ Fixed 2026-10-05: unknown roles are refused at join, and only `controls` may send commands. | `ws/session.go`, `ws/commands.go` |
 | **B7** | ✅ Moot 2026-10-06: the zone page is retired (C10). | `routes/zone.go` |
+| **B8** | ✅ Fixed 2026-10-06: phones got "vote needs a device id". The live service ran last night's binary but serves `public/` from the working tree, so the new phone script (device id now issued by the server, BUGLOG RW2) met the old server. Rebuilt and restarted; a phone vote is counted again. Root cause is C9 (now urgent). | `bin/timerpi`, C9 |
 
 ### 4.2 New work from the spec (in dependency order)
 
@@ -117,6 +118,69 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N15** | Cloud ↔ primary link: pull the event to the venue, stream the copy back | H6 | §6 |
 | **N16** | Audience relay through the cloud; "audience paused" when the link is down | H2, H6 | §6 |
 
+### 4.2a Owner feedback 2026-10-06 (UI round)
+
+Owner's list after trying the build, grouped by area. Wording kept close to the owner's.
+
+**Screens and displays**
+
+| ID | To do |
+|---|---|
+| **U1** | Handle device rotation on phones/tablets used as displays (e.g. an iPhone as a timer display): rotating the device re-lays the screen automatically. |
+| **U2** | Remove the "F / tap for full screen" behaviour from displays. |
+| **U3** | Walk-in schedule: one line per session, `hh:mm  Session Title - Speaker Name` (start time only, 24-hour clock). |
+| **U4** | Walk-in current and next session read: `Current Session: Start Time · Duration · Speaker` and `Next Session: Start Time · Duration · Speaker`. |
+| **U5** | Walk-in, Audience and Presenter displays never show the event code. |
+| **U6** | Wherever a display shows the room name, prefix it `Room: <name>` (e.g. "Room: Stark"), only when the event has more than one room. |
+| **U7** | Turning an audience interaction on or off must not flash or re-render Walk-in screens (it doesn't concern them). |
+
+**Layouts and the Screens page**
+
+| ID | To do |
+|---|---|
+| **U8** | The layout editor is cumbersome: full screen keeps popping in and out; the handles aren't self-explanatory; "Edit layout" has to be pressed twice before editing works. Make it one clear editing mode. |
+| **U9** | Bug: a display's layout can't be changed from the Screens page. |
+| **U10** | Built-in layouts are stored as **templates**. Users create and adjust their own layouts from a template. |
+| **U11** | When a screen uses a template and the user hits "Edit layout": ask for a name for the new layout and which screens should use it, then edit that copy. |
+| **U12** | Screens page: move "Forget" to a red X / close button in the top-right corner of each screen card (`panel tp-scr`). |
+
+**Running order (Run tab)**
+
+| ID | To do |
+|---|---|
+| **U13** | Bug: typing "R" (and other shortcut keys) in an inline input triggers a shortcut. Shortcuts must ignore keys typed into inputs. |
+| **U14** | Adding a cue: pick **Session (speaker)** or **Break**; a break can have a location, e.g. where lunch is served ("Great Hall"). |
+| **U15** | Dragging or reordering the running order never interrupts the running cue (engine side fixed in BUGLOG RC2; verify in the UI). |
+| **U16** | Editing a cue (title, alerts…) never resets its running timer: a 30-minute countdown keeps counting from where it was. |
+
+**Audience**
+
+| ID | To do |
+|---|---|
+| **U17** | Polls, interaction options and results use ftl-themes components as much as possible. |
+| **U18** | Audience tab as a table: one row per item, column headers. Columns: view-control toggles (**Presenter**, **Audience**, **Results**), Type, Title/Question, Approve automatically, actions (edit pencil, delete bin). |
+
+**Home and event pages**
+
+| ID | To do |
+|---|---|
+| **U19** | Home: remove "On the TV, projector PC or kiosk, open /d/ on this box." and "It shows Ready and its name."; use "Open a screen here" with an **Open a screen** button. |
+| **U20** | Home: show "Recent on this device" above "Run your event", only when a recent event exists (else hide the whole pane), with a **Resume** button. |
+| **U21** | Home: the TimerPi logo sits inline before "Run your event". |
+| **U22** | Home: each room input in event creation gets an X button on its right to remove it; "Add a room" becomes a button. |
+| **U23** | Home: remove the word "an" from all home page wording. |
+| **U24** | Event page (`/e/<code>`): "Sign out" becomes **Leave event**; label the event ID shown at the top as **Event ID**. |
+
+**Roles and the room page**
+
+| ID | To do |
+|---|---|
+| **U25** | A moderator only works in **Run** and **Audience**. |
+| **U26** | Moderators can import a running order (.xlsx, .xls, .csv, .json): before importing, match the file's column headers to ours and flag any mismatch. |
+| **U27** | Moderators can import a list of audience interactions (.xlsx, .xls, .csv, .json), with the same header matching and flagging. |
+| **U28** | Only the SuperOperator changes themes; moderators can't. |
+| **U29** | Remove the **Setup** tab (redundant); its remaining pieces move to Run, Audience or the SuperOperator dashboard. |
+
 ### 4.3 Cleanup (hanging leftovers)
 
 | ID | Item |
@@ -129,7 +193,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **C6** | ✅ References to files that never existed are removed. Citations of `PLAN §…`, `CONTRACT-UI`, `NOTES-board` resolve via `docs/archive/README.md`. |
 | **C7** | ✅ Done. |
 | **C8** | ✅ `docs/UI-CONTRACT.md`. |
-| **C9** | `templates/`, `public/` and ftl-themes are read from disk, not embedded. Embed them, or add a `make dist` tarball. |
+| **C9** | **Urgent (caused B8).** `templates/`, `public/` and ftl-themes are read from disk, not embedded, so a deployed binary serves whatever the working tree holds. Embed them in the binary (or deploy from a `make dist` tarball), so code and pages always match. |
 | **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; `/api/shows/:ident/zone` and `/api/zone-map` are gone; zone maps were migrated to event maps at adoption. Left: the unused `shows.zone` column and the bundle's legacy zone/map fields. |
 
 ### 4.4 Hardware / field proof
