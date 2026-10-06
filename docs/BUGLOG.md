@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 13 |
+| Suggestion | 41 | 8 |
 
 ## Critical
 
@@ -156,16 +156,16 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
 | RS25 | `routes/showfile.go:293-294, 408, 423, 430, 473, 481, 485, 490`; `routes/api.go:722, 731`; `timerpi/db.go:1051` | Ignored errors: export silently loses messages and schedule when `ListMessages`/`LoadRuntime` fail; restore writes use `_ =`; `LastActionID` returns 0 on a DB error. | Return or log the errors. | Fixed 2026-10-06 (803cac8) |
-| RS26 | `main.go:120-122, 186-190` | `log.Fatalf` on a serve error skips every defer (no DB close, mDNS goodbye or DRM release). `meshCancel` runs after the goodbye, so the poll loop can re-announce. The hub is never stopped, and hijacked sockets aren't closed by `srv.Shutdown`. | Return an error from a `run()` function; cancel the mesh first; add `hub.Stop()`. | Open |
-| RS27 | `timerpi/db.go:195-258`; `timerpi/events.go:73-117` | Startup migrations aren't transactional. A crash mid-`adoptOrphanShows` leaves empty events and re-adopts the show into a duplicate event next boot. | Run the adopt loop and code backfill in one transaction. | Open |
+| RS26 | `main.go:120-122, 186-190` | `log.Fatalf` on a serve error skips every defer (no DB close, mDNS goodbye or DRM release). `meshCancel` runs after the goodbye, so the poll loop can re-announce. The hub is never stopped, and hijacked sockets aren't closed by `srv.Shutdown`. | Return an error from a `run()` function; cancel the mesh first; add `hub.Stop()`. | Fixed 2026-10-06 (1eac2ab) |
+| RS27 | `timerpi/db.go:195-258`; `timerpi/events.go:73-117` | Startup migrations aren't transactional. A crash mid-`adoptOrphanShows` leaves empty events and re-adopts the show into a duplicate event next boot. | Run the adopt loop and code backfill in one transaction. | Fixed 2026-10-06 (1eac2ab) |
 
 ### Performance
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RS28 | `timerpi/db.go:170`; `timerpi/polls.go:460, 576, 592` | No index on `polls.parent`; `childViews`, the count and `DeletePoll` scan the whole table on every recompute. | `CREATE INDEX idx_polls_parent ON polls(parent)`. | Open |
-| RS29 | `ws/hub.go:300-306` | Pings go out one session at a time; `WriteControl` waits up to 5 s for a stalled phone's write lock, so many stalled phones delay pings and dead-session cleanup for minutes. | Ping from each session's own write loop on a ticker. | Open |
-| RS30 | `routes/import.go:28-37` | Append import calls `CreateCue` per row, each renumbering the show (2N updates): ~250k statements for 500 rows, and errors don't stop the loop, so it can apply partially. | One transaction, insert all, `applyOrder` once. | Open |
+| RS28 | `timerpi/db.go:170`; `timerpi/polls.go:460, 576, 592` | No index on `polls.parent`; `childViews`, the count and `DeletePoll` scan the whole table on every recompute. | `CREATE INDEX idx_polls_parent ON polls(parent)`. | Fixed 2026-10-06 (1eac2ab) |
+| RS29 | `ws/hub.go:300-306` | Pings go out one session at a time; `WriteControl` waits up to 5 s for a stalled phone's write lock, so many stalled phones delay pings and dead-session cleanup for minutes. | Ping from each session's own write loop on a ticker. | Fixed 2026-10-06 (1eac2ab) |
+| RS30 | `routes/import.go:28-37` | Append import calls `CreateCue` per row, each renumbering the show (2N updates): ~250k statements for 500 rows, and errors don't stop the loop, so it can apply partially. | One transaction, insert all, `applyOrder` once. | Fixed 2026-10-06 (1eac2ab) |
 | RS31 | `routes/boards.go:53-58` | `boardStore()` runs `boards.Migrate` on every board API call and board render. | Migrate once at startup or behind `sync.Once`. | Fixed 2026-10-06 `38eec8b` (also: the lazy table broke screen templates and bundle import on a fresh box) |
 | RS32 | `routes/screens.go:183-190` | `screenCard` calls `GetBoard` per screen although `ListBoards` already loaded them: an N+1 on every 3 s Screens poll and every `notifyControls`. | Pass a `map[id]Board`. | Open |
 | RS33 | `public/src/timerpi.js:645-711` (`paint`) | Every animation frame (60 Hz on a Pi) runs `querySelectorAll` over the cue list, day-bar segments and `#tp-rate`, though digits change once a second. | Cache nodes in `_collect()`; repaint only when the displayed second changes. | Open |
