@@ -291,7 +291,8 @@ func TestDayStartFanout(t *testing.T) {
 	defer a.close()
 	a.readUntil(t, "joined")
 
-	const stamp = int64(1791117428137)
+	// Day starts must be within about a day of now (BUGLOG RS23).
+	stamp := time.Now().Add(-time.Hour).UnixMilli()
 	a.send(t, map[string]any{"t": "cmd", "action": "settings", "args": map[string]any{"ts": stamp}})
 	m := a.readUntil(t, "state")
 	rt := m["snapshot"].(map[string]any)["runtime"].(map[string]any)
@@ -465,10 +466,13 @@ func TestScheduleFrameOnStructureAndAnchorChange(t *testing.T) {
 		t.Fatalf("schedule dayStartTS missing: %v", sched)
 	}
 
-	// A daystart jump re-ships the frame with the new anchor.
-	a.send(t, map[string]any{"t": "cmd", "action": "settings", "args": map[string]any{"ts": dayStart + 555_000}})
+	// A daystart jump re-ships the frame with the new anchor (an anchor
+	// near now: far-off anchors are refused, BUGLOG RS23).
+	_ = dayStart
+	jump := float64(time.Now().Add(-time.Hour).UnixMilli())
+	a.send(t, map[string]any{"t": "cmd", "action": "settings", "args": map[string]any{"ts": jump}})
 	sched2 := a.readUntil(t, "schedule")
-	if got := sched2["dayStartTS"].(float64); got != dayStart+555_000 {
+	if got := sched2["dayStartTS"].(float64); got != jump {
 		t.Fatalf("daystart jump not reflected: %v", got)
 	}
 	if rows := sched2["rows"].([]any); len(rows) != 3 {

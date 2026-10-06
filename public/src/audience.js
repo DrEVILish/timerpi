@@ -63,29 +63,47 @@ async function postRetry(path, body) {
 
 /* ---------------------------------------------------------------- render -- */
 
+// The page is the question, a form slot (the "ask" box, built once per
+// item) and a live slot (bars, wall, cloud). Live updates while the same
+// item stays in the same state only rebuild the live slot, so the text box
+// someone is typing in is never torn down: no lost caret or keyboard
+// composition, and a send that lands during an update clears the real box
+// (BUGLOG RW23).
+let liveSlot = null;
 function render() {
   const sig = item ? `${item.id}:${item.kind}:${item.state}` : '';
   const fresh = sig !== shownSig;
   shownSig = sig;
+  if (!fresh && item && liveSlot && main.contains(liveSlot)) {
+    setTextOf(main.querySelector('.tp-aud-q'), item.question);
+    const live = el('div', 'tp-aud-live');
+    renderLive(live, null);
+    liveSlot.replaceWith(live);
+    liveSlot = live;
+    return;
+  }
   const box = el('div', 'tp-aud-item');
+  liveSlot = null;
   if (!item) {
     box.append(el('p', 'tp-aud-wait-title', 'WAITING FOR THE ROOM'),
       el('p', 'text-muted', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
   } else {
     box.append(el('h2', 'tp-aud-q', item.question));
-    if (item.kind === 'poll' || item.kind === 'quiz') renderVote(box);
-    else if (item.kind === 'wordcloud') renderCloud(box);
-    else renderWall(box);
+    const formSlot = el('div', 'tp-aud-formslot');
+    const live = el('div', 'tp-aud-live');
+    box.append(formSlot, live);
+    renderLive(live, formSlot);
+    liveSlot = live;
   }
-  // Keep a focused text box (typing a question) across live updates.
-  const typing = main.querySelector('textarea, input[type=text]');
-  const draft = typing?.value || '';
-  const hadFocus = typing && document.activeElement === typing;
   main.replaceChildren(box);
-  const again = main.querySelector('textarea, input[type=text]');
-  if (again && draft) again.value = draft;
-  if (again && hadFocus) again.focus();
   if (fresh) box.classList.add('tp-aud-in');
+}
+function setTextOf(node, text) { if (node && node.textContent !== text) node.textContent = text; }
+// renderLive fills the live slot; formSlot is given only on a full build.
+function renderLive(live, formSlot) {
+  if (item.kind === 'poll' || item.kind === 'quiz') renderVote(live);
+  else if (item.kind === 'wordcloud') renderCloud(live, formSlot);
+  else renderWall(live, formSlot);
 }
 
 function renderVote(box) {
@@ -99,12 +117,17 @@ function renderVote(box) {
       b.type = 'button';
       b.setAttribute('aria-pressed', String(mine === i));
       b.addEventListener('click', async () => {
-        store.set(`tp.aud.vote.${item.id}`, i);
+        const key = `tp.aud.vote.${item.id}`;
+        const before = store.get(key, null);
+        store.set(key, i);
         render();
         try {
           await postRetry('/vote', { pollId: item.id, choice: String(i) });
           setNote('Vote received — you can change it until the results are shown.');
         } catch (e) {
+          // Not counted: don't show it as this phone's vote (BUGLOG RS11).
+          store.set(key, before);
+          render();
           setNote(e.message, false);
         }
       });
@@ -171,9 +194,9 @@ function askForm(box, { placeholder, max, multiline, sentText }) {
   box.appendChild(form);
 }
 
-function renderWall(box) {
+function renderWall(box, formSlot) {
   const isQA = item.kind === 'qa';
-  askForm(box, {
+  if (formSlot) askForm(formSlot, {
     placeholder: isQA ? 'Ask a question…' : 'Share an idea…', max: 280, multiline: true,
     sentText: 'Sent — the moderator will review it shortly.',
   });
@@ -205,7 +228,15 @@ function renderWall(box) {
       ups.add(k.id);
       store.set('tp.aud.up', [...ups].slice(-200));
       up.disabled = true;
-      try { await postRetry('/vote', { pollId: k.id, choice: '1' }); } catch (e) { setNote(e.message, false); }
+      try {
+        await postRetry('/vote', { pollId: k.id, choice: '1' });
+      } catch (e) {
+        // Not counted: the phone may try again (RS11).
+        ups.delete(k.id);
+        store.set('tp.aud.up', [...ups].slice(-200));
+        up.disabled = false;
+        setNote(e.message, false);
+      }
     });
     li.append(up, el('span', '', k.question));
     list.appendChild(li);
@@ -213,8 +244,8 @@ function renderWall(box) {
   if (kids.length) box.appendChild(list);
 }
 
-function renderCloud(box) {
-  askForm(box, { placeholder: 'One word…', max: 32, multiline: false, sentText: 'Sent — it appears once approved.' });
+function renderCloud(box, formSlot) {
+  if (formSlot) askForm(formSlot, { placeholder: 'One word…', max: 32, multiline: false, sentText: 'Sent — it appears once approved.' });
   const words = item.children || [];
   if (!words.length) return;
   const max = Math.max(1, ...words.map((w) => w.upvotes || 0));
@@ -237,6 +268,7 @@ function adopt(poll) {
 let ws = null;
 let backoff = 1000;
 let restTimer = null;
+let retryTimer = 0;
 
 function startRest() {
   if (restTimer) return;
@@ -255,13 +287,22 @@ function stopRest() {
   restTimer = null;
 }
 
+// One socket per phone (BUGLOG RW22): connect() is a no-op while a socket
+// is connecting or open, a pending retry is cancelled when another path
+// connects first, and a close from a socket that is no longer current
+// never schedules another retry.
 function connect() {
+  clearTimeout(retryTimer);
+  retryTimer = 0;
+  if (ws && ws.readyState <= 1) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  try { ws = new WebSocket(`${proto}://${location.host}/ws`); } catch { return retry(); }
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ v: 1, t: 'join', role: 'audience', show: code, peerId: peer, joinedAt: Date.now() }));
+  let sock;
+  try { sock = new WebSocket(`${proto}://${location.host}/ws`); } catch { return retry(); }
+  ws = sock;
+  sock.onopen = () => {
+    sock.send(JSON.stringify({ v: 1, t: 'join', role: 'audience', show: code, peerId: peer, joinedAt: Date.now() }));
   };
-  ws.onmessage = (ev) => {
+  sock.onmessage = (ev) => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === 'poll') {
@@ -273,15 +314,16 @@ function connect() {
       setNote(m.message || 'Connection problem', false);
     }
   };
-  ws.onclose = () => retry();
-  ws.onerror = () => { try { ws.close(); } catch { /* */ } };
+  sock.onclose = () => { if (sock === ws) retry(); };
+  sock.onerror = () => { try { sock.close(); } catch { /* */ } };
 }
 function retry() {
   setNote('Reconnecting…', false);
   startRest();
+  if (retryTimer) return;
   const wait = backoff + Math.random() * backoff;
   backoff = Math.min(backoff * 2, 15000);
-  setTimeout(connect, wait);
+  retryTimer = setTimeout(connect, wait);
 }
 
 connect();

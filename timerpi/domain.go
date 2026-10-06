@@ -153,6 +153,26 @@ func DayStartTSFrom(hhmm string, nowMS int64) int64 {
 	return time.Date(t.Year(), t.Month(), t.Day(), h, m, 0, 0, t.Location()).UnixMilli()
 }
 
+// ClockAt resolves a wall-clock "HH:MM" inside the room's day (midnight
+// handling, STATUS: owner 2026-10-06; BUGLOG RW25). With a day anchor it is
+// that day's date at HH:MM, or the NEXT date when HH:MM is earlier than the
+// anchor: a day starting 18:00 runs 23:30, then 00:15 tomorrow. With no
+// anchor it is today's HH:MM (DayStartTSFrom). 0 for a bad time. Calendar
+// arithmetic (AddDate) keeps DST days right.
+func ClockAt(hhmm string, dayStartTS, nowMS int64) int64 {
+	if dayStartTS == 0 {
+		return DayStartTSFrom(hhmm, nowMS)
+	}
+	ts := DayStartTSFrom(hhmm, dayStartTS)
+	if ts == 0 {
+		return 0
+	}
+	if ts < dayStartTS {
+		ts = time.UnixMilli(ts).Local().AddDate(0, 0, 1).UnixMilli()
+	}
+	return ts
+}
+
 // Cue is one row of the running order. Pos is the stable visual/run order
 // (1-based, contiguous); ID is the stable row identity used by reorder ops.
 type Cue struct {

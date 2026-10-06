@@ -24,6 +24,8 @@ type Engine struct {
 	lastAlert   int
 	lastCrossed bool
 	rtDirty     bool // reconcileLocked repaired rt; Tick must commit it
+	// lastRollCheck throttles the new-day check in Tick (once a minute).
+	lastRollCheck int64
 
 	// activeID is the cue id behind rt.ActivePos (0 = unknown). Cue CRUD
 	// renumbers positions behind the engine's back; cuesLocked re-finds
@@ -204,7 +206,13 @@ func (e *Engine) ApplyCmd(action string, args map[string]any) error {
 	case "rate":
 		return e.SetRate(argFloat(args, "rate"))
 	case "daystart":
-		return e.SetDayStart(argInt(args, "ts"))
+		// 0 clears the anchor; anything else must be within about a day of
+		// now (BUGLOG RS23: {"ts":1} anchored the day in 1970).
+		ts := argInt(args, "ts")
+		if ts != 0 && (ts < e.now()-36*3600*1000 || ts > e.now()+36*3600*1000) {
+			return ErrBadArgs
+		}
+		return e.SetDayStart(ts)
 	default:
 		return fmt.Errorf("%w: %q", ErrUnknownCmd, action)
 	}
@@ -333,6 +341,10 @@ func (e *Engine) Tick(nowMS int64) error {
 		e.mu.Unlock()
 		return err
 	}
+	if nowMS-e.lastRollCheck >= 60_000 {
+		e.lastRollCheck = nowMS
+		e.rolloverLocked(cues, nowMS)
+	}
 	if c := cueAtPos(cues, e.rt.ActivePos); c != nil && e.rt.Running && !e.rt.Paused && c.TimerKind == TimerCountdown {
 		remaining, _, _ := DisplayedRemaining(c, e.rt, nowMS)
 		crossed := remaining <= 0
@@ -380,7 +392,7 @@ func (e *Engine) Tick(nowMS int64) error {
 	// freshly cloned) show with inherited startAt times must NOT auto-
 	// start cue 1 at 14:00 on a day nobody has begun.
 	if !e.rt.Running && !e.rt.Paused && e.rt.ActivePos > 0 {
-		if next := autoStartDue(cues, e.rt.ActivePos, nowMS); next > 0 {
+		if next := autoStartDue(cues, e.rt.ActivePos, e.rt.DayStartTS, nowMS); next > 0 {
 			if serr := e.startLocked(next); serr == nil {
 				changed = true
 				startedPos = next // E5 scheduled start fires the hook too
@@ -724,6 +736,47 @@ func (e *Engine) setRateLocked(rate float64) error {
 	return nil
 }
 
+// dayRolloverGrace: how long after a day's planned end the room may start
+// a new day (overruns and late finishes stay on their day).
+const dayRolloverGrace int64 = 4 * 3600 * 1000
+
+// rolloverLocked starts a new day for an idle room (BUGLOG RW26, owner
+// 2026-10-06 "handle midnight and day roll over"). The stored day anchor
+// used to stay on the first day forever, so day 2 showed yesterday's times
+// and every session as done. A new day starts only when ALL hold:
+//   - nothing is running or paused (a show over midnight is never cut);
+//   - the anchor is on an earlier calendar day than now;
+//   - the anchored day's planned end plus 4 h has passed (late finishes,
+//     overruns and paused breaks after midnight keep their day).
+// Then the day re-anchors to the room's scheduled start ("09:00" → today
+// 09:00; none → unanchored until the first GO) and the playhead goes back
+// to the top, so GO starts the first session again.
+func (e *Engine) rolloverLocked(cues []Cue, now int64) bool {
+	if e.rt.Running || e.rt.Paused || e.rt.DayStartTS == 0 {
+		return false
+	}
+	if startOfDay(e.rt.DayStartTS) >= startOfDay(now) {
+		return false
+	}
+	end := e.rt.DayStartTS + ComputeSchedule(cues, e.rt.DayStartTS, 1).TotalMS
+	if now < end+dayRolloverGrace {
+		return false
+	}
+	anchor := int64(0)
+	if e.deps.Show != nil {
+		if sh, err := e.deps.Show(); err == nil {
+			anchor = DayStartTSFrom(sh.DayStart, now)
+		}
+	}
+	e.rt.DayStartTS = anchor
+	e.rt.ActivePos, e.rt.PrevPos, e.rt.NextPos = 0, 0, 0
+	e.activeID = 0
+	e.rt.AnchorTS, e.rt.PausedElapsedMS = 0, 0
+	e.lastAlert, e.lastCrossed = 0, false
+	e.rtDirty = true
+	return true
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers shared with schedule.go / snapshot.go
 
@@ -731,7 +784,9 @@ func (e *Engine) setRateLocked(rate float64) error {
 // wall-clock startAt has come (0 when none). Cues at or before the playhead
 // are never re-armed by the clock — firing moves ActivePos forward, which
 // is also what stops refires.
-func autoStartDue(cues []Cue, activePos, nowMS int64) int64 {
+// Times resolve inside the room's day (ClockAt), so "00:15" in a day that
+// started at 18:00 means tonight after midnight, not this morning.
+func autoStartDue(cues []Cue, activePos, dayStartTS, nowMS int64) int64 {
 	for i := range cues {
 		if cues[i].Pos <= activePos {
 			continue
@@ -739,7 +794,7 @@ func autoStartDue(cues []Cue, activePos, nowMS int64) int64 {
 		if cues[i].StartAt == "" {
 			continue
 		}
-		if ts := DayStartTSFrom(cues[i].StartAt, nowMS); ts != 0 && ts <= nowMS {
+		if ts := ClockAt(cues[i].StartAt, dayStartTS, nowMS); ts != 0 && ts <= nowMS {
 			return cues[i].Pos
 		}
 	}
@@ -902,6 +957,11 @@ func (r *Engines) Get(showID int64) (*Engine, error) {
 	// engine construction — service reboot before the show should not
 	// leave the day-bar needle hidden. Only anchors when the operator
 	// hasn't manually anchored (manual anchors stay under the operator).
+	// A box switched on the next morning starts the new day straight away
+	// (the first Tick runs the day-rollover check).
+	if e != nil {
+		_ = e.Tick(e.now())
+	}
 	if e != nil && e.deps.Show != nil {
 		if sh, serr := e.deps.Show(); serr == nil {
 			if ts := DayStartTSFrom(sh.DayStart, e.now()); ts != 0 && e.rt.DayStartTS == 0 {
