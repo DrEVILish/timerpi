@@ -672,7 +672,8 @@ func (d *Deps) apiEventMap(c *gin.Context) {
 		return
 	}
 	if body.AssetID > 0 {
-		if _, err := d.Store.GetAsset(body.AssetID); err != nil {
+		a, err := d.Store.GetAsset(body.AssetID)
+		if err != nil || (a.EventID != 0 && a.EventID != ev.ID) {
 			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown asset"})
 			return
 		}

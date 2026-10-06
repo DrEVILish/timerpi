@@ -449,7 +449,7 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 			if !ok {
 				continue
 			}
-			if na, aerr := d.Store.CreateAsset(a.Name, mime, data); aerr == nil {
+			if na, aerr := d.Store.CreateAsset(eventID, a.Name, mime, data); aerr == nil {
 				assetX[a.ID] = na.ID
 			}
 		}

@@ -267,7 +267,7 @@ func TestAssetList(t *testing.T) {
 	if code, _ := uploadAsset(t, ts, "map-north.png", img); code != 200 {
 		t.Fatalf("upload: %d", code)
 	}
-	if code, b := ts.call("GET", "/api/assets", nil, ""); code != 200 || !strings.Contains(string(b), "map-north.png") {
+	if code, b := ts.call("GET", "/api/assets?room="+ts.showCode, nil, ""); code != 200 || !strings.Contains(string(b), "map-north.png") {
 		t.Fatalf("list: %d %s", code, b)
 	}
 

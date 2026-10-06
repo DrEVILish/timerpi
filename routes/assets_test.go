@@ -32,7 +32,7 @@ func uploadAsset(t *testing.T, ts *apiTest, name string, body []byte) (int, stri
 	fw, _ := w.CreateFormFile("file", name)
 	fw.Write(body)
 	w.Close()
-	code, raw := ts.callType("POST", "/api/assets", buf.Bytes(), w.FormDataContentType())
+	code, raw := ts.callType("POST", "/api/assets?event="+ts.eventCode, buf.Bytes(), w.FormDataContentType())
 	return code, string(raw)
 }
 
@@ -137,35 +137,5 @@ func TestBoardPUTAcceptsRoomsTypes(t *testing.T) {
 	if ocode, _ := ts.call("PUT", fmt.Sprintf("/api/shows/%s/boards/%d", ts.showCode, created.ID),
 		[]byte(bad), ""); ocode != 400 {
 		t.Errorf("overlap accepted: %d", ocode)
-	}
-}
-
-func TestZoneMapReachesPage(t *testing.T) {
-	ts := newAPITest(t)
-	if err := ts.db.SetShowZone(ts.showID, "Hall B"); err != nil {
-		t.Fatalf("zone: %v", err)
-	}
-	code, raw := uploadAsset(t, ts, "map.png", pngBytes(t))
-	if code != 200 {
-		t.Fatalf("upload: %d %s", code, raw)
-	}
-	var up struct {
-		ID int64 `json:"id"`
-	}
-	json.Unmarshal([]byte(raw), &up)
-	if code, b := ts.call("POST", "/api/zone-map",
-		[]byte(fmt.Sprintf(`{"zone":"Hall B","assetId":%d}`, up.ID)), ""); code != 200 {
-		t.Fatalf("zone-map: %d %s", code, b)
-	}
-	code, b := ts.call("GET", "/zone/Hall%20B", nil, "")
-	if code != 200 || !strings.Contains(string(b), fmt.Sprintf(`src="/assets/%d"`, up.ID)) {
-		t.Fatalf("zone page map: %d %.200s", code, b)
-	}
-	// Clearing removes it.
-	if code, _ := ts.call("POST", "/api/zone-map", []byte(`{"zone":"Hall B","assetId":0}`), ""); code != 200 {
-		t.Fatalf("zone-map clear: %d", code)
-	}
-	if _, b := ts.call("GET", "/zone/Hall%20B", nil, ""); strings.Contains(string(b), "assets/") {
-		t.Fatalf("cleared map still on page: %.200s", b)
 	}
 }

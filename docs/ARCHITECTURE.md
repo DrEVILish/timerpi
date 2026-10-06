@@ -74,7 +74,7 @@ SQLite tables (in `timerpi/db.go` unless noted):
 | `waiting_screens` | uncaptured `/d/` screens waiting for an operator |
 | `display_boards` (`boards/`) | layouts: name + JSON layout of tiles |
 | `display_presets` | named bundles of per-screen assignments (export/import as JSON) |
-| `assets` | uploaded blobs (venue maps), sniffed MIME, 4 MiB cap |
+| `assets` | uploaded images (venue maps), `event_id` owner (0 = legacy, box-wide), sniffed image type, 4 MiB cap |
 | `actions` | operator action log (200 per show) |
 | `client_errors` | browser error reports (200 per show) |
 | `mesh_state` (`mesh/`) | device mesh identity |
@@ -83,8 +83,8 @@ SQLite tables (in `timerpi/db.go` unless noted):
 sharing a zone label become rooms of one event named after the zone; others
 become one-room events. Legacy show passphrases become room-password hashes,
 and zone maps become event maps. Adopted events have no supervisor password
-until one is set. The old `/zone/<name>` page still works until STATUS N7
-replaces it.
+until one is set. The old `/zone/<name>` page is retired (STATUS C10); old links
+go to the home page.
 
 ## 4. The cue engine
 
@@ -156,7 +156,7 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 |---|---|---|
 | SuperOperator | Cookie `tp_ev_<EVENT>`, issued by `POST /api/events/:code/login` (supervisor password) or on event creation | Everything in the event, including moderating every room |
 | Moderator | Cookie `tp_rm_<ROOM>`, issued by `POST /api/events/:code/rooms/:room/login` (room password, or none). Getting it needs the **event code** | One room: `/c/`, `/screens/`, show-scoped REST (`requireShowGated`), WS `controls` joins |
-| Screen / audience | Nothing | `/d/*`, `/a/*`, `/zone/*`, WS `display`/`screen`/`audience` joins (read-only), waiting-room register/mine, QR images, error reports |
+| Screen / audience | Nothing | `/d/*`, `/a/*`, WS `display`/`screen`/`audience` joins (read-only), waiting-room register/mine, QR images, error reports |
 | Box admin | Cookie `tp_box`, issued by `POST /api/box/setup` (first time, while no box password exists) or `POST /api/box/login` (box password). Event sessions never count (`routes/box.go`) | `/settings`, `/api/network/*`, `/api/osc*`, `POST /api/theme` |
 
 - Session cookies are `HMAC(secret, scope | codes | stored password hash)`. The secret is random per box (settings `auth.secret`). Changing a password therefore signs every holder of the old one out.

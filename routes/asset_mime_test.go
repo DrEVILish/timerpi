@@ -26,7 +26,8 @@ func TestBundleAssetMimeIsSniffed(t *testing.T) {
 	if code, b := ts.call("POST", "/api/events/"+ts.eventCode+"/rooms/import", []byte(bundle), ""); code != http.StatusCreated {
 		t.Fatalf("import: %d %.200s", code, b)
 	}
-	list, err := ts.db.ListAssets()
+	ev, _ := ts.db.ResolveEvent(ts.eventCode)
+	list, err := ts.db.ListAssets(ev.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestBundleAssetMimeIsSniffed(t *testing.T) {
 	}
 
 	// A row stored by the old import path still can't render as a page.
-	legacy, err := ts.db.CreateAsset("old.html", "text/html", []byte("<script>alert(1)</script>"))
+	legacy, err := ts.db.CreateAsset(0, "old.html", "text/html", []byte("<script>alert(1)</script>"))
 	if err != nil {
 		t.Fatal(err)
 	}

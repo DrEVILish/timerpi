@@ -1124,7 +1124,7 @@ function openSettings(wid) {  const w = widgetOf(wid);
     };
     sel.value = w.opts?.assetId || '0';
     fill([]);
-    fetch('/api/assets').then((r) => r.json()).then((j) => fill(j?.assets || [])).catch(() => {});
+    fetch(`/api/assets?room=${encodeURIComponent(code)}`).then((r) => r.json()).then((j) => fill(j?.assets || [])).catch(() => {});
     sel.setAttribute('aria-label', 'Map asset');
     sel.addEventListener('change', () => {
       w.opts = { ...(w.opts || {}), assetId: sel.value.replace(/[^0-9]/g, '') };

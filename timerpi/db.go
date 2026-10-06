@@ -238,6 +238,9 @@ func (d *DB) migrate() error {
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
 		},
+		"assets": {
+			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
+		},
 	}
 	for table, cols := range extra {
 		for _, nc := range cols {
@@ -256,7 +259,10 @@ func (d *DB) migrate() error {
 	if err := d.migrateShowCodes(); err != nil {
 		return err
 	}
-	return d.adoptOrphanShows()
+	if err := d.adoptOrphanShows(); err != nil {
+		return err
+	}
+	return d.migrateAssetOwners()
 }
 
 // migrateShowCodes backfills the END-of-chain shows.code migration: every

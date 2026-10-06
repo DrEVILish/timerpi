@@ -226,8 +226,8 @@ func (d *Deps) accessGate() gin.HandlerFunc {
 			}
 		case p == "/api/waiting/register" || p == "/api/waiting/mine":
 			// Screens register themselves without signing in.
-		case strings.HasPrefix(p, "/api/waiting") || strings.HasPrefix(p, "/api/assets") ||
-			p == "/api/zone-map":
+		case strings.HasPrefix(p, "/api/waiting"):
+			// /api/assets checks its event scope in the handlers (assets.go).
 			if !d.requireAnySession(c) {
 				return
 			}

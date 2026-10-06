@@ -29,7 +29,7 @@
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
 | `GET /d/:ident` | screen | `?view=stage` (default) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (mod) |
 | `GET /a/:code` | audience | Phone page (open) |
-| `GET /zone/:name` | screen | Event walk-in for a zone (server-rendered, 30 s refresh; to be replaced by a live event walk-in, STATUS N7) |
+| `GET /zone/:name` | — | Retired (STATUS C10); 302 to `/`. The event walk-in replaces it |
 | `GET /favicon.ico` | browser | 301 to `/img/timerpi.svg` |
 | `GET /health` | probe | `{ok, version:"2.0", uptime, device, title, sessions:{connected}}` |
 
@@ -71,7 +71,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST …/import` (multipart `file`, `kind`, `mode=replace\|append`) · `GET …/import-example?fmt=` · `GET /api/import-example?fmt=` | Running-order import |
 | `GET …/file` | mod. v2 full room bundle export (import: `POST /api/events/:code/rooms/import`) |
 | `POST …/messages {text,color?,show?}` · `POST …/messages/:mid/show\|hide` · `DELETE …/messages/:mid` | Stage messages |
-| `POST …/notes` · `POST …/daystart {hhmm}` · `POST …/zone {zone}` | Room settings |
+| `POST …/notes` · `POST …/daystart {hhmm}` | Room settings |
 | `GET …/actions?limit=` · `GET/POST …/client-log` | Action log · browser error reports |
 | `GET …/qr?data=&size=` | QR PNG (open; screens use it) |
 | `DELETE …/sessions/:peer` | Kick a WS session |
@@ -117,7 +117,7 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 |---|---|
 | `GET /api/theme` · `POST /api/theme` (box) | Box default theme (+ installed list from `ftl-themes/dist`) |
 | `GET /api/network` · `POST /api/network/hostname\|role` · `GET /frag/network` | box. Device identity / mesh |
-| `GET/POST /api/assets` · `DELETE /api/assets/:id` · `POST /api/zone-map {zone, assetId}` | Any operator session. Uploads (sniffed MIME, 4 MiB) · legacy zone map pointer |
+| `GET/POST /api/assets?event=CODE` (SuperOperator) or `?room=CODE` (moderator) · `DELETE /api/assets/:id` | Images belong to an event: list = that event's plus legacy unowned ones; upload (sniffed image type, 4 MiB) is owned by the named event; delete needs the owning event's SuperOperator (legacy: box admin) |
 | `GET/POST /api/osc` · `POST /api/osc/test` | box. OSC bridge settings · send test packet |
 
 ## 3. WebSocket `/ws`

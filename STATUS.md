@@ -33,7 +33,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 
 | # | Surface | Status | Gap |
 |---|---|---|---|
-| 1 | Event walk-in | ✅ | `event` / `event-portrait` templates: "All rooms now" (live now/next per room), event schedule (one column per room), event map, clock. Fed by `/api/shows/:room/walkin` (5 s). The old `/zone/` page remains until C10 |
+| 1 | Event walk-in | ✅ | `event` / `event-portrait` templates: "All rooms now" (live now/next per room), event schedule (one column per room), event map, clock. Fed by `/api/shows/:room/walkin` (5 s). The old `/zone/` page is retired (C10) |
 | 2/3 | Room walk-in | ✅ | `room` / `room-portrait` templates; rotation per screen |
 | 4/5 | Room audience display | ✅ | `main` template: one large Audience-item tile (poll/quiz bars, Q&A wall + spotlight, word cloud, ideas) + join QR. Text scaling for big screens comes in the UI pass |
 | 6/7 | Room presenter display | ✅ | `dsm` template; its Audience-item tile follows the Presenter target. Display types (N4) still to do |
@@ -94,7 +94,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **B4** | ✅ Fixed: ideas are entries of their item, shown as a wall with upvotes. | |
 | **B5** | ✅ Fixed: audience tiles render edit chrome only in the editor. | |
 | **B6** | ✅ Fixed 2026-10-05: unknown roles are refused at join, and only `controls` may send commands. | `ws/session.go`, `ws/commands.go` |
-| **B7** | Zone page: an unanchored day computes from epoch, so every row shows as done. The configured theme is ignored. (Superseded by N7, but cheap to fix meanwhile.) | `routes/zone.go` |
+| **B7** | ✅ Moot 2026-10-06: the zone page is retired (C10). | `routes/zone.go` |
 
 ### 4.2 New work from the spec (in dependency order)
 
@@ -125,7 +125,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **C7** | ✅ Done. |
 | **C8** | ✅ `docs/UI-CONTRACT.md`. |
 | **C9** | `templates/`, `public/` and ftl-themes are read from disk, not embedded. Embed them, or add a `make dist` tarball. |
-| **C10** | The zone concept goes away with N1/N7 . Remove `shows.zone`, `/api/shows/:ident/zone`, `/api/zone-map` and the `/super?zone=` filter once events land. Migrate zone maps to event maps. |
+| **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; `/api/shows/:ident/zone` and `/api/zone-map` are gone; zone maps were migrated to event maps at adoption. Left: the unused `shows.zone` column and the bundle's legacy zone/map fields. |
 
 ### 4.4 Hardware / field proof
 

@@ -269,7 +269,7 @@ function initAdmin() {
     const fd = new FormData();
     fd.append('file', f);
     run(async () => {
-      const up = await api('POST', '/api/assets', fd);
+      const up = await api('POST', `/api/assets?event=${EV}`, fd);
       await api('POST', `/api/events/${EV}/map`, { assetId: up.id });
     }, 'Venue map uploaded').then(reload);
   });

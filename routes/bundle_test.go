@@ -34,7 +34,7 @@ func TestBundleFullFidelity(t *testing.T) {
 		t.Fatalf("zone: %v", err)
 	}
 	img := append([]byte(pngHeader), bytes.Repeat([]byte{1, 2, 3}, 24)...)
-	a, aerr := ts.db.CreateAsset("floorplan.png", "image/png", img)
+	a, aerr := ts.db.CreateAsset(0, "floorplan.png", "image/png", img)
 	if aerr != nil {
 		t.Fatalf("asset: %v", aerr)
 	}
