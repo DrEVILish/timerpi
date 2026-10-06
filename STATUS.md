@@ -181,6 +181,28 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **U28** | ✅ Done 2026-10-06: the room page's theme picker shows for the SuperOperator only; screen themes are set on the Screens page (SuperOperator). |
 | **U29** | ✅ Done 2026-10-06: no Setup tab. Import → Run (collapsible); Duplicate → SuperOperator dashboard rooms table; presets → Screens page; the old Screens panel (a copy of the Screens page) is gone. |
 
+**Room page tidy (owner, 2026-10-06)**
+
+Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as behaviour too: the engine stops honouring them and imports ignore them (stored values stay unused; midnight/day rollover stays). Reset is removed entirely (no button, no R key; GO on a row restarts it). The inline table columns are: drag handle, #, Type, Title, Speaker / Where, Duration, Start, End, Timer, At zero, Alert 1 + colour, Alert 2 + colour, Notes, row actions. Tags and row colour stay in the details panel.
+
+| ID | To do |
+|---|---|
+| **U30** | Alert colours use the ftl-themes colour picker (details panel and inline table). |
+| **U31** | Transport (GO, Prev, Next, Pause, Blank) moves above the Running order. Stop/Reset is removed. |
+| **U32** | The adjust buttons move under the countdown readout. |
+| **U33** | The readout fits its pane when it shows m:ss.xx (the hundredths no longer fall off the side). |
+| **U34** | The time-of-day clock moves to the top centre of the header bar. |
+| **U35** | Remove the "Space GO · ← → cue · P pause · R reset · ? more" hint from the room page. |
+| **U36** | Remove the cue filter and the undo button; Cmd/Ctrl+Z still undoes. |
+| **U37** | Messages pane sits below the Current cue pane; Import running order below Messages. |
+| **U38** | No "Next up" section in the Current cue pane. |
+| **U39** | Running order: new cues are added from an inline row in the table, with the columns above. |
+| **U40** | Remove the up/down arrows (rows drag by the handle on the left). |
+| **U41** | Duplicate moves from a row icon to a right-click / long-press row menu. |
+| **U42** | Remove auto-continue, auto-start and Hold after (controls and behaviour). |
+| **U43** | Breaks have a different accent colour from sessions. |
+| **U44** | The Screens page's remove X is a proper ftl-themes element. |
+
 ### 4.3 Cleanup (hanging leftovers)
 
 | ID | Item |
