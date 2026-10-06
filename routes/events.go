@@ -396,6 +396,10 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
 		return
 	}
+	if body.Theme != nil && !themeKnown(*body.Theme) { // RS16
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Unknown theme"})
+		return
+	}
 	if body.Name != nil {
 		if err := d.Store.RenameEvent(ev.ID, *body.Name); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})

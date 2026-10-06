@@ -163,7 +163,7 @@ function card(s) {
     class: 'btn-close tp-scr-forget', type: 'button',
     title: `Forget ${s.name}`, 'aria-label': `Forget screen ${s.name}`,
     onclick: async () => {
-      if (!(await tpConfirm(`"${s.name}" is removed from this list and released: its settings and screen link stop working. If it is still open it comes back as a new screen showing the public timer.`, { title: 'Forget screen?', ok: 'Forget', danger: true }))) return;
+      if (!(await tpConfirm(`"${s.name}" is removed from this list and released: its settings and screen link stop working. If it is open, it goes back to the ready screen, waiting to be captured.`, { title: 'Forget screen?', ok: 'Forget', danger: true }))) return;
       apply(() => post('/screens/forget', { name: s.name }), 'Screen forgotten');
     },
   });

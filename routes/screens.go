@@ -207,6 +207,29 @@ func (d *Deps) screenCard(r timerpi.Screen,
 	return v
 }
 
+// matchRotation turns a screen to suit its new layout, as the capture
+// dialog does: a portrait layout on an unrotated screen gets 90°, a
+// landscape one on a screen turned 90°/270° goes back to 0° (BUGLOG RS19:
+// a portrait template used to stretch across a landscape TV). The
+// operator's own rotation choice stays: this runs only when a layout is
+// picked. Phones and tablets ignore it anyway (they report their own).
+func (d *Deps) matchRotation(id int64, name, orientation string) {
+	cur, err := d.Store.GetScreenByName(id, name)
+	if err != nil {
+		return
+	}
+	rot := cur.Rotation
+	switch {
+	case orientation == "portrait" && rot == 0:
+		rot = 90
+	case orientation != "portrait" && (rot == 90 || rot == 270):
+		rot = 0
+	default:
+		return
+	}
+	_ = d.Store.SetScreenLook(id, name, cur.Kind, rot)
+}
+
 // pushScreen applies one screen's stored config to its live tabs (theme +
 // board assignment frames).
 func (d *Deps) pushScreen(id int64, name string) {
@@ -362,6 +385,11 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 			return
 		}
 	}
+	if body.Rotation == nil && body.BoardID > 0 {
+		if b, err := boards.GetBoard(d.Store.DB, id, body.BoardID); err == nil {
+			d.matchRotation(id, name, b.Parsed().Orientation)
+		}
+	}
 	d.pushScreen(id, name)
 	d.notifyControls(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -513,6 +541,14 @@ func (d *Deps) apiScreenForget(c *gin.Context) {
 	if err := d.Store.DeleteScreen(id, name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
+	}
+	// A screen still open is released too: its tabs go back to the ready
+	// screen (waiting to be captured) instead of re-appearing here as a
+	// blank card, which made Forget look like a no-op (BUGLOG RS17).
+	if d.Hub != nil {
+		for _, pr := range d.Hub.ScreenPeers(id)[name] {
+			d.Hub.KickSession(id, pr[0])
+		}
 	}
 	d.notifyControls(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -817,6 +853,9 @@ func (d *Deps) apiScreenTemplate(c *gin.Context) {
 				_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
 			}
 		}
+	}
+	if tl, ok := boards.TemplateLayouts()[key]; ok {
+		d.matchRotation(id, name, boards.NormalizeLayout(tl).Orientation)
 	}
 	d.pushScreen(id, name)
 	d.notifyControls(id)

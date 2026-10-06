@@ -62,3 +62,17 @@ func TestCmdRefusesMalformedJSON(t *testing.T) {
 		t.Errorf("empty body: %d %s, want 200", code, b)
 	}
 }
+
+// BUGLOG RS16: an unknown theme name is refused, not saved as the default.
+func TestUnknownThemeRefused(t *testing.T) {
+	ts := newAPITest(t)
+	if code, _ := ts.call("POST", "/api/theme", []byte(`{"theme":"no-such-theme"}`), "application/json"); code != 400 {
+		t.Errorf("box theme: %d, want 400", code)
+	}
+	if code, _ := ts.call("POST", "/api/theme", []byte(`{"theme":"blue-future"}`), "application/json"); code != 200 {
+		t.Errorf("installed theme: %d, want 200", code)
+	}
+	if code, _ := ts.call("PATCH", "/api/events/"+ts.eventCode, []byte(`{"theme":"no-such-theme"}`), "application/json"); code != 400 {
+		t.Errorf("event theme: %d, want 400", code)
+	}
+}

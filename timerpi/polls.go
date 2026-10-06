@@ -516,17 +516,30 @@ func (d *DB) Spotlight(showID, itemID, childID int64) error {
 }
 
 // DeletePoll removes one row (votes and children cascade).
+// One transaction: the item, its entries, and any spotlight pointing at
+// the deleted row (BUGLOG RS13: the second delete's error was ignored and
+// a deleted spotlighted entry left spot dangling).
 func (d *DB) DeletePoll(showID, id int64) error {
 	defer d.airDirty(showID)
-	res, err := d.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id)
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM polls WHERE show_id = ? AND id = ?`, showID, id)
 	if err != nil {
 		return fmt.Errorf("timerpi: delete poll: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return sql.ErrNoRows
 	}
-	_, _ = d.Exec(`DELETE FROM polls WHERE show_id = ? AND parent = ?`, showID, id)
-	return nil
+	if _, err := tx.Exec(`DELETE FROM polls WHERE show_id = ? AND parent = ?`, showID, id); err != nil {
+		return fmt.Errorf("timerpi: delete poll entries: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE polls SET spot = 0 WHERE show_id = ? AND spot = ?`, showID, id); err != nil {
+		return fmt.Errorf("timerpi: clear spotlight: %w", err)
+	}
+	return tx.Commit()
 }
 
 // Vote records one device's choice on an open poll/quiz (replacing its old

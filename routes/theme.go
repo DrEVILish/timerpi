@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -27,11 +28,26 @@ func installedThemes() []string {
 	out := []string{}
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".css") {
+		if strings.HasSuffix(name, ".css") && name != "core.css" { // core is the base layer, not a theme
 			out = append(out, strings.TrimSuffix(name, ".css"))
 		}
 	}
 	return out
+}
+
+// themeKnown: "" (the default) or an installed theme bundle. Unknown names
+// used to be saved as "" and answered ok (BUGLOG RS16).
+func themeKnown(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	for _, t := range installedThemes() {
+		if strings.EqualFold(t, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // registerTheme wires the appliance default theme into /settings surfaces:
@@ -57,6 +73,10 @@ func registerTheme(r *gin.Engine) {
 			}
 		} else {
 			body.Theme = c.PostForm("theme")
+		}
+		if !themeKnown(body.Theme) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Unknown theme " + strconv.Quote(body.Theme)})
+			return
 		}
 		if err := config.SetDefaultTheme(body.Theme); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})

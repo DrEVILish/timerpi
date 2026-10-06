@@ -29,5 +29,20 @@ export async function run(t) {
   await pg.waitForTimeout(1200);
   const list = await (await ctx.request.get(`${t.base}/api/shows/${room}/screens`)).json();
   t.check('the screen is gone after confirming', !list.screens.some((s) => s.name === 'Old TV'));
+
+  // BUGLOG RS17: forgetting a screen that is open releases its tab to the
+  // ready screen; it doesn't come back here as a blank card.
+  const tvCtx = await t.browser.newContext();
+  const tv = await tvCtx.newPage();
+  await tv.goto(`${t.base}/d/${room}?screen=Live+TV`);
+  await pg.waitForSelector('button[aria-label="Forget screen Live TV"]', { timeout: 10000 });
+  await pg.click('button[aria-label="Forget screen Live TV"]');
+  await pg.click('.tp-dlg-actions .btn-danger');
+  await tv.waitForURL(/\/d\/\?screen=/, { timeout: 8000 }).catch(() => {});
+  t.check(`the open tab went back to the ready screen (${tv.url().replace(t.base, '')})`, /\/d\/\?screen=Live/.test(tv.url()));
+  await pg.waitForTimeout(2500);
+  const after = await (await ctx.request.get(`${t.base}/api/shows/${room}/screens`)).json();
+  t.check('the forgotten live screen did not come back as a card', !after.screens.some((s) => s.name === 'Live TV'));
+  await tvCtx.close();
   await ctx.close();
 }
