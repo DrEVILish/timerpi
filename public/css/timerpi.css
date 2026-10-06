@@ -1227,7 +1227,7 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .tp-cuetable { font-size: .82rem; }
 .tp-cuetable :is(th, td) { padding-inline: .25rem; vertical-align: middle; }
 .tp-cuetable th { font-size: .7rem; letter-spacing: .03em; }
-.tp-cuetable .tp-cue-title { min-width: 7rem; }
+.tp-cuetable .tp-cue-title { min-width: 6.5rem; }
 .tp-cuetable .tp-cue-notes { color: var(--muted); font-size: inherit; }
 .tp-cuetable .tp-clip { display: block; max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-cuetable .tp-cue-notes .tp-clip { max-width: 4rem; }
@@ -1247,11 +1247,12 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 /* Compact add-row controls: they set the column widths, and the whole
    table should fit a 1440 px screen next to the Current cue pane. */
 .tp-cue-add :is(.input, .select) { padding-inline: .3rem; font-size: .78rem; }
-.tp-cue-add .select { padding-inline-end: 1.1rem; background-position: right .25rem center; }
-.tp-cue-add .tp-cue-kind .select { width: 5.2em; }
-.tp-cue-add :is(.tp-cue-timer, .tp-cue-atzero) .select { width: 6.4em; }
+.tp-cue-add .select { padding-inline: .25rem .95rem; background-position: right .2rem center; font-size: .74rem; }
+.tp-cue-add .tp-cue-kind .select { width: 6.2em; }
+.tp-cue-add .tp-cue-timer .select { width: 7.4em; }
+.tp-cue-add .tp-cue-atzero .select { width: 6.6em; }
 .tp-cue-add .tp-cue-dur .input { width: 4.2em; }
-.tp-cue-add .tp-cue-title .input { width: 100%; min-width: 7em; }
+.tp-cue-add .tp-cue-title .input { width: 100%; min-width: 6.5em; }
 .tp-cue-add .tp-cue-who .input { width: 100%; min-width: 5em; }
 .tp-cue-add .tp-cue-notes .input { width: 100%; min-width: 4em; }
 .tp-alert-field { display: flex; align-items: center; gap: .25rem; }
