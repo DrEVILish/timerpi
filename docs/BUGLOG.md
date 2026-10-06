@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 33 |
+| Suggestion | 41 | 28 |
 
 ## Critical
 
@@ -121,11 +121,11 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RS1 | `routes/access.go:36-42` | Session tokens carry no issue time and never expire server-side. A copied cookie is valid forever; for a password-less room it can never be revoked. | Sign an issued-at time and reject tokens older than `sessionMaxAge`. | Open |
-| RS2 | `routes/access.go:208-216` | `Secure` is hard-coded false, so behind an HTTPS proxy cookies still travel over plain HTTP. | Set `Secure` on TLS or a trusted `X-Forwarded-Proto: https`. | Open |
-| RS3 | `timerpi/events.go:352-362` (`SessionSecret`) | Two concurrent first requests can generate different secrets, silently invalidating one fresh cookie. If saving fails, every call makes a new key and nobody stays signed in. It is also read from SQLite on every check. | Create once at `Open` (`INSERT OR IGNORE`, read back) and cache in memory. | Open |
-| RS4 | `routes/access.go:98-117, 127-133` | One DB lookup per `tp_ev_`/`tp_rm_` cookie. One unauthenticated request with ~1 MB of fake cookie names triggers tens of thousands of queries. | Examine at most ~16 session cookies; skip duplicates. | Open |
-| RS5 | `main.go:150-154` | Only `ReadHeaderTimeout` is set, so slow-body POSTs (up to 32 MiB on `/import`) and idle keep-alives hold connections indefinitely. | Add `ReadTimeout` (~60 s), `WriteTimeout`, `IdleTimeout` (~120 s). | Open |
+| RS1 | `routes/access.go:36-42` | Session tokens carry no issue time and never expire server-side. A copied cookie is valid forever; for a password-less room it can never be revoked. | Sign an issued-at time and reject tokens older than `sessionMaxAge`. | Fixed 2026-10-06 (a56be56) |
+| RS2 | `routes/access.go:208-216` | `Secure` is hard-coded false, so behind an HTTPS proxy cookies still travel over plain HTTP. | Set `Secure` on TLS or a trusted `X-Forwarded-Proto: https`. | Fixed 2026-10-06 (a56be56) |
+| RS3 | `timerpi/events.go:352-362` (`SessionSecret`) | Two concurrent first requests can generate different secrets, silently invalidating one fresh cookie. If saving fails, every call makes a new key and nobody stays signed in. It is also read from SQLite on every check. | Create once at `Open` (`INSERT OR IGNORE`, read back) and cache in memory. | Fixed 2026-10-06 (a56be56) |
+| RS4 | `routes/access.go:98-117, 127-133` | One DB lookup per `tp_ev_`/`tp_rm_` cookie. One unauthenticated request with ~1 MB of fake cookie names triggers tens of thousands of queries. | Examine at most ~16 session cookies; skip duplicates. | Fixed 2026-10-06 (a56be56) |
+| RS5 | `main.go:150-154` | Only `ReadHeaderTimeout` is set, so slow-body POSTs (up to 32 MiB on `/import`) and idle keep-alives hold connections indefinitely. | Add `ReadTimeout` (~60 s), `WriteTimeout`, `IdleTimeout` (~120 s). | Fixed 2026-10-06 (a56be56) |
 | RS6 | `routes/access.go:226-245` (`accessGate`) | Gating re-encodes the route table as path prefixes; a new box-level route under another prefix would be silently open. | Mount box-admin routes in a `r.Group` with the gate middleware. | Open |
 | RS7 | `routes/events.go:223-244, 333-346`; `timerpi/events.go:240-247` | Event and room names are only trimmed (an 8 MiB name is accepted), and creation is open and unlimited (50 rooms per call). | Clip names with `ClipUTF8(…, 120)`; cap events per box and rate-limit creation. | Open |
 
