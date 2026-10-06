@@ -22,7 +22,9 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,12 +37,74 @@ const sessionMaxAge = 14 * 24 * 3600
 func superCookieName(evCode string) string  { return "tp_ev_" + evCode }
 func roomCookieName(roomCode string) string { return "tp_rm_" + roomCode }
 
+// Session tokens are "<issued unix seconds>.<HMAC over the parts and the
+// issue time>". A token older than sessionMaxAge is refused server-side,
+// whatever the browser kept (BUGLOG RS1: tokens used to be valid forever,
+// so a copied cookie for a password-less room could never be revoked).
+var tokenNow = func() int64 { return time.Now().Unix() }
+
+func issueToken(secret []byte, parts ...string) string {
+	at := strconv.FormatInt(tokenNow(), 10)
+	return at + "." + timerpi.SignSession(secret, append(parts, at)...)
+}
+
+func checkToken(secret []byte, tok string, parts ...string) bool {
+	at, _, ok := strings.Cut(tok, ".")
+	if !ok {
+		return false
+	}
+	issued, err := strconv.ParseInt(at, 10, 64)
+	now := tokenNow()
+	if err != nil || issued > now+300 || now-issued > sessionMaxAge {
+		return false
+	}
+	return tokenEq(tok, at+"."+timerpi.SignSession(secret, append(parts, at)...))
+}
+
 func superToken(secret []byte, ev timerpi.Event) string {
-	return timerpi.SignSession(secret, "ev", ev.Code, ev.SuperHash)
+	return issueToken(secret, "ev", ev.Code, ev.SuperHash)
+}
+
+// SuperSessionToken is a fresh supervisor session token for ev (tests that
+// build cookies by hand, e.g. the ws package).
+func SuperSessionToken(store *timerpi.DB, ev timerpi.Event) string {
+	return superToken(store.SessionSecret(), ev)
+}
+
+func superTokenOK(secret []byte, tok string, ev timerpi.Event) bool {
+	return checkToken(secret, tok, "ev", ev.Code, ev.SuperHash)
 }
 
 func roomToken(secret []byte, ev timerpi.Event, room timerpi.Show) string {
-	return timerpi.SignSession(secret, "rm", ev.Code, room.Code, room.RoomPW)
+	return issueToken(secret, "rm", ev.Code, room.Code, room.RoomPW)
+}
+
+func roomTokenOK(secret []byte, tok string, ev timerpi.Event, room timerpi.Show) bool {
+	return checkToken(secret, tok, "rm", ev.Code, room.Code, room.RoomPW)
+}
+
+// secureCookie: mark cookies Secure when the browser reached us over
+// HTTPS, directly or through a proxy (BUGLOG RS2).
+func secureCookie(c *gin.Context) bool {
+	return c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+}
+
+// maxSessionCookies bounds how many tp_ev_/tp_rm_ cookies one request may
+// make us look up (BUGLOG RS4: ~1 MB of fake names meant tens of
+// thousands of queries). Only well-formed, unexpired tokens count, so old
+// cookies never crowd out a live one.
+const maxSessionCookies = 32
+
+// tokenLooksLive is the free pre-check before any DB lookup: the shape
+// "<issued>.<64 hex>" with an issue time inside sessionMaxAge.
+func tokenLooksLive(tok string) bool {
+	at, mac, ok := strings.Cut(tok, ".")
+	if !ok || len(mac) != 64 {
+		return false
+	}
+	issued, err := strconv.ParseInt(at, 10, 64)
+	now := tokenNow()
+	return err == nil && issued <= now+300 && now-issued <= sessionMaxAge
 }
 
 func tokenEq(a, b string) bool {
@@ -63,7 +127,7 @@ func SuperFromCookies(store *timerpi.DB, cookies map[string]string, ev timerpi.E
 	if store == nil || ev.ID == 0 {
 		return false
 	}
-	return tokenEq(cookies[superCookieName(ev.Code)], superToken(store.SessionSecret(), ev))
+	return superTokenOK(store.SessionSecret(), cookies[superCookieName(ev.Code)], ev)
 }
 
 // ModerateFromCookies reports whether the cookies may moderate the room
@@ -84,7 +148,7 @@ func ModerateFromCookies(store *timerpi.DB, cookies map[string]string, showID in
 	if SuperFromCookies(store, cookies, ev) {
 		return true
 	}
-	return tokenEq(cookies[roomCookieName(room.Code)], roomToken(store.SessionSecret(), ev, room))
+	return roomTokenOK(store.SessionSecret(), cookies[roomCookieName(room.Code)], ev, room)
 }
 
 func (d *Deps) isSuper(c *gin.Context, ev timerpi.Event) bool {
@@ -102,7 +166,17 @@ func (d *Deps) hasAnySession(c *gin.Context) bool {
 		return false
 	}
 	cookies := cookieMap(c.Request)
-	for name := range cookies {
+	seen := 0
+	for name, val := range cookies {
+		if !strings.HasPrefix(name, "tp_ev_") && !strings.HasPrefix(name, "tp_rm_") {
+			continue
+		}
+		if !tokenLooksLive(val) {
+			continue
+		}
+		if seen++; seen > maxSessionCookies {
+			break
+		}
 		switch {
 		case strings.HasPrefix(name, "tp_ev_"):
 			if ev, ok := d.Store.ResolveEvent(strings.TrimPrefix(name, "tp_ev_")); ok && SuperFromCookies(d.Store, cookies, ev) {
@@ -193,12 +267,12 @@ func (d *Deps) renderAccessDenied(c *gin.Context, title, msg string) {
 // sign-in.
 func (d *Deps) setSuperSession(c *gin.Context, ev timerpi.Event) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(superCookieName(ev.Code), superToken(d.Store.SessionSecret(), ev), sessionMaxAge, "/", "", false, true)
+	c.SetCookie(superCookieName(ev.Code), superToken(d.Store.SessionSecret(), ev), sessionMaxAge, "/", "", secureCookie(c), true)
 }
 
 func (d *Deps) setRoomSession(c *gin.Context, ev timerpi.Event, room timerpi.Show) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(roomCookieName(room.Code), roomToken(d.Store.SessionSecret(), ev, room), sessionMaxAge, "/", "", false, true)
+	c.SetCookie(roomCookieName(room.Code), roomToken(d.Store.SessionSecret(), ev, room), sessionMaxAge, "/", "", secureCookie(c), true)
 }
 
 // clearSessions drops every TimerPi session cookie on this browser.
@@ -206,7 +280,7 @@ func clearSessions(c *gin.Context) {
 	for _, ck := range c.Request.Cookies() {
 		if strings.HasPrefix(ck.Name, "tp_ev_") || strings.HasPrefix(ck.Name, "tp_rm_") ||
 			strings.HasPrefix(ck.Name, "tp_show_") || ck.Name == "tp_auth" || ck.Name == boxCookieName {
-			c.SetCookie(ck.Name, "", -1, "/", "", false, true)
+			c.SetCookie(ck.Name, "", -1, "/", "", secureCookie(c), true)
 		}
 	}
 }

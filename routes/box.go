@@ -32,7 +32,7 @@ const (
 )
 
 func boxToken(secret []byte, hash string) string {
-	return timerpi.SignSession(secret, "box", hash)
+	return issueToken(secret, "box", hash) // issued-at + HMAC (RS1)
 }
 
 // boxSigned reports whether the request holds a valid box session.
@@ -45,12 +45,12 @@ func (d *Deps) boxSigned(c *gin.Context) bool {
 		return false // unset or unreadable: fail closed
 	}
 	ck, err := c.Cookie(boxCookieName)
-	return err == nil && tokenEq(ck, boxToken(d.Store.SessionSecret(), hash))
+	return err == nil && checkToken(d.Store.SessionSecret(), ck, "box", hash)
 }
 
 func (d *Deps) setBoxSession(c *gin.Context, hash string) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(boxCookieName, boxToken(d.Store.SessionSecret(), hash), sessionMaxAge, "/", "", false, true)
+	c.SetCookie(boxCookieName, boxToken(d.Store.SessionSecret(), hash), sessionMaxAge, "/", "", secureCookie(c), true)
 }
 
 func registerBox(r *gin.Engine, d *Deps) {
@@ -59,7 +59,7 @@ func registerBox(r *gin.Engine, d *Deps) {
 	r.POST("/api/box/login", d.apiBoxLogin)
 	r.POST("/api/box/password", d.apiBoxPassword)
 	r.POST("/api/box/logout", func(c *gin.Context) {
-		c.SetCookie(boxCookieName, "", -1, "/", "", false, true)
+		c.SetCookie(boxCookieName, "", -1, "/", "", secureCookie(c), true)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 }

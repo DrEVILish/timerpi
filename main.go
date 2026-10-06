@@ -169,10 +169,16 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%d", config.HTTPPort())
+	// Slow bodies and idle keep-alives can't hold connections forever
+	// (BUGLOG RS5). WebSockets clear these deadlines after the upgrade
+	// (ws/hub.go) and run their own ping/pong and write deadlines.
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           g,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Bind BEFORE declaring readiness: a failed bind must not produce a

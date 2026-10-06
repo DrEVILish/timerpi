@@ -255,6 +255,11 @@ func (h *Hub) serve(w http.ResponseWriter, req *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The HTTP server's read/write timeouts (main.go, BUGLOG RS5) would
+	// otherwise cut a long-lived socket: the session sets its own read
+	// deadline (pong) and per-frame write deadlines.
+	_ = conn.NetConn().SetDeadline(time.Time{})
+	_ = conn.SetReadDeadline(time.Now().Add(readDeadline))
 	h.runSession(conn, cookies)
 	return nil
 }

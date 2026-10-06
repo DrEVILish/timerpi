@@ -41,6 +41,10 @@ func newAPITest(t *testing.T) *apiTest {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
+	// A fresh browser per test: every test server listens on 127.0.0.1,
+	// and cookie jars ignore ports, so one shared jar collected every
+	// earlier test's sessions.
+	freshDefaultClient()
 
 	ev, rooms, err := db.CreateEvent("API Test Event", testSuperPW, []string{"API Test Show"})
 	if err != nil {

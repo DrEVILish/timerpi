@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 34 |
+| Suggestion | 41 | 33 |
 
 ## Critical
 
@@ -179,6 +179,6 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS36 | `timerpi/db.go` (throughout) | `SELECT *` into structs breaks every read the day a migration adds a column without a struct field. | Explicit column lists. | Open |
 | RS37 | `public/src/timerpi.js` (2,446 lines), `timerpi/db.go` (1,633), `public/src/board.js` (1,426) | Very large files mixing unrelated concerns; `wireCompose`'s misindented block is what hid RC3. | Split along existing sections (db: schema/shows/cues/screens/logs/runtime; board.js: render/compose/walk-in; timerpi.js: screens/cue edit/share). | Open |
 | RS38 | `public/src/timerpi.js:1401-1500, 2306-2352`; `routes/pages.go:77`; `routes/display.go:252` vs `routes/boards.go:339`; `routes/boards.go:373, 455`; `public/src/board.js:75-91`; `templates/fragments/b-widgets.html:20`; `routes/boards.go:251` | Dead and duplicated code: ~150 lines of the old home page (`initHome`, `renderRecent`, `tp.recent.shows`) whose `recordRecent` still writes localStorage on every snapshot; unused `listShowRows`; identical `joinVMof`/`boardJoinOf`; the Runtime copy literal twice; `FACTORY_DEFAULT` drifted from Go (missing `notice`, see C5); a doubled `{{if $.P.Editable}}`; `board` shadowed in `boardView`. | Delete the dead code, dedupe, serve `DefaultLayout()` to the client. | Open |
-| RS39 | `public/src/timerpi.js:1944, 1965` | Cell-edit cancel restores with `host.innerHTML = oldHTML`. Safe today, but breaks the textContent-only rule and drops child listeners. | Save `[...host.childNodes]` and `replaceChildren(...saved)`. | Open |
+| RS39 | `public/src/timerpi.js:1944, 1965` | Cell-edit cancel restores with `host.innerHTML = oldHTML`. Safe today, but breaks the textContent-only rule and drops child listeners. | Save `[...host.childNodes]` and `replaceChildren(...saved)`. | Fixed 2026-10-06 (b5d055d, the inline cell editor restores its cell's nodes) |
 | RS40 | `oscbridge/oscbridge.go`; `routes/oscapi.go:76` | Every bad OSC packet is logged, so a flood fills the journal. The listener binds `0.0.0.0` with no allowlist. | Rate-limit the parse-error log; optional source-IP allowlist. | Open |
 | RS41 | `go.mod` | `github.com/grandcat/zeroconf` is listed `// indirect` but `mdns/mdns.go` imports it directly; Go tooling rewrites the line during some runs. | Move it to the direct `require` block. | Open |

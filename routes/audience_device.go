@@ -58,7 +58,7 @@ func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
 	}
 	id := "d-" + hex.EncodeToString(b[:])
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(audCookieName, audToken(secret, id), audCookieAge, "/", "", false, true)
+	c.SetCookie(audCookieName, audToken(secret, id), audCookieAge, "/", "", secureCookie(c), true)
 	return id, true
 }
 

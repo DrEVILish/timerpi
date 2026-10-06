@@ -381,16 +381,26 @@ func CheckPassword(hash, pw string) bool {
 
 // SessionSecret returns the appliance's HMAC key for session cookies,
 // creating it on first use (settings "auth.secret").
+//
+// It is created once (INSERT OR IGNORE, then read back, so two first
+// requests agree) and kept in memory; it used to be read from SQLite on
+// every check, and a failed save made a new key per call (BUGLOG RS3).
 func (d *DB) SessionSecret() []byte {
-	if v, _ := d.GetSetting("auth.secret"); len(v) == 64 {
-		if b, err := hex.DecodeString(v); err == nil {
-			return b
-		}
+	d.secretMu.Lock()
+	defer d.secretMu.Unlock()
+	if d.secret != nil {
+		return d.secret
 	}
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
-	_ = d.SetSetting("auth.secret", hex.EncodeToString(b))
-	return b
+	_, _ = d.Exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auth.secret', ?)`, hex.EncodeToString(b))
+	if v, _ := d.GetSetting("auth.secret"); len(v) == 64 {
+		if kb, err := hex.DecodeString(v); err == nil {
+			d.secret = kb
+			return kb
+		}
+	}
+	return b // unreadable store: this process's key (not cached, so a recovered store wins)
 }
 
 // SignSession is HMAC-SHA256(secret, parts joined by "|"), hex.

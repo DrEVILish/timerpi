@@ -62,10 +62,10 @@ func registerEvents(r *gin.Engine, d *Deps) {
 	// for other events on the same browser stay.
 	r.GET("/e/:code/leave", func(c *gin.Context) {
 		if ev, ok := d.Store.ResolveEvent(c.Param("code")); ok {
-			c.SetCookie(superCookieName(ev.Code), "", -1, "/", "", false, true)
+			c.SetCookie(superCookieName(ev.Code), "", -1, "/", "", secureCookie(c), true)
 			if rooms, err := d.Store.ListRooms(ev.ID); err == nil {
 				for _, r := range rooms {
-					c.SetCookie(roomCookieName(r.Code), "", -1, "/", "", false, true)
+					c.SetCookie(roomCookieName(r.Code), "", -1, "/", "", secureCookie(c), true)
 				}
 			}
 		}

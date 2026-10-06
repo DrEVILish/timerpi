@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"timerpi/routes"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -106,7 +107,7 @@ func newTestServer(t *testing.T, withRender bool) *testServer {
 	return &testServer{t: t, srv: srv, db: db, engines: engines, hub: hub, oobs: rec, showID: show.ID, showCode: show.Code,
 		// The SuperOperator session cookie every test client presents (the
 		// hub admits "controls" joins only with moderator access).
-		cookie: "tp_ev_" + ev.Code + "=" + timerpi.SignSession(db.SessionSecret(), "ev", ev.Code, ev.SuperHash)}
+		cookie: "tp_ev_" + ev.Code + "=" + routes.SuperSessionToken(db, ev)}
 }
 
 // joinClient dials + joins as a fresh websocket client.

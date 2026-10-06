@@ -22,6 +22,9 @@ type DB struct {
 	*sqlx.DB
 	air  airCache // on-air interaction per room (polls.go OnAirNow)
 	cueG cueGens  // per-show cue write generation (engine cue cache, RW55)
+
+	secretMu sync.Mutex
+	secret   []byte // session signing key, cached (SessionSecret, RS3)
 }
 
 type cueGens struct {
