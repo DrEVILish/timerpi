@@ -132,7 +132,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **U4** | ✅ Done 2026-10-06: new **Current & next** tile (`nownext`): `Current Session: <title>` / `Next Session: <title>`, each with `Start Time`, `Duration`, `Speaker`. The Room walk-in templates use it; screens already on the old walk-in layout get it by picking the template again. Browser test `walkin-format`. |
 | **U5** | ✅ Done 2026-10-06: screens no longer print the room code ("Session XXXX-XXXX" lines, the title tile's code) or the corner join card with the control-room link. The audience join QR tile stays (that is how phones join). Test `TestScreensShowNoCode`. |
 | **U6** | ✅ Done 2026-10-06: screens print `Room: <name>` when the event has more than one room (titles, stage status, board title tile, walk-in room cards and schedule columns via the feed's `label`), and the bare name otherwise. Tests `TestScreensRoomPrefix`, browser `room-prefix`. |
-| **U7** | Turning an audience interaction on or off must not flash or re-render Walk-in screens (it doesn't concern them). |
+| **U7** | ✅ Done 2026-10-06: screens without audience tiles ignore poll updates, and list tiles (schedule, all rooms, event schedule, current & next, messages) only rebuild when what they show changes. That also ends the flicker on the event walk-in's 5 s refresh. Browser test `walkin-ignores-audience` (fails on the old code). |
 
 **Layouts and the Screens page**
 

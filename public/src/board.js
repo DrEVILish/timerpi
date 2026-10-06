@@ -45,6 +45,20 @@ loadThemeVersion();
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t; };
+// unchanged(el, key): true when el already shows what key describes; else
+// remembers key so the caller rebuilds once. List tiles call it first, so
+// an update that changes nothing they show never rebuilds (flickers) them
+// (STATUS U7).
+const unchanged = (el, key) => {
+  if (!el) return true;
+  if (el.dataset.k === key) return true;
+  el.dataset.k = key;
+  return false;
+};
+// Tiles that show audience interactions; a screen without any ignores
+// poll updates entirely (STATUS U7).
+const AUDIENCE_TILES = new Set(['poll', 'qa', 'wordcloud']);
+const hasAudienceTile = () => !!grid && $$('.b-widget', grid).some((t) => AUDIENCE_TILES.has(t.dataset.widget));
 
 const body = document.body;
 const code = body.dataset.show || '';
@@ -179,7 +193,7 @@ function initMesh() {
           if (mesh.snap) {
             mesh.snap.poll = m.poll || null;
             if ('presenter' in m) mesh.snap.presenter = m.presenter || null;
-            if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
+            if ((snap === mesh.snap || !snap) && hasAudienceTile()) { snap = mesh.snap; renderStatic(); }
           }
           break;
         case 'message':
@@ -440,10 +454,11 @@ function renderNowNext(tile, cue, plan) {
     setText($('.b-js-nn-title', box), c ? c.label : '—');
     const facts = $('.b-js-nn-facts', box);
     if (!facts) return;
+    const row = c && rows.find((x) => x.pos === c.pos);
+    const start = row && r.dayStartTS ? hhmm(r.dayStartTS + row.startMS) : '';
+    if (unchanged(facts, JSON.stringify(c ? [start, c.durationMS, c.speaker] : null))) return;
     facts.textContent = '';
     if (!c) return;
-    const row = rows.find((x) => x.pos === c.pos);
-    const start = row && r.dayStartTS ? hhmm(r.dayStartTS + row.startMS) : '';
     for (const [k, v] of [['Start Time', start], ['Duration', nnDur(c.durationMS)], ['Speaker', c.speaker || '']]) {
       if (!v) continue;
       const f = mk('span', 'b-nn-fact');
@@ -460,6 +475,7 @@ function renderRooms(tile) {
   const box = $('.b-js-rooms', tile);
   const rooms = walkin.data?.rooms;
   if (!box || !rooms) return;
+  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.here, r.now?.label, r.now?.speaker, r.next?.label, r.next?.startTS])))) return;
   box.textContent = '';
   for (const r of rooms) {
     const card = mk('div', 'b-room' + (r.now ? ' is-live' : '') + (r.here ? ' is-here' : ''));
@@ -474,6 +490,7 @@ function renderEventSchedule(tile) {
   const box = $('.b-js-evsched', tile);
   const rooms = walkin.data?.rooms;
   if (!box || !rooms) return;
+  if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.schedule.map((x) => [x.label, x.startTS, x.state])])))) return;
   box.textContent = '';
   for (const r of rooms) {
     const col = mk('div', 'b-evsched-col');
@@ -563,7 +580,7 @@ function renderStaticBody() {
         break;
       case 'messages': {
         const box = $('.b-js-msgs', tile);
-        if (box) {
+        if (box && !unchanged(box, JSON.stringify(snap.messages.map((m) => [m.id, m.text, m.color])))) {
           box.textContent = '';
           if (!snap.messages.length) {
             const d = document.createElement('div');
@@ -632,13 +649,15 @@ function renderStaticBody() {
         // Walk-in style (STATUS U3): "hh:mm  Title - Speaker", 24 h, no
         // duration; no time until the day has a start.
         const ul = $('.b-js-sched', tile);
-        if (ul) {
+        const rows = sched?.rows || computeSchedule(snap).rows;
+        const byPos = new Map(rows.map((r) => [r.pos, r]));
+        const base = snap.runtime.dayStartTS || serverNow();
+        const want = w?.opts?.count || '5';
+        const list = want === 'all' ? snap.cues : snap.cues.slice(0, Number(want) || 5);
+        const key = JSON.stringify([snap.runtime.dayStartTS, snap.runtime.activePos,
+          list.map((c) => [c.pos, c.label, c.speaker, byPos.get(c.pos)?.startMS])]);
+        if (ul && !unchanged(ul, key)) {
           ul.textContent = '';
-          const rows = sched?.rows || computeSchedule(snap).rows;
-          const byPos = new Map(rows.map((r) => [r.pos, r]));
-          const base = snap.runtime.dayStartTS || serverNow();
-          const want = w?.opts?.count || '5';
-          const list = want === 'all' ? snap.cues : snap.cues.slice(0, Number(want) || 5);
           if (!list.length) {
             const li = document.createElement('li');
             li.textContent = 'No cues yet — build the running order in the control room.';
