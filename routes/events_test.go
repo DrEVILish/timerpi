@@ -244,3 +244,29 @@ func TestLogoutClearsSessions(t *testing.T) {
 		t.Errorf("after logout: %d, want 401", code)
 	}
 }
+
+// STATUS U24: "Leave event" drops only this event's sessions on the
+// browser; another event's session survives. The event page labels the
+// code "Event ID".
+func TestLeaveEventOnlyThisEvent(t *testing.T) {
+	ts := newAPITest(t)
+	p := newPersona(ts)
+	p.do("POST", "/api/events/"+ts.eventCode+"/login", `{"pw":"`+testSuperPW+`"}`)
+	code, body := p.do("POST", "/api/events", `{"name":"Other","password":"other-pw","rooms":["X"]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("second event: %d %s", code, body)
+	}
+	var other struct{ Code string }
+	_ = json.Unmarshal([]byte(body), &other)
+	_, page := p.do("GET", "/e/"+ts.eventCode, "", "text/html")
+	if !strings.Contains(page, "Event ID") || !strings.Contains(page, "Leave event") || strings.Contains(page, ">Sign out<") {
+		t.Error("event page: want the Event ID label and Leave event")
+	}
+	p.do("GET", "/e/"+ts.eventCode+"/leave", "")
+	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != http.StatusUnauthorized {
+		t.Errorf("left event still controllable: %d", code)
+	}
+	if code, _ := p.do("GET", "/e/"+other.Code+"/admin", "", "text/html"); code != 200 {
+		t.Errorf("the other event's session was dropped too: %d", code)
+	}
+}

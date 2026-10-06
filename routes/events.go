@@ -56,6 +56,20 @@ func registerEvents(r *gin.Engine, d *Deps) {
 		clearSessions(c)
 		c.Redirect(http.StatusFound, "/")
 	})
+	// "Leave event" (STATUS U24): drop this browser's sessions for one
+	// event (SuperOperator and every room's moderator session); sessions
+	// for other events on the same browser stay.
+	r.GET("/e/:code/leave", func(c *gin.Context) {
+		if ev, ok := d.Store.ResolveEvent(c.Param("code")); ok {
+			c.SetCookie(superCookieName(ev.Code), "", -1, "/", "", false, true)
+			if rooms, err := d.Store.ListRooms(ev.ID); err == nil {
+				for _, r := range rooms {
+					c.SetCookie(roomCookieName(r.Code), "", -1, "/", "", false, true)
+				}
+			}
+		}
+		c.Redirect(http.StatusFound, "/")
+	})
 
 	g := r.Group("/api/events")
 	g.POST("", d.apiCreateEvent)

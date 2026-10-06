@@ -62,7 +62,7 @@ func TestNavDisplayEntity(t *testing.T) {
 		t.Fatalf("dashboard: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`, `Change Theme`, `href="/logout"`} {
+	for _, sub := range []string{`Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`, `Change Theme`, `Leave event`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("dashboard appbar missing %q", sub)
 		}

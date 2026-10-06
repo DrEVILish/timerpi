@@ -25,6 +25,7 @@
 | `GET /settings` | box | Box settings: device identity, default theme, OSC. No box session → 303 to `/box?next=/settings` |
 | `GET /box` | anyone | Box password: first-time setup, sign-in, or (signed in) change password / sign out |
 | `GET /logout` | — | Drops every TimerPi session cookie on this browser |
+| `GET /e/:code/leave` | — | "Leave event": drops this browser's sessions for that event (SuperOperator + its rooms), then home |
 | `GET /super`, `GET /setup` | — | Retired; 302 to `/` |
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
 | `GET /d/:ident` | screen | `?view=stage` (default) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (mod) |

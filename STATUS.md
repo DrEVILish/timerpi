@@ -169,7 +169,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **U21** | ✅ Done 2026-10-06. |
 | **U22** | ✅ Done 2026-10-06. |
 | **U23** | ✅ Done 2026-10-06 ("Join event", "Create event", error text). Browser test `home-page` covers U19–U23. |
-| **U24** | Event page (`/e/<code>`): "Sign out" becomes **Leave event**; label the event ID shown at the top as **Event ID**. |
+| **U24** | ✅ Done 2026-10-06: event pages and the room page say **Leave event** (`GET /e/<code>/leave`: drops this browser's sessions for that event only); the code at the top is labelled **Event ID**. Test `TestLeaveEventOnlyThisEvent`. |
 
 **Roles and the room page**
 

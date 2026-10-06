@@ -78,7 +78,7 @@
         <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
       </div>
     </details>
-    <a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>
+    {{if .Event.Code}}<a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and SuperOperator)">Leave event</a>{{else}}<a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>{{end}}
   </div>
 </header>
 {{end}}

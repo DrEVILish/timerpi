@@ -19,8 +19,8 @@
     {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
   </nav>
   <div class="cluster push">
-    <span class="badge mono" title="Event code — share it only with your moderators">{{.Event.CodeFmt}}</span>
-    <a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>
+    <span class="tp-event-id"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
+    <a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and SuperOperator)">Leave event</a>
   </div>
 </header>
 {{end}}
