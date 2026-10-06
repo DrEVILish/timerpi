@@ -43,6 +43,13 @@ const readyDir = "/run/timerpi" // EPHEMERAL (tmpfs) — splash handshake dir
 var webFiles embed.FS
 
 func main() {
+	os.Exit(run())
+}
+
+// run is the whole program; it returns the exit code instead of calling
+// log.Fatalf after setup, so every deferred cleanup (DB close, mDNS
+// goodbye, HDMI release) still runs on a serve error (BUGLOG RS26).
+func run() int {
 	debug := flag.Bool("debug", false, "gin debug mode (launcher defaults to release)")
 	devTmpl := flag.Bool("dev", false, "reparse templates per request (template dev loop)")
 	flag.Parse()
@@ -116,6 +123,8 @@ func main() {
 		return ids
 	})
 	hub.Start()
+	defer hub.Stop()
+	defer hub.CloseAll() // runs first: live sockets close before the hub stops
 
 	// Wire the hub counter into /health.
 	routes.SessionsCount = hub.Sessions
@@ -138,10 +147,15 @@ func main() {
 		log.Printf("timerpi: mesh device off: %v", meshErr)
 	} else {
 		meshCtx, meshCancel := context.WithCancel(context.Background())
-		defer meshCancel()
 		meshYB.Start(meshCtx)
-		defer meshYB.Stop()
-		defer meshYB.Close()
+		// Cancel the poll loop and wait for it before the goodbye: the
+		// old defer order said goodbye first, and a last tick could
+		// re-announce (BUGLOG RS26).
+		defer func() {
+			meshCancel()
+			meshYB.Wait(3 * time.Second)
+			meshYB.Close()
+		}()
 		routes.InstallNetwork(&routes.NetworkDeps{
 			Device:     meshYB,
 			Tmpl:       tmplSet,
@@ -185,7 +199,8 @@ func main() {
 	// ready marker telling the splash to stand down.
 	lnr, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("timerpi: listen %s: %v", addr, err)
+		log.Printf("timerpi: listen %s: %v", addr, err)
+		return 1
 	}
 	serveErr := make(chan error, 1)
 	go func() {
@@ -210,7 +225,8 @@ func main() {
 	case err := <-serveErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			removeReadyFile(readyFile)
-			log.Fatalf("timerpi: http server: %v", err)
+			log.Printf("timerpi: http server: %v", err)
+			return 1
 		}
 	}
 
@@ -221,6 +237,7 @@ func main() {
 	}
 	removeReadyFile(readyFile)
 	log.Println("timerpi: stopped")
+	return 0
 }
 
 // writeReadyFile creates /run/timerpi/ready (0644, empty) for the splash

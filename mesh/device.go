@@ -268,6 +268,9 @@ type Device struct {
 	// announce browsed back is recognised even when another box has the
 	// same hostname and port (BUGLOG RW49).
 	bootID string
+
+	// runDone closes when the Start poll loop returns (Wait).
+	runDone chan struct{}
 }
 
 // New builds a Device (NOT started, NOT announcing). Loads persisted state
@@ -330,7 +333,30 @@ func (dev *Device) Close() {
 // tick evaluates immediately so announce starts without delay; a fresh
 // device announces role "idle" right away (peers can see us during grace).
 func (dev *Device) Start(ctx context.Context) {
-	go dev.run(ctx)
+	done := make(chan struct{})
+	dev.mu.Lock()
+	dev.runDone = done
+	dev.mu.Unlock()
+	go func() {
+		defer close(done)
+		dev.run(ctx)
+	}()
+}
+
+// Wait blocks until the poll loop started by Start has returned (its
+// context was cancelled), at most d. Shutdown cancels, waits, THEN says
+// goodbye, so a last tick can't re-announce after it (BUGLOG RS26).
+func (dev *Device) Wait(d time.Duration) {
+	dev.mu.Lock()
+	done := dev.runDone
+	dev.mu.Unlock()
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
 }
 
 // Stop tears the announce down (goodbye packet). Idempotent; also invoked

@@ -27,6 +27,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // CodeAlphabet is the 32-character code alphabet in Crockford base32
@@ -59,7 +61,10 @@ func newCodeRaw() (string, error) {
 // already in the DB, retrying on collision (and surfacing repeated
 // collisions only as a last-resort error). Callers must still insert with
 // the UNIQUE index live so a concurrent win cannot double-book.
-func NewCode(d *DB) (string, error) {
+func NewCode(d *DB) (string, error) { return newCodeQ(d) }
+
+// newCodeQ is NewCode against any query runner (a transaction, too).
+func newCodeQ(q sqlx.Queryer) (string, error) {
 	for attempt := 0; attempt < 64; attempt++ {
 		code, err := newCodeRaw()
 		if err != nil {
@@ -71,7 +76,7 @@ func NewCode(d *DB) (string, error) {
 		if _, numeric := ParseNumericID(code); numeric {
 			continue
 		}
-		inUse, err := codeInUse(d, code)
+		inUse, err := codeInUse(q, code)
 		if err != nil {
 			return "", err
 		}
@@ -83,11 +88,11 @@ func NewCode(d *DB) (string, error) {
 }
 
 // codeInUse reports whether a show already holds code (false = free).
-func codeInUse(d *DB, code string) (bool, error) {
+func codeInUse(q sqlx.Queryer, code string) (bool, error) {
 	var one int64
 	// Event and room codes share one namespace: a typed code must never
 	// be ambiguous between the two.
-	err := d.Get(&one, `SELECT 1 FROM shows WHERE code = ? UNION SELECT 1 FROM events WHERE code = ?`, code, code)
+	err := sqlx.Get(q, &one, `SELECT 1 FROM shows WHERE code = ? UNION SELECT 1 FROM events WHERE code = ?`, code, code)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

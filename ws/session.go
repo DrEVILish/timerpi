@@ -462,9 +462,22 @@ func (s *session) sendErr(msg string) {
 }
 
 // writeLoop drains the queue onto the socket; done closing → socket close.
+// writeLoop also pings: every session pings on its own ticker and drops
+// itself when silent past the read deadline. One hub-wide loop used to
+// ping sessions one at a time, so a few stalled phones (WriteControl
+// waits up to 5 s each) delayed everyone's pings and dead-session cleanup
+// for minutes (BUGLOG RS29).
 func (s *session) writeLoop() {
+	ping := time.NewTicker(pingInterval)
+	defer ping.Stop()
 	for {
 		select {
+		case <-ping.C:
+			if s.activeAgeMs(s.hub.nowFn()) > int64(readDeadline/time.Millisecond) {
+				s.kill()
+				continue
+			}
+			_ = s.conn.WriteControl(websocket.PingMessage, []byte("tp"), time.Now().Add(writeTimeout))
 		case <-s.done:
 			// Refusal paths (join gates) enqueue the err frame and kill()
 			// immediately; this select raced done vs the queued frame and

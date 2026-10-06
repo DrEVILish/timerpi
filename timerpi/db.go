@@ -213,6 +213,8 @@ func (d *DB) migrate() error {
 		ts       INTEGER NOT NULL DEFAULT 0,
 		updated  INTEGER NOT NULL DEFAULT 0
 	);`,
+		// Entries are read by parent on every on-air recompute (BUGLOG RS28).
+		`CREATE INDEX IF NOT EXISTS idx_polls_parent ON polls(parent)`,
 		`CREATE INDEX IF NOT EXISTS idx_polls_show ON polls (show_id, updated);`,
 		`CREATE TABLE IF NOT EXISTS votes (
 		id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -887,6 +889,37 @@ func (d *DB) ReorderCues(showID int64, cueIDs []int64) error {
 	}
 	if err := bumpStamp(tx, showID); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// AppendCues adds cues after the last one, in order, in ONE transaction:
+// all or none, no per-row renumbering (BUGLOG RS30: append import ran one
+// CreateCue per row, each renumbering the whole show — ~250k statements for
+// 500 rows — and a bad row left the import half-applied).
+func (d *DB) AppendCues(showID int64, cues []Cue) error {
+	defer d.cuesChanged(showID)
+	for i := range cues {
+		cues[i].ShowID = showID
+		cues[i].Normalize()
+		if err := cues[i].Validate(); err != nil {
+			return fmt.Errorf("timerpi: append cue %d: %w", i+1, err)
+		}
+	}
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var last int64
+	if err := tx.Get(&last, `SELECT COALESCE(MAX(pos), 0) FROM cues WHERE show_id = ?`, showID); err != nil {
+		return err
+	}
+	now := nowMS()
+	for i, c := range cues {
+		if _, err := insertCue(tx, showID, last+int64(i)+1, c, now); err != nil {
+			return fmt.Errorf("timerpi: append cue %d: %w", i+1, err)
+		}
 	}
 	return tx.Commit()
 }

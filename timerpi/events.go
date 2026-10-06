@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // Event is one conference (single day in v2; Days is the day count the
@@ -71,9 +73,21 @@ func (d *DB) createEventsSchema() error {
 // other show becomes a one-room event named after itself. Legacy plaintext
 // show passphrases become hashed room passwords. Idempotent.
 func (d *DB) adoptOrphanShows() error {
+	// One transaction: a crash half-way used to leave empty events and
+	// adopt the show again into a duplicate event at the next boot
+	// (BUGLOG RS27). With one DB connection, everything inside goes
+	// through tx.
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	var orphans []Show
-	if err := d.Select(&orphans, `SELECT * FROM shows WHERE event_id = 0 ORDER BY id`); err != nil {
+	if err := tx.Select(&orphans, `SELECT * FROM shows WHERE event_id = 0 ORDER BY id`); err != nil {
 		return fmt.Errorf("timerpi: orphan scan: %w", err)
+	}
+	if len(orphans) == 0 {
+		return nil
 	}
 	byZone := map[string]int64{}
 	for _, sh := range orphans {
@@ -88,7 +102,7 @@ func (d *DB) adoptOrphanShows() error {
 			if z := strings.TrimSpace(sh.Zone); z != "" {
 				name = z
 			}
-			ev, err := d.insertEvent(name, "")
+			ev, err := insertEventQ(tx, name, "")
 			if err != nil {
 				return err
 			}
@@ -96,39 +110,49 @@ func (d *DB) adoptOrphanShows() error {
 			if z := strings.TrimSpace(sh.Zone); z != "" {
 				byZone[z] = evID
 				// Zone maps become event maps.
-				if v, _ := d.GetSetting("zone.map." + z); v != "" {
+				var v string
+				if gerr := tx.Get(&v, `SELECT value FROM settings WHERE key = ?`, "zone.map."+z); gerr == nil && v != "" {
 					if id, perr := strconv.ParseInt(v, 10, 64); perr == nil {
-						_, _ = d.Exec(`UPDATE events SET map_asset = ? WHERE id = ?`, id, evID)
+						if _, err := tx.Exec(`UPDATE events SET map_asset = ? WHERE id = ?`, id, evID); err != nil {
+							return fmt.Errorf("timerpi: adopt zone map: %w", err)
+						}
 					}
 				}
 			}
 		}
 		var pos int64
-		_ = d.Get(&pos, `SELECT COALESCE(MAX(room_pos), 0) + 1 FROM shows WHERE event_id = ?`, evID)
+		if err := tx.Get(&pos, `SELECT COALESCE(MAX(room_pos), 0) + 1 FROM shows WHERE event_id = ?`, evID); err != nil {
+			return fmt.Errorf("timerpi: adopt room position: %w", err)
+		}
 		roomPW := ""
 		if sh.Passphrase != "" {
 			roomPW = HashPassword(sh.Passphrase)
 		}
-		if _, err := d.Exec(`UPDATE shows SET event_id = ?, room_pos = ?, room_pw = CASE WHEN ? != '' THEN ? ELSE room_pw END, passphrase = '' WHERE id = ?`,
+		if _, err := tx.Exec(`UPDATE shows SET event_id = ?, room_pos = ?, room_pw = CASE WHEN ? != '' THEN ? ELSE room_pw END, passphrase = '' WHERE id = ?`,
 			evID, pos, roomPW, roomPW, sh.ID); err != nil {
 			return fmt.Errorf("timerpi: adopt show %d: %w", sh.ID, err)
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (d *DB) insertEvent(name, superHash string) (Event, error) {
+	return insertEventQ(d, name, superHash)
+}
+
+// insertEventQ inserts an event through any runner (a transaction, too).
+func insertEventQ(x sqlx.Ext, name, superHash string) (Event, error) {
 	name = ClipUTF8(strings.TrimSpace(name), MaxNameLen)
 	if name == "" {
 		return Event{}, fmt.Errorf("timerpi: event name must not be empty")
 	}
 	now := nowMS()
 	for attempt := 0; attempt < 16; attempt++ {
-		code, err := NewCode(d)
+		code, err := newCodeQ(x)
 		if err != nil {
 			return Event{}, err
 		}
-		res, err := d.Exec(`INSERT INTO events (code, name, super_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		res, err := x.Exec(`INSERT INTO events (code, name, super_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
 			code, name, superHash, now, now)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
@@ -137,7 +161,11 @@ func (d *DB) insertEvent(name, superHash string) (Event, error) {
 			return Event{}, fmt.Errorf("timerpi: create event: %w", err)
 		}
 		id, _ := res.LastInsertId()
-		return d.GetEvent(id)
+		var e Event
+		if err := sqlx.Get(x, &e, `SELECT * FROM events WHERE id = ?`, id); err != nil {
+			return Event{}, fmt.Errorf("timerpi: get event %d: %w", id, err)
+		}
+		return e, nil
 	}
 	return Event{}, fmt.Errorf("timerpi: create event: code collision persisted")
 }

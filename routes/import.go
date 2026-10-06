@@ -22,18 +22,11 @@ import (
 	"timerpi/timerpi"
 )
 
-// importCues applies a parsed cue list to the show (replace = one tx
-// renumbering Pos 1..N; append = tail creates). Returns the first apply
-// error, if any.
+// importCues applies a parsed cue list to the show, all or nothing
+// (replace = ReplaceCues, append = AppendCues; one transaction each).
 func (d *Deps) importCues(showID int64, cues []timerpi.Cue, mode string) error {
 	if mode == "append" {
-		var first error
-		for _, cue := range cues {
-			if _, cerr := d.Store.CreateCue(showID, cue); cerr != nil && first == nil {
-				first = cerr
-			}
-		}
-		return first
+		return d.Store.AppendCues(showID, cues) // one transaction (RS30)
 	}
 	return d.Store.ReplaceCues(showID, cues)
 }

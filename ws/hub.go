@@ -29,10 +29,13 @@ import (
 	"timerpi/views"
 )
 
+// pingInterval: each session pings this often (a var so tests can shorten
+// it; client pings app-level every 20 s).
+var pingInterval = 30 * time.Second
+
 const (
 	writeTimeout  = 5 * time.Second  // data write deadline
 	readDeadline  = 75 * time.Second // silent after this → drop (PROTOCOL keepalive)
-	pingInterval  = 30 * time.Second // server control pings (client pings app-level every 20 s)
 	tickInterval  = 250 * time.Millisecond
 	seedInterval  = 5 * time.Second // discover shows created outside a hub join
 	joinGrace     = 10 * time.Second
@@ -268,13 +271,31 @@ func (h *Hub) serve(w http.ResponseWriter, req *http.Request) error {
 // them.
 func (h *Hub) Start() {
 	go h.tickLoop()
-	go h.pingLoop()
 }
 
 // Stop halts the background loops (sessions die with the HTTP server).
 // Idempotent: shutdown paths may call it more than once.
 func (h *Hub) Stop() {
 	h.stopMu.Do(func() { close(h.stop) })
+}
+
+// CloseAll ends every live session (shutdown): srv.Shutdown doesn't close
+// hijacked WebSocket connections (BUGLOG RS26).
+func (h *Hub) CloseAll() {
+	h.mu.Lock()
+	var all []*session
+	for _, sh := range h.byShow {
+		for s := range sh.sessions {
+			all = append(all, s)
+		}
+		for s := range sh.aud {
+			all = append(all, s)
+		}
+	}
+	h.mu.Unlock()
+	for _, s := range all {
+		s.kill()
+	}
 }
 
 func (h *Hub) tickLoop() {
@@ -291,44 +312,6 @@ func (h *Hub) tickLoop() {
 		case <-seed.C:
 			h.seedEngines()
 		}
-	}
-}
-
-// pingLoop sends a control ping to every session every 30 s (PROTOCOL) and
-// drops sessions silent longer than the read deadline (no app frames AND
-// no pongs). WriteControl is safe concurrent with data writes.
-func (h *Hub) pingLoop() {
-	t := time.NewTicker(pingInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-h.stop:
-			return
-		case <-t.C:
-			h.pingSessions()
-		}
-	}
-}
-
-func (h *Hub) pingSessions() {
-	now := h.nowFn()
-	h.mu.Lock()
-	var all []*session
-	for _, sh := range h.byShow {
-		for s := range sh.sessions {
-			all = append(all, s)
-		}
-		for s := range sh.aud {
-			all = append(all, s)
-		}
-	}
-	h.mu.Unlock()
-	for _, s := range all {
-		if s.activeAgeMs(now) > int64(readDeadline/time.Millisecond) {
-			s.kill()
-			continue
-		}
-		_ = s.conn.WriteControl(websocket.PingMessage, []byte("tp"), time.Now().Add(writeTimeout))
 	}
 }
 
