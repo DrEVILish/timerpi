@@ -558,6 +558,11 @@ func argInt(args map[string]any, key string) int64 {
 func int64Arg(args map[string]any, key string) (int64, bool) {
 	switch v := args[key].(type) {
 	case float64:
+		// NaN or past float precision: refuse rather than let the
+		// platform-defined int64 conversion pick a value (BUGLOG RW30).
+		if !(v > -(1<<53) && v < 1<<53) {
+			return 0, false
+		}
 		return int64(v), true
 	case nil:
 		return 0, false

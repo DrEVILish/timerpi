@@ -247,6 +247,11 @@ func (c *Cue) Normalize() {
 	c.Label = strings.TrimSpace(c.Label)
 }
 
+// MaxDurationMS caps every cue duration, hold and alert: 7 days. Larger
+// values overflow the schedule maths (on the Pi's arm64 a huge float
+// saturates to MaxInt64 and times go negative; BUGLOG RW30).
+const MaxDurationMS int64 = 7 * 24 * 3600 * 1000
+
 // Validate checks the enum-ish fields and non-negative magnitudes. Alert
 // thresholds are independent (alert1 = 0 means "no first alert"), so alert2
 // may be set while alert1 is not.
@@ -255,6 +260,14 @@ func (c Cue) Validate() error {
 	case KindSession, KindBreak:
 	default:
 		return fmt.Errorf("timerpi: cue kind %q invalid (want %q or %q)", c.Kind, KindSession, KindBreak)
+	}
+	for _, f := range []struct {
+		name string
+		ms   int64
+	}{{"duration", c.DurationMS}, {"hold", c.HoldMS}, {"alert1", c.Alert1MS}, {"alert2", c.Alert2MS}} {
+		if f.ms > MaxDurationMS {
+			return fmt.Errorf("timerpi: cue %s %d ms is longer than 7 days", f.name, f.ms)
+		}
 	}
 	switch c.TimerKind {
 	case TimerCountdown, TimerCountStop, TimerClock:

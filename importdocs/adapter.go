@@ -24,6 +24,7 @@ func (c Cue) ToTimerpiCue() (timerpi.Cue, error) {
 		Tags:         c.Tags,
 		Speaker:      c.Speaker,
 		HoldMS:       c.HoldMS,
+		TimerKind:    c.TimerKind, // BUGLOG RW28: stopwatch/clock sessions stay so
 		Alert1MS:     c.Alert1MS,
 		Alert2MS:     c.Alert2MS,
 		AlertColor1:  c.AlertColor1,
@@ -32,6 +33,8 @@ func (c Cue) ToTimerpiCue() (timerpi.Cue, error) {
 		AutoContinue: c.AutoContinue,
 		Notes:        c.Notes,
 		Color:        c.Color,
+		StartAt:      c.StartAt,
+		Location:     c.Location,
 	}
 	// The domain's Normalize fills empty kind/timerKind/endAction and alert
 	// colours with the PROTOCOL defaults and clamps negatives.
@@ -78,6 +81,8 @@ func FromTimerpiCue(tc timerpi.Cue) Cue {
 		AutoContinue: tc.AutoContinue,
 		Notes:        tc.Notes,
 		Color:        tc.Color,
+		StartAt:      tc.StartAt,
+		Location:     tc.Location,
 	}
 }
 

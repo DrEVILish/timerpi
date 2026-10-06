@@ -28,7 +28,7 @@ import (
 const (
 	GridCols   = 12
 	MaxWidgets = 48
-	MaxY       = 99
+	MaxY       = MaxRows - 1 // a tile's top row; Y+H never passes MaxRows (BUGLOG RW33)
 	MaxH       = 12
 )
 
@@ -53,9 +53,9 @@ type Widget struct {
 // screen. Orientation says which way up the canvas is designed
 // (landscape 16:9 or portrait 9:16 poster screens).
 type Layout struct {
-	V           int      `json:"v"`
-	Rows        int      `json:"rows,omitempty"`
-	Orientation string   `json:"orientation,omitempty"`
+	V           int    `json:"v"`
+	Rows        int    `json:"rows,omitempty"`
+	Orientation string `json:"orientation,omitempty"`
 	// Anim / AnimMS: the layout's default appear/disappear animation
 	// (fade | slide | pop | none; 120–3000 ms). Tiles may override it
 	// with opts.anim / opts.animMS.
@@ -289,7 +289,8 @@ func DefaultLayoutJSON() string {
 }
 
 // NormalizeLayout clamps every widget into the grid in place order:
-// X∈[0,11], W∈[1,12] with X+W≤12, Y∈[0,MaxY], H∈[1,MaxH]; empty ids are
+// X∈[0,11], W∈[1,12] with X+W≤12, Y∈[0,MaxY], H∈[1,MaxH] with Y+H≤MaxRows
+// (the canvas never holds more rows, so a lower tile would be hidden); empty ids are
 // filled (w1…), opts maps sanitized (length caps). Unknown types and
 // overlaps are NOT fixed here — ValidateLayout rejects those.
 func NormalizeLayout(in Layout) Layout {
@@ -348,6 +349,9 @@ func NormalizeLayout(in Layout) Layout {
 		}
 		if w.H > MaxH {
 			w.H = MaxH
+		}
+		if w.Y+w.H > MaxRows {
+			w.H = MaxRows - w.Y
 		}
 		w.Opts = sanitizeOpts(w.Opts)
 		out.Widgets = append(out.Widgets, w)

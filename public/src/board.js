@@ -1290,14 +1290,19 @@ function openSettings(wid) {  const w = widgetOf(wid);
   form.appendChild(close);
 }
 
+// MAX_ROWS mirrors boards.MaxRows: no tile may reach below it (BUGLOG RW33).
+const MAX_ROWS = 48;
+
+// freeSpot finds the first free cell block for a w×h tile inside the
+// canvas, or null when the board is full.
 function freeSpot(w, h) {
   const taken = (x, y) => (layout.widgets || []).some((o) => overlaps({ x, y, w, h }, o));
-  for (let y = 0; y <= 90; y++) {
+  for (let y = 0; y + h <= MAX_ROWS; y++) {
     for (let x = 0; x + w <= 12; x++) {
       if (!taken(x, y)) return { x, y };
     }
   }
-  return { x: 0, y: 90 };
+  return null;
 }
 
 async function reloadEditing() {
@@ -1421,6 +1426,10 @@ function wireCompose() {
     let id = type;
     for (let n = 2; seen.has(id); n++) id = `${type}-${n}`;
     const spot = freeSpot(Math.min(def.w, 12), def.h);
+    if (!spot) {
+      saveState('No room for that tile: make space or delete one first');
+      return;
+    }
     layout.widgets = [...(layout.widgets || []), {
       id, type, x: spot.x, y: spot.y, w: Math.min(def.w, 12), h: def.h,
       opts: { ...def.opts },

@@ -48,6 +48,11 @@ type Cue struct {
 	AutoContinue bool   `json:"autoContinue"`
 	Notes        string `json:"notes"`
 	Color        string `json:"color"`
+	// StartAt ("HH:MM" wall-clock auto-start) and Location (where a break
+	// happens) ride JSON exports and re-imports; spreadsheets don't map
+	// them yet (header matching is STATUS U26).
+	StartAt  string `json:"startAt,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 // IsEmpty reports whether the parsed row carried neither label nor duration —
@@ -476,7 +481,25 @@ func parseClockTimeMS(s string) (int64, error) {
 		total += f * factor
 		factor *= 60
 	}
-	return int64(total * 1000), nil
+	return capMS(total*1000, s)
+}
+
+// maxDurationMS mirrors timerpi.MaxDurationMS; parse.go stays free of the
+// domain package (adapter.go is the only bridge).
+const maxDurationMS = 7 * 24 * 3600 * 1000
+
+// capMS converts a parsed millisecond count, refusing anything longer than
+// maxDurationMS (7 days), NaN or infinite. A bigger float would
+// overflow the int64 conversion: MinInt64 on amd64, MaxInt64 on the Pi's
+// arm64, and the schedule maths would go negative (BUGLOG RW30).
+func capMS(ms float64, src string) (int64, error) {
+	if !(ms <= maxDurationMS) { // also catches NaN
+		return 0, fmt.Errorf("duration %q is longer than 7 days", src)
+	}
+	if ms < 0 {
+		return 0, nil
+	}
+	return int64(ms), nil
 }
 
 // durationUnits maps a written unit to milliseconds.
@@ -522,7 +545,7 @@ func parseUnitChunksMS(s string) (int64, error) {
 		}
 		ms += num * mult
 	}
-	return int64(ms), nil
+	return capMS(ms, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -822,6 +845,12 @@ func cueFromJSONMap(nm map[string]any, rowNo int) (Cue, error) {
 	if c.Kind != "" {
 		c.Kind = parseKind(c.Kind)
 	}
+	if err := pickJSONStr(nm, &c.StartAt, "startat"); err != nil {
+		return Cue{}, wrapJSON(rowNo, err)
+	}
+	if err := pickJSONStr(nm, &c.Location, "location"); err != nil {
+		return Cue{}, wrapJSON(rowNo, err)
+	}
 	truthy, berr := pickJSONBool(nm, "autocontinue", "contin", "continue")
 	if berr != nil {
 		return Cue{}, wrapJSON(rowNo, berr)
@@ -872,17 +901,17 @@ func pickJSONDur(nm map[string]any, keys ...string) (int64, error) {
 func jsonToMS(v any) (int64, error) {
 	switch n := v.(type) {
 	case float64:
-		return int64(n), nil // wire value; JSON numbers are always ms
+		return capMS(n, fmt.Sprint(n)) // wire value; JSON numbers are always ms
 	case int:
-		return int64(n), nil
+		return capMS(float64(n), fmt.Sprint(n))
 	case int64:
-		return n, nil
+		return capMS(float64(n), fmt.Sprint(n))
 	case json.Number:
 		f, err := n.Float64()
 		if err != nil {
 			return 0, fmt.Errorf("duration %q invalid", string(n))
 		}
-		return int64(f), nil
+		return capMS(f, string(n))
 	case string:
 		return ParseDurationMS(n) // strings are always human durations
 	default:

@@ -218,6 +218,11 @@ func (e *Engine) ApplyCmd(action string, args map[string]any) error {
 	}
 }
 
+// maxArgInt bounds float64 args before the int64 conversion: beyond 2^53
+// a JSON number is no longer exact, and past int64 the conversion is
+// platform-defined (MinInt64 on amd64, MaxInt64 on arm64).
+const maxArgInt = 1 << 53
+
 // argInt reads an int-ish arg (JSON numbers arrive as float64); missing → 0.
 func argInt(args map[string]any, key string) int64 {
 	if args == nil {
@@ -225,6 +230,9 @@ func argInt(args map[string]any, key string) int64 {
 	}
 	switch v := args[key].(type) {
 	case float64:
+		if !(v > -maxArgInt && v < maxArgInt) { // NaN or past float precision: refuse (RW30)
+			return 0
+		}
 		return int64(v)
 	case int64:
 		return v
@@ -252,7 +260,9 @@ func argFloat(args map[string]any, key string) float64 {
 // the wall clock and runs it.
 func (e *Engine) Start(pos int64) error {
 	err := e.runMutation(func() error { return e.startLocked(pos) })
-	e.fireStart()
+	if err == nil { // a refused start must not re-fire the running cue (BUGLOG RW24)
+		e.fireStart()
+	}
 	return err
 }
 
@@ -277,7 +287,9 @@ func (e *Engine) Reset() error {
 // cue after the running one; from a fresh idle show it starts cue 1.
 func (e *Engine) Go() error {
 	err := e.runMutation(e.goLocked)
-	e.fireStart()
+	if err == nil { // GO past the last cue must not re-fire the running one (RW24)
+		e.fireStart()
+	}
 	return err
 }
 
@@ -748,6 +760,7 @@ const dayRolloverGrace int64 = 4 * 3600 * 1000
 //   - the anchor is on an earlier calendar day than now;
 //   - the anchored day's planned end plus 4 h has passed (late finishes,
 //     overruns and paused breaks after midnight keep their day).
+//
 // Then the day re-anchors to the room's scheduled start ("09:00" → today
 // 09:00; none → unanchored until the first GO) and the playhead goes back
 // to the top, so GO starts the first session again.

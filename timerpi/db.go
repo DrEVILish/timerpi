@@ -717,6 +717,9 @@ func (d *DB) DeleteCue(showID, pos int64) error {
 	if err := applyOrder(tx, showID, order); err != nil {
 		return err
 	}
+	if err := bumpStamp(tx, showID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -750,6 +753,9 @@ func (d *DB) MoveCue(showID, from, to int64) error {
 	order = append(order[:i], order[i+1:]...)
 	order = append(order[:j], append([]int64{id}, order[j:]...)...)
 	if err := applyOrder(tx, showID, order); err != nil {
+		return err
+	}
+	if err := bumpStamp(tx, showID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -831,6 +837,9 @@ func (d *DB) ReorderCues(showID int64, cueIDs []int64) error {
 	if err := applyOrder(tx, showID, append(append([]int64{}, ids...), rest...)); err != nil {
 		return err
 	}
+	if err := bumpStamp(tx, showID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -870,6 +879,9 @@ func (d *DB) ReplaceCues(showID int64, cues []Cue) error {
 	if err := applyOrder(tx, showID, ids); err != nil {
 		return err
 	}
+	if err := bumpStamp(tx, showID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -878,6 +890,21 @@ func cueIDsOrdered(q sqlx.Queryer, showID int64) ([]int64, error) {
 	var ids []int64
 	err := sqlx.Select(q, &ids, `SELECT id FROM cues WHERE show_id = ? ORDER BY pos ASC, id ASC`, showID)
 	return ids, err
+}
+
+// bumpStamp moves the show's updated_at strictly past every stamp the show
+// has (UpdatedStamp), for changes that leave no row of their own to stamp:
+// a delete or a renumber. Without it a stale mesh push carrying the old
+// stamp passes the sync check and restores deleted or reordered sessions
+// (BUGLOG RW27).
+func bumpStamp(x sqlx.Execer, showID int64) error {
+	_, err := x.Exec(`UPDATE shows SET updated_at = MAX(?, 1 + (SELECT COALESCE(MAX(ts), 0) FROM (
+		SELECT updated_at AS ts FROM shows WHERE id = ?
+		UNION ALL SELECT MAX(updated_at) FROM cues WHERE show_id = ?
+		UNION ALL SELECT MAX(updated_at) FROM messages WHERE show_id = ?
+		UNION ALL SELECT MAX(updated_at) FROM runtime_state WHERE show_id = ?))) WHERE id = ?`,
+		nowMS(), showID, showID, showID, showID, showID)
+	return err
 }
 
 // applyOrder renumbers the given id order into contiguous Pos 1..N. Phase 1
@@ -995,8 +1022,18 @@ func (d *DB) ClearMessage(showID, id int64) error {
 
 // DeleteMessage removes a message entirely.
 func (d *DB) DeleteMessage(showID, id int64) error {
-	_, err := d.Exec(`DELETE FROM messages WHERE show_id = ? AND id = ?`, showID, id)
-	return err
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM messages WHERE show_id = ? AND id = ?`, showID, id); err != nil {
+		return err
+	}
+	if err := bumpStamp(tx, showID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ---------------------------------------------------------------------------

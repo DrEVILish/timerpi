@@ -207,3 +207,23 @@ func TestMigrateIdempotent(t *testing.T) {
 		t.Fatalf("second migrate: %v", err)
 	}
 }
+
+// BUGLOG RW33: no tile may sit below the canvas (MaxRows). A tile at y=80
+// used to validate while the CSS grid (48 rows) hid it.
+func TestNormalizeKeepsTilesInsideCanvas(t *testing.T) {
+	raw := `{"v":1,"widgets":[` +
+		`{"id":"a","type":"countdown","x":0,"y":80,"w":4,"h":3},` +
+		`{"id":"b","type":"wallclock","x":4,"y":46,"w":4,"h":6}]}`
+	l, err := boards.ValidateLayout(raw)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	for _, w := range l.Widgets {
+		if w.Y+w.H > boards.MaxRows || w.H < 1 {
+			t.Errorf("tile %s y=%d h=%d reaches past row %d", w.ID, w.Y, w.H, boards.MaxRows)
+		}
+		if w.Y+w.H > l.Rows {
+			t.Errorf("tile %s y=%d h=%d outside the %d-row canvas", w.ID, w.Y, w.H, l.Rows)
+		}
+	}
+}
