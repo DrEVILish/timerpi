@@ -111,6 +111,11 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N9** | ✅ Done 2026-10-05: layout default animation (`anim`/`animMS`) + per-tile override for every content tile, set in the editor; content tiles animate on change | L2, L3 | |
 | **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
 | **N11** | 🟡 Room page reorganised into Run · Audience · Setup tabs (tablet-friendly, wraps); touch targets ≥44 px on coarse pointers on the new pages. A dedicated tablet layout for the Run tab is still open | L6 | |
+| **N12** | Event end date/time; boxes and screens release at end + 4 h (never mid-timer) and on event delete | H8 | [VENUE-CLOUD.md](docs/VENUE-CLOUD.md) §3 |
+| **N13** | Pairing codes on unpaired displays; pair from the event dashboard (cloud or `timerpi.local`); event mesh key; signed mDNS (closes BUGLOG RW15) | H3, H7 | §4–5 |
+| **N14** | `timerpi.local` alias on the primary; box clock from primary / NTP / SuperOperator browser | H3 | §5 |
+| **N15** | Cloud ↔ primary link: pull the event to the venue, stream the copy back | H6 | §6 |
+| **N16** | Audience relay through the cloud; "audience paused" when the link is down | H2, H6 | §6 |
 
 ### 4.3 Cleanup (hanging leftovers)
 
@@ -152,4 +157,4 @@ After the 2026-10-06 review: BUGLOG RC1–RC8 come before everything above, and 
 
 ## 5. Open questions
 
-None. All owner questions are answered (PRODUCT §7).
+See [docs/VENUE-CLOUD.md](docs/VENUE-CLOUD.md) §7: cloud edits while the event is at the venue (locked or forwarded?), multi-venue events, creating an event offline at the venue.

@@ -146,8 +146,11 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 ### 4.6 Appliance
 
 - **H1** Single Go binary, with HTTP and WebSocket on one port and SQLite storage. Runs on a Raspberry Pi 4/5 or any Linux box, behind a reverse proxy or custom domain.
-- **H2** Works on an isolated venue LAN. No internet, CDN or cloud at show time. All JS/CSS is vendored locally.
-- **H3** Several TimerPi devices on one LAN discover each other (mDNS). If the primary dies, another takes over.
+- **H2** Timers, screens and the control panel work on the venue LAN with no internet; no CDN, all JS/CSS vendored. **Audience features need the internet**: phones reach TimerPi through the public cloud address (2026-10-06, [VENUE-CLOUD.md](VENUE-CLOUD.md)).
+- **H3** Boxes paired to an event discover each other (mDNS, signed with the event key). If the primary dies, another takes over. The primary answers `timerpi.local`.
+- **H6** A **cloud server** hosts many events at once. During a show the **venue's primary box is the event's home** and the cloud relays audience traffic and keeps a copy ([VENUE-CLOUD.md](VENUE-CLOUD.md)).
+- **H7** A **box is one display, attached to one event at a time**. An unpaired box shows a pairing code; the SuperOperator types it on the event dashboard (cloud or `timerpi.local`, with or without internet).
+- **H8** Every event has an end date/time. Boxes release their pairing 4 hours after it (never mid-timer), or at once when the event is deleted.
 - **H4** Optional OSC bridge to a CuTePi media player: GO fires the paired media cue, and blackout fires panic.
 - **H5** Screens can be browsers on anything: kiosk Pis, smart TVs, PCs. The Pi's native renderer is an optional extra for presenter countdowns.
 
@@ -182,7 +185,7 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 ## 6. Out of scope (v2)
 
 - Personal user accounts and SSO.
-- Cloud hosting, multi-venue, internet relay.
+- Multi-venue events (open question, VENUE-CLOUD §7).
 - Audio alerts. Alerts are visual only.
 - Multi-day *UI*. The data model is still designed for days (§4.7).
 
@@ -212,6 +215,8 @@ This set is a default, not a limit: any number of rooms, and any number of scree
 | 2026-10-06 | Supervisor passwords need at least 6 characters; room passwords can be anything (minimum security). Sign-in attempts are rate limited. |
 | 2026-10-06 | OSC input stays as is (room code in the address, off by default). Accepted risk when switched on. |
 | 2026-10-06 | Captured screens get a key: only keyed screens receive presenter items and the running order. |
+| 2026-10-06 | **Cloud + venue boxes** ([VENUE-CLOUD.md](VENUE-CLOUD.md)): the cloud server holds many events; a box is one display attached to one event at a time; the venue box is home during the show and the cloud relays audience traffic; without internet audience features are off; moderators reach the control panel at `timerpi.local`. |
+| 2026-10-06 | Pairing: unpaired boxes show a pairing code; pairing works on the cloud or on `timerpi.local` (offline too). Boxes release 4 h after the event's end date/time, or when the event is deleted. |
 | 2026-10-05 | Zones are replaced by the event. The event walk-in shows every room in the event. |
 | 2026-10-05 | "Show results" reveals results wherever the item is currently shown. |
 | 2026-10-05 | Every screen has its own theme and layout. Screen names are renamed inline by double-click (or double-tap). |

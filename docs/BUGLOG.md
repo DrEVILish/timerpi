@@ -23,7 +23,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | Group | Count | Open |
 |---|---|---|
 | Critical | 8 | 0 |
-| Warning | 58 | 41 |
+| Warning | 58 | 40 |
 | Suggestion | 41 | 40 |
 
 ## Critical
@@ -59,7 +59,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RW12 | `routes/events.go:269-307`; `timerpi/events.go:320`; room passwords `routes/events.go:570, 625` | Sign-in has no attempt limit. Supervisor passwords need 4 characters, room passwords 1. PBKDF2 uses only 60,000 rounds, and each attempt costs the Pi real CPU, so parallel logins are both a brute-force route and a CPU DoS. | Per-IP plus per-code token bucket with backoff; minimum about 8 characters; raise the rounds (the count is stored per hash) or move to argon2id. | Fixed 2026-10-06 `8cdb3d4`, `41ff45f` (rate limit, 300k rounds, supervisor 6+ chars; room passwords free-form by owner decision) |
 | RW13 | `routes/oscapi.go:89-131` | With `osc.in` on, any LAN host knowing a room code can send `/timerpi/<code>/go`, blank and so on over UDP. Room codes are printed on audience QRs, so this breaks "room codes never grant moderator actions". | Require the event code or a per-box OSC secret in the address, or a source-IP allowlist. | Won't fix 2026-10-06 (owner decision: OSC input is off by default; accepted risk when on) |
 | RW14 | `routes/events.go:278-284` | For migrated password-less events, `apiEventLogin` makes anyone with the event code SuperOperator. Every moderator has the code, so one can set a supervisor password, lock out the owner and, through RC5, become box admin. | Let only box admin set the first password on legacy events, or require the first claim from the box console. | Fixed 2026-10-06 `8cdb3d4` |
-| RW15 | `mesh/device.go:340-375, 472-477, 778-779` | mDNS TXT records are trusted without authentication. One LAN host announcing `role=primary epoch=1` makes every real primary step down ("split-brain heal") and become the takeover target. | Sign the TXT record with a shared appliance secret, or pair boxes explicitly. Document the risk in the mesh docs. | Open |
+| RW15 | `mesh/device.go:340-375, 472-477, 778-779` | mDNS TXT records are trusted without authentication. One LAN host announcing `role=primary epoch=1` makes every real primary step down ("split-brain heal") and become the takeover target. | Sign the TXT record with a shared appliance secret, or pair boxes explicitly. Document the risk in the mesh docs. | Planned: closed by design STATUS N13 (pairing + signed mDNS, docs/VENUE-CLOUD.md) |
 | RW16 | `routes/waiting.go:54` → `timerpi/db.go:1312`; `routes/api.go:456-493` → `timerpi/db.go:1074-1085` | Two open endpoints can be flooded. `/api/waiting/register` has no row cap or rate limit, so random names flood every operator's "Waiting" list for 10 minutes. The client-log endpoint runs up to 25 inserts plus 25 prune deletes per request on the single DB connection the timers need. | Cap waiting rows like `maxScreenRows`; rate-limit both per IP; batch the client-log insert and prune once. | Fixed 2026-10-06 `8cdb3d4` |
 
 ### Bugs and edge cases

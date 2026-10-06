@@ -26,6 +26,7 @@ Read in this order:
 | [AGENTS.md](AGENTS.md) | Rules for anyone (human or AI) changing this repo |
 | [docs/OPS.md](docs/OPS.md) · [docs/PI-DEPLOY.md](docs/PI-DEPLOY.md) · [docs/HW-DRILLS.md](docs/HW-DRILLS.md) | Run, deploy and prove on hardware |
 | [docs/UI-CONTRACT.md](docs/UI-CONTRACT.md) | Pages, scripts, CSS and DOM hooks |
+| [docs/VENUE-CLOUD.md](docs/VENUE-CLOUD.md) | Design: cloud server, venue boxes, pairing and release (STATUS N12–N16) |
 | [docs/BUGLOG.md](docs/BUGLOG.md) | Bug log from the 2026-10-06 code review: every open defect with location, fix and status |
 | [docs/OFFLINE-EDIT.md](docs/OFFLINE-EDIT.md) · [docs/TIMERPI-THEME-SPEC.md](docs/TIMERPI-THEME-SPEC.md) | Offline mesh editing spec · shelved draft for a future custom theme |
 | [docs/archive/](docs/archive/README.md) | Historical notes. Not current |
