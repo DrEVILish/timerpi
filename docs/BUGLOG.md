@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 8 |
+| Suggestion | 41 | 2 |
 
 ## Critical
 
@@ -167,18 +167,18 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS29 | `ws/hub.go:300-306` | Pings go out one session at a time; `WriteControl` waits up to 5 s for a stalled phone's write lock, so many stalled phones delay pings and dead-session cleanup for minutes. | Ping from each session's own write loop on a ticker. | Fixed 2026-10-06 (1eac2ab) |
 | RS30 | `routes/import.go:28-37` | Append import calls `CreateCue` per row, each renumbering the show (2N updates): ~250k statements for 500 rows, and errors don't stop the loop, so it can apply partially. | One transaction, insert all, `applyOrder` once. | Fixed 2026-10-06 (1eac2ab) |
 | RS31 | `routes/boards.go:53-58` | `boardStore()` runs `boards.Migrate` on every board API call and board render. | Migrate once at startup or behind `sync.Once`. | Fixed 2026-10-06 `38eec8b` (also: the lazy table broke screen templates and bundle import on a fresh box) |
-| RS32 | `routes/screens.go:183-190` | `screenCard` calls `GetBoard` per screen although `ListBoards` already loaded them: an N+1 on every 3 s Screens poll and every `notifyControls`. | Pass a `map[id]Board`. | Open |
-| RS33 | `public/src/timerpi.js:645-711` (`paint`) | Every animation frame (60 Hz on a Pi) runs `querySelectorAll` over the cue list, day-bar segments and `#tp-rate`, though digits change once a second. | Cache nodes in `_collect()`; repaint only when the displayed second changes. | Open |
-| RS34 | `public/src/mesh.js:319-320` | Reconnect backoff has no jitter, so after a restart every screen reconnects in lockstep. | `this._wsBackoff * (0.5 + Math.random())`. | Open |
+| RS32 | `routes/screens.go:183-190` | `screenCard` calls `GetBoard` per screen although `ListBoards` already loaded them: an N+1 on every 3 s Screens poll and every `notifyControls`. | Pass a `map[id]Board`. | Fixed 2026-10-06 (0384a3c) |
+| RS33 | `public/src/timerpi.js:645-711` (`paint`) | Every animation frame (60 Hz on a Pi) runs `querySelectorAll` over the cue list, day-bar segments and `#tp-rate`, though digits change once a second. | Cache nodes in `_collect()`; repaint only when the displayed second changes. | Fixed 2026-10-06 (0384a3c) |
+| RS34 | `public/src/mesh.js:319-320` | Reconnect backoff has no jitter, so after a restart every screen reconnects in lockstep. | `this._wsBackoff * (0.5 + Math.random())`. | Fixed 2026-10-06 (0384a3c) |
 
 ### Style and readability
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
 | RS35 | `timerpi/db.go:380, 599, 738, 832`; `timerpi/merge.go:197` | The same 19-column cue INSERT is copy-pasted five times and none writes `day`, so clone, duplicate and replace silently reset sessions to day 1 (matters for N10 multi-day). | One `insertCue(tx, c)` helper including `day`. | Fixed 2026-10-06 `a9e8108` |
-| RS36 | `timerpi/db.go` (throughout) | `SELECT *` into structs breaks every read the day a migration adds a column without a struct field. | Explicit column lists. | Open |
+| RS36 | `timerpi/db.go` (throughout) | `SELECT *` into structs breaks every read the day a migration adds a column without a struct field. | Explicit column lists. | Fixed 2026-10-06 (0384a3c) |
 | RS37 | `public/src/timerpi.js` (2,446 lines), `timerpi/db.go` (1,633), `public/src/board.js` (1,426) | Very large files mixing unrelated concerns; `wireCompose`'s misindented block is what hid RC3. | Split along existing sections (db: schema/shows/cues/screens/logs/runtime; board.js: render/compose/walk-in; timerpi.js: screens/cue edit/share). | Open |
-| RS38 | `public/src/timerpi.js:1401-1500, 2306-2352`; `routes/pages.go:77`; `routes/display.go:252` vs `routes/boards.go:339`; `routes/boards.go:373, 455`; `public/src/board.js:75-91`; `templates/fragments/b-widgets.html:20`; `routes/boards.go:251` | Dead and duplicated code: ~150 lines of the old home page (`initHome`, `renderRecent`, `tp.recent.shows`) whose `recordRecent` still writes localStorage on every snapshot; unused `listShowRows`; identical `joinVMof`/`boardJoinOf`; the Runtime copy literal twice; `FACTORY_DEFAULT` drifted from Go (missing `notice`, see C5); a doubled `{{if $.P.Editable}}`; `board` shadowed in `boardView`. | Delete the dead code, dedupe, serve `DefaultLayout()` to the client. | Open |
+| RS38 | `public/src/timerpi.js:1401-1500, 2306-2352`; `routes/pages.go:77`; `routes/display.go:252` vs `routes/boards.go:339`; `routes/boards.go:373, 455`; `public/src/board.js:75-91`; `templates/fragments/b-widgets.html:20`; `routes/boards.go:251` | Dead and duplicated code: ~150 lines of the old home page (`initHome`, `renderRecent`, `tp.recent.shows`) whose `recordRecent` still writes localStorage on every snapshot; unused `listShowRows`; identical `joinVMof`/`boardJoinOf`; the Runtime copy literal twice; `FACTORY_DEFAULT` drifted from Go (missing `notice`, see C5); a doubled `{{if $.P.Editable}}`; `board` shadowed in `boardView`. | Delete the dead code, dedupe, serve `DefaultLayout()` to the client. | Fixed 2026-10-06 (0384a3c) |
 | RS39 | `public/src/timerpi.js:1944, 1965` | Cell-edit cancel restores with `host.innerHTML = oldHTML`. Safe today, but breaks the textContent-only rule and drops child listeners. | Save `[...host.childNodes]` and `replaceChildren(...saved)`. | Fixed 2026-10-06 (b5d055d, the inline cell editor restores its cell's nodes) |
-| RS40 | `oscbridge/oscbridge.go`; `routes/oscapi.go:76` | Every bad OSC packet is logged, so a flood fills the journal. The listener binds `0.0.0.0` with no allowlist. | Rate-limit the parse-error log; optional source-IP allowlist. | Open |
+| RS40 | `oscbridge/oscbridge.go`; `routes/oscapi.go:76` | Every bad OSC packet is logged, so a flood fills the journal. The listener binds `0.0.0.0` with no allowlist. | Rate-limit the parse-error log; optional source-IP allowlist. | Fixed 2026-10-06 (0384a3c) |
 | RS41 | `go.mod` | `github.com/grandcat/zeroconf` is listed `// indirect` but `mdns/mdns.go` imports it directly; Go tooling rewrites the line during some runs. | Move it to the direct `require` block. | Open |
