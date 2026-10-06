@@ -33,15 +33,15 @@
         <td class="tp-cue-pos" title="Drag to reorder · right-click for more"><span class="tp-grip" aria-hidden="true">⠿</span><span class="mono">{{printf "%02d" .Pos}}</span></td>
         <td class="tp-cue-kind" data-edit="kind">{{if .IsBreak}}<span class="badge tp-badge-break">Break</span>{{else}}<span class="badge badge-accent">Session</span>{{end}}</td>
         <td class="tp-cue-title" data-edit="label"><span class="tp-cue-label">{{.Label}}</span><span class="badge tp-alert-badge" hidden></span>{{range .Tags}} <span class="badge">{{.}}</span>{{end}}</td>
-        <td class="tp-cue-who text-truncate" data-edit="{{if .IsBreak}}location{{else}}speaker{{end}}">{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}</td>
+        <td class="tp-cue-who" data-edit="{{if .IsBreak}}location{{else}}speaker{{end}}"><span class="tp-clip" title="{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}">{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}</span></td>
         <td class="tp-cue-dur mono" data-edit="durationMS">{{.DurFmt}}</td>
-        <td class="tp-cue-start mono">{{.StartFmt}}</td>
-        <td class="tp-cue-end mono">{{.EndFmt}}</td>
+        <td class="tp-cue-start mono" title="{{.StartFmt}}">{{if .StartHM}}{{.StartHM}}{{else}}{{.StartFmt}}{{end}}</td>
+        <td class="tp-cue-end mono" title="{{.EndFmt}}">{{if .EndHM}}{{.EndHM}}{{else}}{{.EndFmt}}{{end}}</td>
         <td class="tp-cue-timer" data-edit="timerKind">{{if eq .TimerKind "COUNTSTOP"}}Count up{{else if eq .TimerKind "CLOCK"}}Clock{{else}}Countdown{{end}}</td>
         <td class="tp-cue-atzero" data-edit="endAction">{{if eq .EndAction "OVERTIME"}}Overtime{{else if eq .EndAction "BLANK"}}Blank{{else}}Hold{{end}}</td>
         <td class="tp-cue-alert1 mono" data-edit="alert1MS"><span class="tp-alert-dot" style="--swatch: {{.AlertColor1}}" title="Alert 1 colour" data-color="alertColor1"></span>{{if .Alert1Fmt}}{{.Alert1Fmt}}{{else}}—{{end}}</td>
         <td class="tp-cue-alert2 mono" data-edit="alert2MS"><span class="tp-alert-dot" style="--swatch: {{.AlertColor2}}" title="Alert 2 colour" data-color="alertColor2"></span>{{if .Alert2Fmt}}{{.Alert2Fmt}}{{else}}—{{end}}</td>
-        <td class="tp-cue-notes text-truncate" data-edit="notes">{{.Notes}}</td>
+        <td class="tp-cue-notes" data-edit="notes"><span class="tp-clip" title="{{.Notes}}">{{.Notes}}</span></td>
         <td class="tp-cue-rowbtns">
           <div class="btn-group">
             <button class="btn btn-sm btn-go" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>

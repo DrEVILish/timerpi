@@ -105,6 +105,16 @@ export async function run(t) {
   await pg.click('#tp-insp-save');
   await pg.waitForTimeout(700);
   t.check('a swatch picked in the details panel saves', (await snap()).cues[0].alertColor1 === '#ff4444');
+  // The whole table fits a 1440 px screen beside the Current cue pane,
+  // with the day running (planned times read HH:MM).
+  await ctx.request.post(`${t.base}/api/shows/${room}/cmd/start`, { data: { pos: 1 }, headers: H });
+  await pg.setViewportSize({ width: 1440, height: 900 });
+  await pg.waitForTimeout(800);
+  const fit = await pg.$eval('#cuelist', (x) => ({ sw: x.scrollWidth, cw: x.clientWidth }));
+  // BUGLOG RW60: once the day has a start, the rows show clock times.
+  const starts = await pg.$$eval('#cuelist tbody td.tp-cue-start', (n) => n.map((x) => x.textContent.trim()));
+  t.check(`planned starts are clock times after GO (${starts.join(', ')})`, starts.every((x) => /^\d\d:\d\d$/.test(x)));
+  t.check(`the table fits at 1440 px (${fit.sw} ≤ ${fit.cw})`, fit.sw <= fit.cw + 1);
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
   await ctx.close();
 }

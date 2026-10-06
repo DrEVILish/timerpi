@@ -102,6 +102,7 @@ type CueVM struct {
 	StartFmt     string
 	EndFmt       string
 	StartHM      string // planned start "15:04" (24 h); "" until the day has a start (walk-in schedule, U3)
+	EndHM        string // planned end "15:04" (running order shows HH:MM; StartFmt/EndFmt keep seconds)
 	HoldFmt      string
 	Kind         string
 	IsBreak      bool
@@ -555,6 +556,7 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 				vm.StartFmt = FmtTimeOfDay(row.StartTS)
 				vm.EndFmt = FmtTimeOfDay(row.EndTS)
 				vm.StartHM = time.UnixMilli(row.StartTS).Format("15:04")
+				vm.EndHM = time.UnixMilli(row.EndTS).Format("15:04")
 			} else {
 				// No day anchored yet: show relative offsets instead of a
 				// misleading midnight wall clock.

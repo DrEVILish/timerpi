@@ -455,8 +455,11 @@ class ClockUI {
       title.appendChild(span('badge', t));
     }
 
-    const who = td('tp-cue-who text-truncate', isBreak ? 'location' : 'speaker');
-    setText(who, isBreak ? (c.location || '') : (c.speaker || ''));
+    // Long text is clipped in an inner span (cells ignore max-width), with
+    // the full text as its tooltip.
+    const clip = (text) => { const sp = span('tp-clip', text); sp.title = text; return sp; };
+    const who = td('tp-cue-who', isBreak ? 'location' : 'speaker');
+    who.appendChild(clip(isBreak ? (c.location || '') : (c.speaker || '')));
 
     const dur = td('tp-cue-dur mono', 'durationMS');
     setText(dur, fmtDuration(c.durationMS));
@@ -464,9 +467,13 @@ class ClockUI {
     const start = td('tp-cue-start mono');
     const end = td('tp-cue-end mono');
     if (schedRow) {
+      // HH:MM in the table (the full time is the tooltip), like the
+      // server's rows.
       const anchor = this.snap?.runtime?.dayStartTS || this.serverNow();
-      setText(start, fmtTimeOfDay(anchor + (schedRow.startMS || 0)));
-      setText(end, fmtTimeOfDay(anchor + (schedRow.endMS || 0)));
+      const s = fmtTimeOfDay(anchor + (schedRow.startMS || 0));
+      const e = fmtTimeOfDay(anchor + (schedRow.endMS || 0));
+      setText(start, s.slice(0, 5)); start.title = s;
+      setText(end, e.slice(0, 5)); end.title = e;
     }
 
     const timer = td('tp-cue-timer', 'timerKind');
@@ -485,8 +492,8 @@ class ClockUI {
       return cell;
     };
 
-    const notes = td('tp-cue-notes text-truncate', 'notes');
-    setText(notes, c.notes || '');
+    const notes = td('tp-cue-notes', 'notes');
+    notes.appendChild(clip(c.notes || ''));
 
     // Row actions — same data-cmd contracts as the server frag.
     const btns = td('tp-cue-rowbtns');

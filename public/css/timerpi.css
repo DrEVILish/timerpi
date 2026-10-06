@@ -19,7 +19,7 @@
 .tp-dash {
   display: grid;
   /* U37: left = Current cue, Messages, Import; right = transport + running order. */
-  grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr);
+  grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr);
   gap: var(--space-m, 1rem);
   align-items: start;
   height: 100%;
@@ -1224,11 +1224,16 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .b-palette-list button { flex: 0 0 auto; }
 
 /* --- Running order table (STATUS U39–U43) -------------------------------- */
-.tp-cuetable { font-size: .9rem; }
-.tp-cuetable :is(th, td) { padding-inline: .45rem; vertical-align: middle; }
-.tp-cuetable .tp-cue-title { min-width: 12rem; }
-.tp-cuetable .tp-cue-who { max-width: 12rem; }
-.tp-cuetable .tp-cue-notes { max-width: 14rem; color: var(--muted); font-size: inherit; }
+.tp-cuetable { font-size: .82rem; }
+.tp-cuetable :is(th, td) { padding-inline: .25rem; vertical-align: middle; }
+.tp-cuetable th { font-size: .7rem; letter-spacing: .03em; }
+.tp-cuetable .tp-cue-title { min-width: 7rem; }
+.tp-cuetable .tp-cue-notes { color: var(--muted); font-size: inherit; }
+.tp-cuetable .tp-clip { display: block; max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-cuetable .tp-cue-notes .tp-clip { max-width: 4rem; }
+.tp-cuetable .tp-cue-rowbtns .btn { padding-inline: .2rem; }
+.tp-cuetable .tp-cue-rowbtns .btn-go { padding-inline: .45rem; }
+
 .tp-cuetable :is(.tp-cue-timer, .tp-cue-atzero, .tp-cue-kind) { white-space: nowrap; }
 .tp-cuetable :is(.tp-cue-alert1, .tp-cue-alert2) { white-space: nowrap; }
 .tp-cuetable td[data-edit] { cursor: text; }
@@ -1239,9 +1244,18 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 /* The add row (U39): a quiet footer with the same columns. */
 .tp-cue-add td { padding-block: .4rem; border-top: 1px solid var(--hairline, var(--border)); background: var(--surface-2, transparent); }
 .tp-cue-add :is(.input, .select) { width: 100%; min-width: 0; }
-.tp-cue-add .tp-cue-dur .input { min-width: 4.5rem; }
-.tp-alert-field { display: flex; align-items: center; gap: .3rem; }
-.tp-alert-field .input { min-width: 3.6rem; }
+/* Compact add-row controls: they set the column widths, and the whole
+   table should fit a 1440 px screen next to the Current cue pane. */
+.tp-cue-add :is(.input, .select) { padding-inline: .3rem; font-size: .78rem; }
+.tp-cue-add .select { padding-inline-end: 1.1rem; background-position: right .25rem center; }
+.tp-cue-add .tp-cue-kind .select { width: 5.2em; }
+.tp-cue-add :is(.tp-cue-timer, .tp-cue-atzero) .select { width: 6.4em; }
+.tp-cue-add .tp-cue-dur .input { width: 4.2em; }
+.tp-cue-add .tp-cue-title .input { width: 100%; min-width: 7em; }
+.tp-cue-add .tp-cue-who .input { width: 100%; min-width: 5em; }
+.tp-cue-add .tp-cue-notes .input { width: 100%; min-width: 4em; }
+.tp-alert-field { display: flex; align-items: center; gap: .25rem; }
+.tp-alert-field .input { width: 3.6em; }
 /* Alert colour dots (U30): a swatch the operator clicks to change. */
 .tp-alert-dot {
   display: inline-block; inline-size: .85rem; block-size: .85rem; flex: none;

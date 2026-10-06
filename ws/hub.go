@@ -446,7 +446,10 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 	}
 
 	var oobs [][]byte
-	if sig := cuesSignature(snap.Cues); sig != sh.sigs.cues {
+	// The day start is part of it: the first GO (or "Day starts now")
+	// turns the rows' "+0:10" offsets into clock times, and the table used
+	// to keep the offsets until a reload (BUGLOG RW60).
+	if sig := cuesSignature(snap.Cues) + "|" + strconv.FormatInt(snap.Runtime.DayStartTS, 10); sig != sh.sigs.cues {
 		for _, frag := range []string{"frag-cuelist", "frag-daybar"} {
 			if html, err := h.render(frag, data); err == nil {
 				oobs = append(oobs, oobFrame(oobTargetOf(frag), html))
