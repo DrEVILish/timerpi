@@ -14,7 +14,7 @@ func TestActionLogTailAndCap(t *testing.T) {
 	if acts, err := d.ListActions(show.ID, 10); err != nil || len(acts) != 0 {
 		t.Fatalf("empty log: %+v %v", acts, err)
 	}
-	if d.LastActionID(show.ID) != 0 {
+	if id, _ := d.LastActionID(show.ID); id != 0 {
 		t.Fatal("empty log cursor != 0")
 	}
 
@@ -27,7 +27,7 @@ func TestActionLogTailAndCap(t *testing.T) {
 	if acts[0].Action != "clone" || acts[0].Actor != "api" {
 		t.Errorf("newest-first violated: %+v", acts)
 	}
-	if d.LastActionID(show.ID) != acts[0].ID {
+	if id, _ := d.LastActionID(show.ID); id != acts[0].ID {
 		t.Error("cursor != newest id")
 	}
 

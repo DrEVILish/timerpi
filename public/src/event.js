@@ -60,17 +60,22 @@ function initHome() {
   });
   document.getElementById('create-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // One event per press: Enter twice used to create two (BUGLOG RS24).
+    const btn = e.submitter || e.target.querySelector('[type="submit"]');
+    if (btn?.disabled) return;
     const err = document.getElementById('create-error');
     const name = document.getElementById('ev-name').value.trim();
     const pw = document.getElementById('ev-pw').value;
     const pw2 = document.getElementById('ev-pw2').value;
     if (pw !== pw2) return showError(err, 'The two passwords do not match.');
     const roomNames = [...rooms.querySelectorAll('input')].map((i) => i.value.trim()).filter(Boolean);
+    if (btn) btn.disabled = true;
     try {
       const out = await api('POST', '/api/events', { name, password: pw, rooms: roomNames });
       rememberEvent(out.code, name);
-      location.href = out.admin;
+      location.href = out.admin; // stays disabled while the page changes
     } catch (ex) {
+      if (btn) btn.disabled = false;
       showError(err, ex.message);
     }
   });

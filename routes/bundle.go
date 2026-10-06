@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"timerpi/boards"
@@ -107,7 +108,9 @@ func (d *Deps) fillBundleExtras(id int64, sf *showFile) {
 func (d *Deps) restoreBundleVotes(pollX map[int64]int64, votes []showFileVote) {
 	for _, v := range votes {
 		if dbID, ok := pollX[v.PollID]; ok && dbID > 0 {
-			_ = d.Store.VoteRaw(dbID, v.Peer, v.Choice, v.Ts)
+			if err := d.Store.VoteRaw(dbID, v.Peer, v.Choice, v.Ts); err != nil {
+				log.Printf("routes: import vote: %v", err) // RS25
+			}
 		}
 	}
 }

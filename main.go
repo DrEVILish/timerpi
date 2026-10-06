@@ -79,7 +79,7 @@ func main() {
 		if port == "" {
 			port = "53000" // QLab/CuTePi default
 		}
-		return host + ":" + port
+		return oscbridge.JoinTarget(host, port)
 	}
 
 	// Template registry: parse once (hot reload is -dev only). Production

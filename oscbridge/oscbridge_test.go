@@ -238,3 +238,24 @@ func TestFireOutNeverBlocksTheCaller(t *testing.T) {
 		}
 	}
 }
+
+// BUGLOG RS22: targets join correctly for IPv6, and the outbound host is
+// validated.
+func TestTargetsAndHosts(t *testing.T) {
+	if got := JoinTarget("::1", "53000"); got != "[::1]:53000" {
+		t.Errorf("IPv6 target = %q", got)
+	}
+	if got := JoinTarget("qlab.local", "53000"); got != "qlab.local:53000" {
+		t.Errorf("hostname target = %q", got)
+	}
+	for _, ok := range []string{"10.0.0.5", "::1", "[fe80::1]", "qlab.local", "cutepi"} {
+		if !ValidHost(ok) {
+			t.Errorf("ValidHost(%q) = false", ok)
+		}
+	}
+	for _, bad := range []string{"", "http://x", "a b", "host:53000", "-bad.local", strings.Repeat("a", 300)} {
+		if ValidHost(bad) {
+			t.Errorf("ValidHost(%q) = true", bad)
+		}
+	}
+}

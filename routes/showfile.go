@@ -294,8 +294,18 @@ func (d *Deps) apiShowFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": cerr.Error()})
 		return
 	}
-	msgs, _ := d.Store.ListMessages(id)
-	rt, _, _ := d.Store.LoadRuntime(id)
+	// An export that silently drops the messages or the day's schedule is
+	// worse than a clear failure (BUGLOG RS25).
+	msgs, merr := d.Store.ListMessages(id)
+	if merr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": merr.Error()})
+		return
+	}
+	rt, _, rerr := d.Store.LoadRuntime(id)
+	if rerr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": rerr.Error()})
+		return
+	}
 
 	out := make([]timerpi.Cue, 0, len(cues))
 	for _, cue := range cues {
@@ -410,7 +420,9 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 			continue
 		}
 		if m.ShownAt > 0 {
-			_ = d.Store.ShowMessage(show.ID, nm.ID, m.ShownAt)
+			if err := d.Store.ShowMessage(show.ID, nm.ID, m.ShownAt); err != nil {
+				log.Printf("routes: import message shown state: %v", err)
+			}
 		}
 	}
 	// Schedule anchor + rate restore as an ARMED day: no playhead travels.
@@ -426,7 +438,9 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		_ = d.Store.DeleteShow(show.ID)
 		return timerpi.Show{}, 0, fmt.Errorf("runtime: %w", err)
 	}
-	_ = d.Store.TouchShow(show.ID)
+	if err := d.Store.TouchShow(show.ID); err != nil {
+		log.Printf("routes: import show stamp: %v", err)
+	}
 
 	// §11.9: the event's other halves ride v2 bundles — zone + map asset,
 	// interaction items with moderation state, votes, screens (re-keyed to
@@ -477,7 +491,9 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		}
 		for slot, p := range sf.Polls {
 			if p.Spot > 0 && pollX[p.Spot] > 0 {
-				_ = d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot])
+				if err := d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot]); err != nil {
+					log.Printf("routes: import spotlight: %v", err)
+				}
 			}
 		}
 		if d.Hub != nil {
@@ -485,11 +501,15 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		}
 		d.restoreBundleVotes(pollX, sf.Votes)
 		for _, r := range sf.Screens {
-			_ = d.Store.SetScreenConfig(show.ID, r.Name, r.Theme, boardX[r.BoardID], r.Room)
+			if err := d.Store.SetScreenConfig(show.ID, r.Name, r.Theme, boardX[r.BoardID], r.Room); err != nil {
+				log.Printf("routes: import screen %s: %v", r.Name, err)
+			}
 		}
 		for _, pr := range sf.Presets {
 			if len(pr.Data) > 0 && string(pr.Data) != "null" {
-				_, _ = d.Store.SavePreset(show.ID, pr.Name, string(pr.Data))
+				if _, err := d.Store.SavePreset(show.ID, pr.Name, string(pr.Data)); err != nil {
+					log.Printf("routes: import preset: %v", err)
+				}
 			}
 		}
 		// The venue map belongs to the event: a bundle's map (or a
@@ -500,7 +520,9 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		}
 		if aid := assetX[idx]; idx > 0 && aid > 0 {
 			if ev, eerr := d.Store.GetEvent(show.EventID); eerr == nil && ev.MapAsset == 0 {
-				_ = d.Store.SetEventMap(ev.ID, aid)
+				if err := d.Store.SetEventMap(ev.ID, aid); err != nil {
+					log.Printf("routes: import venue map: %v", err)
+				}
 			}
 		}
 	}

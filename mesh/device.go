@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -797,9 +798,18 @@ func peerBaseURL(p mdns.Peer) string {
 		port = 80
 	}
 	if len(p.Addrs) == 0 {
-		return fmt.Sprintf("http://%s:%d", strings.ToLower(p.Host), port)
+		return "http://" + net.JoinHostPort(strings.ToLower(p.Host), strconv.Itoa(port))
 	}
-	return fmt.Sprintf("http://%s:%d", p.Addrs[0], port)
+	// Prefer an IPv4 address (a lexically-first IPv6 one may be link-local
+	// and unusable), and bracket IPv6 properly (BUGLOG RS22).
+	addr := p.Addrs[0]
+	for _, a := range p.Addrs {
+		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
+			addr = a
+			break
+		}
+	}
+	return "http://" + net.JoinHostPort(addr, strconv.Itoa(port))
 }
 
 // ---------------------------------------------------------------------------

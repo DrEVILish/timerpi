@@ -277,6 +277,35 @@ func (in *Inbound) SetInbound(addr string, dispatch func(m Message), report func
 // ---------------------------------------------------------------------------
 // Outbound: QLab-style fire-and-forget UDP (QLab's UDP mode has no replies)
 
+// JoinTarget builds "host:port" correctly for IPv6 too ("[::1]:53000");
+// plain string joining broke on IPv6 (BUGLOG RS22).
+func JoinTarget(host, port string) string {
+	return net.JoinHostPort(strings.Trim(strings.TrimSpace(host), "[]"), port)
+}
+
+// ValidHost accepts an IP address or a DNS hostname (letters, digits,
+// hyphens, dots; 253 chars at most) — never a URL, a port or spaces.
+func ValidHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	for _, label := range strings.Split(strings.TrimSuffix(host, "."), ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Target returns the current outbound UDP address ("" disables). Set once
 // at boot from settings by main; read per event (human-rate).
 var Target func() string

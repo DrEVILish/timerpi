@@ -29,7 +29,9 @@ export function themeCssUrl(slug) {
 
 /** No-network-lint: currentColor glyphs only; slugs are charset-sanitised. */
 function safeSlug(slug) {
-  return String(slug || 'blue-future').replace(/[^a-z0-9_-]/g, '').toLowerCase() || 'blue-future';
+  // Lowercase first: stripping first turned "Blue-Future" into "lue-uture"
+  // (BUGLOG RS20).
+  return String(slug || 'blue-future').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'blue-future';
 }
 
 /** Apply a theme: attribute + bundle link, no persistence (callers decide). */

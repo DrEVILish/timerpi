@@ -5,6 +5,7 @@ package boards_test
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -225,5 +226,28 @@ func TestNormalizeKeepsTilesInsideCanvas(t *testing.T) {
 		if w.Y+w.H > l.Rows {
 			t.Errorf("tile %s y=%d h=%d outside the %d-row canvas", w.ID, w.Y, w.H, l.Rows)
 		}
+	}
+}
+
+// BUGLOG RS21: notice text and board names are cut on a character
+// boundary, never in the middle of a UTF-8 sequence.
+func TestClipsKeepUTF8Whole(t *testing.T) {
+	text := strings.Repeat("é", 200) // 400 bytes
+	raw := `{"v":1,"widgets":[{"id":"n","type":"notice","x":0,"y":0,"w":4,"h":1,"opts":{"text":"` + text + `"}}]}`
+	l, err := boards.ValidateLayout(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := l.Widgets[0].Opts["text"]
+	if !utf8.ValidString(got) || len(got) > 256 {
+		t.Errorf("notice clipped to %d bytes, valid UTF-8: %v", len(got), utf8.ValidString(got))
+	}
+	db := memDB(t)
+	b, err := boards.CreateBoard(db, 1, strings.Repeat("ü", 40), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(b.Name) || len(b.Name) > 64 {
+		t.Errorf("board name %q (%d bytes)", b.Name, len(b.Name))
 	}
 }

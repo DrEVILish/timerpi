@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -393,9 +394,7 @@ func sanitizeOpts(in map[string]string) map[string]string {
 		if k == "" || len(k) > 32 {
 			continue
 		}
-		if len(v) > 256 {
-			v = v[:256]
-		}
+		v = clipUTF8(v, 256)
 		out[k] = v
 	}
 	if len(out) == 0 {
@@ -557,6 +556,19 @@ func GetBoard(db *sqlx.DB, showID, bid int64) (Board, error) {
 	return b, err
 }
 
+// clipUTF8 cuts s to at most n bytes without splitting a character
+// (BUGLOG RS21: plain byte slicing could leave half a UTF-8 sequence).
+// Same rule as timerpi.ClipUTF8; boards stays free of that package.
+func clipUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 // CreateBoard inserts a board; an empty layout seeds the factory default.
 // Names are trimmed, capped at 64 chars, and must be non-empty.
 func CreateBoard(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, error) {
@@ -565,7 +577,7 @@ func CreateBoard(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, erro
 		return Board{}, fmt.Errorf("boards: name must not be empty")
 	}
 	if len(name) > 64 {
-		name = name[:64]
+		name = clipUTF8(name, 64)
 	}
 	layout := strings.TrimSpace(layoutRaw)
 	if layout == "" {
@@ -610,7 +622,7 @@ func RenameBoard(db *sqlx.DB, showID, bid int64, name string) (Board, error) {
 		return Board{}, fmt.Errorf("boards: name must not be empty")
 	}
 	if len(name) > 64 {
-		name = name[:64]
+		name = clipUTF8(name, 64)
 	}
 	if _, err := db.Exec(`UPDATE display_boards SET name = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
 		name, nowMS(), showID, showID, bid); err != nil {

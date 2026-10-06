@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,11 +48,12 @@ func (d *Deps) apiOscTest(c *gin.Context) {
 	if port == "" {
 		port = "53000"
 	}
-	if err := oscbridge.Send(host+":"+port, "/timerpi/test"); err != nil {
+	target := oscbridge.JoinTarget(host, port)
+	if err := oscbridge.Send(target, "/timerpi/test"); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "sent": host + ":" + port})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "sent": target})
 }
 
 func (d *Deps) oscSettings() (map[string]string, error) {
@@ -177,6 +179,10 @@ func (d *Deps) apiOscSet(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad inbound port"})
 			return
 		}
+	}
+	if h := strings.TrimSpace(body.Out.Host); h != "" && !oscbridge.ValidHost(h) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The outbound host must be an IP address or a hostname"})
+		return
 	}
 	if body.Out.Host != "" && body.Out.Port == "" {
 		body.Out.Port = "53000" // QLab/CuTePi default

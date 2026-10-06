@@ -1190,10 +1190,11 @@ func (d *DB) ListActions(showID int64, limit int) ([]Action, error) {
 }
 
 // LastActionID is the oob-diff cursor for frag-actions (0 when none).
-func (d *DB) LastActionID(showID int64) int64 {
+// A DB error is returned, not reported as "no actions" (BUGLOG RS25).
+func (d *DB) LastActionID(showID int64) (int64, error) {
 	var id int64
-	_ = d.Get(&id, `SELECT COALESCE(MAX(id), 0) FROM actions WHERE show_id = ?`, showID)
-	return id
+	err := d.Get(&id, `SELECT COALESCE(MAX(id), 0) FROM actions WHERE show_id = ?`, showID)
+	return id, err
 }
 
 // ---------------------------------------------------------------------------

@@ -76,3 +76,15 @@ func TestUnknownThemeRefused(t *testing.T) {
 		t.Errorf("event theme: %d, want 400", code)
 	}
 }
+
+// BUGLOG RS25: an export that can't read the messages fails clearly
+// instead of downloading a file without them.
+func TestExportFailsInsteadOfDroppingData(t *testing.T) {
+	ts := newAPITest(t)
+	if _, err := ts.db.Exec(`ALTER TABLE messages RENAME TO messages_gone`); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := ts.call("GET", "/api/shows/"+ts.showCode+"/file", nil, ""); code != 500 {
+		t.Errorf("export without readable messages: %d, want 500", code)
+	}
+}
