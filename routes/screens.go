@@ -20,6 +20,7 @@ package routes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -328,21 +329,36 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
 		return
 	}
-	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID, body.Room); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	if body.Kind != nil || body.Rotation != nil {
+	// Check every field before writing any (BUGLOG RW42): a bad rotation
+	// used to answer 400 with the theme/board/room already saved.
+	look := body.Kind != nil || body.Rotation != nil
+	var kind string
+	var rot int
+	if look {
 		cur, _ := d.Store.GetScreenByName(id, name)
-		kind, rot := cur.Kind, cur.Rotation
+		kind, rot = cur.Kind, cur.Rotation
 		if body.Kind != nil {
 			kind = *body.Kind
 		}
 		if body.Rotation != nil {
 			rot = *body.Rotation
 		}
+		if !timerpi.ValidScreenKind(kind) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown display type " + strconv.Quote(kind)})
+			return
+		}
+		if !timerpi.ValidRotation(rot) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "rotation must be 0, 90, 180 or 270"})
+			return
+		}
+	}
+	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID, body.Room); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if look {
 		if err := d.Store.SetScreenLook(id, name, kind, rot); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 			return
 		}
 	}
@@ -377,12 +393,22 @@ func (d *Deps) apiScreenMatch(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
+	// Match copies the look: theme, layout (a board or a built-in) and
+	// display type. Room and rotation belong to where each screen is and
+	// how it is mounted, so they stay (BUGLOG RW41).
 	matched, failed := 0, 0
 	for _, r := range rows {
 		if r.Name == from {
 			continue
 		}
-		if err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID, src.Room); err != nil {
+		err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID, r.Room)
+		if err == nil && src.BoardID == 0 {
+			err = d.Store.SetScreenTemplate(id, r.Name, src.Template)
+		}
+		if err == nil {
+			err = d.Store.SetScreenLook(id, r.Name, src.Kind, r.Rotation)
+		}
+		if err != nil {
 			failed++
 			continue
 		}
@@ -414,6 +440,10 @@ func (d *Deps) apiScreenRename(c *gin.Context) {
 		return
 	}
 	if err := d.Store.RenameScreen(id, body.From, to); err != nil {
+		if errors.Is(err, timerpi.ErrScreenNameTaken) {
+			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "Another screen is already called " + to})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
@@ -606,7 +636,13 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 			sc.BoardID < 0 || !d.boardKnown(id, sc.BoardID) {
 			continue // entries from another show's file never land here
 		}
-		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID, ""); err != nil {
+		// A preset carries looks, not rooms: keep each screen's room
+		// (BUGLOG RW41; it used to be wiped to "").
+		room := ""
+		if cur, cerr := d.Store.GetScreenByName(id, name); cerr == nil {
+			room = cur.Room
+		}
+		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID, room); err != nil {
 			continue
 		}
 		d.pushScreen(id, name)

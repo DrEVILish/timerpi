@@ -375,6 +375,16 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
 		return
 	}
+	// Check every field before writing any (BUGLOG RW42): a short password
+	// used to be refused after the rename had already been saved.
+	if body.Name != nil && strings.TrimSpace(*body.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The event needs a name"})
+		return
+	}
+	if body.Password != nil && !validSuperPassword(*body.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
+		return
+	}
 	if body.Name != nil {
 		if err := d.Store.RenameEvent(ev.ID, *body.Name); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
@@ -389,10 +399,6 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		}
 	}
 	if body.Password != nil {
-		if !validSuperPassword(*body.Password) {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
-			return
-		}
 		if err := d.Store.SetEventSuperPassword(ev.ID, *body.Password); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
@@ -598,6 +604,10 @@ func (d *Deps) apiEventPatchRoom(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
+		return
+	}
+	if body.Name != nil && strings.TrimSpace(*body.Name) == "" { // before any write (RW42)
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The room needs a name"})
 		return
 	}
 	if body.Name != nil {

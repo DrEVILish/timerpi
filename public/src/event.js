@@ -141,16 +141,30 @@ function initAdmin() {
   let rooms = [];
   let fetchedAt = 0;
 
+  // run reports success so callers reload only when the change landed
+  // (BUGLOG RW43: a failed action used to reload anyway, wiping its error).
   const run = async (fn, okMsg) => {
     try {
       await fn();
       if (okMsg) toast(okMsg, 'success');
       poll();
+      return true;
     } catch (ex) {
       toast(ex.message, 'danger');
+      return false;
     }
   };
-  const verb = (v, room) => run(() => api('POST', `/api/events/${EV}/verb`, { verb: v, room }));
+  // verb disables its button until the request settles, so a double-click
+  // on GO can't advance two sessions (BUGLOG RW44).
+  const verb = async (v, room, btn) => {
+    if (btn?.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+      await run(() => api('POST', `/api/events/${EV}/verb`, { verb: v, room }));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
 
   function stateOf(r) {
     if (r.blanked) return ['Blacked out', 'status-error'];
@@ -160,44 +174,96 @@ function initAdmin() {
     return ['Idle', 'status-idle'];
   }
 
+  // Cards are built once per room and patched in place on every poll
+  // (BUGLOG RW44: rebuilding them every 2 s lost keyboard focus and
+  // dropped clicks that straddled a re-render).
+  const cards = new Map(); // room code → { card, parts }
+  const empty = el('p', { class: 'text-muted', text: 'No rooms yet. Add one below.' });
+
+  function buildCard(code) {
+    const room = () => rooms.find((x) => x.code === code) || {};
+    const parts = {
+      name: el('span'),
+      status: el('span', { class: 'status push' }),
+      clock: el('div', { class: 'tp-live-clock mono', dataset: { remaining: '1' } }),
+      now: el('dd'),
+      next: el('dd'),
+      screens: el('dd'),
+    };
+    parts.go = el('button', { class: 'btn btn-sm', type: 'button', title: 'Start the next session', dataset: { act: 'go' } }, 'GO');
+    parts.go.addEventListener('click', () => verb('go', code, parts.go));
+    parts.pause = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'pause' } });
+    parts.pause.addEventListener('click', () => verb(room().paused ? 'resume' : 'pause', code, parts.pause));
+    parts.blank = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'blank' } });
+    parts.blank.addEventListener('click', () => verb(room().blanked ? 'unblank' : 'blank', code, parts.blank));
+    const card = el('article', { class: 'panel tp-live-card', dataset: { room: code } },
+      el('div', { class: 'panel-header' }, parts.name, parts.status),
+      parts.clock,
+      el('dl', { class: 'tp-live-facts' },
+        el('dt', { text: 'Now' }), parts.now,
+        el('dt', { text: 'Next' }), parts.next,
+        el('dt', { text: 'Screens' }), parts.screens,
+      ),
+      el('div', { class: 'cluster is-gap-2xs' },
+        el('a', { class: 'btn btn-sm btn-primary', href: `/c/${code}` }, 'Open room'),
+        el('a', { class: 'btn btn-sm', href: `/screens/${code}` }, 'Screens'),
+        parts.go, parts.pause, parts.blank,
+      ),
+    );
+    return { card, parts };
+  }
+
+  const setText = (node, t) => { if (node.textContent !== t) node.textContent = t; };
+
   function render() {
-    grid.replaceChildren();
     if (!rooms.length) {
-      grid.appendChild(el('p', { class: 'text-muted', text: 'No rooms yet. Add one below.' }));
+      for (const { card } of cards.values()) card.remove();
+      cards.clear();
+      if (empty.parentNode !== grid) grid.replaceChildren(empty);
       return;
     }
-    for (const r of rooms) {
-      const [label, cls] = stateOf(r);
-      const card = el('article', { class: 'panel tp-live-card', dataset: { room: r.code } },
-        el('div', { class: 'panel-header' }, el('span', { text: r.name }), el('span', { class: `status ${cls} push`, text: label })),
-        el('div', { class: 'tp-live-clock mono', dataset: { remaining: '1' }, text: r.running ? fmtRemaining(r.remainingMS) : '—' }),
-        el('dl', { class: 'tp-live-facts' },
-          el('dt', { text: 'Now' }), el('dd', { text: r.activeLabel || '—' }),
-          el('dt', { text: 'Next' }), el('dd', { text: r.nextLabel || '—' }),
-          el('dt', { text: 'Screens' }), el('dd', { text: String(r.screens) }),
-        ),
-        el('div', { class: 'cluster is-gap-2xs' },
-          el('a', { class: 'btn btn-sm btn-primary', href: `/c/${r.code}` }, 'Open room'),
-          el('a', { class: 'btn btn-sm', href: `/screens/${r.code}` }, 'Screens'),
-          el('button', { class: 'btn btn-sm', type: 'button', onclick: () => verb('go', r.code), title: 'Start the next session' }, 'GO'),
-          r.running ? el('button', { class: 'btn btn-sm', type: 'button', onclick: () => verb(r.paused ? 'resume' : 'pause', r.code) }, r.paused ? 'Resume' : 'Pause') : null,
-          el('button', { class: `btn btn-sm ${r.blanked ? '' : 'btn-danger'}`, type: 'button', onclick: () => verb(r.blanked ? 'unblank' : 'blank', r.code) }, r.blanked ? 'Restore' : 'Blackout'),
-        ),
-      );
-      grid.appendChild(card);
+    empty.remove();
+    const live = new Set(rooms.map((r) => r.code));
+    for (const [code, { card }] of cards) {
+      if (!live.has(code)) { card.remove(); cards.delete(code); }
     }
+    rooms.forEach((r, i) => {
+      let entry = cards.get(r.code);
+      if (!entry) { entry = buildCard(r.code); cards.set(r.code, entry); }
+      const { card, parts } = entry;
+      const [label, cls] = stateOf(r);
+      setText(parts.name, r.name);
+      setText(parts.status, label);
+      parts.status.className = `status ${cls} push`;
+      setText(parts.clock, r.running ? fmtRemaining(r.remainingMS) : '—');
+      setText(parts.now, r.activeLabel || '—');
+      setText(parts.next, r.nextLabel || '—');
+      setText(parts.screens, String(r.screens));
+      parts.pause.hidden = !r.running;
+      setText(parts.pause, r.paused ? 'Resume' : 'Pause');
+      setText(parts.blank, r.blanked ? 'Restore' : 'Blackout');
+      parts.blank.classList.toggle('btn-danger', !r.blanked);
+      // Move a card only when it is out of place: moving a node drops focus.
+      if (grid.children[i] !== card) grid.insertBefore(card, grid.children[i] || null);
+    });
   }
 
   function tick() {
     const elapsed = Date.now() - fetchedAt;
-    for (const card of grid.querySelectorAll('.tp-live-card')) {
-      const r = rooms.find((x) => x.code === card.dataset.room);
-      if (!r || !r.running || r.paused) continue;
-      card.querySelector('[data-remaining]').textContent = fmtRemaining(r.remainingMS - elapsed);
+    for (const r of rooms) {
+      if (!r.running || r.paused) continue;
+      const entry = cards.get(r.code);
+      if (entry) setText(entry.parts.clock, fmtRemaining(r.remainingMS - elapsed));
     }
   }
 
+  // One poll at a time: a slow reply can't overwrite a newer one. A poll
+  // asked for while one is in flight runs once that one lands.
+  let polling = false;
+  let pollAgain = false;
   async function poll() {
+    if (polling) { pollAgain = true; return; }
+    polling = true;
     try {
       const out = await api('GET', `/api/events/${EV}/live`);
       rooms = out.rooms || [];
@@ -208,6 +274,9 @@ function initAdmin() {
     } catch (ex) {
       lamp?.classList.remove('is-on');
       if (status) status.textContent = ex.message;
+    } finally {
+      polling = false;
+      if (pollAgain) { pollAgain = false; poll(); }
     }
   }
   poll();
@@ -218,7 +287,7 @@ function initAdmin() {
     b.addEventListener('click', async () => {
       const v = b.dataset.verbAll;
       if (v === 'blank' && !(await tpConfirm('Every screen in every room goes dark.', { title: 'Blackout all rooms?', ok: 'Blackout', danger: true }))) return;
-      verb(v, '');
+      verb(v, '', b);
     });
   }
 
@@ -234,14 +303,14 @@ function initAdmin() {
         fields: [{ id: 'pw', label: 'Password', type: 'password', autocomplete: 'new-password' }],
       });
       const pw = res?.pw;
-      if (pw) run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { password: pw }), 'Room password set').then(reload);
+      if (pw) run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { password: pw }), 'Room password set').then((ok) => ok && reload());
     });
     row.querySelector('[data-room-pw-clear]')?.addEventListener('click', () =>
-      run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { clearPassword: true }), 'Room password removed').then(reload));
+      run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { clearPassword: true }), 'Room password removed').then((ok) => ok && reload()));
     for (const b of row.querySelectorAll('[data-room-move]')) {
       b.addEventListener('click', () => {
         const pos = Number(row.firstElementChild.textContent) + Number(b.dataset.roomMove);
-        run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { pos })).then(reload);
+        run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { pos })).then((ok) => ok && reload());
       });
     }
     // Duplicate (moved here from the room's Setup tab, STATUS U29): same
@@ -251,17 +320,17 @@ function initAdmin() {
         title: 'Duplicate room', ok: 'Duplicate',
       });
       if (!res) return;
-      run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then(reload);
+      run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then((ok) => ok && reload());
     });
     row.querySelector('[data-room-delete]')?.addEventListener('click', async () => {
       const ok = await tpConfirm(`"${nameEl.textContent}" and its sessions, polls and screen layouts are deleted for good.`, { title: 'Delete room?', ok: 'Delete', danger: true });
-      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then(reload);
+      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then((ok) => ok && reload());
     });
   }
   document.getElementById('room-add')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();
-    if (name) run(() => api('POST', `/api/events/${EV}/rooms`, { name }), 'Room added').then(reload);
+    if (name) run(() => api('POST', `/api/events/${EV}/rooms`, { name }), 'Room added').then((ok) => ok && reload());
   });
   document.getElementById('room-pw-all')?.addEventListener('click', async () => {
     const res = await tpPrompt('Every room gets this moderator password. Leave it empty to remove every room password.', '', {
@@ -270,20 +339,20 @@ function initAdmin() {
     });
     if (!res) return;
     const pw = res.pw;
-    run(() => api('POST', `/api/events/${EV}/room-password`, { password: pw }), pw ? 'Password set on every room' : 'Room passwords removed').then(reload);
+    run(() => api('POST', `/api/events/${EV}/room-password`, { password: pw }), pw ? 'Password set on every room' : 'Room passwords removed').then((ok) => ok && reload());
   });
   document.getElementById('room-import')?.addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const fd = new FormData();
     fd.append('file', f);
-    run(() => api('POST', `/api/events/${EV}/rooms/import`, fd), 'Room imported').then(reload);
+    run(() => api('POST', `/api/events/${EV}/rooms/import`, fd), 'Room imported').then((ok) => ok && reload());
   });
 
   // Settings
   document.getElementById('ev-rename')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    run(() => api('PATCH', `/api/events/${EV}`, { name: document.getElementById('ev-name-input').value }), 'Event renamed').then(reload);
+    run(() => api('PATCH', `/api/events/${EV}`, { name: document.getElementById('ev-name-input').value }), 'Event renamed').then((ok) => ok && reload());
   });
   document.getElementById('ev-theme')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -292,7 +361,7 @@ function initAdmin() {
   document.getElementById('ev-pw')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const input = document.getElementById('ev-pw-new');
-    run(() => api('PATCH', `/api/events/${EV}`, { password: input.value }), 'Supervisor password changed').then(() => { input.value = ''; });
+    run(() => api('PATCH', `/api/events/${EV}`, { password: input.value }), 'Supervisor password changed').then((ok) => { if (ok) input.value = ''; });
   });
   document.getElementById('ev-map')?.addEventListener('change', (e) => {
     const f = e.target.files?.[0];
@@ -302,10 +371,10 @@ function initAdmin() {
     run(async () => {
       const up = await api('POST', `/api/assets?event=${EV}`, fd);
       await api('POST', `/api/events/${EV}/map`, { assetId: up.id });
-    }, 'Venue map uploaded').then(reload);
+    }, 'Venue map uploaded').then((ok) => ok && reload());
   });
   document.getElementById('ev-map-clear')?.addEventListener('click', () =>
-    run(() => api('POST', `/api/events/${EV}/map`, { assetId: 0 }), 'Map removed').then(reload));
+    run(() => api('POST', `/api/events/${EV}/map`, { assetId: 0 }), 'Map removed').then((ok) => ok && reload()));
   document.getElementById('ev-delete')?.addEventListener('click', async () => {
     const res = await tpPrompt(`This deletes every room, session, poll and screen layout of "${body.dataset.eventName}". Type the event name to confirm.`, '', {
       title: 'Delete event?', ok: 'Delete event', fields: [{ id: 'name', label: 'Event name' }],

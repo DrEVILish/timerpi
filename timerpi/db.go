@@ -1323,6 +1323,9 @@ func (d *DB) GetScreenByName(showID int64, name string) (Screen, error) {
 	return s, nil
 }
 
+// ErrScreenNameTaken: a rename target already names another screen.
+var ErrScreenNameTaken = errors.New("timerpi: another screen already has that name")
+
 // RenameScreen moves a registry row (operator rename from the panel).
 func (d *DB) RenameScreen(showID int64, from, to string) error {
 	from, to = SanitizeScreenName(from), SanitizeScreenName(to)
@@ -1337,8 +1340,14 @@ func (d *DB) RenameScreen(showID int64, from, to string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM screens WHERE show_id = ? AND name = ?`, showID, to); err != nil {
+	// Renaming onto another screen's name used to delete that screen's row
+	// while its tab was still live (BUGLOG RW40): refuse instead.
+	var taken int
+	if err := tx.Get(&taken, `SELECT COUNT(*) FROM screens WHERE show_id = ? AND name = ?`, showID, to); err != nil {
 		return err
+	}
+	if taken > 0 {
+		return ErrScreenNameTaken
 	}
 	if _, err := tx.Exec(`UPDATE screens SET name = ?, last_seen = ? WHERE show_id = ? AND name = ?`,
 		to, nowMS(), showID, from); err != nil {

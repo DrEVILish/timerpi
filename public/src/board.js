@@ -82,6 +82,9 @@ try {
   if (raw) layout = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
 } catch { /* corrupt embed: render-only, editor stays inert */ }
 const pristine = JSON.parse(JSON.stringify(layout)); // reset-to-saved baseline
+// lastSaved is the layout the server last accepted: a structural change
+// that fails to save rolls back to it instead of reloading (BUGLOG RW43).
+let lastSaved = JSON.parse(JSON.stringify(layout));
 
 // FACTORY_DEFAULT mirrors boards.DefaultLayout() (Go) for Reset-to-default.
 // NOTE (NOTES-board.md): this is a deliberate mirror — the supervisor pass
@@ -783,8 +786,9 @@ function scheduleSave() {
   saveTimer = setTimeout(saveNow, 600);
 }
 
+// saveNow PUTs the layout and reports whether the server accepted it.
 async function saveNow() {
-  if (!editable || !code || !boardId) return;
+  if (!editable || !code || !boardId) return false;
   clearTimeout(saveTimer);
   saveState('Saving…');
   try {
@@ -799,8 +803,11 @@ async function saveNow() {
     }
     const d = new Date();
     saveState(`Saved ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`);
+    lastSaved = JSON.parse(JSON.stringify(layout));
+    return true;
   } catch (e) {
     saveState(`Save failed: ${e.message}`);
+    return false;
   }
 }
 
@@ -1305,10 +1312,20 @@ function freeSpot(w, h) {
   return null;
 }
 
+// reloadEditing saves a structural change (add, delete, template, reset,
+// orientation) and reloads so the server re-renders the tiles. A failed
+// save keeps the page and its "Save failed" message, and rolls the local
+// layout back to what the server holds (BUGLOG RW43).
 async function reloadEditing() {
+  if (!(await saveNow())) {
+    layout = JSON.parse(JSON.stringify(lastSaved));
+    const orient = $('#b-orient');
+    if (orient) orient.value = layout.orientation === 'portrait' ? 'portrait' : 'landscape';
+    return false;
+  }
   try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
-  await saveNow();
   location.reload();
+  return true;
 }
 
 function wireKeys() {
