@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 58 | 29 |
-| Suggestion | 41 | 39 |
+| Suggestion | 41 | 38 |
 
 ## Critical
 
@@ -174,7 +174,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 
 | ID | Location | Problem | Suggested fix | Status |
 |---|---|---|---|---|
-| RS35 | `timerpi/db.go:380, 599, 738, 832`; `timerpi/merge.go:197` | The same 19-column cue INSERT is copy-pasted five times and none writes `day`, so clone, duplicate and replace silently reset sessions to day 1 (matters for N10 multi-day). | One `insertCue(tx, c)` helper including `day`. | Open |
+| RS35 | `timerpi/db.go:380, 599, 738, 832`; `timerpi/merge.go:197` | The same 19-column cue INSERT is copy-pasted five times and none writes `day`, so clone, duplicate and replace silently reset sessions to day 1 (matters for N10 multi-day). | One `insertCue(tx, c)` helper including `day`. | Fixed 2026-10-06 `a9e8108` |
 | RS36 | `timerpi/db.go` (throughout) | `SELECT *` into structs breaks every read the day a migration adds a column without a struct field. | Explicit column lists. | Open |
 | RS37 | `public/src/timerpi.js` (2,446 lines), `timerpi/db.go` (1,633), `public/src/board.js` (1,426) | Very large files mixing unrelated concerns; `wireCompose`'s misindented block is what hid RC3. | Split along existing sections (db: schema/shows/cues/screens/logs/runtime; board.js: render/compose/walk-in; timerpi.js: screens/cue edit/share). | Open |
 | RS38 | `public/src/timerpi.js:1401-1500, 2306-2352`; `routes/pages.go:77`; `routes/display.go:252` vs `routes/boards.go:339`; `routes/boards.go:373, 455`; `public/src/board.js:75-91`; `templates/fragments/b-widgets.html:20`; `routes/boards.go:251` | Dead and duplicated code: ~150 lines of the old home page (`initHome`, `renderRecent`, `tp.recent.shows`) whose `recordRecent` still writes localStorage on every snapshot; unused `listShowRows`; identical `joinVMof`/`boardJoinOf`; the Runtime copy literal twice; `FACTORY_DEFAULT` drifted from Go (missing `notice`, see C5); a doubled `{{if $.P.Editable}}`; `board` shadowed in `boardView`. | Delete the dead code, dedupe, serve `DefaultLayout()` to the client. | Open |
