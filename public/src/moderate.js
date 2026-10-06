@@ -1,10 +1,12 @@
 /**
  * moderate.js — the room moderator's Audience panel (PRODUCT §4.4).
  *
- * Per item: Show to Audience · Show to Presenter (independent toggles),
- * Show results / Back to voting, Hide, Edit, Delete. Submission kinds
- * (Q&A, ideas, word cloud) carry a moderation queue: Approve / Dismiss
- * pending entries; Spotlight / Answered / Dismiss approved ones.
+ * A table (STATUS U18), one row per item, ftl-themes components (U17):
+ * Presenter · Audience · Results switches, Type, Title/Question, Approve
+ * automatically (submission kinds), Edit and Delete icon buttons. Under an
+ * item that has something to show, a detail row holds the live tally
+ * (poll, quiz) or the moderation queue (Q&A, ideas, word cloud): Approve /
+ * Dismiss pending entries; Spotlight / Answered / Dismiss approved ones.
  *
  * Live: the room WS sends {t:"polls"} after every change (votes and
  * submissions included); refresh() re-reads /api/shows/:code/polls.
@@ -92,44 +94,81 @@ function render() {
   }
   // Keep the open <details> (moderation lists) open across refreshes.
   const open = new Set([...host.querySelectorAll('details[open]')].map((d) => d.dataset.key));
-  host.replaceChildren(...[...items].reverse().map((it) => card(it, open)));
+  const tbody = el('tbody');
+  for (const it of [...items].reverse()) tbody.append(...rows(it, open));
+  host.replaceChildren(el('div', { class: 'table-wrap', tabindex: '0' },
+    el('table', { class: 'table tp-aud-table' },
+      el('thead', {}, el('tr', {},
+        el('th', { scope: 'col', text: 'Presenter' }),
+        el('th', { scope: 'col', text: 'Audience' }),
+        el('th', { scope: 'col', text: 'Results' }),
+        el('th', { scope: 'col', text: 'Type' }),
+        el('th', { scope: 'col', text: 'Title / Question' }),
+        el('th', { scope: 'col', text: 'Approve automatically' }),
+        el('th', { scope: 'col' }, el('span', { class: 'visually-hidden', text: 'Actions' })))),
+      tbody)));
 }
 
-function toggle(label, on, title, onclick) {
-  return el('button', { class: `btn btn-sm tp-target${on ? ' is-on btn-primary' : ''}`, type: 'button', 'aria-pressed': String(on), title, onclick }, label);
+// switchCtl is the ftl-themes switch (U17). disabled = shown but greyed.
+function switchCtl(label, on, onchange, disabled = false) {
+  const input = el('input', { type: 'checkbox', 'aria-label': label, disabled });
+  input.checked = !!on;
+  input.addEventListener('change', () => onchange(input.checked));
+  return el('label', { class: 'switch', title: label }, input,
+    el('span', { class: 'switch-track' }, el('span', { class: 'switch-thumb' })));
 }
 
-function card(it, open) {
+function iconBtn(icon, label, cls, onclick) {
+  const b = el('button', { class: `btn btn-sm btn-icon ${cls}`, type: 'button', title: label, 'aria-label': label, onclick });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `/ftl/dist/icons/xbmc.svg#icon-${icon}`);
+  svg.appendChild(use);
+  b.appendChild(svg);
+  return b;
+}
+
+// rows: the item's table row, plus a detail row (tally or queue) when it
+// has something to show.
+function rows(it, open) {
   const shown = it.toAudience || it.toPresenter;
-  const head = el('div', { class: 'tp-item-head' },
-    el('span', { class: 'badge', text: KINDS[it.kind] || it.kind }),
-    el('strong', { class: 'tp-item-q', text: it.question }),
-    it.state === 'results' ? el('span', { class: 'status status-ok', text: 'Results' }) : null,
-    shown && it.state === 'open' ? el('span', { class: 'status status-rec', text: 'Live' }) : null,
-  );
-  const controls = el('div', { class: 'cluster is-gap-2xs tp-item-controls' },
-    toggle(`📱 Audience ${it.toAudience ? 'ON' : 'off'}`, it.toAudience, 'Phones + audience screens',
-      () => act(`/${it.id}/show`, { target: 'audience', on: !it.toAudience })),
-    toggle(`🎤 Presenter ${it.toPresenter ? 'ON' : 'off'}`, it.toPresenter, 'Presenter (DSM) screens',
-      () => act(`/${it.id}/show`, { target: 'presenter', on: !it.toPresenter })),
-    (it.kind === 'poll' || it.kind === 'quiz') && shown
-      ? el('button', { class: 'btn btn-sm', type: 'button', onclick: () => act(`/${it.id}/results`, { on: it.state !== 'results' }) },
-        it.state === 'results' ? 'Back to voting' : 'Show results')
-      : null,
-    shown ? el('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: () => act(`/${it.id}/hide`) }, 'Hide') : null,
-    el('button', { class: 'btn btn-sm btn-ghost', type: 'button', title: 'Edit', onclick: () => openEditor(it) }, 'Edit'),
-    el('button', {
-      class: 'btn btn-sm btn-ghost', type: 'button', title: 'Delete',
-      onclick: async () => {
-        if (!(await tpConfirm(`"${it.question}" and all its votes and submissions are deleted.`, { title: 'Delete item?', ok: 'Delete', danger: true }))) return;
+  const choice = it.kind === 'poll' || it.kind === 'quiz';
+  const q = it.question || '(untitled)';
+  const status = it.state === 'results'
+    ? el('span', { class: 'status status-ok', text: 'Results' })
+    : (shown && it.state === 'open' ? el('span', { class: 'status status-rec', text: 'Live' }) : null);
+  const tr = el('tr', { class: `tp-aud-row${shown ? ' is-shown' : ''}`, dataset: { id: String(it.id) } },
+    el('td', {}, switchCtl(`Show "${q}" to the presenter`, it.toPresenter,
+      (on) => act(`/${it.id}/show`, { target: 'presenter', on }))),
+    el('td', {}, switchCtl(`Show "${q}" to the audience`, it.toAudience,
+      (on) => act(`/${it.id}/show`, { target: 'audience', on }))),
+    el('td', {}, choice
+      ? switchCtl(`Show results of "${q}"`, it.state === 'results', (on) => act(`/${it.id}/results`, { on }), !shown)
+      : el('span', { class: 'text-muted', text: '—' })),
+    el('td', {}, el('span', { class: 'badge', text: KINDS[it.kind] || it.kind })),
+    el('td', { class: 'tp-aud-q' }, el('span', { text: q }), ' ', status,
+      it.pending ? el('span', { class: 'badge badge-accent', text: `${it.pending} to review` }) : null),
+    el('td', {}, SUBMISSIONS.has(it.kind)
+      ? switchCtl(`Approve submissions to "${q}" automatically`, it.autoApprove, async (on) => {
+        try { await api('PATCH', `${base()}/${it.id}`, { autoApprove: on }); refresh(); } catch (err) { toast(err.message, 'danger'); }
+      })
+      : el('span', { class: 'text-muted', text: '—' })),
+    el('td', { class: 'tp-aud-actions' },
+      iconBtn('edit', `Edit "${q}"`, 'btn-ghost', () => openEditor(it)),
+      iconBtn('trash', `Delete "${q}"`, 'btn-ghost btn-danger', async () => {
+        if (!(await tpConfirm(`"${q}" and all its votes and submissions are deleted.`, { title: 'Delete item?', ok: 'Delete', danger: true }))) return;
         try { await api('DELETE', `${base()}/${it.id}`); refresh(); } catch (e) { toast(e.message, 'danger'); }
-      },
-    }, 'Delete'),
+      })),
   );
-  const body = el('div', { class: 'tp-item-body' });
-  if (it.kind === 'poll' || it.kind === 'quiz') body.append(tally(it));
-  else body.append(queue(it, open));
-  return el('article', { class: `tp-item${shown ? ' is-shown' : ''}`, dataset: { id: String(it.id) } }, head, controls, body);
+  const out = [tr];
+  const hasDetail = choice ? (shown || (it.total || 0) > 0) : (shown || (it.children || []).length > 0);
+  if (hasDetail) {
+    out.push(el('tr', { class: 'tp-aud-detail', dataset: { id: String(it.id) } },
+      el('td', { colspan: '7' }, choice ? tally(it) : queue(it, open))));
+  }
+  return out;
 }
 
 function tally(it) {
@@ -141,7 +180,7 @@ function tally(it) {
     const row = el('div', { class: 'tp-tally-row' + (it.kind === 'quiz' && i === it.correct ? ' is-correct' : '') },
       el('span', { text: (it.kind === 'quiz' && i === it.correct ? '✔ ' : '') + o }),
       el('span', { class: 'mono', text: `${n} · ${pct}%` }),
-      el('div', { class: 'progress' }, el('div', { class: 'progress-bar', style: `width:${pct}%` })));
+      el('progress', { class: 'progress', max: '100', value: String(pct), 'aria-label': `${o}: ${pct}%` }));
     t.appendChild(row);
   });
   return t;
@@ -152,17 +191,6 @@ function queue(it, open) {
   const pend = kids.filter((k) => k.state === 'hidden');
   const wall = kids.filter((k) => k.state === 'open' || k.state === 'answered');
   const wrap = el('div', { class: 'stack is-gap-xs' });
-  const auto = el('label', { class: 'tp-auto' },
-    el('input', {
-      type: 'checkbox', class: 'checkbox', checked: !!it.autoApprove,
-      onchange: async (e) => {
-        try {
-          await api('PATCH', `${base()}/${it.id}`, { question: it.question, autoApprove: e.target.checked });
-          refresh();
-        } catch (err) { toast(err.message, 'danger'); }
-      },
-    }), ' Approve submissions automatically');
-  wrap.appendChild(auto);
   if (!it.toAudience && !pend.length && !wall.length) {
     wrap.appendChild(el('p', { class: 'text-muted', text: 'Show it to the Audience to start collecting submissions.' }));
   }
@@ -218,11 +246,16 @@ function initEditor() {
     const kind = dlg.dataset.kind;
     const question = dlg.querySelector('#tp-aud-question').value.trim();
     const rows = [...dlg.querySelectorAll('.tp-opt-row')];
-    const options = rows.map((r) => r.querySelector('input[type=text]').value.trim());
+    // The correct answer's index is counted while blanks are dropped, so
+    // two options with the same text can't pick the wrong one (RS15).
+    const kept = [];
     let correct = -1;
-    rows.forEach((r, i) => { if (r.querySelector('input[type=radio]')?.checked) correct = i; });
-    const kept = options.filter(Boolean);
-    if (correct >= 0) correct = kept.indexOf(options[correct]);
+    for (const r of rows) {
+      const v = r.querySelector('input[type=text]').value.trim();
+      if (!v) continue;
+      if (r.querySelector('input[type=radio]')?.checked) correct = kept.length;
+      kept.push(v);
+    }
     const body = { kind, question, autoApprove: dlg.querySelector('#tp-aud-auto').checked };
     if (kind === 'poll' || kind === 'quiz') body.options = kept;
     if (kind === 'quiz') body.correct = correct;

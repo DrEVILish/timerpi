@@ -293,7 +293,7 @@ type pollBody struct {
 	Question    string   `json:"question"`
 	Options     []string `json:"options"`
 	Correct     *int64   `json:"correct"`
-	AutoApprove bool     `json:"autoApprove"`
+	AutoApprove *bool    `json:"autoApprove"`
 }
 
 func (b pollBody) cleanOptions() []string {
@@ -319,7 +319,7 @@ func (d *Deps) apiPollCreate(c *gin.Context) {
 	}
 	opts, _ := jsonMarshal(body.cleanOptions())
 	p := timerpi.Poll{ShowID: id, Kind: body.Kind, Question: timerpi.ClipUTF8(body.Question, 200),
-		Options: string(opts), Correct: -1, AutoApprove: body.AutoApprove}
+		Options: string(opts), Correct: -1, AutoApprove: body.AutoApprove != nil && *body.AutoApprove}
 	if body.Correct != nil {
 		p.Correct = *body.Correct
 	}
@@ -348,15 +348,31 @@ func (d *Deps) apiPollEdit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
 		return
 	}
-	correct := int64(-1)
+	// A PATCH changes only what it names (BUGLOG RS14): omitted fields keep
+	// their stored values (an "approve automatically" toggle must not reset
+	// the quiz answer, and vice versa).
+	cur, err := d.Store.GetPoll(id, pid)
+	if err != nil {
+		d.pollResult(c, id, "edit", err)
+		return
+	}
+	question := cur.Question
+	if strings.TrimSpace(body.Question) != "" {
+		question = timerpi.ClipUTF8(body.Question, 200)
+	}
+	correct := cur.Correct
 	if body.Correct != nil {
 		correct = *body.Correct
+	}
+	auto := cur.AutoApprove
+	if body.AutoApprove != nil {
+		auto = *body.AutoApprove
 	}
 	var opts []string
 	if body.Options != nil {
 		opts = body.cleanOptions()
 	}
-	d.pollResult(c, id, fmt.Sprintf("edit %d", pid), d.Store.UpdatePoll(id, pid, timerpi.ClipUTF8(body.Question, 200), opts, correct, body.AutoApprove))
+	d.pollResult(c, id, fmt.Sprintf("edit %d", pid), d.Store.UpdatePoll(id, pid, question, opts, correct, auto))
 }
 
 // POST /api/shows/:ident/polls/:pid/show {target: audience|presenter, on}

@@ -157,8 +157,8 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U17** | Polls, interaction options and results use ftl-themes components as much as possible. |
-| **U18** | Audience tab as a table: one row per item, column headers. Columns: view-control toggles (**Presenter**, **Audience**, **Results**), Type, Title/Question, Approve automatically, actions (edit pencil, delete bin). |
+| **U17** | ✅ 2026-10-06 (moderator side): the Audience tab uses ftl `.table`, `.switch`, `.btn-icon` and `<progress class="progress">` tallies. The phone page and screen tiles get the same pass later. |
+| **U18** | ✅ Done 2026-10-06: one row per item with Presenter / Audience / Results switches (Results locked until shown), Type, Title / Question (Live/Results/to-review badges), Approve automatically, edit and delete icon buttons; a detail row holds the tally or the moderation queue. Browser test `audience-table`. |
 
 **Home and event pages**
 

@@ -269,3 +269,12 @@ body.b-board .b-sched li > .mono:first-child { min-width: 3.2em; display: inline
 .tp-aud-layout #tp-aud-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: .75rem; align-items: start; }
 .tp-setup-grid { display: grid; gap: var(--space-m, 1rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); align-items: start; }
 @media (max-width: 52rem) { .tp-aud-layout { grid-template-columns: 1fr; } }
+
+/* Audience tab as a table (STATUS U18; ftl .table + .switch, U17). */
+.tp-aud-table th, .tp-aud-table td { vertical-align: middle; }
+.tp-aud-table .tp-aud-q { width: 100%; min-width: 14rem; }
+.tp-aud-table .tp-aud-q > span:first-child { font-weight: 700; }
+.tp-aud-table .tp-aud-actions { white-space: nowrap; }
+.tp-aud-row.is-shown > td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tp-aud-detail > td { padding-top: 0; }
+.tp-tally-row progress.progress { width: 100%; }
