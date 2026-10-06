@@ -24,7 +24,7 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 |---|---|---|
 | Critical | 8 | 0 |
 | Warning | 59 | 0 |
-| Suggestion | 41 | 23 |
+| Suggestion | 41 | 18 |
 
 ## Critical
 
@@ -138,13 +138,13 @@ collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.
 | RS10 | `routes/audience.go:226-235, 260-273` | `voteRecent`/`voteMark` and `askRecent`/`askMark` are separated by the DB call, so concurrent requests from one peer all pass. | Reserve the slot atomically; release on validation failure. | Fixed 2026-10-06 `906bd8f` |
 | RS11 | `public/src/audience.js:102-109, 205-208` | The phone records "mine" and the upvote before the server accepts. On failure (429, voting closed) it still shows "(you)" or "You got it right!", and the upvote button stays disabled. | Roll back local state on failure. | Fixed 2026-10-06 `a8d77d2` |
 | RS12 | `timerpi/polls.go:575-577` | The public submission total counts pending and dismissed entries, revealing how many are held back. | Count only visible entries in public views. | Fixed 2026-10-06 (ada612c) |
-| RS13 | `timerpi/polls.go:452-461` (`DeletePoll`) | Two statements with no transaction, second error ignored. Deleting a spotlighted entry leaves `spot` pointing at a missing row. | One transaction plus `UPDATE polls SET spot=0 WHERE spot=?`. | Open |
+| RS13 | `timerpi/polls.go:452-461` (`DeletePoll`) | Two statements with no transaction, second error ignored. Deleting a spotlighted entry leaves `spot` pointing at a missing row. | One transaction plus `UPDATE polls SET spot=0 WHERE spot=?`. | Fixed 2026-10-06 (4d7356a) |
 | RS14 | `routes/audience.go:385-393` (`apiPollEdit`) | Omitted `autoApprove` becomes false and omitted `correct` becomes -1, so a PATCH that changes only the question turns auto-approve off, and quiz edits without `correct` fail. | Pointer fields; keep stored values when absent. | Fixed 2026-10-06 `ffdf054` |
 | RS15 | `public/src/moderate.js:224-225` | `kept.indexOf(options[correct])` returns the first match, so duplicate option text can store the wrong quiz answer. | Compute the index while filtering empty options. | Fixed 2026-10-06 `ffdf054` |
-| RS16 | `routes/theme.go:61`; `config/config.go:295` | POST `/api/theme` with an unknown name is sanitised to "" (blue-future) and returns ok. | 400 unless the name is in `installedThemes()`. | Open |
-| RS17 | `routes/screens.go:154-160` | "Forget" on a connected screen looks like a no-op: the card is re-added from live sessions with an empty config. | Mark live-only cards, or disconnect on forget. | Open |
-| RS18 | `public/src/screens.js:284-285` | "Edit layout" on a screen with `boardId 0` opens the shared default board, so edits change every unassigned screen. | Create the screen's own board first, or warn. | Open |
-| RS19 | `routes/screens.go:714-723`; `public/src/screens.js:104-122` | Picking a portrait template on a card keeps rotation 0, stretching a 9:16 layout across a landscape TV (only the capture dialog syncs them). | Set 90 when the template is portrait and rotation is 0, or show a mismatch badge. | Open |
+| RS16 | `routes/theme.go:61`; `config/config.go:295` | POST `/api/theme` with an unknown name is sanitised to "" (blue-future) and returns ok. | 400 unless the name is in `installedThemes()`. | Fixed 2026-10-06 (4d7356a) |
+| RS17 | `routes/screens.go:154-160` | "Forget" on a connected screen looks like a no-op: the card is re-added from live sessions with an empty config. | Mark live-only cards, or disconnect on forget. | Fixed 2026-10-06 (4d7356a) |
+| RS18 | `public/src/screens.js:284-285` | "Edit layout" on a screen with `boardId 0` opens the shared default board, so edits change every unassigned screen. | Create the screen's own board first, or warn. | Fixed 2026-10-06 (a376310, U11: Edit layout on a screen without one makes a named copy first) |
+| RS19 | `routes/screens.go:714-723`; `public/src/screens.js:104-122` | Picking a portrait template on a card keeps rotation 0, stretching a 9:16 layout across a landscape TV (only the capture dialog syncs them). | Set 90 when the template is portrait and rotation is 0, or show a mismatch badge. | Fixed 2026-10-06 (4d7356a) |
 | RS20 | `public/src/theme.js:30-32` (`safeSlug`) | Strips characters outside `[a-z0-9_-]` before lowercasing, so "Blue-Future" becomes "lue-uture" and loads a missing bundle. | Lowercase first, then strip. | Open |
 | RS21 | `boards/boards.go:396, 558, 603`; `public/src/board.js:1148` | `v[:256]` and `name[:64]` cut by bytes and can split UTF-8; the board.js comment claims the server clip is rune-safe. | Use `timerpi.ClipUTF8`. | Open |
 | RS22 | `routes/oscapi.go:50, 181-199`; `mesh/device.go:754-763` | `host+":"+port` and `fmt.Sprintf("http://%s:%d")` break on IPv6; peer addresses sort lexically so IPv6 can come first. `osc.out.host` isn't validated, and one event's blackout fires `/panic` at the box-wide target, reaching other events' desks. | `net.JoinHostPort`, prefer IPv4, validate the host; consider per-event OSC targets. | Open |
