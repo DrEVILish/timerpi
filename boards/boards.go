@@ -527,17 +527,26 @@ func Migrate(db *sqlx.DB) error {
 
 func nowMS() int64 { return time.Now().UnixMilli() }
 
-// ListBoards returns the show's boards, oldest first (first = default).
+// Layouts belong to the EVENT (PRODUCT §7, 2026-10-06): every room of an
+// event sees and can use the same layouts. Rows keep the room that made
+// them (show_id, for the cascade on event delete); every lookup below is
+// widened to "any room of showID's event". A room outside any event
+// (event_id 0, never after adoption) only sees its own.
+const sameEvent = `show_id IN (SELECT s2.id FROM shows s2 WHERE s2.event_id =
+	(SELECT s1.event_id FROM shows s1 WHERE s1.id = ?) AND s2.event_id != 0) OR show_id = ?`
+
+// ListBoards returns the event's layouts, oldest first (first = default).
 func ListBoards(db *sqlx.DB, showID int64) ([]Board, error) {
 	var out []Board
-	err := db.Select(&out, `SELECT * FROM display_boards WHERE show_id = ? ORDER BY id ASC`, showID)
+	err := db.Select(&out, `SELECT * FROM display_boards WHERE (`+sameEvent+`) ORDER BY id ASC`, showID, showID)
 	return out, err
 }
 
-// GetBoard fetches one board; sql.ErrNoRows when missing (callers 404).
+// GetBoard fetches one layout of showID's event; sql.ErrNoRows when
+// missing (callers 404).
 func GetBoard(db *sqlx.DB, showID, bid int64) (Board, error) {
 	var b Board
-	err := db.Get(&b, `SELECT * FROM display_boards WHERE show_id = ? AND id = ?`, showID, bid)
+	err := db.Get(&b, `SELECT * FROM display_boards WHERE (`+sameEvent+`) AND id = ?`, showID, showID, bid)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("boards: get %d: %w", bid, err)
 	}
@@ -599,8 +608,8 @@ func RenameBoard(db *sqlx.DB, showID, bid int64, name string) (Board, error) {
 	if len(name) > 64 {
 		name = name[:64]
 	}
-	if _, err := db.Exec(`UPDATE display_boards SET name = ?, updated_at = ? WHERE show_id = ? AND id = ?`,
-		name, nowMS(), showID, bid); err != nil {
+	if _, err := db.Exec(`UPDATE display_boards SET name = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
+		name, nowMS(), showID, showID, bid); err != nil {
 		return Board{}, fmt.Errorf("boards: rename: %w", err)
 	}
 	return GetBoard(db, showID, bid)
@@ -612,31 +621,33 @@ func StoreLayout(db *sqlx.DB, showID, bid int64, layoutRaw string) (Board, error
 	if err != nil {
 		return Board{}, err
 	}
-	if _, err := db.Exec(`UPDATE display_boards SET layout_json = ?, updated_at = ? WHERE show_id = ? AND id = ?`,
-		MarshalLayout(l), nowMS(), showID, bid); err != nil {
+	if _, err := db.Exec(`UPDATE display_boards SET layout_json = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
+		MarshalLayout(l), nowMS(), showID, showID, bid); err != nil {
 		return Board{}, fmt.Errorf("boards: store layout: %w", err)
 	}
 	return GetBoard(db, showID, bid)
 }
 
-// DeleteBoard removes a board (a show with none left re-seeds on next view
-// via EnsureDefaultBoard).
-// UpsertLayoutByName creates or replaces the show board with this name —
-// the capture round's template picker (one board per captured screen keeps
-// its customizations isolated from every other screen on the template).
-func UpsertLayoutByName(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, error) {
-	if list, err := ListBoards(db, showID); err == nil {
-		for _, b := range list {
-			if b.Name != name {
-				continue
-			}
-			return StoreLayout(db, showID, b.ID, layoutRaw)
-		}
-	}
-	return CreateBoard(db, showID, name, layoutRaw)
+// DeleteBoard removes a layout of showID's event (a room with none left
+// re-seeds on next view via EnsureDefaultBoard).
+func DeleteBoard(db *sqlx.DB, showID, bid int64) error {
+	_, err := db.Exec(`DELETE FROM display_boards WHERE (`+sameEvent+`) AND id = ?`, showID, showID, bid)
+	return err
 }
 
-func DeleteBoard(db *sqlx.DB, showID, bid int64) error {
-	_, err := db.Exec(`DELETE FROM display_boards WHERE show_id = ? AND id = ?`, showID, bid)
-	return err
+// RehomeRoomLayouts hands the layouts a room made to another room of its
+// event before the room is deleted (the row cascade would otherwise delete
+// layouts other rooms' screens use). With no other room (the event is
+// going too) nothing moves and the cascade removes them.
+func RehomeRoomLayouts(db *sqlx.DB, showID int64) error {
+	_, err := db.Exec(`UPDATE display_boards SET show_id = (
+			SELECT s2.id FROM shows s2 WHERE s2.event_id = (SELECT event_id FROM shows WHERE id = ?)
+			AND s2.event_id != 0 AND s2.id != ? ORDER BY s2.room_pos, s2.id LIMIT 1)
+		WHERE show_id = ? AND EXISTS (
+			SELECT 1 FROM shows s2 WHERE s2.event_id = (SELECT event_id FROM shows WHERE id = ?)
+			AND s2.event_id != 0 AND s2.id != ?)`, showID, showID, showID, showID, showID)
+	if err != nil {
+		return fmt.Errorf("boards: rehome: %w", err)
+	}
+	return nil
 }

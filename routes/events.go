@@ -35,6 +35,7 @@ import (
 
 	"timerpi/config"
 	"timerpi/oscbridge"
+	"timerpi/boards"
 	"timerpi/timerpi"
 )
 
@@ -637,6 +638,12 @@ func (d *Deps) apiEventDeleteRoom(c *gin.Context) {
 	}
 	room, ok := d.roomOf(c, ev)
 	if !ok {
+		return
+	}
+	// Event layouts this room made stay with the event (other rooms'
+	// screens may use them).
+	if err := boards.RehomeRoomLayouts(d.Store.DB, room.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	if err := d.Store.DeleteShow(room.ID); err != nil {

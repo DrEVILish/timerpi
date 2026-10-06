@@ -138,10 +138,10 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 
 | ID | To do |
 |---|---|
-| **U8** | The layout editor is cumbersome: full screen keeps popping in and out; the handles aren't self-explanatory; "Edit layout" has to be pressed twice before editing works. Make it one clear editing mode. |
+| **U8** | ✅ Done 2026-10-06: the editor is an almost-full-screen modal that opens already editing (one press), with a legend and labelled handles (⠿ move, ◢ resize, ⚙ settings, bin remove; tooltips and accessible names), buttons grouped right, hover outline, and a "Used by N screens" warning. Fullscreen no longer pops (U2). Browser test `layout-editor-flow`. |
 | **U9** | ✅ 2026-10-06: the Layout list on each screen card now offers the room's existing layouts and "Plain timer (no layout)" (applied at once) plus "New from template" (confirm). An unassigned screen no longer shows another layout's name (BUGLOG RW36), and going back to the plain timer or default theme reaches the live TV (RW35). Picking a template and the live TV following already worked in testing; the reported failure may have been the B8 mismatch this afternoon. Browser test `screen-layout-change`. |
-| **U10** | Built-in layouts are stored as **templates**. Users create and adjust their own layouts from a template. |
-| **U11** | When a screen uses a template and the user hits "Edit layout": ask for a name for the new layout and which screens should use it, then edit that copy. |
+| **U10** | ✅ Done 2026-10-06: built-ins are listed in each screen's Layout list as **[built-in] …** and shown as they are (screens.template); they are never edited. Layouts belong to the event (every room lists them; deleting a room keeps them). The built-ins themselves are to be reworked later (owner). |
+| **U11** | ✅ Done 2026-10-06: Edit layout on a built-in (or the plain timer) asks for a name and what to start from, lists the same-type screens across the event by room (a moderator sees only rooms they moderate), creates the event layout, switches the ticked screens and opens the editor on it. |
 | **U12** | ✅ Done 2026-10-06: Forget is a red X (ftl `btn-danger btn-icon`, close icon) in each screen card's top-right corner, with a confirm that says the screen is released. Browser test `screen-forget`. |
 
 **Running order (Run tab)**

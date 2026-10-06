@@ -876,9 +876,15 @@ function initMesh(showId, role, page) {
             if (m.boardId > 0) {
               u.searchParams.set('view', 'board');
               u.searchParams.set('board', String(m.boardId));
+              u.searchParams.delete('tpl');
+            } else if (m.template) { // a built-in shown directly (U10)
+              u.searchParams.set('view', 'board');
+              u.searchParams.set('tpl', m.template);
+              u.searchParams.delete('board');
             } else {
               u.searchParams.delete('view');
               u.searchParams.delete('board');
+              u.searchParams.delete('tpl');
             }
             if (u.toString() !== location.href) location.replace(u.toString());
           }

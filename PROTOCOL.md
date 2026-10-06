@@ -82,8 +82,10 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 |---|---|
 | `GET …/screens` · `GET …/screens/self?name=` | Registry ∪ live sessions (with preview data) · a screen's own config |
 | `POST …/screens/config {name, theme?, boardId?, room?, kind?, rotation?}` | mod. Theme, layout, display type (`audience\|walkin\|presenter`), rotation (0/90/180/270) |
-| `POST …/screens/template {name, template}` | mod. Give the screen its own copy of a built-in template |
 | `POST …/screens/match\|rename\|forget` | mod. Copy one screen's look to all · rename `{from,to}` · forget (drops the screen's key: it is released) |
+| `POST …/screens/template {name, template}` | mod. The screen shows a built-in as is (`""` = plain timer); no copy is made |
+| `GET …/layout-targets?kind=` | mod. Screens of that type in the event's rooms you moderate (SuperOperator: all), by room |
+| `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | mod. New event layout from a built-in (or a layout); the listed screens switch to it → `{boardId}` |
 | `POST …/screens/link {name}` | mod. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
 | `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}` |

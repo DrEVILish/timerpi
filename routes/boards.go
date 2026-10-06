@@ -101,7 +101,13 @@ func (d *Deps) apiBoardsList(c *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(list))
 	for _, b := range list {
-		out = append(out, boardJSON(b))
+		j := boardJSON(b)
+		// How many screens of the event use it (the editor warns when an
+		// edit reaches several screens).
+		var n int
+		_ = d.Store.Get(&n, `SELECT COUNT(*) FROM screens WHERE board_id = ?`, b.ID)
+		j["usedBy"] = n
+		out = append(out, j)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -241,6 +247,16 @@ func (d *Deps) boardView(c *gin.Context, showID int64, snap timerpi.Snapshot) {
 		return
 	}
 	var board boards.Board
+	// A built-in shown directly (?tpl=<key>, STATUS U10): rendered from the
+	// catalog, read-only (id 0 — the editor never opens on a built-in).
+	if key, known := templateKey(c.Query("tpl")); known && c.Query("board") == "" {
+		raw, _ := json.Marshal(boards.TemplateLayouts()[key])
+		board = boards.Board{ID: 0, Name: templateName(key), Layout: string(raw)}
+		pd := d.boardData(c, snap, showID, board)
+		pd.Editable = false
+		d.render(c, "display_board", pd)
+		return
+	}
 	if raw := strings.TrimSpace(c.Query("board")); raw != "" {
 		bid, perr := strconv.ParseInt(raw, 10, 64)
 		// Operator review round: a stale/deleted board id on a TV URL must

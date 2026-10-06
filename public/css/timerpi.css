@@ -618,12 +618,25 @@ body[data-editing] .b-w-chrome button {
   line-height: 1; padding: .1em .4em;
 }
 body[data-editing] .b-w-chrome .b-w-gear { margin-inline-start: 0; }
+/* Buttons cluster at the right of the tile's bar; the title takes the rest
+   (they were spread across the bar, one per auto margin). */
+body[data-editing] .b-w-chrome button { margin-inline-start: 0 !important; }
+body[data-editing] .b-w-chrome .b-w-title { margin-inline-end: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body[data-editing] .b-widget { border-color: #7C3AED; }
+/* Handles (STATUS U8): grip = move, corner = resize; hover shows which
+   tile you are about to touch. */
+body[data-editing] .b-widget:hover { outline: 2px solid color-mix(in srgb, #7C3AED 60%, transparent); outline-offset: -2px; }
+body[data-editing] .b-w-grip { font-size: 1.1em; color: #7C3AED; letter-spacing: -.1em; }
+body[data-editing] .b-w-chrome .b-w-del { color: var(--danger, #e5484d); }
+body[data-editing] .b-w-chrome .icon { width: 1em; height: 1em; }
+/* In the Screens page editor the modal owns Done and the layout choice. */
+body[data-compose] #b-edit-toggle, body[data-compose] #b-boards,
+body[data-compose] .b-boards-label, body[data-compose] #b-new { display: none !important; }
 body[data-editing] .b-widget.b-dragging { opacity: .75; outline: 2px solid #7C3AED; z-index: 6; }
 body[data-editing] .b-w-resize {
   display: block;
   position: absolute; inset-block-end: 0; inset-inline-end: 0;
-  inline-size: 1.2rem; block-size: 1.2rem;
+  inline-size: 1.6rem; block-size: 1.6rem;
   cursor: nwse-resize; touch-action: none;
   background: linear-gradient(135deg, transparent 50%, #7C3AED 50%);
   border-end-end-radius: var(--radius, .5rem);

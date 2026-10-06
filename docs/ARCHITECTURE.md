@@ -119,6 +119,7 @@ go to the home page.
 - **Per screen:** name (inline rename), **display type** (`audience` | `walkin` | `presenter`), theme (else the event default, else the box default), layout (board), **rotation** (0/90/180/270, CSS-rotated page).
 - **Waiting room.** `/d/` shows a READY card and registers in `waiting_screens`. A moderator captures it from `/screens/<room>` (name, type, template, rotation, theme); the claim is atomic and consumed once.
 - **Layouts ("boards", `boards/`).** A layout is a canvas of 12 columns × `rows` rows, `landscape` or `portrait`, stretched to fill the screen (no scrolling). Tile text sizes follow the tile (CSS container query units). 20 tile types: countdown, cuelabel, speaker, nextup, nownext ("Current & next", walk-in), wallclock, progress, dayprogress, messages, showtitle, rate, schedule, notice, poll ("Audience item"), qa, wordcloud, map, joinqr, rooms ("All rooms now"), eventschedule.
+- **Layouts belong to the event** (2026-10-06): `display_boards` rows keep the room that made them, but every lookup covers all rooms of that room's event; deleting a room hands its layouts to another room first (`RehomeRoomLayouts`). **Built-ins** (the template catalog) are shown directly by a screen (`screens.template`, `?view=board&tpl=<key>`) and never edited; editing one makes a named event layout (`POST …/layouts`).
 - **Templates** (`boards.Templates()`, served at `GET /api/board-templates` as `catalog`), grouped by display type:
 
 | Type | Templates |

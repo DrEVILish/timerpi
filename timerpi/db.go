@@ -252,6 +252,7 @@ func (d *DB) migrate() error {
 			{"kind", "TEXT NOT NULL DEFAULT ''"},
 			{"rotation", "INTEGER NOT NULL DEFAULT 0"},
 			{"key", "TEXT NOT NULL DEFAULT ''"},
+			{"template", "TEXT NOT NULL DEFAULT ''"},
 		},
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
@@ -1169,6 +1170,10 @@ type Screen struct {
 	// set yet). Rotation is 0/90/180/270 degrees (portrait poster screens).
 	Kind     string `db:"kind"      json:"kind"`
 	Rotation int    `db:"rotation"  json:"rotation"`
+	// Template is a built-in layout the screen shows directly ("" = none):
+	// built-ins are never edited; editing one makes an event layout
+	// (STATUS U10/U11). A board_id > 0 wins over it.
+	Template string `db:"template"  json:"template"`
 }
 
 // Display types (PRODUCT §3.2).
@@ -1257,8 +1262,9 @@ func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64, ro
 	room = SanitizeScreenName(room)
 	now := nowMS()
 	if _, err := d.Exec(`INSERT INTO screens (show_id, name, theme, board_id, room, last_seen) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (show_id, name) DO UPDATE SET theme = ?, board_id = ?, room = ?, last_seen = ?`,
-		showID, name, theme, boardID, room, now, theme, boardID, room, now); err != nil {
+		ON CONFLICT (show_id, name) DO UPDATE SET theme = ?, board_id = ?, room = ?, last_seen = ?,
+			template = CASE WHEN ? > 0 THEN '' ELSE template END`,
+		showID, name, theme, boardID, room, now, theme, boardID, room, now, boardID); err != nil {
 		return fmt.Errorf("timerpi: set screen config: %w", err)
 	}
 	return nil
@@ -1267,7 +1273,7 @@ func (d *DB) SetScreenConfig(showID int64, name, theme string, boardID int64, ro
 // ListScreens returns the registered screens, most-recently-seen first.
 func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 	var out []Screen
-	err := d.Select(&out, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation FROM screens
+	err := d.Select(&out, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation, template FROM screens
 		WHERE show_id = ? ORDER BY last_seen DESC`, showID)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list screens: %w", err)
@@ -1281,7 +1287,7 @@ func (d *DB) ListScreens(showID int64) ([]Screen, error) {
 // GetScreenByName fetches one registered screen ("" name → no rows error).
 func (d *DB) GetScreenByName(showID int64, name string) (Screen, error) {
 	var s Screen
-	err := d.Get(&s, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation FROM screens
+	err := d.Get(&s, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation, template FROM screens
 		WHERE show_id = ? AND name = ?`, showID, name)
 	if err != nil {
 		return Screen{}, fmt.Errorf("timerpi: get screen: %w", err)
@@ -1311,6 +1317,22 @@ func (d *DB) RenameScreen(showID int64, from, to string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetScreenTemplate makes the screen show a built-in layout directly
+// ("" = none: back to the plain timer), clearing any layout assignment.
+func (d *DB) SetScreenTemplate(showID int64, name, template string) error {
+	name = SanitizeScreenName(name)
+	if name == "" {
+		return fmt.Errorf("timerpi: empty screen name")
+	}
+	now := nowMS()
+	if _, err := d.Exec(`INSERT INTO screens (show_id, name, template, last_seen) VALUES (?, ?, ?, ?)
+		ON CONFLICT (show_id, name) DO UPDATE SET template = ?, board_id = 0, last_seen = ?`,
+		showID, name, template, now, template, now); err != nil {
+		return fmt.Errorf("timerpi: set screen template: %w", err)
+	}
+	return nil
 }
 
 // ScreenKey returns the screen's key, creating the screen row and a fresh
@@ -1357,8 +1379,11 @@ func (d *DB) ScreenKeyValid(showID int64, name, key string) bool {
 // ClearScreenBoard drops the board assignment from every screen pointing
 // at bid (called when a board is deleted — a stale id would navigate locked
 // TVs to a 404 on every join push).
+//
+// Layouts are event-wide, so every screen of every room using it falls
+// back (board ids are unique box-wide; showID is kept for callers).
 func (d *DB) ClearScreenBoard(showID, bid int64) error {
-	_, err := d.Exec(`UPDATE screens SET board_id = 0 WHERE show_id = ? AND board_id = ?`, showID, bid)
+	_, err := d.Exec(`UPDATE screens SET board_id = 0 WHERE board_id = ?`, bid)
 	if err != nil {
 		return fmt.Errorf("timerpi: clear screen board: %w", err)
 	}

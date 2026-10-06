@@ -38,12 +38,11 @@ func TestScreenLookAndTemplate(t *testing.T) {
 		t.Fatalf("template: %d %s", code, b)
 	}
 	scr, _ = ts.db.GetScreenByName(ts.showID, "Foyer")
-	b, err := boards.GetBoard(ts.db.DB, ts.showID, scr.BoardID)
-	if err != nil || b.Parsed().Orientation != "portrait" || b.Parsed().Rows != 16 {
-		t.Fatalf("screen board: %+v %v", b.Parsed(), err)
+	if scr.Template != "room-portrait" || scr.BoardID != 0 {
+		t.Fatalf("screen should show the built-in directly: %+v", scr)
 	}
-	// The screen's page renders rotated, on its portrait canvas.
-	_, page := ts.anon("GET", fmt.Sprintf("/d/%s?view=board&board=%d&screen=Foyer", ts.showCode, scr.BoardID), nil, "")
+	// The screen's page renders the built-in rotated, on its portrait canvas.
+	_, page := ts.anon("GET", "/d/"+ts.showCode+"?view=board&tpl=room-portrait&screen=Foyer", nil, "")
 	for _, want := range []string{`data-rotate="90"`, `data-orientation="portrait"`, `--b-rows: 16`, `data-kind="walkin"`} {
 		if !strings.Contains(string(page), want) {
 			t.Errorf("screen page missing %q", want)
@@ -109,7 +108,7 @@ func TestCaptureLookAndAccess(t *testing.T) {
 		t.Fatalf("capture: %d %s", code, b)
 	}
 	scr, err := ts.db.GetScreenByName(ts.showID, "Poster")
-	if err != nil || scr.Kind != "walkin" || scr.Rotation != 270 || scr.BoardID == 0 {
+	if err != nil || scr.Kind != "walkin" || scr.Rotation != 270 || scr.Template != "event-portrait" {
 		t.Fatalf("captured look: %+v %v", scr, err)
 	}
 }

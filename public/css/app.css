@@ -249,9 +249,18 @@ body.b-board .b-sched li > .mono:first-child { min-width: 3.2em; display: inline
 .tp-kind.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 @media (max-width: 34rem) { .tp-kind-pick { grid-template-columns: 1fr; } .tp-scr-fields { grid-template-columns: 1fr; } }
 /* Layout editor dialog: the iframe shows the screen's own canvas shape. */
-.tp-screen-edit iframe { aspect-ratio: auto; height: min(84vh, calc(min(96vw, 1600px) * 9 / 16 + 7rem)); }
-.tp-screen-edit.is-portrait { width: min(96vw, 46rem); }
-.tp-screen-edit.is-portrait iframe { height: 86vh; }
+/* Layout editor: an almost-full-screen modal (STATUS U8). */
+.tp-screen-edit { width: 98vw; max-width: 98vw; height: 96vh; max-height: 96vh; display: none; }
+.tp-screen-edit[open] { display: flex; flex-direction: column; }
+.tp-screen-edit iframe { flex: 1 1 auto; aspect-ratio: auto; height: auto; min-height: 0; }
+.tp-screen-edit .tp-modal-bar { flex-wrap: wrap; }
+.tp-edit-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+.tp-edit-legend b { color: var(--accent); }
+.tp-layout-copy { width: min(96vw, 36rem); }
+.tp-layout-copy-targets { border: 0; padding: 0; margin: 0; }
+.tp-copy-room { display: grid; gap: .25rem; padding: .4rem .6rem; border: 1px solid var(--border); border-radius: var(--radius, 4px); }
+.tp-copy-screen { display: flex; align-items: center; gap: .4rem; }
+
 
 /* ------------------------------------------------- room page tabs */
 .tp-room-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }

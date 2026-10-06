@@ -20,7 +20,7 @@ func memDB(t *testing.T) *sqlx.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	if _, err := db.Exec(`CREATE TABLE shows (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE shows (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, event_id INTEGER NOT NULL DEFAULT 0, room_pos INTEGER NOT NULL DEFAULT 0)`); err != nil {
 		t.Fatalf("stub shows: %v", err)
 	}
 	if _, err := db.Exec(`INSERT INTO shows (title) VALUES ('Board Show')`); err != nil {

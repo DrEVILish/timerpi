@@ -99,30 +99,21 @@ function card(s) {
   kindSel.value = s.kind || '';
   kindSel.addEventListener('change', () => apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: s.boardId, room: s.room, kind: kindSel.value }), 'Display type saved'));
 
-  // Layout: the room's own layouts (pick one: applied at once), the plain
-  // timer, or a built-in template (copied into a new layout for this
-  // screen, after a confirm) — STATUS U9.
+  // Layout: one list (PRODUCT 2026-10-06) — the plain timer, the event's
+  // layouts, then the built-ins labelled [built-in]. Every pick applies at
+  // once; built-ins are shown as they are (editing makes a named copy).
   const tplSel = el('select', { class: 'select input-sm', 'aria-label': `Layout of ${s.name}` });
-  const own = el('optgroup', { label: 'Layouts' });
-  own.appendChild(new Option('Plain timer (no layout)', 'b:0'));
-  for (const b of st.layouts) own.appendChild(new Option(b.name || `Layout ${b.id}`, `b:${b.id}`));
-  tplSel.appendChild(own);
-  const tpls = el('optgroup', { label: 'New from template' });
-  for (const t of st.catalog.filter((x) => !s.kind || x.kind === s.kind)) tpls.appendChild(new Option(t.name, `t:${t.key}`));
-  tplSel.appendChild(tpls);
-  tplSel.value = `b:${s.boardId || 0}`;
-  tplSel.addEventListener('change', async () => {
+  tplSel.appendChild(new Option('Plain timer (no layout)', 'b:0'));
+  for (const b of st.layouts) tplSel.appendChild(new Option(b.name || `Layout ${b.id}`, `b:${b.id}`));
+  for (const t of st.catalog.filter((x) => !s.kind || x.kind === s.kind)) tplSel.appendChild(new Option(`[built-in] ${t.name}`, `t:${t.key}`));
+  tplSel.value = s.boardId ? `b:${s.boardId}` : (s.template ? `t:${s.template}` : 'b:0');
+  tplSel.addEventListener('change', () => {
     const [kind, val] = tplSel.value.split(':');
-    if (kind === 'b') {
+    if (kind === 'b' && Number(val) > 0) {
       apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: Number(val), room: s.room }), 'Layout changed');
-      return;
+    } else {
+      apply(() => post('/screens/template', { name: s.name, template: kind === 't' ? val : '' }), 'Layout changed');
     }
-    const t = st.catalog.find((x) => x.key === val);
-    if (!(await tpConfirm(`"${s.name}" gets a new layout made from the "${t?.name}" template.`, { title: 'Use template?', ok: 'Use template' }))) {
-      tplSel.value = `b:${s.boardId || 0}`;
-      return;
-    }
-    apply(() => post('/screens/template', { name: s.name, template: val }), 'Layout changed');
   });
 
   const rotSel = el('select', { class: 'select input-sm', 'aria-label': `Rotation of ${s.name}` });
@@ -139,7 +130,7 @@ function card(s) {
     el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Mounted' }), rotSel));
 
   const actions = el('div', { class: 'cluster is-gap-2xs' },
-    el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => openEditor(s) }, 'Edit layout'),
+    el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => editLayout(s) }, 'Edit layout'),
     el('a', { class: 'btn btn-sm', href: `/d/${code}?screen=${encodeURIComponent(s.name)}`, target: '_blank', rel: 'opener', title: 'Open what this screen shows' }, 'View'),
     el('button', {
       class: 'btn btn-sm btn-ghost', type: 'button', title: 'The address to open on this screen by hand (kiosk start page, TV bookmark)',
@@ -304,22 +295,100 @@ function initCapture() {
 
 /* -------------------------------------------------------------- editor -- */
 
+// Edit layout (STATUS U8/U11): a screen on one of the event's layouts opens
+// the editor on it; a screen on a built-in (or the plain timer) first makes
+// a named copy for the event.
+function editLayout(s) {
+  if (s.boardId) {
+    const b = st.layouts.find((x) => x.id === s.boardId);
+    openEditor({ id: s.boardId, name: b?.name || s.boardName || 'Layout', usedBy: b?.usedBy || 0, theme: s.theme, orientation: s.orientation });
+    return;
+  }
+  openCopy(s);
+}
+
+let copyFor = null;
+async function openCopy(s) {
+  const dlg = document.getElementById('tp-layout-copy');
+  copyFor = s;
+  const from = document.getElementById('tp-layout-copy-from');
+  from.textContent = '';
+  for (const t of st.catalog.filter((x) => !s.kind || x.kind === s.kind)) from.appendChild(new Option(`[built-in] ${t.name}`, t.key));
+  if (s.template) from.value = s.template;
+  const tName = () => st.catalog.find((x) => x.key === from.value)?.name || 'Layout';
+  const nameIn = document.getElementById('tp-layout-copy-name');
+  nameIn.value = `${tName()} (${page.dataset.roomName || 'event'})`;
+  from.onchange = () => { nameIn.value = `${tName()} (${page.dataset.roomName || 'event'})`; };
+  const list = document.getElementById('tp-layout-copy-list');
+  list.textContent = '';
+  const err = dlg.querySelector('.field-error');
+  err.hidden = true;
+  try {
+    const q = s.kind ? `?kind=${encodeURIComponent(s.kind)}` : '';
+    const out = await api('GET', `/api/shows/${code}/layout-targets${q}`);
+    for (const r of out.rooms || []) {
+      if (!r.screens.length) continue;
+      const box = el('div', { class: 'tp-copy-room' }, el('strong', { text: r.name }));
+      for (const sc of r.screens) {
+        const id = `tp-copy-${r.room}-${sc.name}`.replace(/[^A-Za-z0-9_-]/g, '_');
+        const cb = el('input', { type: 'checkbox', id, dataset: { room: r.room, name: sc.name } });
+        cb.checked = r.here && sc.name === s.name;
+        box.appendChild(el('label', { class: 'tp-copy-screen', for: id }, cb, ' ', sc.name));
+      }
+      list.appendChild(box);
+    }
+  } catch (e) { toast(e.message, 'danger'); }
+  if (!list.children.length) list.appendChild(el('p', { class: 'text-muted', text: 'No other screens of this type yet.' }));
+  busy = true;
+  dlg.showModal();
+  nameIn.select();
+}
+
+function initCopy() {
+  const dlg = document.getElementById('tp-layout-copy');
+  if (!dlg) return;
+  dlg.querySelector('[data-cancel]').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('close', () => { busy = false; });
+  dlg.querySelector('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const screens = [...dlg.querySelectorAll('#tp-layout-copy-list input:checked')].map((cb) => ({ room: cb.dataset.room, name: cb.dataset.name }));
+    const name = document.getElementById('tp-layout-copy-name').value.trim();
+    const template = document.getElementById('tp-layout-copy-from').value;
+    try {
+      const out = await api('POST', `/api/shows/${code}/layouts`, { name, template, screens });
+      dlg.close();
+      toast(`"${out.name}" created${screens.length ? ` for ${screens.length} screen${screens.length === 1 ? '' : 's'}` : ''}`, 'success');
+      await pull();
+      openEditor({ id: out.boardId, name: out.name, usedBy: screens.length, theme: copyFor?.theme, orientation: copyFor?.orientation });
+    } catch (err) {
+      const p = dlg.querySelector('.field-error');
+      p.textContent = err.message;
+      p.hidden = false;
+    }
+  });
+}
+
 function initEditor() {
+  initCopy();
   const dlg = document.getElementById('tp-screen-edit');
   const frame = document.getElementById('tp-screen-edit-frame');
   document.getElementById('tp-screen-edit-close')?.addEventListener('click', () => dlg.close());
   dlg?.addEventListener('close', () => { frame.src = 'about:blank'; busy = false; pull(); });
 }
 
-function openEditor(s) {
+// The editor: an almost-full-screen modal straight into editing mode
+// (compose=1: no second "Edit layout" press), on one layout.
+function openEditor(b) {
   const dlg = document.getElementById('tp-screen-edit');
   const frame = document.getElementById('tp-screen-edit-frame');
-  const q = new URLSearchParams({ view: 'board', edit: '1', preview: '1' });
-  if (s.boardId) q.set('board', String(s.boardId));
-  if (s.theme) q.set('theme', s.theme);
+  const q = new URLSearchParams({ view: 'board', edit: '1', preview: '1', compose: '1', board: String(b.id) });
+  if (b.theme) q.set('theme', b.theme);
   frame.src = `/d/${code}?${q}`;
-  dlg.classList.toggle('is-portrait', s.orientation === 'portrait');
-  document.getElementById('tp-screen-edit-title').textContent = `Layout — ${s.name}`;
+  dlg.classList.toggle('is-portrait', b.orientation === 'portrait');
+  document.getElementById('tp-screen-edit-title').textContent = `Editing: ${b.name}`;
+  const shared = document.getElementById('tp-screen-edit-shared');
+  shared.hidden = !(b.usedBy > 1);
+  shared.textContent = `Used by ${b.usedBy} screens: changes show on all of them`;
   busy = true;
   dlg.showModal();
 }

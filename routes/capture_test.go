@@ -193,17 +193,11 @@ func TestLayoutAssignmentSteersStage(t *testing.T) {
 	}
 }
 
-// The capture modal's Template pick (layout round): capturing with a
-// template builds that screen's OWN board from the named layout
-// (re-capture replaces it, never duplicates) and assigns it.
+// The capture modal's Template pick: the captured screen shows the
+// built-in directly (STATUS U10) — no per-screen copy is made, so
+// re-capturing with another template just switches it.
 func TestCaptureWithTemplate(t *testing.T) {
 	ts := newAPITest(t)
-	if err := boards.Migrate(ts.db.DB); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	for _, pair := range []struct{ id, name string }{{"1", "TV-1"}} {
-		_ = pair
-	}
 	if code, _ := ts.call("POST", "/api/waiting/register",
 		[]byte(`{"name":"TV-1","host":"tv.local"}`), ""); code != 200 {
 		t.Fatal("register")
@@ -212,26 +206,17 @@ func TestCaptureWithTemplate(t *testing.T) {
 		[]byte(fmt.Sprintf(`{"code":%q,"name":"TV-1","template":"room"}`, ts.showCode)), ""); code != 200 {
 		t.Fatal("capture with template")
 	}
-	// The screen's own board exists, holds the room widgets, and is assigned.
-	list, _ := boards.ListBoards(ts.db.DB, ts.showID)
-	mine := 0
-	var mineID int64
-	for _, b := range list {
-		if b.Name == "TV-1 layout" {
-			mine++
-			mineID = b.ID
-			if !strings.Contains(b.LayoutJSON(), `"type":"schedule"`) {
-				t.Errorf("template widgets missing: %.200s", b.LayoutJSON())
-			}
-		}
+	scr, err := ts.db.GetScreenByName(ts.showID, "TV-1")
+	if err != nil || scr.Template != "room" || scr.BoardID != 0 {
+		t.Fatalf("captured screen should show the built-in: %+v %v", scr, err)
 	}
-	if mine != 1 {
-		t.Fatalf("want exactly 1 built board, got %d", mine)
+	if list, _ := boards.ListBoards(ts.db.DB, ts.showID); len(list) != 0 {
+		t.Fatalf("capture made %d layout copies, want none", len(list))
 	}
-	if scr, err := ts.db.GetScreenByName(ts.showID, "TV-1"); err != nil || scr.BoardID != mineID {
-		t.Fatalf("board not assigned to the screen: %+v err %v", scr, err)
+	// The screen's own page renders that built-in.
+	if _, page := ts.anon("GET", "/d/"+ts.showCode+"?screen=TV-1", nil, ""); !strings.Contains(string(page), `data-widget="nownext"`) {
+		t.Error("the screen's page doesn't render the Room walk-in built-in")
 	}
-	// Recapture with a DIFFERENT template → replaced, not duplicated.
 	if code, _ := ts.call("POST", "/api/waiting/register",
 		[]byte(`{"name":"TV-1","host":"tv.local"}`), ""); code != 200 {
 		t.Fatal("re-register")
@@ -240,18 +225,8 @@ func TestCaptureWithTemplate(t *testing.T) {
 		[]byte(fmt.Sprintf(`{"code":%q,"name":"TV-1","template":"break"}`, ts.showCode)), ""); code != 200 {
 		t.Fatal("recapture")
 	}
-	list2, _ := boards.ListBoards(ts.db.DB, ts.showID)
-	n := 0
-	for _, b := range list2 {
-		if b.Name == "TV-1 layout" {
-			n++
-			if !strings.Contains(b.LayoutJSON(), `"type":"wallclock"`) {
-				t.Errorf("replaced board kept the old template: %.200s", b.LayoutJSON())
-			}
-		}
-	}
-	if n != 1 {
-		t.Fatalf("re-capture duplicated the board: %d", n)
+	if scr, _ = ts.db.GetScreenByName(ts.showID, "TV-1"); scr.Template != "break" {
+		t.Fatalf("re-capture didn't switch the built-in: %+v", scr)
 	}
 	// Unknown template refused.
 	if code, _ := ts.call("POST", "/api/waiting/1/capture",

@@ -186,13 +186,14 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		return
 	}
 	boardID := body.BoardID
+	tplKey := ""
 	if tpl := strings.TrimSpace(body.Template); tpl != "" {
-		bid, berr := d.screenTemplateBoard(sid, name, tpl)
-		if berr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": berr.Error()})
+		k, known := templateKey(tpl)
+		if !known {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
 			return
 		}
-		boardID = bid
+		tplKey, boardID = k, 0 // the screen shows the built-in directly (U10)
 	}
 	if boardID < 0 || !d.boardKnown(sid, boardID) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
@@ -216,6 +217,12 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 	if err := d.Store.SetScreenLook(sid, name, body.Kind, body.Rotation); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
+	}
+	if tplKey != "" {
+		if err := d.Store.SetScreenTemplate(sid, name, tplKey); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 	}
 	d.notifyControls(sid)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "code": sh.Code, "name": name})

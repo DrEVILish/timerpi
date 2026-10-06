@@ -75,10 +75,44 @@
   </form>
 </dialog>
 
+{{- /* New layout from a built-in (STATUS U11): name it, pick what it starts
+  from, tick the screens (same display type, whole event, by room) that
+  should use it; then the editor opens on the copy. */ -}}
+<dialog id="tp-layout-copy" class="tp-inspector tp-layout-copy" aria-labelledby="tp-layout-copy-title">
+  <h2 id="tp-layout-copy-title" class="panel-header">New layout</h2>
+  <form class="stack is-gap-s" method="dialog">
+    <p class="text-muted" id="tp-layout-copy-why">Built-in layouts aren't edited. Name your own copy; it belongs to this event, so every room can use it.</p>
+    <div class="field">
+      <label class="label" for="tp-layout-copy-name">Layout name</label>
+      <input class="input" id="tp-layout-copy-name" maxlength="64" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label class="label" for="tp-layout-copy-from">Start from</label>
+      <select class="select" id="tp-layout-copy-from"></select>
+    </div>
+    <fieldset class="field tp-layout-copy-targets">
+      <legend class="label">Screens that should use it</legend>
+      <div id="tp-layout-copy-list" class="stack is-gap-xs"></div>
+    </fieldset>
+    <p class="field-error" role="alert" hidden></p>
+    <div class="cluster is-gap-s">
+      <button type="submit" class="btn btn-primary">Create and edit</button>
+      <button type="button" class="btn" data-cancel>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="tp-screen-edit" class="tp-screen-edit">
   <div class="tp-modal-bar">
     <strong id="tp-screen-edit-title">Layout editor</strong>
-    <span class="field-hint">Drag tiles to move, the corner to resize. Changes reach the screen as you save.</span>
+    <span class="badge badge-warn" id="tp-screen-edit-shared" hidden></span>
+    <span class="field-hint tp-edit-legend">
+      <span><b aria-hidden="true">⠿</b> drag to move</span>
+      <span><b aria-hidden="true">◢</b> drag to resize</span>
+      <span><b aria-hidden="true">⚙</b> settings</span>
+      <span><b aria-hidden="true">🗑</b> remove</span>
+      <span>arrow keys nudge · Shift+arrows resize</span>
+    </span>
     <button type="button" class="btn btn-sm btn-primary" id="tp-screen-edit-close">Done</button>
   </div>
   <iframe id="tp-screen-edit-frame" title="Screen layout editor"></iframe>

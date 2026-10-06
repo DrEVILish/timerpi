@@ -55,6 +55,7 @@ type screenView struct {
 	Name      string `json:"name"`
 	Theme     string `json:"theme"`
 	BoardID   int64  `json:"boardId"`
+	Template  string `json:"template"` // built-in shown directly ("" = none)
 	Room      string `json:"room"`
 	LastSeen  int64  `json:"lastSeen"`
 	Sessions  int    `json:"sessions"` // live tabs under this name
@@ -182,6 +183,17 @@ func (d *Deps) screenCard(r timerpi.Screen,
 	if n, ok := boardNames[bid]; ok {
 		v.BoardName = n
 	}
+	v.Template = r.Template
+	if bid == 0 && r.Template != "" {
+		if tl, ok := boards.TemplateLayouts()[r.Template]; ok {
+			v.BoardName = templateName(r.Template)
+			l := boards.NormalizeLayout(tl)
+			v.Rows, v.Orientation = l.Rows, l.Orientation
+			for _, w := range l.Widgets {
+				v.Widgets = append(v.Widgets, screenBoxView{X: w.X, Y: w.Y, W: w.W, H: w.H, Type: w.Type})
+			}
+		}
+	}
 	if d.Store != nil && bid != 0 {
 		if b, err := boards.GetBoard(d.Store.DB, showID, bid); err == nil {
 			l := b.Parsed()
@@ -215,7 +227,7 @@ func (d *Deps) pushScreen(id int64, name string) {
 	if b, jerr := json.Marshal(map[string]any{"t": "display", "theme": theme}); jerr == nil {
 		frames = append(frames, b)
 	}
-	if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID}); jerr == nil {
+	if b, jerr := json.Marshal(map[string]any{"t": "screen-board", "boardId": s.BoardID, "template": s.Template}); jerr == nil {
 		frames = append(frames, b)
 	}
 	if b, jerr := json.Marshal(map[string]any{"t": "screen-look", "kind": s.Kind, "rotation": s.Rotation}); jerr == nil {
@@ -710,24 +722,28 @@ func (d *Deps) apiPresetImport(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "id": p.ID, "name": p.Name})
 }
 
-// screenTemplateBoard builds (or replaces) a screen's own board from a
-// built-in template and returns its id. One board per screen keeps each
-// screen's customisations isolated.
-func (d *Deps) screenTemplateBoard(showID int64, screen, template string) (int64, error) {
-	tl, ok := boards.TemplateLayouts()[strings.ToLower(strings.TrimSpace(template))]
-	if !ok {
-		return 0, fmt.Errorf("unknown template")
-	}
-	raw, _ := json.Marshal(tl)
-	b, err := boards.UpsertLayoutByName(d.Store.DB, showID, strings.TrimSpace(screen)+" layout", string(raw))
-	if err != nil {
-		return 0, err
-	}
-	return b.ID, nil
+// templateKey normalises a built-in key; ok=false when unknown.
+func templateKey(raw string) (string, bool) {
+	k := strings.ToLower(strings.TrimSpace(raw))
+	_, ok := boards.TemplateLayouts()[k]
+	return k, ok
 }
 
-// POST /api/shows/:ident/screens/template {name, template} — give a screen
-// its own copy of a built-in layout (and its display type), pushed live.
+// templateName is a built-in's display name, "[built-in] Room walk-in".
+func templateName(key string) string {
+	for _, t := range boards.Templates() {
+		if t.Key == key {
+			return "[built-in] " + t.Name
+		}
+	}
+	return "[built-in] " + key
+}
+
+// POST /api/shows/:ident/screens/template {name, template} — the screen
+// shows a built-in layout directly ("" = plain timer). Built-ins are never
+// copied or edited here: "Edit layout" makes a named event layout from one
+// (POST …/layouts/copy, STATUS U11). A screen with no display type yet
+// takes the template's.
 func (d *Deps) apiScreenTemplate(c *gin.Context) {
 	id, ok := d.requireShowGated(c)
 	if !ok {
@@ -746,22 +762,27 @@ func (d *Deps) apiScreenTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
 		return
 	}
-	bid, err := d.screenTemplateBoard(id, name, body.Template)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
-		return
+	key := ""
+	if strings.TrimSpace(body.Template) != "" {
+		k, known := templateKey(body.Template)
+		if !known {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
+			return
+		}
+		key = k
 	}
-	cur, _ := d.Store.GetScreenByName(id, name)
-	if err := d.Store.SetScreenConfig(id, name, cur.Theme, bid, cur.Room); err != nil {
+	if err := d.Store.SetScreenTemplate(id, name, key); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	for _, t := range boards.Templates() {
-		if t.Key == strings.ToLower(strings.TrimSpace(body.Template)) && cur.Kind == "" {
-			_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
+	if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.Kind == "" {
+		for _, t := range boards.Templates() {
+			if t.Key == key {
+				_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
+			}
 		}
 	}
 	d.pushScreen(id, name)
 	d.notifyControls(id)
-	c.JSON(http.StatusOK, gin.H{"ok": true, "boardId": bid})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "template": key})
 }

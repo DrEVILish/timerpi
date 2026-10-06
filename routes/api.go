@@ -14,6 +14,7 @@ import (
 
 	"timerpi/oscbridge"
 
+	"timerpi/boards"
 	"timerpi/timerpi"
 )
 
@@ -331,6 +332,10 @@ func (d *Deps) requireSuperOfShow(c *gin.Context) (int64, bool) {
 func (d *Deps) apiDeleteShow(c *gin.Context) {
 	id, ok := d.requireSuperOfShow(c)
 	if !ok {
+		return
+	}
+	if err := boards.RehomeRoomLayouts(d.Store.DB, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if err := d.Store.DeleteShow(id); err != nil {

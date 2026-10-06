@@ -1,5 +1,5 @@
 // STATUS U9 (+ BUGLOG RW35/RW36): on the Screens page a display's layout
-// can be switched to another existing layout, to a new one from a template,
+// can be switched to another existing layout, to a built-in (shown as is),
 // or back to the plain timer, and the live TV follows each time.
 export const name = 'change a display\'s layout on the Screens page';
 
@@ -32,13 +32,12 @@ export async function run(t) {
 
   await pg.waitForSelector(sel);
   const tpl = await pg.$eval(sel, (s) => [...s.options].find((o) => o.value.startsWith('t:'))?.value);
-  await pg.selectOption(sel, tpl);
-  await pg.click('.tp-dlg-actions .btn-primary');
+  await pg.selectOption(sel, tpl); // built-ins apply directly (U10), no copy, no confirm
   await pg.waitForTimeout(1500);
   const s = await screenOf();
-  t.check(`a template makes a new layout for the screen (board ${s.boardId})`, s.boardId > 0 && s.boardId !== sponsor.id);
+  t.check(`a built-in applies as is (template ${s.template}, board ${s.boardId})`, s.template === tpl.slice(2) && s.boardId === 0);
   await tv.waitForTimeout(1500);
-  t.check('the TV follows', (await tvBoard()) === s.boardId);
+  t.check(`the TV follows (${new URL(tv.url()).searchParams.get('tpl')})`, new URL(tv.url()).searchParams.get('tpl') === tpl.slice(2));
 
   await pg.waitForSelector(sel);
   await pg.selectOption(sel, 'b:0');

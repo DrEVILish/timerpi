@@ -132,6 +132,7 @@ func New(d *Deps) *gin.Engine {
 		}
 	}
 	RegisterBoards(r, d) // display-board CRUD (Agent N; ?view=board renders in display.go)
+	registerLayoutRoutes(r, d) // named event layouts from built-ins (U11)
 	if d.Hub != nil {    // WS upgrade — same port, same origin rules
 		d.Hub.Register(r)
 	}

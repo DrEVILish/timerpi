@@ -114,9 +114,13 @@ func (d *Deps) displayVariants(c *gin.Context) {
 	// (timerpi.js); the editor keeps its draft and is not steered.
 	if view == defaultStage && c.Query("screen") != "" && d.Store != nil && c.Query("edit") != "1" {
 		if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" {
-			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && scr.BoardID > 0 {
+			if scr, serr := d.Store.GetScreenByName(showID, name); serr == nil && (scr.BoardID > 0 || scr.Template != "") {
 				dst := fmt.Sprintf("/d/%s?view=board&board=%d&screen=%s",
 					c.Param("ident"), scr.BoardID, url.QueryEscape(name))
+				if scr.BoardID == 0 {
+					dst = fmt.Sprintf("/d/%s?view=board&tpl=%s&screen=%s",
+						c.Param("ident"), url.QueryEscape(scr.Template), url.QueryEscape(name))
+				}
 				if key := c.Query("key"); key != "" {
 					dst += "&key=" + url.QueryEscape(key) // the screen key rides along (RW9)
 				}

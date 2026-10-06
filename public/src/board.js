@@ -227,16 +227,16 @@ function initMesh() {
           }
           // F1: the operator re-assigned this screen's board — navigate
           // (locked screens only; an open editor must not lose its draft).
-          // boardId 0 = "plain timer": back to the stage view (RW35).
+          // boardId > 0 = an event layout; else template = a built-in
+          // shown directly (U10); neither = "plain timer" (RW35).
           if (m.t === 'screen-board' && !editable) {
-            const cur = Number(new URLSearchParams(location.search).get('board') || 0);
+            const u = new URL(location.href);
             const want = Number(m.boardId) || 0;
-            if (cur !== want) {
-              const u = new URL(location.href);
-              if (want > 0) u.searchParams.set('board', String(want));
-              else { u.searchParams.delete('board'); u.searchParams.delete('view'); }
-              location.replace(u.toString());
-            }
+            const tpl = want > 0 ? '' : (m.template || '');
+            if (want > 0) { u.searchParams.set('view', 'board'); u.searchParams.set('board', String(want)); u.searchParams.delete('tpl'); }
+            else if (tpl) { u.searchParams.set('view', 'board'); u.searchParams.set('tpl', tpl); u.searchParams.delete('board'); }
+            else { u.searchParams.delete('view'); u.searchParams.delete('board'); u.searchParams.delete('tpl'); }
+            if (u.toString() !== location.href) location.replace(u.toString());
           }
           break;
       }
@@ -826,7 +826,44 @@ function applyGeometry(wid) {
   window.dispatchEvent(new CustomEvent('tp-geom-' + wid));
 }
 
+// Editing handles follow common editor practice (STATUS U8): every handle
+// has a visible glyph, a tooltip and an accessible name — ⠿ grip = move,
+// ◢ corner = resize, ⚙ = settings, bin = remove.
+function svgIcon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `/ftl/dist/icons/xbmc.svg#icon-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+function labelHandles(tile) {
+  const chrome = $('.b-w-chrome', tile);
+  if (chrome && !chrome.dataset.labelled) {
+    chrome.dataset.labelled = '1';
+    const title = $('.b-w-title', chrome)?.textContent || 'tile';
+    chrome.title = `Drag to move ${title}`;
+    const grip = document.createElement('span');
+    grip.className = 'b-w-grip';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.textContent = '⠿';
+    chrome.prepend(grip);
+    const gear = $('.b-w-gear', chrome);
+    if (gear) gear.title = `${title} settings`;
+    const del = $('.b-w-del', chrome);
+    if (del) {
+      del.title = `Remove ${title}`;
+      del.textContent = '';
+      del.appendChild(svgIcon('trash'));
+    }
+  }
+  const rs = $('.b-w-resize', tile);
+  if (rs) rs.title = 'Drag to resize';
+}
+
 function addAlignButtons(tile) {
+  labelHandles(tile);
   const chrome = $('.b-w-chrome', tile);
   if (!chrome || chrome.querySelector('[data-align]')) return;
   for (const side of ['left', 'right']) {
@@ -1259,31 +1296,7 @@ async function reloadEditing() {
   location.reload();
 }
 
-function wireCompose() {
-  if (!editable || !grid) return;
-  const toggle = $('#b-edit-toggle');
-  const palette = $('#b-palette');
-  const settings = $('#b-settings');
-  const setEditing = (on) => {
-    editing = on;
-    body.toggleAttribute('data-editing', on);
-    if (toggle) {
-      toggle.textContent = on ? 'Done' : 'Edit layout';
-      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
-    }
-    if (palette) palette.hidden = !on;
-    if (!on && settings) settings.hidden = true;
-    if (on) for (const tile of $$('.b-widget', grid)) addAlignButtons(tile);
-    buildEditorList(on);
-  };
-  toggle?.addEventListener('click', () => setEditing(!editing));
-  // Re-enter editing after a structural reload (add/delete/reset/switch).
-  try {
-    if (sessionStorage.getItem('b-editing') === '1') {
-      sessionStorage.removeItem('b-editing');
-      setEditing(true);
-    }
-  } catch { /* private mode */ }
+function wireKeys() {
   // Keyboard nudge (owner "feels bad" round): with editing on, the
   // last-touched tile moves by one cell on the arrow keys (Shift resizes),
   // drop-style confirm on every nudge — overlap reverts exactly like a drag.
@@ -1313,6 +1326,43 @@ function wireCompose() {
     lastTouched.w = { ...w };
     scheduleSave();
   });
+}
+
+function wireCompose() {
+  if (!editable || !grid) return;
+  const toggle = $('#b-edit-toggle');
+  const palette = $('#b-palette');
+  const settings = $('#b-settings');
+  const setEditing = (on) => {
+    editing = on;
+    body.toggleAttribute('data-editing', on);
+    if (toggle) {
+      toggle.textContent = on ? 'Done' : 'Edit layout';
+      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    if (palette) palette.hidden = !on;
+    if (!on && settings) settings.hidden = true;
+    if (on) for (const tile of $$('.b-widget', grid)) addAlignButtons(tile);
+    buildEditorList(on);
+  };
+  toggle?.addEventListener('click', () => setEditing(!editing));
+  // Opened from the Screens page editor (compose=1): edit straight away,
+  // on this one layout; the modal's Done closes it (STATUS U8: "Edit
+  // layout" no longer needs pressing twice).
+  if (new URLSearchParams(location.search).get('compose') === '1') {
+    body.dataset.compose = '1';
+    try { sessionStorage.removeItem('b-editing'); } catch { /* private mode */ }
+    setEditing(true);
+  } else {
+    // Re-enter editing after a structural reload (add/delete/reset/switch).
+    try {
+      if (sessionStorage.getItem('b-editing') === '1') {
+        sessionStorage.removeItem('b-editing');
+        setEditing(true);
+      }
+    } catch { /* private mode */ }
+  }
+  wireKeys();
 
   grid.addEventListener('pointerdown', (e) => {
     if (!editing) return;
