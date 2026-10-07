@@ -101,12 +101,17 @@ function card(s) {
   kindSel.addEventListener('change', () => apply(() => post('/screens/config', { name: s.name, theme: s.theme, boardId: s.boardId, room: s.room, kind: kindSel.value }), 'Display type saved'));
 
   // Layout: one list (PRODUCT 2026-10-06) — the plain timer, the event's
-  // layouts, then the built-ins labelled [built-in]. Every pick applies at
-  // once; built-ins are shown as they are (editing makes a named copy).
+  // layouts, then the built-ins labelled [built-in]. Only layouts that fit
+  // the display type and the mounting are offered (Type → Mounted →
+  // Layout); the server refits a built-in when type or mounting change.
+  // Every pick applies at once; built-ins are shown as they are (editing
+  // makes a named copy).
+  const portrait = s.rotation === 90 || s.rotation === 270;
+  const shape = (o) => (o === 'portrait') === portrait;
   const tplSel = el('select', { class: 'select input-sm', 'aria-label': `Layout of ${s.name}` });
   tplSel.appendChild(new Option('Plain timer (no layout)', 'b:0'));
-  for (const b of st.layouts) tplSel.appendChild(new Option(b.name || `Layout ${b.id}`, `b:${b.id}`));
-  for (const t of st.catalog.filter((x) => !s.kind || x.kind === s.kind)) tplSel.appendChild(new Option(`[built-in] ${t.name}`, `t:${t.key}`));
+  for (const b of st.layouts.filter((x) => x.id === s.boardId || shape(x.layout?.orientation))) tplSel.appendChild(new Option(b.name || `Layout ${b.id}`, `b:${b.id}`));
+  for (const t of st.catalog.filter((x) => x.key === s.template || ((!s.kind || x.kind === s.kind) && shape(x.layout?.orientation)))) tplSel.appendChild(new Option(`[built-in] ${t.name}`, `t:${t.key}`));
   tplSel.value = s.boardId ? `b:${s.boardId}` : (s.template ? `t:${s.template}` : 'b:0');
   tplSel.addEventListener('change', () => {
     const [kind, val] = tplSel.value.split(':');
@@ -126,9 +131,9 @@ function card(s) {
 
   const fields = el('div', { class: 'tp-scr-fields' },
     el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Type' }), kindSel),
+    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Mounted' }), rotSel),
     el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Layout' }), tplSel),
-    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Theme' }), themeSel),
-    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Mounted' }), rotSel));
+    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Theme' }), themeSel));
 
   const actions = el('div', { class: 'cluster is-gap-2xs' },
     el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => editLayout(s) }, 'Edit layout'),
@@ -206,17 +211,19 @@ let capWaiting = null;
 let capKind = 'audience';
 
 function fillTemplates() {
+  // Type → Mounted → Layout: only the layouts that fit both are offered.
   const sel = document.getElementById('tp-capture-template');
   const hint = document.getElementById('tp-capture-template-hint');
+  const rot = document.getElementById('tp-capture-rotation').value;
+  const portrait = rot === '90' || rot === '270';
+  const keep = sel.value;
   sel.replaceChildren();
-  for (const t of st.catalog.filter((x) => x.kind === capKind)) sel.appendChild(new Option(t.name, t.key));
+  for (const t of st.catalog.filter((x) => x.kind === capKind && (x.layout?.orientation === 'portrait') === portrait)) sel.appendChild(new Option(t.name, t.key));
   sel.appendChild(new Option('Plain timer (no layout)', ''));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
   const sync = () => {
     const t = st.catalog.find((x) => x.key === sel.value);
     hint.textContent = t ? t.desc : 'The full-screen timer.';
-    const rot = document.getElementById('tp-capture-rotation');
-    if (t?.layout?.orientation === 'portrait' && rot.value === '0') rot.value = '90';
-    if (t && t.layout?.orientation !== 'portrait' && (rot.value === '90' || rot.value === '270')) rot.value = '0';
   };
   sel.onchange = sync;
   sync();
@@ -263,6 +270,7 @@ function initCapture() {
     });
   }
   dlg.addEventListener('close', () => { busy = false; });
+  document.getElementById('tp-capture-rotation').addEventListener('change', fillTemplates);
   dlg.querySelector('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {

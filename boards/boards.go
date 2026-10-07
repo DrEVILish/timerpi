@@ -151,6 +151,24 @@ func Templates() []TemplateInfo {
 				w("item", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
 				// The QR's own label is the one "Scan to take part" on screen.
 				w("join", "joinqr", 9, 1, 3, 7, nil))},
+		{Key: "main-portrait", Name: "Audience main (portrait)", Kind: "audience", Desc: "Poster version of the audience main: the shown item above, join QR below",
+			Layout: port(16,
+				w("title", "showtitle", 0, 0, 12, 2, nil),
+				w("item", "poll", 0, 2, 12, 9, map[string]string{"target": "audience"}),
+				w("join", "joinqr", 3, 11, 6, 5, nil))},
+		{Key: "countdown", Name: "Audience countdown", Kind: "audience", Desc: "A timer the room can see (breaks, competitions, timed tasks): big countdown, session and what's next",
+			Layout: land(8,
+				w("countdown", "countdown", 0, 0, 12, 4, map[string]string{"tenths": "0"}),
+				w("label", "cuelabel", 0, 4, 12, 1, map[string]string{"source": "label"}),
+				w("progress", "progress", 0, 5, 12, 1, nil),
+				w("next", "nextup", 0, 6, 12, 2, nil))},
+		{Key: "countdown-portrait", Name: "Audience countdown (portrait)", Kind: "audience", Desc: "Poster version of the audience countdown",
+			Layout: port(16,
+				w("label", "cuelabel", 0, 0, 12, 2, map[string]string{"source": "label"}),
+				w("countdown", "countdown", 0, 2, 12, 7, map[string]string{"tenths": "0"}),
+				w("progress", "progress", 0, 9, 12, 1, nil),
+				w("next", "nextup", 0, 10, 12, 3, nil),
+				w("clock", "wallclock", 0, 13, 12, 3, clock))},
 		{Key: "qawall", Name: "Q&A wall", Kind: "audience", Desc: "The approved questions and the spotlight, full screen",
 			Layout: land(8,
 				w("wall", "qa", 0, 0, 9, 8, map[string]string{"target": "audience"}),
@@ -195,6 +213,12 @@ func Templates() []TemplateInfo {
 				w("msgs", "messages", 5, 1, 7, 3, nil),
 				w("sched", "schedule", 0, 4, 12, 4, map[string]string{"count": "6"}))},
 		// --- Presenter displays (face the speaker) ---
+		{Key: "lobby-portrait", Name: "Room lobby (portrait)", Kind: "walkin", Desc: "Poster version of the room lobby",
+			Layout: port(16,
+				w("title", "showtitle", 0, 0, 12, 2, nil),
+				w("clock", "wallclock", 0, 2, 12, 3, clock),
+				w("msgs", "messages", 0, 5, 12, 4, nil),
+				w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "6"}))},
 		{Key: "dsm", Name: "Presenter (DSM)", Kind: "presenter", Desc: "Big countdown, stage messages, next session and items shown to the presenter",
 			Layout: land(8,
 				w("countdown", "countdown", 0, 0, 8, 4, map[string]string{"tenths": "1"}),
@@ -214,6 +238,22 @@ func Templates() []TemplateInfo {
 				w("dayprogress", "dayprogress", 0, 5, 8, 1, nil),
 				w("wallclock", "wallclock", 8, 5, 4, 2, clock),
 				w("showtitle", "showtitle", 0, 6, 8, 1, nil))},
+		{Key: "stage-portrait", Name: "Full timer (portrait)", Kind: "presenter", Desc: "Portrait confidence monitor: giant countdown, messages, session and next",
+			Layout: port(16,
+				w("cuelabel", "cuelabel", 0, 0, 12, 2, map[string]string{"source": "label"}),
+				w("countdown", "countdown", 0, 2, 12, 6, map[string]string{"tenths": "1"}),
+				w("progress", "progress", 0, 8, 12, 1, nil),
+				w("messages", "messages", 0, 9, 12, 3, nil),
+				w("nextup", "nextup", 0, 12, 12, 2, nil),
+				w("wallclock", "wallclock", 0, 14, 12, 2, clock))},
+		{Key: "timer", Name: "Countdown only", Kind: "presenter", Desc: "Just the countdown and stage messages: the cleanest confidence monitor",
+			Layout: land(8,
+				w("countdown", "countdown", 0, 0, 12, 6, map[string]string{"tenths": "1"}),
+				w("messages", "messages", 0, 6, 12, 2, nil))},
+		{Key: "timer-portrait", Name: "Countdown only (portrait)", Kind: "presenter", Desc: "Portrait version of countdown only",
+			Layout: port(16,
+				w("countdown", "countdown", 0, 0, 12, 11, map[string]string{"tenths": "1"}),
+				w("messages", "messages", 0, 11, 12, 5, nil))},
 		{Key: "speaker", Name: "Speaker support", Kind: "presenter", Desc: "Who is on, the session, progress and what comes next",
 			Layout: land(7,
 				w("speaker", "speaker", 0, 0, 12, 2, nil),
@@ -226,12 +266,52 @@ func Templates() []TemplateInfo {
 			Layout: land(6,
 				w("wallclock", "wallclock", 0, 0, 12, 2, clock),
 				w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"}))},
+		{Key: "clockroom-portrait", Name: "Clock (portrait)", Kind: "walkin", Desc: "Poster version of the clock",
+			Layout: port(16,
+				w("wallclock", "wallclock", 0, 0, 12, 5, clock),
+				w("schedule", "schedule", 0, 5, 12, 11, map[string]string{"count": "6"}))},
 		{Key: "break", Name: "Break", Kind: "audience", Desc: "Between sessions: clock, stage messages and a notice",
 			Layout: land(8,
 				w("wallclock", "wallclock", 0, 0, 12, 3, clock),
 				w("messages", "messages", 0, 3, 12, 3, nil),
 				w("notice", "notice", 0, 6, 12, 2, map[string]string{"text": "Back shortly — enjoy the break"}))},
+		{Key: "break-portrait", Name: "Break (portrait)", Kind: "audience", Desc: "Poster version of the break screen",
+			Layout: port(16,
+				w("wallclock", "wallclock", 0, 0, 12, 5, clock),
+				w("messages", "messages", 0, 5, 12, 6, nil),
+				w("notice", "notice", 0, 11, 12, 5, map[string]string{"text": "Back shortly — enjoy the break"}))},
 	}
+}
+
+// FitTemplate keeps a screen's built-in layout in step with its display
+// type and mounting: the template itself when it already fits, else its
+// portrait/landscape twin ("x" ↔ "x-portrait"), else the type's first
+// template of the right shape. kind "" keeps the template's own type.
+func FitTemplate(key, kind string, portrait bool) string {
+	ts := Templates()
+	byKey := map[string]TemplateInfo{}
+	for _, t := range ts {
+		byKey[t.Key] = t
+	}
+	if kind == "" {
+		kind = byKey[key].Kind
+	}
+	fits := func(k string) bool {
+		t, ok := byKey[k]
+		return ok && (kind == "" || t.Kind == kind) && (t.Layout.Orientation == "portrait") == portrait
+	}
+	base := strings.TrimSuffix(key, "-portrait")
+	for _, k := range []string{key, base, base + "-portrait"} {
+		if fits(k) {
+			return k
+		}
+	}
+	for _, t := range ts {
+		if fits(t.Key) {
+			return t.Key
+		}
+	}
+	return key
 }
 
 // TemplateLayouts maps template key → layout (capture + apply paths).

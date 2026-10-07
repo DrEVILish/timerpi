@@ -128,11 +128,13 @@ go to the home page.
 - **Layouts belong to the event** (2026-10-06): `display_boards` rows keep the room that made them, but every lookup covers all rooms of that room's event; deleting a room hands its layouts to another room first (`RehomeRoomLayouts`). **Built-ins** (the template catalog) are shown directly by a screen (`screens.template`, `?view=board&tpl=<key>`) and never edited; editing one makes a named event layout (`POST …/layouts`).
 - **Templates** (`boards.Templates()`, served at `GET /api/board-templates` as `catalog`), grouped by display type:
 
-| Type | Templates |
-|---|---|
-| Audience | `main` (Audience main), `qawall`, `holding`, `break` |
-| Walk-in | `event`, `event-portrait`, `room`, `room-portrait`, `lobby`, `clockroom` |
-| Presenter | `dsm`, `stage` (Full timer), `speaker` |
+| Type | Landscape | Portrait |
+|---|---|---|
+| Audience | `main` (Audience main), `countdown`, `qawall`, `holding`, `break` | `main-portrait`, `countdown-portrait`, `break-portrait` |
+| Walk-in | `event`, `room`, `lobby`, `clockroom` (Clock) | `event-portrait`, `room-portrait`, `lobby-portrait`, `clockroom-portrait` |
+| Presenter | `dsm`, `stage` (Full timer), `timer` (Countdown only), `speaker` | `stage-portrait`, `timer-portrait` |
+
+  **Type → Mounted → Layout.** A screen's rotation is how the panel is mounted (0/180 landscape, 90/270 portrait). The Layout list offers only layouts of the screen's type and shape. Changing the type or the mounting refits a built-in with `boards.FitTemplate`: the same template if it fits, else its twin (`x` ↔ `x-portrait`), else the type's first template of that shape. Event layouts are never swapped automatically.
 
   Applying a template to a screen (capture or `POST /screens/template`) builds that screen's own board, so edits never leak to other screens.
 - **Event walk-in data.** `rooms`, `eventschedule` and the default `map` tile poll `GET /api/shows/:room/walkin` (every room of the event from the live engines; open).

@@ -386,6 +386,14 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 			return
 		}
+		// A built-in layout follows the type and the mounting: a walk-in
+		// layout never stays on a presenter screen, nor a landscape one on
+		// a portrait-mounted panel.
+		if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.BoardID == 0 && cur.Template != "" {
+			if fit := boards.FitTemplate(cur.Template, kind, rot == 90 || rot == 270); fit != cur.Template {
+				_ = d.Store.SetScreenTemplate(id, name, fit)
+			}
+		}
 	}
 	if body.Rotation == nil && body.BoardID > 0 {
 		if b, err := boards.GetBoard(d.Store.DB, id, body.BoardID); err == nil {

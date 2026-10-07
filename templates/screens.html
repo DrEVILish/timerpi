@@ -66,24 +66,22 @@
       </div>
     </div>
     <div class="field">
+      <label class="label" for="tp-capture-rotation">Mounted</label>
+      <select class="select" id="tp-capture-rotation">
+        <option value="0">Normal (landscape)</option>
+        <option value="90">Portrait — rotated right</option>
+        <option value="270">Portrait — rotated left</option>
+        <option value="180">Upside down</option>
+      </select>
+    </div>
+    <div class="field">
       <label class="label" for="tp-capture-template">Layout</label>
       <select class="select" id="tp-capture-template"></select>
       <span class="field-hint" id="tp-capture-template-hint"></span>
     </div>
-    <div class="row is-gap-s is-wrap">
-      <div class="field">
-        <label class="label" for="tp-capture-rotation">Mounted</label>
-        <select class="select" id="tp-capture-rotation">
-          <option value="0">Normal (landscape)</option>
-          <option value="90">Portrait — rotated right</option>
-          <option value="270">Portrait — rotated left</option>
-          <option value="180">Upside down</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="label" for="tp-capture-theme">Theme</label>
-        <select class="select" id="tp-capture-theme"></select>
-      </div>
+    <div class="field">
+      <label class="label" for="tp-capture-theme">Theme</label>
+      <select class="select" id="tp-capture-theme"></select>
     </div>
     <p class="field-error" role="alert" hidden></p>
     <div class="modal-footer">
