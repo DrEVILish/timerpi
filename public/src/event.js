@@ -369,6 +369,28 @@ function initAdmin() {
     e.preventDefault();
     run(() => api('PATCH', `/api/events/${EV}`, { theme: document.getElementById('ev-theme-select').value }), 'Default screen theme saved');
   });
+  // Sign in on your phone: a single-use, 2-minute QR code (phonelink.go),
+  // refreshed while the dialog is open.
+  const phoneDlg = document.getElementById('phone-link');
+  if (phoneDlg) {
+    let phoneTimer = 0;
+    const showCode = async () => {
+      clearTimeout(phoneTimer);
+      try {
+        const j = await api('POST', `/api/events/${EV}/phone-link`, { base: location.origin });
+        document.getElementById('phone-link-qr').src = j.qr;
+        phoneTimer = setTimeout(showCode, Math.max(10_000, j.expiresAt - Date.now() - 15_000));
+      } catch (e) {
+        phoneDlg.close();
+        toast(e.message, 'danger');
+      }
+    };
+    document.getElementById('phone-link-btn')?.addEventListener('click', () => { phoneDlg.showModal(); showCode(); });
+    phoneDlg.addEventListener('close', () => {
+      clearTimeout(phoneTimer);
+      document.getElementById('phone-link-qr').removeAttribute('src');
+    });
+  }
   // Pair a box (N13): the code on the box's screen + where it goes.
   const pairForm = document.getElementById('pair-form');
   if (pairForm) {

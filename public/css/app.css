@@ -230,3 +230,6 @@ dialog.modal.tp-screen-edit:modal { width: 98vw; max-width: 98vw; height: 96vh; 
 
 /* Footer: sticky, always visible (2026-10-07). */
 body.app > .app-status { position: sticky; inset-block-end: 0; z-index: 5; }
+/* Phone sign-in QR (Event Technician page). */
+.tp-phone-qr { display: block; width: min(320px, 100%); height: auto; margin: .8rem auto; padding: .5rem; background: #fff; border-radius: var(--radius, 6px); image-rendering: pixelated; }
+html[data-device-orient] #phone-link-btn { display: none; } /* already on the phone */

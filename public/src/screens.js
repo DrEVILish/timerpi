@@ -44,6 +44,36 @@ export async function pull(force = false) {
   if (force !== true && (busy || isEditingIn(document.getElementById('tp-screens-page')))) return;
   renderWaiting();
   renderScreens();
+  renderLayouts();
+}
+
+// The event's own layouts: edit or delete (owner 2026-10-07: there was no
+// way to delete one). Screens on a deleted layout go back to the plain
+// timer; built-ins are not listed (they can't be edited or deleted).
+function renderLayouts() {
+  const host = document.getElementById('tp-layouts');
+  if (!host) return;
+  if (!st.layouts.length) {
+    host.replaceChildren(el('div', { class: 'empty-state' },
+      el('span', { class: 'empty-state-title', text: 'No layouts of your own yet.' }),
+      el('span', { class: 'empty-state-hint', text: 'Pick a built-in on a screen, then Edit layout to make your own copy.' })));
+    return;
+  }
+  host.replaceChildren(el('ul', { class: 'list' }, ...st.layouts.map((b) => el('li', { class: 'list-item' },
+    el('span', { class: 'list-item-title', text: b.name || `Layout ${b.id}` }),
+    el('span', { class: 'text-muted', text: b.usedBy ? `${b.usedBy} screen${b.usedBy === 1 ? '' : 's'}` : 'not used' }),
+    el('button', { type: 'button', class: 'btn btn-sm push', text: 'Edit',
+      onclick: () => openEditor({ id: b.id, name: b.name, usedBy: b.usedBy || 0, orientation: b.layout?.orientation }) }),
+    el('button', { type: 'button', class: 'btn btn-sm btn-danger', text: 'Delete', 'aria-label': `Delete layout ${b.name}`,
+      onclick: async () => {
+        const msg = b.usedBy ? `${b.usedBy} screen${b.usedBy === 1 ? '' : 's'} using it go back to the plain timer.` : 'No screen uses it.';
+        if (!(await tpConfirm(msg, { title: `Delete the layout "${b.name}"?`, ok: 'Delete', danger: true }))) return;
+        try {
+          await api('DELETE', `/api/shows/${code}/boards/${b.id}`);
+          toast('Layout deleted', 'success');
+        } catch (e) { toast(e.message, 'danger'); }
+        pull(true);
+      } })))));
 }
 
 const post = (path, body) => api('POST', `/api/shows/${code}${path}`, body);

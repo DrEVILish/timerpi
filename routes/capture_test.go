@@ -21,7 +21,8 @@ func TestCaptureWithConfig(t *testing.T) {
 		[]byte(`{"name":"Screen-XXXX","host":"tv.local"}`), ""); code != 200 {
 		t.Fatalf("register: %d %s", code, b)
 	}
-	// The show's default board exists (seeded) — grab its id for the modal.
+	// A layout of the event — grab its id for the modal.
+	ts.boardsList(t)
 	code, b := ts.call("GET", "/api/shows/"+ts.showCode+"/boards", nil, "")
 	if code != 200 {
 		t.Fatalf("boards: %d %s", code, b)

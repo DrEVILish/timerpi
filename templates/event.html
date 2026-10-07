@@ -110,6 +110,7 @@
       <div class="row is-items-center is-gap-s is-wrap">
         <h2 id="live-h" class="tp-section-title">Live</h2>
         <div class="cluster push">
+          {{if .Event.HasSuperPW}}<button class="btn" type="button" id="phone-link-btn" title="Show a QR code that signs your phone in to this dashboard">Sign in on your phone</button>{{end}}
           <button class="btn btn-danger" data-verb-all="blank" title="Blank every screen in every room">Blackout all rooms</button>
           <button class="btn" data-verb-all="unblank" title="Bring every room's screens back">Restore all</button>
         </div>
@@ -226,6 +227,20 @@
       </div>
     </section>
   </div>
+{{if .Event.HasSuperPW}}
+<dialog class="modal modal-sm" id="phone-link" aria-labelledby="phone-link-h">
+  <div class="modal-header">
+    <h2 id="phone-link-h">Sign in on your phone</h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
+  </div>
+  <p>Scan this with your phone's camera. It opens this dashboard on the phone, signed in as Event Technician, so you can check rooms and screens as you walk the venue.</p>
+  <img class="tp-phone-qr" id="phone-link-qr" alt="QR code that signs a phone in as Event Technician" width="320" height="320">
+  <p class="field-hint" id="phone-link-hint">Each code works once and expires after 2 minutes; a fresh one appears while this stays open.</p>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-close>Done</button>
+  </div>
+</dialog>
+{{end}}
 </main>
 <footer class="app-status">
   <span class="connection" id="live-status" data-state="reconnecting" role="status">connecting…</span>

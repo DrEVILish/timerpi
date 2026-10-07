@@ -14,8 +14,21 @@ import (
 	"timerpi/views"
 )
 
-// boardIDs lists the test show's boards as generic maps.
+// boardsList lists the test event's layouts as generic maps, making one
+// ("Main", factory layout) first when there are none: nothing is seeded
+// by the server any more.
 func (ts *apiTest) boardsList(t *testing.T) []map[string]any {
+	t.Helper()
+	if list := ts.rawBoards(t); len(list) > 0 {
+		return list
+	}
+	if code, body := ts.call("POST", "/api/shows/"+ts.showCode+"/boards", []byte(`{"name":"Main"}`), "application/json"); code != http.StatusCreated {
+		t.Fatalf("create board: %d %s", code, body)
+	}
+	return ts.rawBoards(t)
+}
+
+func (ts *apiTest) rawBoards(t *testing.T) []map[string]any {
 	t.Helper()
 	code, body := ts.call("GET", "/api/shows/"+ts.showCode+"/boards", nil, "")
 	if code != http.StatusOK {
@@ -32,10 +45,20 @@ func (ts *apiTest) boardsList(t *testing.T) []map[string]any {
 func TestBoardCRUD(t *testing.T) {
 	ts := newAPITest(t)
 
-	// First list seeds the show default ("Main", factory layout).
+	// Nothing is seeded (owner 2026-10-07: a deleted "Main" kept coming
+	// back), not even by opening a board page.
+	if list := ts.rawBoards(t); len(list) != 0 {
+		t.Fatalf("an event starts with no layouts, got %v", list)
+	}
+	if code, b := ts.call("GET", "/d/"+ts.showCode+"?view=board", nil, ""); code != http.StatusOK || !bytes.Contains(b, []byte(`data-widget=`)) {
+		t.Fatalf("a board page with no layout shows the factory one: %d", code)
+	}
+	if list := ts.rawBoards(t); len(list) != 0 {
+		t.Fatalf("a board page made a layout: %v", list)
+	}
 	list := ts.boardsList(t)
 	if len(list) != 1 || list[0]["name"] != "Main" {
-		t.Fatalf("seeded list = %v", list)
+		t.Fatalf("made list = %v", list)
 	}
 	defID := int64(list[0]["id"].(float64))
 	lay, _ := json.Marshal(list[0]["layout"])
@@ -94,8 +117,13 @@ func TestBoardCRUD(t *testing.T) {
 	if code, _ := ts.call("DELETE", "/api/shows/"+ts.showCode+"/boards/"+itoa(newID), nil, ""); code != http.StatusNotFound {
 		t.Errorf("delete again: %d (want 404)", code)
 	}
-	if got := ts.boardsList(t); len(got) != 1 {
+	if got := ts.rawBoards(t); len(got) != 1 {
 		t.Errorf("after delete: %d boards (want 1)", len(got))
+	}
+	// Deleting the last one leaves none: it is not re-made.
+	ts.call("DELETE", "/api/shows/"+ts.showCode+"/boards/"+itoa(defID), nil, "")
+	if got := ts.rawBoards(t); len(got) != 0 {
+		t.Errorf("after deleting the last layout: %d boards (want 0)", len(got))
 	}
 }
 
@@ -204,6 +232,7 @@ func TestBoardTemplatesParse(t *testing.T) {
 // (or the event's SuperOperator); a stranger gets the read-only board.
 func TestBoardEditAuthGate(t *testing.T) {
 	ts := newAPITest(t)
+	ts.boardsList(t) // the event's "Main" layout
 	path := "/d/" + ts.showCode + "?view=board&edit=1"
 
 	_, body := ts.call("GET", path, nil, "")

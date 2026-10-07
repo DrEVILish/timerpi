@@ -90,14 +90,8 @@ func (d *Deps) apiBoardsList(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if len(list) == 0 {
-		def, cerr := boards.EnsureDefaultBoard(d.Store.DB, id)
-		if cerr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": cerr.Error()})
-			return
-		}
-		list = []boards.Board{def}
-	}
+	// No seeding: an event has only the layouts someone made, so a deleted
+	// layout stays deleted (owner 2026-10-07: the auto "Main" came back).
 	out := make([]gin.H, 0, len(list))
 	for _, b := range list {
 		j := boardJSON(b)
@@ -267,10 +261,12 @@ func (d *Deps) boardView(c *gin.Context, showID int64, snap timerpi.Snapshot) {
 			return
 		}
 	}
-	board, berr := boards.EnsureDefaultBoard(d.Store.DB, showID)
-	if berr != nil {
-		c.String(http.StatusInternalServerError, "board seeding failed")
-		return
+	// No layout asked for (or a stale id): the event's first layout, else
+	// the factory layout shown read-only. Nothing is created.
+	if list, _ := boards.ListBoards(d.Store.DB, showID); len(list) > 0 {
+		board = list[0]
+	} else {
+		board = boards.Board{ID: 0, Name: "Default", Layout: boards.DefaultLayoutJSON()}
 	}
 	// The stale ?board= param must not win again: strip it from the URL the
 	// page carries (join re-navigation reads location.search).

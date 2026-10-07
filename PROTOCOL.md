@@ -61,6 +61,8 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST /api/events/:code/room-password {password}` | super. Same moderator password for every room ("" clears all) |
 | `POST /api/events/:code/map {assetId}` | super. Event map (0 clears) |
 | `POST /api/events/:code/pair {pairCode, code, kind, template, rotation, name?, theme?, room?}` | super. Pair the box showing `pairCode` (6 digits, registered in the last minute) as a screen of room `code`; 10 tries/min per event |
+| `POST /api/events/:code/phone-link {base}` | super (needs an Event Technician Password). `{url, qr, expiresAt}`: a QR (PNG data URL) for `<base>/e/<code>/phone?t=<token>`. The token is `<expiry>.<nonce>.<HMAC>` keyed with the event's password hash (valid on every copy of the event), single-use, 2 minutes; a password change voids it |
+| `GET /e/:code/phone?t=` | open (sign-in limiter). A good token sets this browser's Event Technician session and 303s to `/e/<code>/admin`; otherwise the "code expired" page. Never tunnelled: it signs in on the server the phone reached |
 | `POST /api/events/:code/rooms/import` (multipart `file`) | super. Room from a `.timerpi.json` bundle |
 
 ### Rooms (shows)
@@ -92,7 +94,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}`. Every layout carries both versions: the landscape one, and the portrait one in `layout.alt` (event layouts too; saving a layout saves both) |
 | `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
-| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | Layouts `{v, rows, orientation, widgets[]}`. `PUT {name?, layout?}` is validated (types, overlap, limits) |
+| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | The event's own layouts `{v, rows, orientation, widgets[], alt}`. `PUT {name?, layout?}` is validated (types, overlap, limits). Nothing is seeded: an event has only the layouts someone made, and a board page with none shows the factory layout without saving it. `DELETE` sends its screens back to the plain timer |
 | `POST /api/waiting/register {name,host,token,code?,handheld?}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>`. A box registers with its pairing `code`; once paired, its `mine` also carries `pairing:{event, eventName, meshKey, endsAt, room}` (boxes only) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session; capture needs moderator access to the room. A screen already captured into another room → 409 |
 

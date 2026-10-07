@@ -578,8 +578,8 @@ func (d *Deps) venueTarget(c *gin.Context) (timerpi.Event, string, bool) {
 		return ev, "operator", ok
 	case len(parts) >= 2 && parts[0] == "e":
 		ev, ok := byEvent(parts[1])
-		if len(parts) >= 3 && parts[2] == "leave" {
-			return ev, "local", ok
+		if len(parts) >= 3 && (parts[2] == "leave" || parts[2] == "phone") {
+			return ev, "local", ok // the phone sign-in sets this server's own session
 		}
 		return ev, "operator", ok
 	case len(parts) >= 3 && parts[0] == "api" && parts[1] == "events":

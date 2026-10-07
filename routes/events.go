@@ -51,6 +51,7 @@ var eventVerbs = map[string]bool{
 func registerEvents(r *gin.Engine, d *Deps) {
 	r.GET("/e/:code", d.eventLobbyPage)
 	r.GET("/e/:code/admin", d.eventAdminPage)
+	r.GET("/e/:code/phone", d.phoneSignIn) // phone sign-in by QR (phonelink.go)
 	// Retired surfaces land somewhere useful.
 	r.GET("/super", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
 	r.GET("/setup", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
@@ -89,6 +90,7 @@ func registerEvents(r *gin.Engine, d *Deps) {
 	g.POST("/:code/room-password", d.apiEventRoomPasswordAll)
 	g.POST("/:code/map", d.apiEventMap)
 	g.POST("/:code/pair", d.apiEventPair)
+	g.POST("/:code/phone-link", d.apiPhoneLink)
 }
 
 // ------------------------------------------------------------ resolution --
