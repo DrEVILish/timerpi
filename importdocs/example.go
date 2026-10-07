@@ -2,11 +2,11 @@ package importdocs
 
 // example.go generates the downloadable example documents the Import dialog
 // offers ("edit + re-import" workflow, PLAN §6.5). The three Example*
-// builders share one fixture grid / expected cue list (exampleRows and
-// exampleCuesFromRows) so formats stay consistent; the round-trip tests parse
-// each generated document back and compare against that list.
+// builders share one fixture grid (exampleRows) so formats stay consistent;
+// the JSON example is the CSV example parsed back. The round-trip tests parse
+// each generated document and compare against one expected cue list.
 //
-// The JSON example uses exactly the PROTOCOL wire keys, so it doubles as the
+// The JSON example is the PROTOCOL wire cue object, so it doubles as the
 // documented JSON import shape.
 
 import (
@@ -20,54 +20,54 @@ import (
 // exampleColumns is the cue-sheet header shared by XLSX and CSV examples.
 var exampleColumns = []string{
 	"Label", "Duration", "Start", "Tags", "Speaker", "Notes",
-	"Kind", "Hold", "Alert1", "Alert2", "EndAction", "AutoContinue",
+	"Kind", "Alert1", "Alert2", "EndAction",
 }
 
 // exampleRows is one fixture day: keynote opening, technical talk, coffee
 // break, changeover, VT package, panel, lunch, closing — the shapes users
 // actually schedule. Start times are informational (TimerPi computes starts
-// from durations + holds); they sit in the sheet so people can eyeball the
+// from durations); they sit in the sheet so people can eyeball the
 // running order.
 var exampleRows = [][]string{
 	{
 		"Opening keynote", "45:00", "09:00", "PRES GFX",
 		"Leslie Knope", "Walk-in music, house lights down", "session",
-		"", "05:00", "", "", "",
+		"05:00", "", "",
 	},
 	{
 		"Tech outlook talk", "25:00", "09:48", "PRES CAM",
 		"Ron Swanson", "Slides on the operator laptop, not the big screen", "session",
-		"00:30", "02:00", "", "HOLD", "no",
+		"02:00", "", "HOLD",
 	},
 	{
 		"Coffee break", "10:00", "10:16", "COM",
 		"", "Catering in the foyer; mics muted", "break",
-		"", "", "", "BLANK", "yes",
+		"", "", "BLANK",
 	},
 	{
 		"Changeover", "02:00", "10:29", "",
 		"", "Reset stage for the panel", "break",
-		"", "", "", "HOLD", "yes",
+		"", "", "HOLD",
 	},
 	{
 		"VT: highlights reel", "08:30", "10:31", "VT",
 		"", "Hirez playback, no speaker idle check", "session",
-		"", "", "", "BLANK", "yes",
+		"", "", "BLANK",
 	},
 	{
 		"Panel discussion", "30:00", "10:40", "COM CAM",
 		"Panel: City Council", "4 mics, cards to cue 20:00", "session",
-		"", "03:00", "", "HOLD", "no",
+		"03:00", "", "HOLD",
 	},
 	{
 		"Lunch break", "45:00", "11:12", "",
 		"", "Boxes in the loading dock", "break",
-		"", "", "", "BLANK", "no",
+		"", "", "BLANK",
 	},
 	{
 		"Closing remarks & awards", "15:00", "12:00", "PRES GFX",
 		"Leslie Knope", "Award row cards on stand-by", "session",
-		"", "02:00", "", "OVERTIME", "no",
+		"02:00", "", "OVERTIME",
 	},
 }
 
@@ -86,7 +86,7 @@ func ExampleXLSX() ([]byte, error) {
 	readme := []string{
 		"TimerPi cue list — example",
 		"",
-		"Columns: Label, Duration, Start, Tags, Speaker, Notes (+ optional Kind, Hold, Alert1, Alert2, EndAction, AutoContinue).",
+		"Columns: Label, Duration, Start, Tags, Speaker, Notes (+ optional Kind, Alert1, Alert2, EndAction).",
 		"Header row and column names are matched loosely — Label/Title/Name and Duration/Time/Minutes all work.",
 		"",
 		"Duration accepts:",
@@ -97,10 +97,9 @@ func ExampleXLSX() ([]byte, error) {
 		"  90           (bares numbers are seconds; 90 = 1:30)",
 		"  90000ms      (explicit milliseconds)",
 		"",
-		"Start is informational only — TimerPi computes starts from durations and holds.",
+		"Start is informational only — TimerPi computes starts from durations.",
 		"Kind: session | break. A break/changeover row is an ordinary cue with break_flag.",
 		"EndAction: HOLD (freeze at 00:00), OVERTIME (count up), BLANK (blank the screen).",
-		"AutoContinue: yes/no — advance to the next cue automatically at zero.",
 		"Alert1/Alert2: per-cue thresholds (mm:ss) where the display changes colour.",
 		"",
 		"You can keep (or delete) this README sheet — the importer picks the first sheet that contains a cue table.",
@@ -146,7 +145,7 @@ func ExampleXLSX() ([]byte, error) {
 			}
 		}
 	}
-	widths := []float64{30, 10, 8, 12, 20, 48, 10, 8, 8, 8, 11, 12}
+	widths := []float64{30, 10, 8, 12, 20, 48, 10, 8, 8, 11}
 	for i, w := range widths {
 		col, _ := excelize.ColumnNumberToName(i + 1)
 		if err := f.SetColWidth("Cues", col, col, w); err != nil {
@@ -188,66 +187,18 @@ func ExampleCSV() []byte {
 	return buf.Bytes()
 }
 
-// ExampleJSON returns the JSON example: a bare array of cue objects using the
-// exact PROTOCOL wire keys (also the accepted import shape for
-// PUT /api/shows/:id/cues).
+// ExampleJSON returns the JSON example: a bare array of wire cue objects
+// (also the accepted import shape for PUT /api/shows/:id/cues) — the CSV
+// example parsed back, so the two cannot drift.
 func ExampleJSON() []byte {
-	cues := exampleCuesFromRows()
-	out, err := json.MarshalIndent(cues, "", "  ")
-	if err != nil {
-		// exampleCuesFromRows only yields plain marshalable structs — this
-		// cannot fail for the hardcoded fixture, but Example* is a public
-		// API so never fall through with partial data.
-		panic("importdocs: ExampleJSON marshal failed: " + err.Error())
+	cues, err := ParseCSV(ExampleCSV())
+	if err == nil {
+		var out []byte
+		if out, err = json.MarshalIndent(cues, "", "  "); err == nil {
+			return append(out, '\n')
+		}
 	}
-	return append(out, '\n')
-}
-
-// exampleCuesFromRows is the expected parse of exampleRows — single source of
-// truth used by ExampleJSON and by the round-trip tests.
-func exampleCuesFromRows() []Cue {
-	return []Cue{
-		{
-			Label: "Opening keynote", DurationMS: 2700000, Kind: "session",
-			Tags: "PRES GFX", Speaker: "Leslie Knope",
-			Notes: "Walk-in music, house lights down", Alert1MS: 300000,
-		},
-		{
-			Label: "Tech outlook talk", DurationMS: 1500000, Kind: "session",
-			Tags: "PRES CAM", Speaker: "Ron Swanson",
-			Notes:  "Slides on the operator laptop, not the big screen",
-			HoldMS: 30000, Alert1MS: 120000, EndAction: "HOLD",
-		},
-		{
-			Label: "Coffee break", DurationMS: 600000, Kind: "break",
-			Tags: "COM", Notes: "Catering in the foyer; mics muted",
-			EndAction: "BLANK", AutoContinue: true,
-		},
-		{
-			Label: "Changeover", DurationMS: 120000, Kind: "break",
-			Notes: "Reset stage for the panel", EndAction: "HOLD",
-			AutoContinue: true,
-		},
-		{
-			Label: "VT: highlights reel", DurationMS: 510000, Kind: "session",
-			Tags: "VT", Notes: "Hirez playback, no speaker idle check",
-			EndAction: "BLANK", AutoContinue: true,
-		},
-		{
-			Label: "Panel discussion", DurationMS: 1800000, Kind: "session",
-			Tags: "COM CAM", Speaker: "Panel: City Council",
-			Notes: "4 mics, cards to cue 20:00", Alert1MS: 180000,
-			EndAction: "HOLD",
-		},
-		{
-			Label: "Lunch break", DurationMS: 2700000, Kind: "break",
-			Notes: "Boxes in the loading dock", EndAction: "BLANK",
-		},
-		{
-			Label: "Closing remarks & awards", DurationMS: 900000, Kind: "session",
-			Tags: "PRES GFX", Speaker: "Leslie Knope",
-			Notes: "Award row cards on stand-by", Alert1MS: 120000,
-			EndAction: "OVERTIME",
-		},
-	}
+	// The hardcoded fixture cannot fail; Example* is a public API, so never
+	// fall through with partial data.
+	panic("importdocs: ExampleJSON: " + err.Error())
 }

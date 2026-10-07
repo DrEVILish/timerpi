@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ParseDuration had no tests at all (only FmtDurSigned was covered): the
+// ParseDuration had no tests at all: the
 // dashboard quick-add parses operator input through here (owner decision
 // 2026-10-05: bare = minutes, two-part = hours:minutes, Ns = seconds).
 func TestParseDurationTable(t *testing.T) {
@@ -39,8 +39,7 @@ func TestParseDurationTable(t *testing.T) {
 	}
 }
 
-// FmtAgo buckets wall-clock age for the UI; only the formatter next to it
-// (FmtDurSigned) was tested.
+// FmtAgo buckets wall-clock age for the UI.
 func TestFmtAgoBoundaries(t *testing.T) {
 	now := time.Now().UnixMilli()
 	cases := []struct {

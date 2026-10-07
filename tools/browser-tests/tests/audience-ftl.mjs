@@ -1,7 +1,7 @@
 // STATUS U17: the phone page and the audience screen tiles use ftl-themes
 // components: .panel card, .empty-state wait, .btn options (chosen =
 // .btn-primary), <progress class="progress"> tallies, .alert verdict and
-// spotlight, .list wall, .badge cloud words.
+// spotlight on the phone, .list wall.
 export const name = 'phone page and audience tiles use ftl components';
 
 export async function run(t) {
@@ -51,8 +51,8 @@ export async function run(t) {
   await phone.waitForSelector('.tp-aud-spot');
   t.check('phone wall is an ftl .list of .list-item', await phone.$eval('.tp-aud-wall', (l) => l.classList.contains('list') && [...l.children].every((li) => li.classList.contains('list-item'))));
   t.check('phone spotlight is an ftl .alert', await phone.$eval('.tp-aud-spot', (s) => s.classList.contains('alert')));
-  await tv.waitForSelector('.b-qa-spot', { timeout: 8000 }).catch(() => {});
-  t.check('screen spotlight is an ftl .alert', await tv.$eval('.b-qa-spot', (s) => s.classList.contains('alert')).catch(() => false));
+  await tv.waitForSelector('.b-qa-item.is-spot', { timeout: 8000 }).catch(() => {});
+  t.check('screen spotlight is a card of the wall', await tv.$eval('.b-qa-item.is-spot', (s) => s.classList.contains('list-item')).catch(() => false));
   t.check('screen wall is an ftl .list', await tv.$eval('.b-qa-wall', (l) => l.classList.contains('list')).catch(() => false));
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
   await ctx.close();

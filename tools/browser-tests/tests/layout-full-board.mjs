@@ -38,7 +38,7 @@ export async function run(t) {
   await pg.reload();
   await pg.waitForSelector('#b-reset', { state: 'attached' });
   await pg.$eval('#b-reset', (b) => b.click());
-  await pg.click('.tp-dlg-actions .btn-danger');
+  await pg.click('dialog.modal .modal-footer .btn-danger');
   await pg.waitForTimeout(1500);
   const after = await layoutOf();
   t.check(`Reset restores the server's factory layout (${after.widgets.length} tiles)`, after.widgets.map((w) => w.id).sort().join() === def.widgets.map((w) => w.id).sort().join());

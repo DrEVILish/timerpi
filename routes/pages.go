@@ -50,7 +50,7 @@ func (d *Deps) render(c *gin.Context, name string, data any) {
 	}
 	if d.ReloadTmpl {
 		var err error
-		tmpl, err = views.New(findDir("templates"))
+		tmpl, err = views.New(FindDir("templates"))
 		if err != nil {
 			log.Printf("routes: dev template reparse: %v", err)
 		}
@@ -146,7 +146,7 @@ func galleryPage(d *Deps) gin.HandlerFunc {
 		// Screens and layouts are the SuperOperator's (STATUS U25):
 		// moderators work in Run and Audience only.
 		if d.Store != nil && !d.superOfShow(c, showID) {
-			d.renderAccessDenied(c, "Screens are set up by the SuperOperator", "Ask your SuperOperator to set up or change this room's screens.")
+			d.renderAccessDenied(c, "Screens are set up by the Event Technician", "Ask your Event Technician to set up or change this room's screens.")
 			return
 		}
 		if d.Engines == nil {
@@ -194,9 +194,6 @@ func hostname() string {
 func (d *Deps) peerCount() int {
 	if d.Hub != nil {
 		return d.Hub.Sessions()
-	}
-	if SessionsCount != nil {
-		return SessionsCount()
 	}
 	return 0
 }

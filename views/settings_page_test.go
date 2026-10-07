@@ -2,6 +2,7 @@ package views
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -26,7 +27,15 @@ func TestSettingsPageStandardsAndSafeNotes(t *testing.T) {
 	if strings.Contains(html, ".innerHTML =") || strings.Contains(html, ".innerHTML=") {
 		t.Error("settings page writes innerHTML")
 	}
-	if !strings.Contains(html, "r.ok && out.ok !== false") {
-		t.Error("role save does not branch on the HTTP status")
+	// The page script lives in settings.js; api() throws on !ok or ok:false.
+	js, err := os.ReadFile("../public/src/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, "settings.js") || !strings.Contains(string(js), "await api('POST', '/api/network/role'") {
+		t.Error("role save does not go through api() (which fails on an HTTP error)")
+	}
+	if strings.Contains(string(js), "innerHTML") {
+		t.Error("settings.js writes innerHTML")
 	}
 }

@@ -7,7 +7,7 @@
 
 {{define "frag-b-poll"}}
 <section class="b-widget b-w-poll" id="b-w-{{.W.ID}}" data-widget="poll" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Audience item</span><button class="b-w-gear" type="button" data-gear aria-label="Audience item settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove audience item">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Audience item</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Audience item settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove audience item"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-poll" aria-live="polite"></div>
   </div>
@@ -17,7 +17,7 @@
 
 {{define "frag-b-qa"}}
 <section class="b-widget b-w-qa" id="b-w-{{.W.ID}}" data-widget="qa" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Q&amp;A wall</span><button class="b-w-gear" type="button" data-gear aria-label="Q&A settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove Q&A">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Q&amp;A wall</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Q&A settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove Q&A"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-qa" aria-live="polite"></div>
   </div>
@@ -27,7 +27,7 @@
 
 {{define "frag-b-wordcloud"}}
 <section class="b-widget b-w-wordcloud" id="b-w-{{.W.ID}}" data-widget="wordcloud" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Word cloud</span><button class="b-w-gear" type="button" data-gear aria-label="Word cloud settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove word cloud">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Word cloud</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Word cloud settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove word cloud"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-cloud" aria-live="polite"></div>
   </div>
@@ -37,10 +37,10 @@
 
 {{define "frag-b-map"}}
 <section class="b-widget b-w-map" id="b-w-{{.W.ID}}" data-widget="map" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Map</span><button class="b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove map">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Map</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove map"></button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-map" alt="Venue map" hidden>
-    <div class="b-map-empty text-muted">No map yet — the SuperOperator uploads one in Event settings.</div>
+    <div class="b-map-empty text-muted">No map yet — the Event Technician uploads one in Event settings.</div>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
@@ -48,7 +48,7 @@
 
 {{define "frag-b-joinqr"}}
 <section class="b-widget b-w-joinqr" id="b-w-{{.W.ID}}" data-widget="joinqr" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Join QR</span><button class="b-w-gear" type="button" data-gear aria-label="Join QR settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove join QR">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Join QR</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Join QR settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove join QR"></button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-joinqr" alt="Scan to join this room" src="/api/audience/{{.P.Show.Code}}/qr">
     <div class="b-js-joinlabel b-join-label">{{if .W.Opts.label}}{{.W.Opts.label}}{{else}}Scan to take part{{end}}</div>
@@ -59,7 +59,7 @@
 
 {{define "frag-b-rooms"}}
 <section class="b-widget b-w-rooms" id="b-w-{{.W.ID}}" data-widget="rooms" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">All rooms now</span><button class="b-w-gear" type="button" data-gear aria-label="All rooms settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove all rooms">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">All rooms now</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="All rooms settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove all rooms"></button></div>{{end}}
   <div class="b-w-body"><div class="b-js-rooms b-rooms" aria-live="polite"></div></div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
@@ -67,7 +67,7 @@
 
 {{define "frag-b-eventschedule"}}
 <section class="b-widget b-w-eventschedule" id="b-w-{{.W.ID}}" data-widget="eventschedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
-  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Event schedule</span><button class="b-w-gear" type="button" data-gear aria-label="Event schedule settings">⚙</button><button class="b-w-del" type="button" data-del aria-label="Remove event schedule">×</button></div>{{end}}
+  {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Event schedule</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Event schedule settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove event schedule"></button></div>{{end}}
   <div class="b-w-body"><div class="b-js-evsched b-evsched"></div></div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>

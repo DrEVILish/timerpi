@@ -1,0 +1,19 @@
+[Unit]
+Description=TimerPi venue mesh radios (BATMAN-adv)
+Documentation=file:///opt/timerpi/docs/VENUE-CLOUD.md
+Wants=systemd-networkd.service
+After=systemd-networkd.service
+Before=timerpi.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/rfkill unblock wifi
+ExecStartPre=/usr/sbin/modprobe batman-adv
+# bat0 is created by systemd-networkd (10-bat0.netdev).
+ExecStartPre=/bin/sh -c 'for i in $(seq 30); do [ -e /sys/class/net/bat0 ] && exit 0; sleep 1; done; echo "bat0 never appeared" >&2; exit 1'
+ExecStart=/opt/timerpi/bin/timerpi mesh
+ExecStartPost=-/usr/sbin/nft -f /opt/timerpi/deploy/box/mesh-filter.nft
+
+[Install]
+WantedBy=multi-user.target

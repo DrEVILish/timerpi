@@ -260,6 +260,8 @@ func (d *DB) migrate() error {
 			{"start_at", "TEXT NOT NULL DEFAULT ''"},
 			{"day", "INTEGER NOT NULL DEFAULT 1"},
 			{"location", "TEXT NOT NULL DEFAULT ''"},
+			{"alert_flash1", "INTEGER NOT NULL DEFAULT 0"},
+			{"alert_flash2", "INTEGER NOT NULL DEFAULT 0"},
 		},
 		"messages": {
 			{"updated_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -291,6 +293,7 @@ func (d *DB) migrate() error {
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
 			{"token", "TEXT NOT NULL DEFAULT ''"},
+			{"pair_code", "TEXT NOT NULL DEFAULT ''"}, // a box's 6-digit pairing code (VENUE-CLOUD §4)
 		},
 		"assets": {
 			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
@@ -720,11 +723,13 @@ func (d *DB) UpdateCue(showID int64, c Cue) (Cue, error) {
 	_, err = d.Exec(`UPDATE cues SET
 		label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 		timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
-		end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, location = ?, updated_at = ?
+		end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, location = ?,
+		alert_flash1 = ?, alert_flash2 = ?, updated_at = ?
 		WHERE id = ?`,
 		c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 		c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Location, nowMS(), cur.ID)
+		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Location,
+		b2i(c.AlertFlash1), b2i(c.AlertFlash2), nowMS(), cur.ID)
 	if err != nil {
 		return Cue{}, fmt.Errorf("timerpi: update cue %d: %w", cur.ID, err)
 	}
@@ -742,11 +747,12 @@ func insertCue(tx *sqlx.Tx, showID, pos int64, c Cue, stamp int64) (sql.Result, 
 	return tx.Exec(`INSERT INTO cues
 		(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
 		 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
-		 end_action, autocontinue, notes, color, start_at, day, location, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 end_action, autocontinue, notes, color, start_at, day, location, alert_flash1, alert_flash2, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		showID, pos, c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 		c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, day, c.Location, stamp)
+		c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, day, c.Location,
+		b2i(c.AlertFlash1), b2i(c.AlertFlash2), stamp)
 }
 
 // DeleteCue removes the cue at pos and renumbers the rest 1..N.
@@ -1656,38 +1662,89 @@ func (d *DB) ClaimWaiting(name, host string) (string, string, error) {
 // row registered with a token is only claimed by that same token, so a
 // stranger polling with the screen's name can't steal its capture.
 func (d *DB) ClaimWaitingToken(name, host, token string) (string, string, error) {
+	code, screen, _, err := d.ClaimWaitingBox(name, host, token)
+	return code, screen, err
+}
+
+// RegisterBoxWaiting is a box's registration: a waiting row that also
+// carries its current 6-digit pairing code (VENUE-CLOUD §4).
+func (d *DB) RegisterBoxWaiting(name, host, token, code string) error {
+	if err := d.RegisterWaitingToken(name, host, token); err != nil {
+		return err
+	}
+	if !ValidPairCode(code) {
+		return fmt.Errorf("timerpi: bad pairing code")
+	}
+	_, err := d.Exec(`UPDATE waiting_screens SET pair_code = ? WHERE name = ? AND host = ? AND token = ?`,
+		code, SanitizeScreenName(name), ClipUTF8(strings.TrimSpace(host), 80), ClipUTF8(strings.TrimSpace(token), 64))
+	return err
+}
+
+// ValidPairCode: six digits.
+func ValidPairCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// pairFreshMS: a pairing code only matches a box that registered it within
+// the last minute (boxes re-register every few seconds).
+const pairFreshMS = 60 * 1000
+
+// WaitingByPairCode finds the unassigned box showing code.
+func (d *DB) WaitingByPairCode(code string) (WaitingScreen, error) {
+	var w WaitingScreen
+	if !ValidPairCode(code) {
+		return w, sql.ErrNoRows
+	}
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens
+		WHERE pair_code = ? AND last_seen >= ? ORDER BY last_seen DESC LIMIT 1`, code, nowMS()-pairFreshMS)
+	return w, err
+}
+
+// ClaimWaitingBox is ClaimWaitingToken that also reports whether the row
+// was a box (registered with a pairing code): only a box receives the
+// event's mesh key with its capture.
+func (d *DB) ClaimWaitingBox(name, host, token string) (string, string, bool, error) {
 	name = SanitizeScreenName(name)
 	host = ClipUTF8(strings.TrimSpace(host), 80)
 	token = ClipUTF8(strings.TrimSpace(token), 64)
 	if err := d.RegisterWaitingToken(name, host, token); err != nil && !errors.Is(err, ErrWaitingFull) {
-		return "", "", nil
+		return "", "", false, nil
 	}
 	var row struct {
 		Assigned string `db:"assigned"`
 		Screen   string `db:"screen"`
 		Token    string `db:"token"`
+		PairCode string `db:"pair_code"`
 	}
-	err := d.Get(&row, `SELECT assigned, screen, token FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
+	err := d.Get(&row, `SELECT assigned, screen, token, pair_code FROM waiting_screens WHERE name = ? AND host = ?`, name, host)
 	if err != nil || row.Assigned == "" {
-		return "", "", nil
+		return "", "", false, nil
 	}
 	if row.Token != "" && subtle.ConstantTimeCompare([]byte(row.Token), []byte(token)) != 1 {
-		return "", "", nil // not the tab that registered this screen
+		return "", "", false, nil // not the tab that registered this screen
 	}
 	// Atomic win: the conditional UPDATE claims the row or loses it to a
 	// racing claimant (hardening round — the read-then-delete window let
 	// two displays both hop to the same capture).
 	res, err := d.Exec(`UPDATE waiting_screens SET assigned = '' WHERE name = ? AND host = ? AND assigned = ?`, name, host, row.Assigned)
 	if err != nil {
-		return "", "", fmt.Errorf("timerpi: claim waiting: %w", err)
+		return "", "", false, fmt.Errorf("timerpi: claim waiting: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return "", "", nil // lost the race — the other poller hops
+		return "", "", false, nil // lost the race — the other poller hops
 	}
 	if _, err := d.Exec(`DELETE FROM waiting_screens WHERE name = ? AND host = ?`, name, host); err != nil {
-		return "", "", fmt.Errorf("timerpi: claim waiting: %w", err)
+		return "", "", false, fmt.Errorf("timerpi: claim waiting: %w", err)
 	}
-	return row.Assigned, row.Screen, nil
+	return row.Assigned, row.Screen, row.PairCode != "" && row.Token != "", nil
 }
 
 // GetWaiting fetches one waiting row (sql.ErrNoRows when missing).

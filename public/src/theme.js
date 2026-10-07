@@ -21,6 +21,16 @@ let themeVersion = ''; // themes.json version → cache-bust the bundles (CONTRA
 
 export function setThemeVersion(v) { themeVersion = String(v || ''); }
 
+/** Fetch themes.json and adopt its version for cache-busting; resolves the
+ * theme list, or null when offline/absent (current version stands). */
+export async function loadThemeVersion() {
+  try {
+    const themes = await (await fetch('/ftl/dist/themes.json')).json();
+    if (Array.isArray(themes) && themes[0]?.version) setThemeVersion(themes[0].version);
+    return themes;
+  } catch { return null; }
+}
+
 /** dist path for a theme bundle; `?v=` busts stale caches after a bump. */
 export function themeCssUrl(slug) {
   const v = themeVersion ? `?v=${encodeURIComponent(themeVersion)}` : '';

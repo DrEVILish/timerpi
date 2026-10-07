@@ -176,20 +176,23 @@ func ClockAt(hhmm string, dayStartTS, nowMS int64) int64 {
 // Cue is one row of the running order. Pos is the stable visual/run order
 // (1-based, contiguous); ID is the stable row identity used by reorder ops.
 type Cue struct {
-	ID           int64  `db:"id"            json:"id"`
-	ShowID       int64  `db:"show_id"       json:"showId,omitempty"`
-	Pos          int64  `db:"pos"           json:"pos"`
-	Label        string `db:"label"         json:"label"`
-	DurationMS   int64  `db:"duration_ms"   json:"durationMS"`
-	Kind         string `db:"kind"          json:"kind"` // session | break
-	Tags         string `db:"tags"          json:"tags"` // "VT GFX" style free text
-	Speaker      string `db:"speaker"       json:"speaker"`
-	HoldMS       int64  `db:"hold_ms"       json:"holdMS"` // deliberate changeover/buffer
-	TimerKind    string `db:"timer_kind"    json:"timerKind"`
-	Alert1MS     int64  `db:"alert1_ms"     json:"alert1MS"` // 0 = no threshold
-	Alert2MS     int64  `db:"alert2_ms"     json:"alert2MS"` // 0 = no threshold
-	AlertColor1  string `db:"alert_color1"  json:"alertColor1"`
-	AlertColor2  string `db:"alert_color2"  json:"alertColor2"`
+	ID          int64  `db:"id"            json:"id"`
+	ShowID      int64  `db:"show_id"       json:"showId,omitempty"`
+	Pos         int64  `db:"pos"           json:"pos"`
+	Label       string `db:"label"         json:"label"`
+	DurationMS  int64  `db:"duration_ms"   json:"durationMS"`
+	Kind        string `db:"kind"          json:"kind"` // session | break
+	Tags        string `db:"tags"          json:"tags"` // "VT GFX" style free text
+	Speaker     string `db:"speaker"       json:"speaker"`
+	HoldMS      int64  `db:"hold_ms"       json:"holdMS"` // deliberate changeover/buffer
+	TimerKind   string `db:"timer_kind"    json:"timerKind"`
+	Alert1MS    int64  `db:"alert1_ms"     json:"alert1MS"` // 0 = no threshold
+	Alert2MS    int64  `db:"alert2_ms"     json:"alert2MS"` // 0 = no threshold
+	AlertColor1 string `db:"alert_color1"  json:"alertColor1"`
+	AlertColor2 string `db:"alert_color2"  json:"alertColor2"`
+	// AlertFlash1/2: the timer blinks on screens while that alert is on.
+	AlertFlash1  bool   `db:"alert_flash1" json:"alertFlash1,omitempty"`
+	AlertFlash2  bool   `db:"alert_flash2" json:"alertFlash2,omitempty"`
 	EndAction    string `db:"end_action"    json:"endAction"`
 	AutoContinue bool   `db:"autocontinue"  json:"autoContinue"`
 	Notes        string `db:"notes"         json:"notes"`

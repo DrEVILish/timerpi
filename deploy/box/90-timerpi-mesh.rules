@@ -1,0 +1,3 @@
+# A Wi-Fi radio plugged in or out re-applies the radio rule (VENUE-CLOUD §11.1).
+# try-restart: does nothing before timerpi-mesh has run at boot.
+ACTION=="add|remove", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/bin/systemctl --no-block try-restart timerpi-mesh.service"

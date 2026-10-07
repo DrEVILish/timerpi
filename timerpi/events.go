@@ -38,6 +38,14 @@ type Event struct {
 	Days      int64  `db:"days"       json:"days"`
 	CreatedAt int64  `db:"created_at" json:"createdAt"`
 	UpdatedAt int64  `db:"updated_at" json:"updatedAt"`
+	// Venue/cloud (VENUE-CLOUD §3–§6): the event's end (venue local time,
+	// epoch ms; 0 = none), when its boxes were released, the event mesh key
+	// that signs box announcements and the cloud link, and where it lives
+	// ("" = here / the cloud, "venue" = a venue's primary box holds it).
+	EndsAt     int64  `db:"ends_at"     json:"endsAt"`
+	ReleasedAt int64  `db:"released_at" json:"releasedAt"`
+	MeshKey    string `db:"mesh_key"    json:"-"`
+	Home       string `db:"home"        json:"home"`
 }
 
 // HasSuperPassword reports whether the event is protected (legacy events
@@ -63,6 +71,17 @@ func (d *DB) createEventsSchema() error {
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {
 			return fmt.Errorf("timerpi: events schema: %w", err)
+		}
+	}
+	// Venue/cloud columns (VENUE-CLOUD §3–§6), added to older databases.
+	for _, col := range []string{
+		"ends_at INTEGER NOT NULL DEFAULT 0",
+		"released_at INTEGER NOT NULL DEFAULT 0",
+		"mesh_key TEXT NOT NULL DEFAULT ''",
+		"home TEXT NOT NULL DEFAULT ''",
+	} {
+		if _, err := d.Exec(`ALTER TABLE events ADD COLUMN ` + col); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("timerpi: events column %s: %w", col, err)
 		}
 	}
 	return nil

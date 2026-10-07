@@ -25,12 +25,15 @@ import (
 
 	"timerpi/config"
 	"timerpi/mesh"
+	"timerpi/meshradio"
+	"timerpi/update"
 	"timerpi/views"
 )
 
 // NetworkDeps carries what the mesh handlers need; installed once at boot.
 type NetworkDeps struct {
 	Device     *mesh.Device
+	Updater    *update.Checker // the boot-time updater; the UPDATE button reuses it
 	Tmpl       *views.Set
 	ReloadTmpl bool // reparses templates per request (matches Deps.ReloadTmpl)
 }
@@ -44,11 +47,6 @@ func InstallNetwork(nd *NetworkDeps) {
 	networkDeps.Store(nd)
 }
 
-// networkDepsFor loads the installed deps (nil pointer → nil struct).
-func networkDepsFor() *NetworkDeps {
-	return networkDeps.Load()
-}
-
 // RegisterNetwork mounts the mesh endpoints on the router (did NOT run at
 // build time — integration owns the call site; see (an old handoff note, not kept)):
 //
@@ -59,7 +57,7 @@ func networkDepsFor() *NetworkDeps {
 //	GET  /settings                    — device identity page (settings root)
 //	GET  /frag/network                — the live mesh panel fragment (htmx poll)
 func RegisterNetwork(grp gin.IRouter) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil {
 		log.Printf("routes: RegisterNetwork before InstallNetwork — installing degraded handlers (503s)")
 	}
@@ -69,6 +67,9 @@ func RegisterNetwork(grp gin.IRouter) {
 	grp.POST("/api/network/role", networkSetRole)
 	grp.GET("/settings", networkSettingsPage)
 	grp.GET("/frag/network", networkFrag)
+	grp.POST("/api/network/mesh", networkSetMesh)
+	grp.GET("/api/network/update", networkUpdateCheck)
+	grp.POST("/api/network/update", networkUpdateApply)
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ func RegisterNetwork(grp gin.IRouter) {
 // GET /api/network — our identity (hostname/device name/role/state/epoch/TXT)
 // plus the freshly detected peers. 503 until mesh is wired.
 func networkSelf(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "mesh not wired (integration pending)"})
 		return
@@ -105,7 +106,7 @@ func networkSelf(c *gin.Context) {
 // (the settings page's live-list data source; the page itself servers it as
 // /frag/network HTML, this stays JSON for scripts).
 func networkExampleDetect(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "mesh not wired (integration pending)"})
 		return
@@ -124,7 +125,7 @@ func networkExampleDetect(c *gin.Context) {
 // immediately. Also stores the display name in config.json. Returns the new
 // TXT evidence. htmx callers get the refreshed fragment/validation note.
 func networkSetHostname(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil {
 		apiNetError(c, http.StatusServiceUnavailable, "mesh not wired (integration pending)")
 		return
@@ -168,7 +169,7 @@ func networkSetHostname(c *gin.Context) {
 // POST /api/network/role {"force": "auto"|"primary"|"member"} — persists and
 // applies the override switch at once (mesh_state.role_override).
 func networkSetRole(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil {
 		apiNetError(c, http.StatusServiceUnavailable, "mesh not wired (integration pending)")
 		return
@@ -197,7 +198,7 @@ func networkSetRole(c *gin.Context) {
 // GET /settings — the device identity page (standalone "settings" root; the
 // base.html dispatch is home|dashboard and is owned by another agent).
 func networkSettingsPage(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil || nd.Tmpl == nil {
 		// Degraded mode: serve an honest, themed stub instead of a bare
 		// 503 string — an operator landing here during a mesh failure must
@@ -218,21 +219,21 @@ func meshDownHTML(host, reason string) string {
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>TimerPi — settings</title>` +
 		`<link rel="stylesheet" href="/ftl/dist/xbmc.css"></head>` +
-		`<body class="app"><main class="main" style="padding:4vh 8vw">` +
-		`<h1>MESH UNAVAILABLE</h1>` +
-		`<p>Device mesh is not running on this appliance (reason: <code>` + htmlEsc(reason) +
-		`</code>). Settings, identity and peer discovery live behind it — everything else keeps working.</p>` +
+		`<body class="app"><main class="app-main"><section class="panel">` +
+		`<div class="panel-header">Mesh unavailable</div>` +
+		`<div class="empty-state is-offline"><p class="empty-state-title">The device mesh is not running</p>` +
+		`<p>Reason: <code>` + htmlEsc(reason) + `</code>. Settings, identity and peer discovery live behind it; everything else keeps working.</p>` +
 		`<p>Cue lists and displays are unaffected: ` +
 		`<a href="/">show list</a> · <code>http://` + htmlEsc(host) + `/d/&lt;code&gt;</code></p>` +
-		`<p class="text-muted">The mesh starts automatically with the service; this page recovers on its own. ` +
-		`Check the journal: <code>journalctl -u timerpi | grep mesh</code></p>` +
-		`</main></body></html>`
+		`<p class="empty-state-hint">The mesh starts automatically with the service; this page recovers on its own. ` +
+		`Check the journal: <code>journalctl -u timerpi | grep mesh</code></p></div>` +
+		`</section></main></body></html>`
 }
 
 // GET /frag/network — exactly the live mesh panel fragment (htmx polls it
 // every 5 s from the settings page; CONTRACT-UI §3 frag-shows pattern).
 func networkFrag(c *gin.Context) {
-	nd := networkDepsFor()
+	nd := networkDeps.Load()
 	if nd == nil || nd.Device == nil || nd.Tmpl == nil {
 		// htmx callers get a 2xx inline note (the poll swaps it in);
 		// scrapers get the honest 503.
@@ -315,6 +316,8 @@ type netPeerVM struct {
 	Epoch     string
 	Age       string
 	IsPrimary bool
+	Ver       string
+	Foreign   bool // another protocol major: not part of this mesh's election
 }
 
 // netVM is the dot for the settings page and the frag-network fragment.
@@ -336,6 +339,15 @@ type netVM struct {
 	Peers        []netPeerVM
 	OK           string
 	Err          string
+	// Venue mesh (VENUE-CLOUD §11): radio status from timerpi-mesh, the
+	// radio settings, and whether a newer box needs this one to update.
+	UpdateNeeded  bool
+	Mesh          meshradio.Status
+	MeshRan       bool
+	Country       string
+	Ch24, Ch5     int
+	Mesh5Channels []int
+	Ch24Options   []int
 }
 
 // buildNetVM maps the device identity + peer views into the template shape.
@@ -371,6 +383,13 @@ func buildNetVM(nd *NetworkDeps, id mesh.Identity, peers []mesh.PeerView) netVM 
 		}
 		vm.TXT = strings.Join(parts, " · ")
 	}
+	vm.UpdateNeeded = id.UpdateNeeded
+	vm.Mesh, vm.MeshRan = meshradio.Load(meshStatusFile)
+	vm.Country, vm.Ch24, vm.Ch5 = config.MeshRadio()
+	vm.Mesh5Channels = config.Mesh5Channels
+	for ch := 1; ch <= 13; ch++ {
+		vm.Ch24Options = append(vm.Ch24Options, ch)
+	}
 	vm.Peers = make([]netPeerVM, 0, len(peers))
 	for _, p := range peers {
 		addr := ""
@@ -383,7 +402,9 @@ func buildNetVM(nd *NetworkDeps, id mesh.Identity, peers []mesh.PeerView) netVM 
 			Role:      p.Role,
 			Epoch:     fmtInt(p.Epoch),
 			Age:       ageFmt(p.AgeS),
-			IsPrimary: p.Role == "primary",
+			IsPrimary: p.Role == "primary" && !p.Foreign,
+			Ver:       p.Ver,
+			Foreign:   p.Foreign,
 		})
 	}
 	return vm
@@ -449,3 +470,27 @@ func ageFmt(sec int64) string {
 // the time package's role changes; handlers never block beyond mesh's own
 // harvest deadline (mesh device owns its timeouts).
 var _ = time.Now
+
+// meshStatusFile is where timerpi-mesh writes the radio status (a var so
+// tests can point it elsewhere).
+var meshStatusFile = meshradio.StatusFile
+
+// POST /api/network/mesh {country, ch24, ch5} — the venue mesh radio
+// settings (box password). timerpi-mesh applies them at the next boot.
+func networkSetMesh(c *gin.Context) {
+	var body struct {
+		Country string `json:"country"`
+		Ch24    int    `json:"ch24"`
+		Ch5     int    `json:"ch5"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		apiNetError(c, http.StatusBadRequest, "send {country, ch24, ch5}")
+		return
+	}
+	if err := config.SetMeshRadio(body.Country, body.Ch24, body.Ch5); err != nil {
+		apiNetError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	country, ch24, ch5 := config.MeshRadio()
+	c.JSON(http.StatusOK, gin.H{"ok": true, "country": country, "ch24": ch24, "ch5": ch5})
+}

@@ -431,6 +431,7 @@ export function cueEdit(snap, args = {}, now = Date.now()) {
   }
   if (args.alertColor1 !== undefined && (args.alertColor1 === '' || COLOR_RE.test(args.alertColor1))) cue.alertColor1 = args.alertColor1;
   if (args.alertColor2 !== undefined && (args.alertColor2 === '' || COLOR_RE.test(args.alertColor2))) cue.alertColor2 = args.alertColor2;
+  for (const k of ['alertFlash1', 'alertFlash2']) if (args[k] !== undefined) cue[k] = args[k] === true || args[k] === 'true' || args[k] === 1;
   if (args.endAction !== undefined) cue.endAction = args.endAction;
   if (args.autoContinue !== undefined) cue.autoContinue = args.autoContinue === true || args.autoContinue === 'true' || args.autoContinue === 1;
   if (args.notes !== undefined) cue.notes = String(args.notes);

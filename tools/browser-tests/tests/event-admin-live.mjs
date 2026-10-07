@@ -12,7 +12,7 @@ export async function run(t) {
   const errs = [];
   pg.on('pageerror', (e) => errs.push(e.message));
   await pg.goto(`${t.base}/e/${event}/admin`);
-  const card = `.tp-live-card[data-room="${room}"]`;
+  const card = `#live-grid [data-room="${room}"]`;
   await pg.waitForSelector(card);
 
   // Focus survives polls, and the card is the same node.
@@ -33,7 +33,7 @@ export async function run(t) {
   const label = snap.cues.find((c) => c.pos === snap.runtime.activePos)?.label;
   t.check(`double-click GO starts only the first session (${label})`, label === 'One');
   await pg.waitForTimeout(2500);
-  const shown = await pg.$eval(`${card} .tp-live-facts dd`, (d) => d.textContent);
+  const shown = await pg.$eval(`${card} dl.props dd`, (d) => d.textContent);
   t.check(`the card shows the running session (${shown})`, shown === 'One');
 
   // A refused rename keeps the page and shows the error.

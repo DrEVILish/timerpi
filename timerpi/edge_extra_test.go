@@ -155,8 +155,8 @@ func TestEngineRecoveryPastZeroHolds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-open engine: %v", err)
 	}
-	if _, err := e2.Timer(); err != nil {
-		t.Fatalf("Timer: %v", err)
+	if _, err := e2.Snapshot(); err != nil {
+		t.Fatalf("Snapshot: %v", err)
 	}
 	if e2.Runtime().ActivePos != 1 {
 		t.Fatalf("crossing replayed: active=%d (want 1 held-at-zero)", e2.Runtime().ActivePos)
@@ -170,8 +170,8 @@ func TestEngineRecoveryPastZeroHolds(t *testing.T) {
 	if got.Running || got.ActivePos != 1 || got.PausedElapsedMS != 60_000 {
 		t.Fatalf("not held at zero after restart: %+v", got)
 	}
-	if tf, _ := e2.Timer(); tf.RemainingMS != 0 || tf.Overtime {
-		t.Fatalf("timer after restart: remaining=%d overtime=%v, want 0 held", tf.RemainingMS, tf.Overtime)
+	if snap, _ := e2.Snapshot(); snap.Runtime.RemainingMS != 0 || snap.Runtime.Overtime {
+		t.Fatalf("timer after restart: remaining=%d overtime=%v, want 0 held", snap.Runtime.RemainingMS, snap.Runtime.Overtime)
 	}
 	if saved, _, _ := d.LoadRuntime(show.ID); saved.Running {
 		t.Fatal("held state not persisted by the first tick")

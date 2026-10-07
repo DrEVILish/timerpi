@@ -28,9 +28,11 @@ const norm = (v) => String(v || '').trim().toLowerCase();
  *   defaultColor  what '' looks like (CSS colour; '' = the theme accent)
  *   defaultLabel  name of the default swatch ("Default", "Theme")
  *   label         accessible legend
+ *   presets       [[title, '#rrggbb'], …] after the default (PRESETS)
+ *   custom        false = no "another colour" input
  *   onChange(v)   called with '#rrggbb' or ''
  */
-export function swatchPicker({ value = '', defaultColor = '', defaultLabel = 'Default', label = 'Colour', onChange }) {
+export function swatchPicker({ value = '', defaultColor = '', defaultLabel = 'Default', label = 'Colour', presets = PRESETS, custom: withCustom = true, onChange }) {
   const name = `tp-sw-${++seq}`;
   const fs = document.createElement('fieldset');
   fs.className = 'swatches tp-swatches';
@@ -58,7 +60,7 @@ export function swatchPicker({ value = '', defaultColor = '', defaultLabel = 'De
     return r;
   };
   add(defaultLabel, '', defaultColor || 'var(--accent)');
-  for (const [title, hex] of PRESETS) add(title, hex, hex);
+  for (const [title, hex] of presets) add(title, hex, hex);
 
   // Any other colour: the native picker, styled by core.
   const custom = document.createElement('input');
@@ -66,7 +68,7 @@ export function swatchPicker({ value = '', defaultColor = '', defaultLabel = 'De
   custom.className = 'tp-swatch-custom';
   custom.title = 'Another colour';
   custom.setAttribute('aria-label', `${label}: another colour`);
-  fs.appendChild(custom);
+  if (withCustom) fs.appendChild(custom);
 
   const set = (v) => {
     const n = norm(v);

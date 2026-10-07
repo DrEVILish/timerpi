@@ -14,15 +14,17 @@
 package boards
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jmoiron/sqlx"
+
+	"timerpi/timerpi"
 )
 
 // Grid geometry.
@@ -147,13 +149,12 @@ func Templates() []TemplateInfo {
 			Layout: land(8,
 				w("title", "showtitle", 0, 0, 12, 1, nil),
 				w("item", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
-				w("join", "joinqr", 9, 1, 3, 4, nil),
-				w("note", "notice", 9, 5, 3, 3, map[string]string{"text": "Scan to take part"}))},
+				// The QR's own label is the one "Scan to take part" on screen.
+				w("join", "joinqr", 9, 1, 3, 7, nil))},
 		{Key: "qawall", Name: "Q&A wall", Kind: "audience", Desc: "The approved questions and the spotlight, full screen",
 			Layout: land(8,
 				w("wall", "qa", 0, 0, 9, 8, map[string]string{"target": "audience"}),
-				w("join", "joinqr", 9, 0, 3, 4, nil),
-				w("note", "notice", 9, 4, 3, 4, map[string]string{"text": "Questions? Scan and ask."}))},
+				w("join", "joinqr", 9, 0, 3, 8, map[string]string{"label": "Questions? Scan and ask."}))},
 		{Key: "holding", Name: "Holding slide", Kind: "audience", Desc: "Session title, speaker, what's next and the join QR between items",
 			Layout: land(8,
 				w("title", "showtitle", 0, 0, 12, 1, nil),
@@ -242,22 +243,16 @@ func TemplateLayouts() map[string]Layout {
 	return out
 }
 
-// widgetDefOf looks a type up in the registry (nil when unknown).
-func widgetDefOf(t string) *WidgetDef {
-	for i := range WidgetTypes {
-		if WidgetTypes[i].Type == t {
-			return &WidgetTypes[i]
-		}
+// DefOf looks a type up in the registry (nil when unknown).
+func DefOf(t string) *WidgetDef {
+	if i := slices.IndexFunc(WidgetTypes, func(d WidgetDef) bool { return d.Type == t }); i >= 0 {
+		return &WidgetTypes[i]
 	}
 	return nil
 }
 
 // ValidType reports whether t is a registered widget type.
-func ValidType(t string) bool { return widgetDefOf(t) != nil }
-
-// DefOf exposes one registry entry (nil when unknown) — tests and the
-// palette renderer read defaults from here.
-func DefOf(t string) *WidgetDef { return widgetDefOf(t) }
+func ValidType(t string) bool { return DefOf(t) != nil }
 
 // DefaultLayout is the factory board: countdown + messages on top, cue
 // meta + next-up below, progress bars, wall clock, rate, title, schedule.
@@ -358,11 +353,8 @@ func NormalizeLayout(in Layout) Layout {
 		out.Widgets = append(out.Widgets, w)
 	}
 	// Stable paint order: top-to-bottom, left-to-right.
-	sort.SliceStable(out.Widgets, func(a, b int) bool {
-		if out.Widgets[a].Y != out.Widgets[b].Y {
-			return out.Widgets[a].Y < out.Widgets[b].Y
-		}
-		return out.Widgets[a].X < out.Widgets[b].X
+	slices.SortStableFunc(out.Widgets, func(a, b Widget) int {
+		return cmp.Or(cmp.Compare(a.Y, b.Y), cmp.Compare(a.X, b.X))
 	})
 	// The canvas always holds every tile.
 	if out.Rows <= 0 {
@@ -394,7 +386,7 @@ func sanitizeOpts(in map[string]string) map[string]string {
 		if k == "" || len(k) > 32 {
 			continue
 		}
-		v = clipUTF8(v, 256)
+		v = timerpi.ClipUTF8(v, 256)
 		out[k] = v
 	}
 	if len(out) == 0 {
@@ -556,19 +548,6 @@ func GetBoard(db *sqlx.DB, showID, bid int64) (Board, error) {
 	return b, err
 }
 
-// clipUTF8 cuts s to at most n bytes without splitting a character
-// (BUGLOG RS21: plain byte slicing could leave half a UTF-8 sequence).
-// Same rule as timerpi.ClipUTF8; boards stays free of that package.
-func clipUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}
-
 // CreateBoard inserts a board; an empty layout seeds the factory default.
 // Names are trimmed, capped at 64 chars, and must be non-empty.
 func CreateBoard(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, error) {
@@ -577,7 +556,7 @@ func CreateBoard(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, erro
 		return Board{}, fmt.Errorf("boards: name must not be empty")
 	}
 	if len(name) > 64 {
-		name = clipUTF8(name, 64)
+		name = timerpi.ClipUTF8(name, 64)
 	}
 	layout := strings.TrimSpace(layoutRaw)
 	if layout == "" {
@@ -622,7 +601,7 @@ func RenameBoard(db *sqlx.DB, showID, bid int64, name string) (Board, error) {
 		return Board{}, fmt.Errorf("boards: name must not be empty")
 	}
 	if len(name) > 64 {
-		name = clipUTF8(name, 64)
+		name = timerpi.ClipUTF8(name, 64)
 	}
 	if _, err := db.Exec(`UPDATE display_boards SET name = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
 		name, nowMS(), showID, showID, bid); err != nil {

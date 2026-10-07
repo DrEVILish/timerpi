@@ -1,9 +1,11 @@
 # PI-DEPLOY — TimerPi on Raspberry Pi 4/5
 
 Flash → boot → verify checklist for the 1080p50 show-timer appliance.
-Target: 64-bit Raspberry Pi OS bookworm (full install, not Lite-minimal —
-systemd, avahi and framebuffer KMS come from the OS image), HDMI display
-at 1920×1080@50, single binary serving HTTP+WS on port 80.
+Target: 64-bit Raspberry Pi OS Lite (Trixie), HDMI display at
+1920×1080@50, single binary serving HTTP+WS on port 80, the venue mesh
+(BATMAN-adv over the built-in Wi-Fi, bridged with eth0) set up by the
+installer ([VENUE-CLOUD.md](VENUE-CLOUD.md) §11). The kiosk/screen setup on
+Lite is still to be decided by the owner.
 
 ```
 boot ─▶ firmware (cmdline pins the HDMI mode)
@@ -82,6 +84,10 @@ The installer is idempotent (safe to re-run):
 | 8 | `cat /sys/class/drm/card?-HDMI-A-1/modes \| grep '\*' \|\| cat /sys/class/drm/*/modes` after boot | `1920x1080` @ 50 Hz active (`drm_info` shows the active mode when installed) |
 | 9 | reboot the Pi | logo again; app takes over (no stuck console text) |
 |10 | `systemctl stop timerpi && journalctl -u timerpi -f` → start | auto-restart, no orphaned sockets, WS clients reconnect |
+|11 | `journalctl -u timerpi-mesh -b` | `wlan0 (built-in) 2.4 GHz channel 13: on the mesh` (plus a USB leg on the other band when an adapter is in) |
+|12 | `batctl o` with two boxes up | the other box listed with a link quality (`(255)` is perfect) |
+|13 | `ip -br addr show br0` | a DHCP address when wired to a router, else a `169.254.x.x` link-local one |
+|14 | `/settings` → VENUE MESH | radios, bands, wired or not, other boxes; refreshes every 10 s |
 
 The mDNS spot-check can also look for the name-conflict watcher: two Pis
 with the same hostname produce a `NAME CONFLICT` line in

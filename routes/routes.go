@@ -13,11 +13,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"timerpi/boards"
+	"timerpi/buildinfo"
 	"timerpi/config"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -25,10 +27,6 @@ import (
 
 // startedAt backs the uptime field in /health.
 var startedAt = time.Now()
-
-// SessionsCount is the standalone seam for /health when no Deps.Hub is
-// injected (skeleton/testing mode). main.go installs the hub's counter.
-var SessionsCount func() int
 
 // HubMount is the subset of ws.Hub routes needs (interface, not import:
 // package ws imports routes for SameOriginRequest).
@@ -45,9 +43,8 @@ type HubMount interface {
 	ScreenPeers(showID int64) map[string][][2]string
 	// Super panel: total live sessions per show (PLAN §11.1).
 	ShowSessions(showID int64) int
-	// PLAN §11.5 audience lane: poll-only delta broadcast + lane count.
+	// PLAN §11.5 audience lane: poll-only delta broadcast.
 	BroadcastPoll(showID int64)
-	AudSessions() int
 }
 
 // Deps carries the wired services; nil fields degrade to skeleton behavior
@@ -67,6 +64,26 @@ type Deps struct {
 
 	// walkin caches each event's walk-in feed (walkin.go, BUGLOG RW57).
 	walkin walkinCache
+
+	// OnRelease runs when an event's screens are released at end + 4 h
+	// (a venue's primary uploads its final copy and unpairs; nil = nothing).
+	OnRelease func(ev timerpi.Event)
+
+	// Role is "cloud" or "box"; "" = the process's role (config.Role).
+	// Tests run a cloud and a box side by side.
+	Role string
+
+	// BoxSelf is the box's own screen state (venue.Agent.Self) and BoxEvent
+	// the event this box is attached to; nil on the cloud (pairing.go).
+	BoxSelf  func() any
+	BoxEvent func() string
+	// ClockHint offers a trusted time (the Event Technician's browser at
+	// sign-in) to a box whose clock was never set.
+	ClockHint func(time.Time)
+
+	// links: the cloud's venue links by event (link.go).
+	links     *linkRegistry
+	linksOnce sync.Once
 }
 
 // bodyCeiling bounds every request body: 8 MiB for plain JSON/form posts,
@@ -105,16 +122,20 @@ func New(d *Deps) *gin.Engine {
 	// asset references forever. Static file mounts re-set the same header
 	// themselves (registerStatic/registerFTL).
 	r.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-cache"); c.Next() })
-	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), d.accessGate())
+	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), d.accessGate(), d.venueGate())
 
 	registerFTL(r) // /ftl/ — vendored ftl-themes (theme picker fonts)
-	registerHealth(r, d, SessionsCount)
-	registerTheme(r)      // B7: appliance default theme (GET/POST /api/theme)
-	registerPages(r, d)   // GET /, /c/:ident, /screens/:ident (/d/ in display.go)
-	RegisterDisplay(r, d) // GET /d/:ident — stage passthrough + view dispatch
-	RegisterSetup(r, d)   // GET /setup + /setup/sheet + /api/setup/*
-	RegisterNetwork(r)    // GET /settings + /api/network/* (503s until InstallNetwork)
-	registerAPI(r, d)     // REST per PROTOCOL §REST + CONTRACT-UI §3
+	registerHealth(r, d)
+	registerTheme(r)            // B7: appliance default theme (GET/POST /api/theme)
+	registerPages(r, d)         // GET /, /c/:ident, /screens/:ident (/d/ in display.go)
+	RegisterDisplay(r, d)       // GET /d/:ident — stage passthrough + view dispatch
+	RegisterSetup(r, d)         // GET /api/shows/:ident/file
+	RegisterNetwork(r)          // GET /settings + /api/network/* (503s until InstallNetwork)
+	registerUpdate(r)           // GET /api/update/* — signed builds for other boxes
+	registerPairingStatus(r, d) // GET /api/pairing/status — boxes learn their event ended
+	registerLink(r, d)          // /api/link* — the cloud ↔ venue link, event copies
+	registerBoxScreen(r, d)     // /d/box + /api/pairing/self — the box's own screen
+	registerAPI(r, d)           // REST per PROTOCOL §REST + CONTRACT-UI §3
 	// PLAN §11 (Rooms v2, stitched phase 0): audience surface, zone walk-in
 	// pages, OSC bridge settings; the OSC listener boots on saved settings.
 	registerAudienceRoutes(r, d)
@@ -134,9 +155,9 @@ func New(d *Deps) *gin.Engine {
 			log.Printf("routes: osc listener boot: %v", oserr)
 		}
 	}
-	RegisterBoards(r, d) // display-board CRUD (Agent N; ?view=board renders in display.go)
+	RegisterBoards(r, d)       // display-board CRUD (Agent N; ?view=board renders in display.go)
 	registerLayoutRoutes(r, d) // named event layouts from built-ins (U11)
-	if d.Hub != nil {    // WS upgrade — same port, same origin rules
+	if d.Hub != nil {          // WS upgrade — same port, same origin rules
 		d.Hub.Register(r)
 	}
 	registerStatic(r, d.Public) // public/ assets as catch-all (NoRoute)
@@ -151,7 +172,7 @@ func isDev() bool {
 // findDir locates a repository-relative asset directory: the binary runs
 // from the checkout in dev, and the systemd unit pins WorkingDirectory —
 // but try the executable's directory as fallback.
-func findDir(name string) string {
+func FindDir(name string) string {
 	candidates := []string{name}
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), name))
@@ -183,7 +204,7 @@ func noCache() gin.HandlerFunc {
 // /ftl/assets/fonts/... . themes.json + per-theme icon bundles serve from
 // there too (theme-loader pattern, CONTRACT-UI §7).
 func registerFTL(r *gin.Engine) {
-	dir := findDir(filepath.Join("third_party", "ftl-themes"))
+	dir := FindDir(filepath.Join("third_party", "ftl-themes"))
 	if _, err := os.Stat(dir); err != nil {
 		log.Printf("routes: ftl-themes tree missing, /ftl disabled: %v", err)
 		return
@@ -191,9 +212,8 @@ func registerFTL(r *gin.Engine) {
 	r.Group("/ftl", noCache()).Static("/", dir)
 }
 
-// registerHealth is the readiness probe. Sessions wiring: the injected
-// hub's counter when present, else the standalone SessionsCount seam.
-func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
+// registerHealth is the readiness probe (sessions: the injected hub's count).
+func registerHealth(r *gin.Engine, d *Deps) {
 	// Browsers probe /favicon.ico on pages without an icon link.
 	r.GET("/favicon.ico", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/img/timerpi.svg") })
 	r.GET("/health", func(c *gin.Context) {
@@ -205,12 +225,11 @@ func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
 		for _, n := range connected {
 			total += n
 		}
-		if connected == nil && standalone != nil {
-			total = standalone()
-		}
 		c.JSON(http.StatusOK, gin.H{
 			"ok":      true,
 			"version": appVersion(),
+			"proto":   buildinfo.Proto,
+			"role":    config.Role(),
 			"uptime":  time.Since(startedAt).Truncate(time.Second).String(),
 			"device":  config.DeviceName(),
 			"title":   config.Title(),
@@ -230,7 +249,7 @@ func registerHealth(r *gin.Engine, d *Deps, standalone func() int) {
 // rev-less paths keep resolving (old bookmarks/templates keep working).
 func registerStatic(r *gin.Engine, pub fs.FS) {
 	if pub == nil {
-		pub = os.DirFS(findDir("public"))
+		pub = os.DirFS(FindDir("public"))
 	}
 	files := http.FileServer(http.FS(pub))
 	rev := regexp.MustCompile(`^/(css|src|img)/v[0-9]+(/.*)$`)
@@ -257,4 +276,12 @@ func registerStatic(r *gin.Engine, pub fs.FS) {
 		}
 		c.String(http.StatusNotFound, "not found")
 	})
+}
+
+// isCloud: this server is the cloud.
+func (d *Deps) isCloud() bool {
+	if d.Role != "" {
+		return d.Role == "cloud"
+	}
+	return config.IsCloud()
 }

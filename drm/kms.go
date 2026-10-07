@@ -23,6 +23,7 @@
 package drm
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -519,19 +520,10 @@ func (b *KMSBackend) mapDumb(d *dumbInfo) ([]byte, error) {
 
 func modeName(m drmModeModeInfo) string {
 	name := m.Name[:]
-	if i := indexByteZero(name); i >= 0 {
+	if i := bytes.IndexByte(name, 0); i >= 0 {
 		name = name[:i]
 	}
 	return string(name)
-}
-
-func indexByteZero(b []byte) int {
-	for i, c := range b {
-		if c == 0 {
-			return i
-		}
-	}
-	return -1
 }
 
 // Size reports the panel geometry.

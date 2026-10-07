@@ -316,16 +316,6 @@ func nextLine(prefix, label string) string {
 	return prefix + " " + label
 }
 
-// clockBand is the union rect of all clock slots (site compares as one
-// only when slots vanish entirely, e.g. Blank).
-func clockBand(slots []Slot) Rect {
-	var band Rect
-	for _, s := range slots {
-		band = band.Union(s.Rect)
-	}
-	return band
-}
-
 // addSite appends a named site (Diff matches sites by name+position).
 func addSite(im *Image, name string, r Rect) {
 	if r.Empty() {

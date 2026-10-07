@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skip2/go-qrcode"
 
 	"timerpi/oscbridge"
 
@@ -65,8 +66,8 @@ func registerAPI(r *gin.Engine, d *Deps) {
 
 	// Import (multipart) + example docs — seams live in import.go.
 	g.POST("/shows/:ident/import", d.apiImport)
-	g.GET("/import-example", d.apiImportExample)
-	g.GET("/shows/:ident/import-example", d.apiImportExampleForShow)
+	g.GET("/import-example", serveExample)
+	g.GET("/shows/:ident/import-example", serveExample)
 
 	// Message REST conveniences (CONTRACT-UI drives these via WS; the REST
 	// shapes here mirror that command mapping).
@@ -348,7 +349,7 @@ func (d *Deps) requireSuperOfShow(c *gin.Context) (int64, bool) {
 	if d.superOfShow(c, id) {
 		return id, true
 	}
-	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "SuperOperator sign-in required"})
+	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Event Technician sign-in required"})
 	return 0, false
 }
 
@@ -849,7 +850,7 @@ func (d *Deps) apiCreateMessage(c *gin.Context) {
 	}
 	msg, err := d.Store.CreateMessage(id, strings.TrimSpace(body.Text), body.Color)
 	if err == nil && body.Show {
-		err = d.Store.ShowMessage(id, msg.ID, msgNow())
+		err = d.Store.ShowMessage(id, msg.ID, time.Now().UnixMilli())
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -874,7 +875,7 @@ func (d *Deps) apiShowMessage(show bool) gin.HandlerFunc {
 		}
 		var err error
 		if show {
-			err = d.Store.ShowMessage(id, mid, msgNow())
+			err = d.Store.ShowMessage(id, mid, time.Now().UnixMilli())
 		} else {
 			err = d.Store.ClearMessage(id, mid)
 		}
@@ -907,8 +908,12 @@ func (d *Deps) apiDeleteMessage(c *gin.Context) {
 }
 
 // notifyShow re-broadcasts after a DB-side mutation (NOTES-timerpi: any
-// CRUD bypassing the engine must Notify).
+// CRUD bypassing the engine must Notify). Building the engine also warms it
+// for the ticker. No-op without engines.
 func (d *Deps) notifyShow(id int64) {
+	if d.Engines == nil {
+		return
+	}
 	if eng, err := d.engineFor(id); err == nil {
 		if nerr := eng.Notify(); nerr != nil {
 			log.Printf("routes: notify show %d: %v", id, nerr)
@@ -931,8 +936,6 @@ func (d *Deps) logAction(id int64, action, detail string) {
 	d.Store.LogAction(id, "api", action, detail)
 }
 
-func msgNow() int64 { return time.Now().UnixMilli() }
-
 // --------------------------------------------------------------------- qr --
 
 // GET /api/shows/:showid/qr?data=…&size=N — PNG QR for the share/open-
@@ -942,12 +945,7 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 	if serr != nil || size <= 0 {
 		size = 320
 	}
-	if size < 64 {
-		size = 64
-	}
-	if size > 1024 {
-		size = 1024
-	}
+	size = min(max(size, 64), 1024)
 	data := c.Query("data")
 	if strings.TrimSpace(data) == "" {
 		c.String(http.StatusBadRequest, "qr needs a data payload")
@@ -967,7 +965,7 @@ func (d *Deps) apiShowQR(c *gin.Context) {
 	if _, ok := d.requireShow(c); !ok {
 		return
 	}
-	png, err := qrPNG(data, size)
+	png, err := qrcode.Encode(data, qrcode.Medium, size)
 	if err != nil {
 		log.Printf("routes: qr: %v", err)
 		c.String(http.StatusInternalServerError, "qr rendering failed")

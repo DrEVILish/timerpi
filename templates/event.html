@@ -1,8 +1,8 @@
 {{- /*
   event.html — the event layer pages.
 
-  "event"        GET /e/:code        lobby: pick your room / SuperOperator sign-in
-  "event-admin"  GET /e/:code/admin  SuperOperator dashboard
+  "event"        GET /e/:code        lobby: pick your room / Event Technician sign-in
+  "event-admin"  GET /e/:code/admin  Event Technician dashboard
   "denied"       access-denied page (moderator/box-admin gates)
 
   Dot: .Event (routes.eventVM), .Title, .DefaultTheme, .Themes (admin).
@@ -16,11 +16,11 @@
   <nav class="nav">
     <span class="nav-item tp-bar-title">{{.Event.Name}}</span>
     <a class="nav-item{{if eq .Page "event"}} is-active{{end}}" href="/e/{{.Event.Code}}">Rooms</a>
-    {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
+    {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">Event Technician</a>{{end}}
   </nav>
   <div class="cluster push">
     <span class="tp-event-id"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
-    <a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and SuperOperator)">Leave event</a>
+    <a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave event</a>
   </div>
 </header>
 {{end}}
@@ -41,9 +41,9 @@
       <p class="text-muted">Pick the room you are moderating.</p>
     </section>
 
-    <section class="tp-room-grid" id="room-grid">
+    <section class="grid" style="--grid-min: 16rem" id="room-grid">
       {{range .Event.Rooms}}
-      <article class="panel tp-room-card" data-room="{{.Code}}">
+      <article class="panel stack is-gap-s" data-room="{{.Code}}">
         <div class="panel-header">{{.Name}}{{if .HasPassword}} <span class="badge" title="This room has a moderator password">🔒</span>{{end}}</div>
         {{if .CanModerate}}
         <a class="btn btn-primary tp-btn-lg" href="/c/{{.Code}}">Open room</a>
@@ -58,31 +58,31 @@
         {{end}}
       </article>
       {{else}}
-      <p class="text-muted">This event has no rooms yet. The SuperOperator adds them.</p>
+      <div class="empty-state"><span class="empty-state-title">This event has no rooms yet.</span><span class="empty-state-hint">The Event Technician adds them.</span></div>
       {{end}}
     </section>
 
-    <section class="panel tp-super-door" id="super-door">
-      <div class="panel-header">SuperOperator</div>
+    <section class="panel" id="super-door">
+      <div class="panel-header">Event Technician</div>
       {{if .Event.IsSuper}}
       <div class="row is-items-center is-gap-s">
-        <p class="text-muted">You are signed in as SuperOperator.</p>
-        <a class="btn btn-primary push" href="/e/{{.Event.Code}}/admin">Open SuperOperator dashboard</a>
+        <p class="text-muted">You are signed in as Event Technician.</p>
+        <a class="btn btn-primary push" href="/e/{{.Event.Code}}/admin">Open Event Technician dashboard</a>
       </div>
       {{else}}
       <form class="row is-items-end is-gap-s is-wrap" id="super-login">
         <div class="field">
-          <label class="label" for="super-pw">{{if .Event.HasSuperPW}}Supervisor password{{else}}No supervisor password yet{{end}}</label>
+          <label class="label" for="super-pw">{{if .Event.HasSuperPW}}Event Technician Password{{else}}No Event Technician Password yet{{end}}</label>
           {{if .Event.HasSuperPW}}<input class="input" type="password" id="super-pw" autocomplete="current-password" required>{{end}}
         </div>
-        <button class="btn" type="submit">Sign in as SuperOperator</button>
+        <button class="btn" type="submit">Sign in as Event Technician</button>
         <p class="field-error" id="super-error" role="alert" hidden></p>
       </form>
       {{end}}
     </section>
   </div>
 </main>
-<footer class="app-status"><span class="text-muted">TimerPi · {{.Event.Name}}</span></footer>
+<footer class="app-status"><span class="text-muted">TimerPi · {{.Event.Name}}</span><span class="text-muted push">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span></footer>
 <script type="module" src="{{asset "/src/event.js"}}"></script>
 </body>
 </html>
@@ -100,7 +100,10 @@
 <main class="app-main">
   <div class="tp-page stack is-gap-l">
     {{if not .Event.HasSuperPW}}
-    <div class="alert alert-warning" role="status">This event has no supervisor password yet — anyone with the event code can open this page. Set one under <a href="#settings">Event settings</a>.</div>
+    <div class="alert alert-warning" role="status">This event has no Event Technician Password yet — anyone with the event code can open this page. Set one under <a href="#settings">Event settings</a>.</div>
+    {{end}}
+    {{if .Event.AtVenue}}
+    <div class="alert alert-info" role="status">This event is running at the venue. While the venue is connected, everything here works on the venue's copy; if the link drops, this page shows the last copy and changes pause until it is back.</div>
     {{end}}
 
     <section class="stack is-gap-s" aria-labelledby="live-h">
@@ -111,31 +114,31 @@
           <button class="btn" data-verb-all="unblank" title="Bring every room's screens back">Restore all</button>
         </div>
       </div>
-      <div class="tp-live-grid" id="live-grid" aria-live="polite">
-        <p class="text-muted">Loading rooms…</p>
+      <div class="grid" style="--grid-min: 17rem" id="live-grid" aria-live="polite">
+        <div class="empty-state is-loading" aria-busy="true"><span class="empty-state-title">Loading rooms…</span></div>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="rooms-h">
       <div class="panel-header" id="rooms-h">Rooms</div>
       <p class="text-muted">Double-click a room name to rename it. Each room has one moderator; a room password is optional.</p>
-      <table class="table tp-rooms-table">
-        <thead><tr><th>#</th><th>Room</th><th>Moderator password</th><th></th></tr></thead>
+      <table class="table is-stacked">
+        <thead><tr><th>#</th><th>Room</th><th>Moderator password</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
         <tbody id="rooms-body">
           {{range .Event.Rooms}}
           <tr data-room="{{.Code}}">
-            <td class="mono">{{.Pos}}</td>
-            <td><span class="tp-inline-edit" data-rename tabindex="0" title="Double-click to rename">{{.Name}}</span></td>
-            <td>{{if .HasPassword}}<span class="badge">Set</span>{{else}}<span class="text-muted">None</span>{{end}}
+            <td class="mono" data-label="#">{{.Pos}}</td>
+            <td class="is-editable" data-label="Room" data-rename tabindex="0" title="Double-click to rename">{{.Name}}</td>
+            <td data-label="Moderator password">{{if .HasPassword}}<span class="badge">Set</span>{{else}}<span class="text-muted">None</span>{{end}}
               <button class="btn btn-sm btn-ghost" data-room-pw>Set…</button>
               {{if .HasPassword}}<button class="btn btn-sm btn-ghost" data-room-pw-clear>Clear</button>{{end}}</td>
-            <td class="cluster is-gap-2xs">
+            <td data-label="Actions"><div class="cluster is-gap-2xs">
               <button class="btn btn-sm btn-ghost" data-room-move="-1" title="Move up" aria-label="Move up">▲</button>
               <button class="btn btn-sm btn-ghost" data-room-move="1" title="Move down" aria-label="Move down">▼</button>
               <button class="btn btn-sm btn-ghost" data-room-dup title="Copy this room's running order into a new room">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/api/shows/{{.Code}}/file" title="Download this room as a file">Export</a>
               <button class="btn btn-sm btn-ghost btn-danger" data-room-delete>Delete</button>
-            </td>
+            </div></td>
           </tr>
           {{end}}
         </tbody>
@@ -152,9 +155,32 @@
       </div>
     </section>
 
+    <section class="panel" id="pair" aria-labelledby="pair-h">
+      <div class="panel-header" id="pair-h">Pair a box</div>
+      <p class="field-hint">A TimerPi box that isn't paired shows a 6-digit code on its screen. Type it here to make that box one of this event's screens.</p>
+      <form id="pair-form" class="row is-gap-s is-items-end is-wrap">
+        <div class="field"><label class="label" for="pair-code">Code on the box</label>
+          <div class="otp">
+            <input class="otp-input" id="pair-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="······" required>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div></div>
+        <div class="field"><label class="label" for="pair-room">Room</label>
+          <select class="select" id="pair-room">{{range .Event.Rooms}}<option value="{{.Code}}">{{.Name}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="pair-kind">Display type</label>
+          <select class="select" id="pair-kind"><option value="audience">Audience</option><option value="walkin">Walk-in</option><option value="presenter">Presenter</option></select></div>
+        <div class="field"><label class="label" for="pair-template">Layout</label>
+          <select class="select" id="pair-template"></select></div>
+        <div class="field"><label class="label" for="pair-rotation">Mounted</label>
+          <select class="select" id="pair-rotation"><option value="0">Landscape</option><option value="90">Portrait (90°)</option><option value="180">Upside down</option><option value="270">Portrait (270°)</option></select></div>
+        <div class="field"><label class="label" for="pair-name">Screen name</label>
+          <input class="input" id="pair-name" maxlength="40" placeholder="Keep the box's name"></div>
+        <button class="btn btn-primary" type="submit">Pair</button>
+      </form>
+    </section>
+
     <section class="panel" id="settings" aria-labelledby="settings-h">
       <div class="panel-header" id="settings-h">Event settings</div>
-      <div class="tp-settings-grid">
+      <div class="grid" style="--grid-min: 20rem">
         <form id="ev-rename" class="field">
           <label class="label" for="ev-name-input">Event name</label>
           <div class="row is-gap-xs"><input class="input" id="ev-name-input" value="{{.Event.Name}}" maxlength="80" required><button class="btn" type="submit">Save</button></div>
@@ -179,21 +205,32 @@
           </div>
           <span class="field-hint">Shown on event walk-in screens.</span>
         </div>
+        <form id="ev-end" class="field" data-ends-at="{{.Event.EndsAt}}">
+          <label class="label" for="ev-end-input">Event ends</label>
+          <div class="row is-gap-xs"><input class="input" id="ev-end-input" type="datetime-local"><button class="btn" type="submit">Save</button></div>
+          <span class="field-hint">Venue local time. Screens and boxes are released 4 hours later (never while a timer runs). Leave empty for no end.</span>
+        </form>
         <form id="ev-pw" class="field">
-          <label class="label" for="ev-pw-new">{{if .Event.HasSuperPW}}Change supervisor password{{else}}Set supervisor password{{end}}</label>
+          <label class="label" for="ev-pw-new">{{if .Event.HasSuperPW}}Change Event Technician Password{{else}}Set Event Technician Password{{end}}</label>
           <div class="row is-gap-xs"><input class="input" id="ev-pw-new" type="password" minlength="6" autocomplete="new-password" required><button class="btn" type="submit">Save</button></div>
-          <span class="field-hint">Signs every other SuperOperator session out.</span>
+          <span class="field-hint">Signs every other Event Technician session out.</span>
         </form>
       </div>
-      <div class="row mt-m">
-        <button class="btn btn-danger btn-sm push" id="ev-delete">Delete this event…</button>
+    </section>
+
+    <section class="panel is-danger" aria-labelledby="danger-h">
+      <div class="panel-header" id="danger-h">Danger zone</div>
+      <div class="cluster">
+        <div><strong>Delete this event</strong><div class="text-muted">Every room, session, poll and screen layout is deleted for good.</div></div>
+        <button class="btn btn-danger push" id="ev-delete">Delete this event…</button>
       </div>
     </section>
   </div>
 </main>
 <footer class="app-status">
-  <span class="lamp" id="live-lamp" title="Live data"></span>
-  <span class="text-muted" id="live-status">connecting…</span>
+  <span class="connection" id="live-status" data-state="reconnecting" role="status">connecting…</span>
+  <span class="text-muted push">Ping <span class="mono" id="conn-ping">—</span></span>
+  <span class="text-muted">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span>
 </footer>
 <div class="toast-region" popover="manual" id="toast-region"></div>
 <script type="module" src="{{asset "/src/event.js"}}"></script>
@@ -213,10 +250,13 @@
 </header>
 <aside class="app-rail" aria-hidden="true"></aside>
 <main class="app-main">
-  <div class="tp-page tp-narrow stack is-gap-m">
-    <h1 class="tp-hero-title">{{.Title}}</h1>
-    <p>{{.Message}}</p>
-    <a class="btn btn-primary tp-btn-lg" href="/">Go to the home page</a>
+  <div class="tp-page tp-narrow">
+    <div class="empty-state is-locked" role="status">
+      <svg class="icon empty-state-icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-lock"/></svg>
+      <h1 class="empty-state-title">{{.Title}}</h1>
+      <p class="empty-state-hint">{{.Message}}</p>
+      <div class="cluster"><a class="btn btn-primary tp-btn-lg" href="/">Go to the home page</a></div>
+    </div>
   </div>
 </main>
 </body>

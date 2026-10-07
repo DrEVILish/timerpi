@@ -131,7 +131,7 @@ func TestBoardView(t *testing.T) {
 	}
 	s := string(body)
 	for _, sub := range []string{
-		`id="b-grid"`, `data-view="board"`, `id="b-offline"`,
+		`id="b-grid"`, `data-view="board"`, `id="tp-offline"`,
 		`id="b-layout"`, `board.`, // rev'd asset name: board.vNN.js (any rev)
 		`id="b-w-countdown"`, `id="b-w-cuelabel"`, `id="b-w-speaker"`,
 		`id="b-w-nextup"`, `id="b-w-wallclock"`, `id="b-w-progress"`,

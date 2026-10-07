@@ -2,11 +2,7 @@
 // shims kept local so call sites stay one word).
 package ws
 
-import (
-	"crypto/rand"
-	"encoding/json"
-	"sort"
-)
+import "sort"
 
 // wire() renders a peers list for JSON frames as [{peerId,role,joinedAt}].
 // F1: named displays also carry {screen} — the operator screens panel
@@ -27,12 +23,3 @@ func (p peerViews) wire() any {
 func sortPeers(p peerViews) {
 	sort.Slice(p, func(i, j int) bool { return p[i].JoinedAt < p[j].JoinedAt })
 }
-
-// randRead fills b from the crypto pool (best-effort: session ids are not
-// security tokens).
-func randRead(b []byte) (int, error) {
-	return rand.Read(b)
-}
-
-// marshalJSON is json.Marshal's alias (some call sites pre-marshal).
-func marshalJSON(v any) ([]byte, error) { return json.Marshal(v) }

@@ -11,7 +11,7 @@
  *     degrading to client computeSchedule). Digits are never server-ticked;
  *     the local clock re-anchors on serverTime (joined/state/pong). While
  *     the server is down the board stays live peer-to-peer: the mesh master
- *     keeps executing and broadcasting, and #b-offline / #b-link only report
+ *     keeps executing and broadcasting, and #tp-offline / #b-link only report
  *     LINK DOWN when no server AND no mesh path carry the show.
  *  2. COMPOSE (operator only, ?edit=1) — Edit-layout/Done toggle, pointer
  *     drag to move + corner resize (touch-capable), add-widget palette,
@@ -29,22 +29,16 @@ import {
   clockView, computeSchedule, fmtDuration, fmtRemaining, fmtTimeOfDay,
 } from './engine.js';
 import { Mesh, screenName } from './mesh.js';
-import { applyTheme, setThemeVersion, initClientLog } from './theme.js';
+import { applyTheme, loadThemeVersion, initClientLog } from './theme.js';
+import { api, setText } from './ui.js';
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
+import { paintAudience, clearAudience } from './audtiles.js';
 
-async function loadThemeVersion() {
-  try {
-    const res = await fetch('/ftl/dist/themes.json');
-    const themes = await res.json();
-    if (Array.isArray(themes) && themes[0]?.version) setThemeVersion(themes[0].version);
-  } catch { /* offline or absent — current cache-bust value stands */ }
-}
 loadThemeVersion();
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t; };
 // unchanged(el, key): true when el already shows what key describes; else
 // remembers key so the caller rebuilds once. List tiles call it first, so
 // an update that changes nothing they show never rebuilds (flickers) them
@@ -83,7 +77,7 @@ try {
 } catch { /* corrupt embed: render-only, editor stays inert */ }
 // lastSaved is the layout the server last accepted: a structural change
 // that fails to save rolls back to it instead of reloading (BUGLOG RW43).
-let lastSaved = JSON.parse(JSON.stringify(layout));
+let lastSaved = structuredClone(layout);
 
 // Palette defaults for newly added tiles (mirror of the Go registry).
 const TILE_DEFAULTS = {
@@ -142,6 +136,8 @@ function onMeshSnapshot() {
   updateLink();
 }
 
+let flashTimer = 0;
+
 function initMesh() {
   if (!code) return;
   mesh = new Mesh({
@@ -167,6 +163,14 @@ function initMesh() {
             if (m.rotation && !document.documentElement.dataset.deviceOrient) document.documentElement.dataset.rotate = String(m.rotation);
             else delete document.documentElement.dataset.rotate;
             if (m.kind) body.dataset.kind = m.kind;
+          }
+          break;
+        case 'flash':
+          // The operator's Flash: presenter screens blink the timer.
+          if (body.dataset.kind === 'presenter') {
+            body.classList.add('b-flash');
+            clearTimeout(flashTimer);
+            flashTimer = setTimeout(() => body.classList.remove('b-flash'), m.ms || 5000);
           }
           break;
         case 'poll':
@@ -229,7 +233,7 @@ function initMesh() {
   updateLink();
 }
 
-// Honest link state (same language as the .tp-dv-link chip on the variant
+// Honest link state (ftl .connection, same as the .tp-dv-link chip on the variant
 // boards): LINK LIVE while the server OR any mesh path carries the show —
 // that includes being the mesh master ourselves. The strip only covers the
 // truly-dark case (no server, no master, no open peer). Before the first
@@ -237,11 +241,11 @@ function initMesh() {
 // for snap (same pre-snapshot-hole rule as the variant module).
 function updateLink() {
   if (mesh) applyWaiting(mesh.wsStatus); // orphaned board tab raises the waiting overlay
-  const strip = $('#b-offline');
+  const strip = $('#tp-offline');
   const chip = $('#b-link');
   const live = mesh ? (mesh.serverOnline() || mesh.isMaster() || mesh.openPeerIds().length > 0) : false;
   if (chip) {
-    chip.dataset.online = live ? '1' : '0';
+    chip.dataset.state = live ? 'live' : 'offline';
     setText(chip, live ? 'LINK LIVE' : 'LINK DOWN');
   }
   if (strip) strip.classList.toggle('is-visible', !live && !!snap);
@@ -286,7 +290,9 @@ function renderAudience(tile, type, w) {
   const p = target === 'presenter' ? snap.presenter : snap.poll;
   const vis = audienceVisible(type, p);
   const was = tile.dataset.bVis === '1';
-  const sig = vis ? `${p.id}:${p.state}` : '';
+  // The tile animates in when another item comes on; changes within the
+  // item (results, votes, words, questions) animate inside it.
+  const sig = vis ? `${p.id}:${p.kind}` : '';
   const changed = tile.dataset.bItem !== sig;
   const { mode, ms } = animOf(w);
   tile.dataset.bVis = vis ? '1' : '0';
@@ -297,10 +303,10 @@ function renderAudience(tile, type, w) {
     return;
   }
   if (was && mode !== 'none' && box.childElementCount) {
-    playAnim(box, mode, ms, 'out', () => { if (tile.dataset.bVis !== '1') box.textContent = ''; });
+    playAnim(box, mode, ms, 'out', () => { if (tile.dataset.bVis !== '1') clearAudience(box); });
     return;
   }
-  box.textContent = '';
+  if (box._aud || box.childElementCount) clearAudience(box);
 }
 
 function audienceVisible(type, p) {
@@ -317,84 +323,6 @@ function mk(tag, cls, text) {
   return n;
 }
 
-function paintAudience(box, p, w) {
-  box.textContent = '';
-  box.appendChild(mk('div', 'b-poll-q', p.question));
-  if (p.kind === 'qa' || p.kind === 'ideas') return paintWall(box, p, w);
-  if (p.kind === 'wordcloud') return paintCloud(box, p);
-  paintBars(box, p);
-}
-
-function paintBars(box, p) {
-  const opts = p.options || [];
-  const counts = p.counts || [];
-  const total = Math.max(1, p.total || 0);
-  const results = p.state === 'results';
-  box.appendChild(mk('div', 'b-poll-meta', results
-    ? `${p.total || 0} vote${(p.total || 0) === 1 ? '' : 's'}`
-    : `${p.total || 0} voted so far`));
-  opts.forEach((label, i) => {
-    const correct = results && p.kind === 'quiz' && i === p.correct;
-    const row = mk('div', 'b-poll-opt' + (correct ? ' is-correct' : '') + (results ? ' is-results' : ''));
-    const head = mk('div', 'b-poll-opt-head');
-    head.append(mk('span', '', (correct ? '✔ ' : '') + label));
-    const pct = Math.round(((counts[i] || 0) / total) * 100);
-    // Before results the room sees the question and options only — no
-    // running tallies that would sway the vote.
-    if (results) head.append(mk('span', 'mono', `${counts[i] || 0} · ${pct}%`));
-    row.append(head);
-    if (results) {
-      const bar = mk('progress', 'progress b-poll-bar'); // ftl progress (U17)
-      bar.max = 100;
-      bar.value = pct;
-      bar.setAttribute('aria-label', `${label}: ${pct}%`);
-      row.append(bar);
-    }
-    box.appendChild(row);
-  });
-}
-
-function paintWall(box, p, w) {
-  const kids = p.children || [];
-  if (p.spotlight) {
-    const spot = mk('div', 'alert alert-info b-qa-spot');
-    spot.append(mk('div', 'b-qa-spot-text', p.spotlight.question));
-    if (p.spotlight.upvotes) spot.append(mk('div', 'b-poll-meta', `▲ ${p.spotlight.upvotes}`));
-    box.appendChild(spot);
-  }
-  const rest = kids.filter((c) => !p.spotlight || c.id !== p.spotlight.id);
-  if (!rest.length && !p.spotlight) {
-    box.appendChild(mk('div', 'b-poll-meta', p.kind === 'qa' ? 'Scan the code to ask a question' : 'Scan the code to share an idea'));
-    return;
-  }
-  const limit = Number(w?.opts?.count) || (p.spotlight ? 4 : 8);
-  const list = mk('ol', 'list b-qa-wall');
-  for (const c of rest.slice(0, limit)) {
-    const li = mk('li', 'list-item b-qa-item' + (c.state === 'answered' ? ' is-answered' : ''));
-    li.append(mk('span', 'b-qa-votes mono', `▲ ${c.upvotes || 0}`), mk('span', 'b-qa-text', c.question));
-    list.appendChild(li);
-  }
-  box.appendChild(list);
-}
-
-function paintCloud(box, p) {
-  const words = p.children || [];
-  if (!words.length) {
-    box.appendChild(mk('div', 'b-poll-meta', 'Scan the code and send a word'));
-    return;
-  }
-  const cloud = mk('div', 'b-cloud');
-  const max = Math.max(1, ...words.map((c) => c.upvotes || 0));
-  for (const c of words) {
-    const t = mk('span', 'badge b-cloud-tile', c.question);
-    const rel = (c.upvotes || 0) / max; // 0..1 — size by how many sent it
-    t.style.fontSize = `${(0.9 + rel * 1.6).toFixed(2)}em`;
-    if (rel >= 0.999) t.classList.add('is-top');
-    cloud.appendChild(t);
-  }
-  box.appendChild(cloud);
-}
-
 // ------------------------------------------------- event walk-in tiles --
 // "All rooms now", "Event schedule" and the event map read the walk-in
 // feed (every room of the event, from the live timers). Polled: sessions
@@ -406,7 +334,7 @@ function needsWalkin() {
 async function pullWalkin() {
   if (!code) return;
   try {
-    const j = await (await fetch(`/api/shows/${encodeURIComponent(code)}/walkin`)).json();
+    const j = await api('GET', `/api/shows/${encodeURIComponent(code)}/walkin`);
     if (j.ok) { walkin.data = j; walkin.at = Date.now(); renderStatic(); }
   } catch { /* keep the last data; the next pull retries */ }
 }
@@ -416,9 +344,7 @@ function startWalkin() {
   walkin.timer = setInterval(pullWalkin, 5000);
 }
 function hhmm(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return ts ? fmtTimeOfDay(ts).slice(0, 5) : '';
 }
 // "Current & next" walk-in tile (STATUS U4): for each session its title,
 // then Start Time (planned, 24 h), Duration and Speaker; empty facts are
@@ -442,12 +368,9 @@ function renderNowNext(tile, cue, plan) {
     facts.textContent = '';
     if (!c) return;
     const who = c.kind === 'break' ? ['Location', c.location || ''] : ['Speaker', c.speaker || ''];
+    // ftl dl.props; the spaces keep the text readable as one line.
     for (const [k, v] of [['Start Time', start], ['Duration', nnDur(c.durationMS)], who]) {
-      if (!v) continue;
-      const f = mk('span', 'b-nn-fact');
-      f.append(mk('span', 'b-nn-k', `${k}: `), mk('span', 'b-nn-v', v));
-      if (facts.childNodes.length) facts.append(' ');
-      facts.appendChild(f);
+      if (v) facts.append(mk('dt', '', k), ' ', mk('dd', '', v), ' ');
     }
   };
   const live = (r.running || r.paused) ? cue : null;
@@ -483,18 +406,28 @@ function renderEventSchedule(tile) {
   if (!box || !rooms) return;
   if (unchanged(box, JSON.stringify(rooms.map((r) => [r.label || r.name, r.schedule.map((x) => [schedLabel(x), x.startTS, x.state])])))) return;
   box.textContent = '';
+  // One ftl .schedule-list per room, side by side.
   for (const r of rooms) {
-    const col = mk('div', 'b-evsched-col');
-    col.append(mk('h3', '', r.label || r.name));
+    const col = mk('div', '');
+    const list = mk('ol', 'schedule-list');
+    col.append(mk('h3', 'schedule-heading', r.label || r.name), list);
     // Done sessions drop off the top so the column shows what is left.
     const rows = r.schedule.filter((x) => x.state !== 'done');
-    for (const s of (rows.length ? rows : r.schedule)) {
-      const row = mk('div', `b-evsched-row is-${s.state}`);
-      row.append(mk('span', 'b-evsched-time', hhmm(s.startTS)), mk('span', '', schedLabel(s)));
-      col.appendChild(row);
-    }
+    for (const s of (rows.length ? rows : r.schedule)) list.appendChild(schedItem(hhmm(s.startTS), schedLabel(s), s.state));
     box.appendChild(col);
   }
+}
+
+// schedItem builds one ftl .schedule-item: state 'done' is past, 'now' is
+// aria-current="time". The plain space keeps "hh:mm Title" readable as text
+// (an en space would become an anonymous grid item).
+function schedItem(time, label, state) {
+  const li = mk('li', 'schedule-item' + (state === 'done' ? ' is-past' : ''));
+  if (state === 'now') li.setAttribute('aria-current', 'time');
+  const body = mk('div', 'schedule-body');
+  body.append(mk('span', 'schedule-title', label));
+  li.append(mk('time', 'schedule', time), ' ', body);
+  return li;
 }
 
 // Animation for a tile: its own opts.anim / animMS, else the layout's
@@ -650,22 +583,17 @@ function renderStaticBody() {
         if (ul && !unchanged(ul, key)) {
           ul.textContent = '';
           if (!list.length) {
-            const li = document.createElement('li');
-            li.textContent = 'No cues yet — build the running order in the control room.';
+            const li = mk('li', 'schedule-item is-free');
+            li.append(mk('div', 'schedule-body'));
+            li.firstChild.append(mk('span', 'schedule-title', 'No cues yet — build the running order in the control room.'));
             ul.appendChild(li);
           }
+          const act = snap.runtime.activePos;
           for (const c of list) {
             const planRow = byPos.get(c.pos);
-            const li = document.createElement('li');
+            const li = schedItem(planRow && snap.runtime.dayStartTS ? hhmm(base + planRow.startMS) : '',
+              schedLabel(c), act && c.pos === act ? 'now' : act && c.pos < act ? 'done' : '');
             li.dataset.pos = String(c.pos);
-            if (snap.runtime.activePos && c.pos === snap.runtime.activePos) li.className = 'is-active';
-            else if (snap.runtime.activePos && c.pos < snap.runtime.activePos) li.className = 'is-past';
-            const st = document.createElement('span');
-            st.className = 'mono';
-            st.textContent = planRow && snap.runtime.dayStartTS ? hhmm(base + planRow.startMS) : '';
-            const lb = document.createElement('span');
-            lb.textContent = schedLabel(c);
-            li.append(st, document.createTextNode('\u2002'), lb);
             ul.appendChild(li);
           }
         }
@@ -693,6 +621,7 @@ function tick() {
         const el = $('.b-js-clock', tile);
         if (el) {
           el.dataset.state = view.state;
+          el.classList.toggle('is-flash', !!((view.alert === 1 && cue?.alertFlash1) || (view.alert === 2 && cue?.alertFlash2)));
           if (view.state === 'blank') setText(el, '—');
           else if (view.state === 'held') setText(el, '0:00');
           else if (view.state === 'idle' || view.state === 'armed') {
@@ -725,16 +654,16 @@ function tick() {
         break;
       }
       case 'dayprogress': {
-        const fill = $('.b-js-dayprogress', tile);
-        if (fill) {
+        // ftl .gauge-linear: the meter level and the "now" mark move together.
+        const meter = $('.b-js-dayprogress', tile);
+        if (meter) {
           const tot = sched ? sched.totalMS : computeSchedule(snap).totalMS;
           const base = snap.runtime.dayStartTS;
-          if (base && tot > 0) {
-            const rel = Math.min(Math.max(now - base, 0), tot);
-            fill.style.width = `${((rel / tot) * 100).toFixed(2)}%`;
-          } else {
-            fill.style.width = '0%';
-          }
+          const pct = base && tot > 0 ? (Math.min(Math.max(now - base, 0), tot) / tot) * 100 : 0;
+          meter.style.setProperty('--meter-level', `${pct.toFixed(2)}%`);
+          $('.b-js-daynow', tile)?.style.setProperty('--at', `${pct.toFixed(2)}%`);
+          const v = String(Math.round(pct));
+          if (meter.getAttribute('aria-valuenow') !== v) meter.setAttribute('aria-valuenow', v);
         }
         break;
       }
@@ -770,18 +699,10 @@ async function saveNow() {
   clearTimeout(saveTimer);
   saveState('Saving…');
   try {
-    const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', anim: layout.anim || 'fade', animMS: Number(layout.animMS) || 400, widgets: layout.widgets } }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `save failed (${res.status})`);
-    }
-    const d = new Date();
-    saveState(`Saved ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`);
-    lastSaved = JSON.parse(JSON.stringify(layout));
+    await api('PUT', `/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`,
+      { layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', anim: layout.anim || 'fade', animMS: Number(layout.animMS) || 400, widgets: layout.widgets } });
+    saveState(`Saved ${fmtTimeOfDay(Date.now())}`);
+    lastSaved = structuredClone(layout);
     return true;
   } catch (e) {
     saveState(`Save failed: ${e.message}`);
@@ -824,15 +745,6 @@ function applyGeometry(wid) {
 // Editing handles follow common editor practice (STATUS U8): every handle
 // has a visible glyph, a tooltip and an accessible name — ⠿ grip = move,
 // ◢ corner = resize, ⚙ = settings, bin = remove.
-function svgIcon(name) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'icon');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `/ftl/dist/icons/xbmc.svg#icon-${name}`);
-  svg.appendChild(use);
-  return svg;
-}
 function labelHandles(tile) {
   const chrome = $('.b-w-chrome', tile);
   if (chrome && !chrome.dataset.labelled) {
@@ -847,11 +759,7 @@ function labelHandles(tile) {
     const gear = $('.b-w-gear', chrome);
     if (gear) gear.title = `${title} settings`;
     const del = $('.b-w-del', chrome);
-    if (del) {
-      del.title = `Remove ${title}`;
-      del.textContent = '';
-      del.appendChild(svgIcon('trash'));
-    }
+    if (del) del.title = `Remove ${title}`;
   }
   const rs = $('.b-w-resize', tile);
   if (rs) rs.title = 'Drag to resize';
@@ -864,7 +772,7 @@ function addAlignButtons(tile) {
   for (const side of ['left', 'right']) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'b-w-align';
+    b.className = 'btn btn-icon btn-sm is-clear';
     b.dataset.align = side;
     b.textContent = side === 'left' ? '⯇' : '⯈';
     b.title = `Align ${side} edge`;
@@ -884,7 +792,6 @@ function gridMetrics() {
   return {
     colW: (grid.clientWidth - padX + gapX) / 12,
     rowPitch: (grid.clientHeight - padY + gapY) / rows,
-    padTop: parseFloat(cs.paddingTop),
   };
 }
 
@@ -898,17 +805,10 @@ function showGhost(w) {
     g.id = 'b-drag-ghost';
     grid.appendChild(g);
   }
-  g.className = 'b-ghost';
-  const { colW } = gridMetrics();
-  g.style.left = `calc(${(w.x * 100) / 12}% + 2px)`;
-  g.style.width = `calc(${(w.w * 100) / 12}% - 4px)`;
-  g.style.top = '0';
-  g.style.height = grid.getBoundingClientRect().height + 'px';
-  g.dataset.row = String(w.y);
-  g.style.transform = '';
-  const m = gridMetrics();
-  g.style.top = (m.padTop + w.y * m.rowPitch) + 'px';
-  g.style.height = (w.h * m.rowPitch) + 'px';
+  // ftl .widget-placeholder, placed on the destination cells.
+  g.className = 'widget-placeholder';
+  g.style.gridColumn = `${w.x + 1} / span ${w.w}`;
+  g.style.gridRow = `${w.y + 1} / span ${w.h}`;
 }
 function hideGhost() {
   document.getElementById('b-drag-ghost')?.remove();
@@ -927,7 +827,7 @@ function dragTile(tile, wid, startEvent, mode) {
   const startX = startEvent.clientX;
   const startY = startEvent.clientY;
   const orig = { ...w };
-  tile.classList.add('b-dragging');
+  tile.classList.add('is-dragging');
   showGhost(w);
   const move = (e) => {
     const dc = Math.round((e.clientX - startX) / colW);
@@ -944,7 +844,7 @@ function dragTile(tile, wid, startEvent, mode) {
     showGhost(w);
   };
   const up = () => {
-    tile.classList.remove('b-dragging');
+    tile.classList.remove('is-dragging');
     hideGhost();
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
@@ -1219,7 +1119,7 @@ function openSettings(wid) {  const w = widgetOf(wid);
     };
     sel.value = w.opts?.assetId || '0';
     fill([]);
-    fetch(`/api/assets?room=${encodeURIComponent(code)}`).then((r) => r.json()).then((j) => fill(j?.assets || [])).catch(() => {});
+    api('GET', `/api/assets?room=${encodeURIComponent(code)}`).then((j) => fill(j?.assets || [])).catch(() => {});
     sel.setAttribute('aria-label', 'Map asset');
     sel.addEventListener('change', () => {
       w.opts = { ...(w.opts || {}), assetId: sel.value.replace(/[^0-9]/g, '') };
@@ -1293,7 +1193,7 @@ function freeSpot(w, h) {
 // layout back to what the server holds (BUGLOG RW43).
 async function reloadEditing() {
   if (!(await saveNow())) {
-    layout = JSON.parse(JSON.stringify(lastSaved));
+    layout = structuredClone(lastSaved);
     const orient = $('#b-orient');
     if (orient) orient.value = layout.orientation === 'portrait' ? 'portrait' : 'landscape';
     return false;
@@ -1348,6 +1248,11 @@ function wireCompose() {
       toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     if (palette) palette.hidden = !on;
+    // Edit-mode visuals come from ftl's dashboard edit state (outlines,
+    // grab handle, resize corner, column guides); placement stays ours.
+    grid.classList.toggle('dashboard', on);
+    grid.classList.toggle('is-editing', on);
+    for (const tile of $$('.b-widget', grid)) tile.classList.toggle('widget', on);
     if (!on && settings) settings.hidden = true;
     if (on) for (const tile of $$('.b-widget', grid)) addAlignButtons(tile);
     buildEditorList(on);
@@ -1430,7 +1335,7 @@ function wireCompose() {
   const presetList = $('#b-preset-list');
   let catalog = [];
   if (presetList) {
-    fetch('/api/board-templates').then((r) => r.json()).then((j) => {
+    api('GET', '/api/board-templates').then((j) => {
       catalog = j.catalog || [];
       const groups = { audience: 'Audience', walkin: 'Walk-in', presenter: 'Presenter' };
       for (const [kind, label] of Object.entries(groups)) {
@@ -1440,6 +1345,7 @@ function wireCompose() {
         for (const t of items) {
           const b = document.createElement('button');
           b.type = 'button';
+          b.className = 'btn btn-sm';
           b.dataset.preset = t.key;
           b.title = t.desc;
           b.textContent = t.name;
@@ -1454,7 +1360,7 @@ function wireCompose() {
     const t = catalog.find((x) => x.key === btn.dataset.preset);
     if (!t) return;
     if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
-    layout = JSON.parse(JSON.stringify(t.layout));
+    layout = structuredClone(t.layout);
     await reloadEditing(); // server re-renders tiles, then we relock into edit
   });
 
@@ -1493,7 +1399,7 @@ function wireCompose() {
     // The factory layout comes from the server (boards.DefaultLayout), so
     // it never drifts from Go (STATUS C5).
     try {
-      const j = await (await fetch('/api/board-templates')).json();
+      const j = await api('GET', '/api/board-templates');
       if (!j.default?.widgets?.length) throw new Error('no default layout');
       layout = j.default;
     } catch (err) {
@@ -1515,13 +1421,7 @@ function wireCompose() {
     const name = res?.name;
     if (!name || !name.trim()) return;
     try {
-      const res = await fetch(`/api/shows/${encodeURIComponent(code)}/boards`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      if (!res.ok) throw new Error(`create failed (${res.status})`);
-      const created = await res.json();
+      const created = await api('POST', `/api/shows/${encodeURIComponent(code)}/boards`, { name: name.trim() });
       const url = new URL(location.href);
       url.searchParams.set('board', String(created.id));
       location.href = url.toString();

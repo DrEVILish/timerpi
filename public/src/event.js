@@ -6,9 +6,13 @@
  *   box          box password: first-time setup, sign-in, change, sign out
  */
 import {
-  api, toast, showError, normalizeCode, fmtCode, fmtRemaining, el,
+  api, toast, showError, normalizeCode, el, setText,
   recentEvents, rememberEvent, forgetEvent, inlineEdit,
 } from './ui.js';
+import { fmtCode, fmtRemaining } from './engine.js';
+
+// Lobby clocks show whole seconds (engine adds tenths below 10 s).
+const fmtClock = (ms) => fmtRemaining(ms).replace(/\.\d$/, '');
 import { tpConfirm, tpPrompt } from './dialog.js';
 
 const body = document.body;
@@ -36,7 +40,7 @@ function initHome() {
       await api('GET', `/api/events/${code}`);
       location.href = `/e/${code}`;
     } catch (ex) {
-      showError(err, ex.message === 'Unknown event code' ? 'No event with that code on this box. Check the code with your SuperOperator.' : ex.message);
+      showError(err, ex.message === 'Unknown event code' ? 'No event with that code on this box. Check the code with your Event Technician.' : ex.message);
     }
   });
 
@@ -89,9 +93,9 @@ function initHome() {
   if (list && recent.length) {
     panel.hidden = false;
     for (const ev of recent) {
-      list.appendChild(el('li', { class: 'tp-recent-item' },
-        el('span', { class: 'tp-recent-link' }, el('strong', { text: ev.name }), ' ', el('span', { class: 'mono text-muted', text: fmtCode(ev.code) })),
-        el('a', { class: 'btn btn-sm btn-primary', href: `/e/${ev.code}` }, 'Resume'),
+      list.appendChild(el('li', { class: 'list-item' },
+        el('div', { class: 'stack is-gap-none' }, el('span', { class: 'list-item-title', text: ev.name }), el('span', { class: 'list-item-meta mono', text: fmtCode(ev.code) })),
+        el('a', { class: 'btn btn-sm btn-primary push', href: `/e/${ev.code}` }, 'Resume'),
         el('button', {
           class: 'btn btn-sm btn-ghost', type: 'button', title: 'Forget on this device', 'aria-label': `Forget ${ev.name}`,
           onclick: (e) => {
@@ -125,7 +129,7 @@ function initLobby() {
   superForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const out = await api('POST', `/api/events/${EV}/login`, { pw: document.getElementById('super-pw')?.value || '' });
+      const out = await api('POST', `/api/events/${EV}/login`, { pw: document.getElementById('super-pw')?.value || '', now: Date.now() });
       location.href = out.admin;
     } catch (ex) {
       showError(document.getElementById('super-error'), ex.message);
@@ -141,7 +145,6 @@ function initLobby() {
 function initAdmin() {
   rememberEvent(EV, body.dataset.eventName);
   const grid = document.getElementById('live-grid');
-  const lamp = document.getElementById('live-lamp');
   const status = document.getElementById('live-status');
   let rooms = [];
   let fetchedAt = 0;
@@ -183,14 +186,15 @@ function initAdmin() {
   // (BUGLOG RW44: rebuilding them every 2 s lost keyboard focus and
   // dropped clicks that straddled a re-render).
   const cards = new Map(); // room code → { card, parts }
-  const empty = el('p', { class: 'text-muted', text: 'No rooms yet. Add one below.' });
+  const empty = el('div', { class: 'empty-state' },
+    el('span', { class: 'empty-state-title', text: 'No rooms yet.' }), el('span', { class: 'empty-state-hint', text: 'Add one below.' }));
 
   function buildCard(code) {
     const room = () => rooms.find((x) => x.code === code) || {};
     const parts = {
       name: el('span'),
       status: el('span', { class: 'status push' }),
-      clock: el('div', { class: 'tp-live-clock mono', dataset: { remaining: '1' } }),
+      clock: el('div', { class: 'readout readout-lg', dataset: { remaining: '1' } }),
       now: el('dd'),
       next: el('dd'),
       screens: el('dd'),
@@ -201,10 +205,10 @@ function initAdmin() {
     parts.pause.addEventListener('click', () => verb(room().paused ? 'resume' : 'pause', code, parts.pause));
     parts.blank = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'blank' } });
     parts.blank.addEventListener('click', () => verb(room().blanked ? 'unblank' : 'blank', code, parts.blank));
-    const card = el('article', { class: 'panel tp-live-card', dataset: { room: code } },
-      el('div', { class: 'panel-header' }, parts.name, parts.status),
+    const card = el('article', { class: 'panel stack is-gap-xs', dataset: { room: code } },
+      el('div', { class: 'panel-header cluster' }, parts.name, parts.status),
       parts.clock,
-      el('dl', { class: 'tp-live-facts' },
+      el('dl', { class: 'props' },
         el('dt', { text: 'Now' }), parts.now,
         el('dt', { text: 'Next' }), parts.next,
         el('dt', { text: 'Screens' }), parts.screens,
@@ -218,8 +222,6 @@ function initAdmin() {
     return { card, parts };
   }
 
-  const setText = (node, t) => { if (node.textContent !== t) node.textContent = t; };
-
   function render() {
     if (!rooms.length) {
       for (const { card } of cards.values()) card.remove();
@@ -228,6 +230,7 @@ function initAdmin() {
       return;
     }
     empty.remove();
+    grid.querySelector('.empty-state.is-loading')?.remove();
     const live = new Set(rooms.map((r) => r.code));
     for (const [code, { card }] of cards) {
       if (!live.has(code)) { card.remove(); cards.delete(code); }
@@ -240,7 +243,7 @@ function initAdmin() {
       setText(parts.name, r.name);
       setText(parts.status, label);
       parts.status.className = `status ${cls} push`;
-      setText(parts.clock, r.running ? fmtRemaining(r.remainingMS) : '—');
+      setText(parts.clock, r.running ? fmtClock(r.remainingMS) : '—');
       setText(parts.now, r.activeLabel || '—');
       setText(parts.next, r.nextLabel || '—');
       setText(parts.screens, String(r.screens));
@@ -258,7 +261,7 @@ function initAdmin() {
     for (const r of rooms) {
       if (!r.running || r.paused) continue;
       const entry = cards.get(r.code);
-      if (entry) setText(entry.parts.clock, fmtRemaining(r.remainingMS - elapsed));
+      if (entry) setText(entry.parts.clock, fmtClock(r.remainingMS - elapsed));
     }
   }
 
@@ -270,14 +273,17 @@ function initAdmin() {
     if (polling) { pollAgain = true; return; }
     polling = true;
     try {
+      const t0 = performance.now();
       const out = await api('GET', `/api/events/${EV}/live`);
+      const ping = document.getElementById('conn-ping');
+      if (ping) ping.textContent = `${Math.round(performance.now() - t0)} ms`;
       rooms = out.rooms || [];
       fetchedAt = Date.now();
       render();
-      lamp?.classList.add('is-on');
+      if (status) status.dataset.state = 'live';
       if (status) status.textContent = `Live · ${rooms.length} room${rooms.length === 1 ? '' : 's'}`;
     } catch (ex) {
-      lamp?.classList.remove('is-on');
+      if (status) status.dataset.state = 'offline';
       if (status) status.textContent = ex.message;
     } finally {
       polling = false;
@@ -363,10 +369,64 @@ function initAdmin() {
     e.preventDefault();
     run(() => api('PATCH', `/api/events/${EV}`, { theme: document.getElementById('ev-theme-select').value }), 'Default screen theme saved');
   });
+  // Pair a box (N13): the code on the box's screen + where it goes.
+  const pairForm = document.getElementById('pair-form');
+  if (pairForm) {
+    const kindSel = document.getElementById('pair-kind');
+    // ftl .otp: one input drawn as six boxes; keep it to the six digits so a
+    // pasted "123 456" fits.
+    const codeIn = document.getElementById('pair-code');
+    codeIn.addEventListener('input', () => { codeIn.value = codeIn.value.replace(/\D/g, '').slice(0, 6); });
+    const tplSel = document.getElementById('pair-template');
+    let catalog = [];
+    const fillTemplates = () => {
+      tplSel.replaceChildren();
+      for (const t of catalog.filter((x) => x.kind === kindSel.value)) {
+        const o = document.createElement('option');
+        o.value = t.key;
+        o.textContent = t.name;
+        tplSel.appendChild(o);
+      }
+    };
+    api('GET', '/api/board-templates').then((j) => { catalog = j.catalog || []; fillTemplates(); }).catch(() => {});
+    kindSel.addEventListener('change', fillTemplates);
+    pairForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const body = {
+        pairCode: document.getElementById('pair-code').value.replace(/\s+/g, ''),
+        code: document.getElementById('pair-room').value,
+        kind: kindSel.value,
+        template: tplSel.value,
+        rotation: Number(document.getElementById('pair-rotation').value),
+        name: document.getElementById('pair-name').value.trim(),
+        theme: '',
+      };
+      run(() => api('POST', `/api/events/${EV}/pair`, body), 'Box paired — it switches to its screen in a few seconds')
+        .then((ok) => { if (ok) document.getElementById('pair-code').value = ''; });
+    });
+  }
+
+  // Event end (N12): shown and entered in this browser's local time, which
+  // is the venue's when the Event Technician is there; stored as epoch ms.
+  const endForm = document.getElementById('ev-end');
+  if (endForm) {
+    const endInput = document.getElementById('ev-end-input');
+    const ms = Number(endForm.dataset.endsAt) || 0;
+    if (ms) {
+      const d = new Date(ms);
+      const p = (n) => String(n).padStart(2, '0');
+      endInput.value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    endForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = endInput.value ? new Date(endInput.value).getTime() : 0;
+      run(() => api('PATCH', `/api/events/${EV}`, { endsAt: v }), v ? 'Event end saved' : 'Event end cleared');
+    });
+  }
   document.getElementById('ev-pw')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const input = document.getElementById('ev-pw-new');
-    run(() => api('PATCH', `/api/events/${EV}`, { password: input.value }), 'Supervisor password changed').then((ok) => { if (ok) input.value = ''; });
+    run(() => api('PATCH', `/api/events/${EV}`, { password: input.value }), 'Event Technician Password changed').then((ok) => { if (ok) input.value = ''; });
   });
   document.getElementById('ev-map')?.addEventListener('change', (e) => {
     const f = e.target.files?.[0];

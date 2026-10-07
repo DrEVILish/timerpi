@@ -34,9 +34,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/boards"
 	"timerpi/config"
 	"timerpi/oscbridge"
-	"timerpi/boards"
 	"timerpi/timerpi"
 )
 
@@ -88,6 +88,7 @@ func registerEvents(r *gin.Engine, d *Deps) {
 	g.DELETE("/:code/rooms/:room", d.apiEventDeleteRoom)
 	g.POST("/:code/room-password", d.apiEventRoomPasswordAll)
 	g.POST("/:code/map", d.apiEventMap)
+	g.POST("/:code/pair", d.apiEventPair)
 }
 
 // ------------------------------------------------------------ resolution --
@@ -112,7 +113,7 @@ func (d *Deps) requireSuper(c *gin.Context) (timerpi.Event, bool) {
 		return ev, false
 	}
 	if !d.isSuper(c, ev) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "SuperOperator sign-in required"})
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Event Technician sign-in required"})
 		return ev, false
 	}
 	return ev, true
@@ -149,6 +150,8 @@ type eventVM struct {
 	MapAsset    int64         `json:"mapAsset"`
 	HasSuperPW  bool          `json:"hasSuperPassword"`
 	IsSuper     bool          `json:"isSuper"`
+	EndsAt      int64         `json:"endsAt"` // epoch ms, 0 = no end set
+	AtVenue     bool          `json:"atVenue"`
 	Rooms       []eventRoomVM `json:"rooms"`
 	ScreenCount int           `json:"-"`
 }
@@ -163,6 +166,7 @@ func (d *Deps) eventView(c *gin.Context, ev timerpi.Event) (eventVM, error) {
 		Code: ev.Code, CodeFmt: timerpi.FmtCode(ev.Code), Name: ev.Name, Theme: ev.Theme,
 		MapAsset: ev.MapAsset, HasSuperPW: ev.HasSuperPassword(),
 		IsSuper: SuperFromCookies(d.Store, cookies, ev),
+		EndsAt:  ev.EndsAt, AtVenue: ev.Home == "venue",
 	}
 	for _, r := range rooms {
 		vm.Rooms = append(vm.Rooms, eventRoomVM{
@@ -225,7 +229,7 @@ func (d *Deps) eventAdminPage(c *gin.Context) {
 		return
 	}
 	d.render(c, "event-admin", gin.H{
-		"Page": "event-admin", "Title": ev.Name + " · SuperOperator", "Event": vm,
+		"Page": "event-admin", "Title": ev.Name + " · Event Technician", "Event": vm,
 		"DefaultTheme": config.DefaultTheme(), "Themes": installedThemes(),
 	})
 }
@@ -236,6 +240,13 @@ func (d *Deps) apiCreateEvent(c *gin.Context) {
 	if d.Store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
 		return
+	}
+	// A box is attached to one event at a time (VENUE-CLOUD §2).
+	if d.BoxEvent != nil {
+		if code := d.BoxEvent(); code != "" {
+			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box belongs to event " + timerpi.FmtCode(code) + ". Join that event, or create new events on the cloud."})
+			return
+		}
 	}
 	var body struct {
 		Name     string   `json:"name"`
@@ -274,7 +285,7 @@ func (d *Deps) apiCreateEvent(c *gin.Context) {
 		return
 	}
 	for _, r := range rooms {
-		d.warmShow(r.ID)
+		d.notifyShow(r.ID)
 	}
 	d.setSuperSession(c, ev)
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "code": ev.Code, "codeFmt": timerpi.FmtCode(ev.Code), "admin": "/e/" + ev.Code + "/admin"})
@@ -306,7 +317,7 @@ func (d *Deps) apiEventLogin(c *gin.Context) {
 	// box password may claim them (BUGLOG RW14). Every moderator has the
 	// event code, so the code alone must not make anyone SuperOperator.
 	if !ev.HasSuperPassword() && !d.isBoxAdmin(c) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "This event has no supervisor password yet. Sign in to box settings first (/box), then set one."})
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "This event has no Event Technician Password yet. Sign in to box settings first (/box), then set one."})
 		return
 	}
 	if ev.HasSuperPassword() {
@@ -317,11 +328,14 @@ func (d *Deps) apiEventLogin(c *gin.Context) {
 		ok := timerpi.CheckPassword(ev.SuperHash, pw)
 		loginResult(c, target, ok)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong supervisor password"})
+			c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Wrong Event Technician Password"})
 			return
 		}
 	}
 	d.setSuperSession(c, ev)
+	if now := c.GetInt64("clientNow"); now > 0 && d.ClockHint != nil {
+		d.ClockHint(time.UnixMilli(now)) // a box without a clock takes the Event Technician's
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "admin": "/e/" + ev.Code + "/admin"})
 }
 
@@ -357,7 +371,8 @@ func (d *Deps) apiRoomLogin(c *gin.Context) {
 // readPwBody reads {pw} JSON or pw= form.
 func readPwBody(c *gin.Context) (string, bool) {
 	var body struct {
-		PW string `json:"pw"`
+		PW  string `json:"pw"`
+		Now int64  `json:"now"` // the browser's clock (a box without one takes it, VENUE-CLOUD §5)
 	}
 	if strings.HasPrefix(c.ContentType(), "application/json") {
 		if err := c.ShouldBindJSON(&body); err != nil {
@@ -367,6 +382,7 @@ func readPwBody(c *gin.Context) (string, bool) {
 	} else {
 		body.PW = c.PostForm("pw")
 	}
+	c.Set("clientNow", body.Now)
 	return body.PW, true
 }
 
@@ -381,6 +397,7 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		Name     *string `json:"name"`
 		Theme    *string `json:"theme"`
 		Password *string `json:"password"`
+		EndsAt   *int64  `json:"endsAt"` // epoch ms; 0 clears
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
@@ -396,6 +413,10 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
 		return
 	}
+	if body.EndsAt != nil && *body.EndsAt < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Bad end date"})
+		return
+	}
 	if body.Theme != nil && !themeKnown(*body.Theme) { // RS16
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Unknown theme"})
 		return
@@ -409,6 +430,12 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 	if body.Theme != nil {
 		t := sanitizeTheme(*body.Theme)
 		if err := d.Store.SetEventTheme(ev.ID, t); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+	}
+	if body.EndsAt != nil {
+		if err := d.Store.SetEventEnd(ev.ID, *body.EndsAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
@@ -601,7 +628,7 @@ func (d *Deps) apiEventAddRoom(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	d.warmShow(room.ID)
+	d.notifyShow(room.ID)
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "code": room.Code, "name": room.Title})
 }
 
@@ -752,7 +779,7 @@ func (d *Deps) apiEventImportRoom(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	d.warmShow(show.ID)
+	d.notifyShow(show.ID)
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "code": show.Code, "name": show.Title, "cueCount": n})
 }
 
@@ -826,7 +853,7 @@ func (d *Deps) roomRoomLeft(c *gin.Context, ev timerpi.Event) bool {
 // anything: they are a light gate, and sign-in is rate limited.
 const (
 	minSuperPasswordLen = 6
-	superPasswordRule   = "The supervisor password needs at least 6 characters"
+	superPasswordRule   = "The Event Technician Password needs at least 6 characters"
 )
 
 func validSuperPassword(pw string) bool {

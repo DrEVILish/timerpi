@@ -1,7 +1,8 @@
 package timerpi
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 )
 
 // Snapshot is the wire state shared over WS (`state` frame), REST
@@ -49,9 +50,8 @@ type RuntimeView struct {
 
 // BuildSnapshot is the pure snapshot builder (also used by tests).
 func BuildSnapshot(show Show, cues []Cue, msgs []Message, rt Runtime, updatedAt, serverTime int64) Snapshot {
-	sorted := make([]Cue, len(cues))
-	copy(sorted, cues)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Pos < sorted[j].Pos })
+	sorted := append([]Cue{}, cues...) // never nil: the wire wants "cues": []
+	slices.SortFunc(sorted, func(a, b Cue) int { return cmp.Compare(a.Pos, b.Pos) })
 
 	shown := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
@@ -59,7 +59,7 @@ func BuildSnapshot(show Show, cues []Cue, msgs []Message, rt Runtime, updatedAt,
 			shown = append(shown, m)
 		}
 	}
-	sort.Slice(shown, func(i, j int) bool { return shown[i].ShownAt < shown[j].ShownAt })
+	slices.SortFunc(shown, func(a, b Message) int { return cmp.Compare(a.ShownAt, b.ShownAt) })
 
 	var active *Cue
 	for i := range sorted {

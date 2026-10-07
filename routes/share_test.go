@@ -31,7 +31,6 @@ func TestSharePanelAndCodeOnlyAddress(t *testing.T) {
 	}
 	for _, want := range []string{
 		`/a/` + code,                 // audience link + mirror
-		`/d/` + code,                 // the app bar's Open Display link
 		`/api/shows/` + code + `/qr`, // QR route by code
 		`data=%2Fa%2F` + code,        // QR payload is the audience link (edge-encoded)
 	} {

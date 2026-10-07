@@ -1,0 +1,30 @@
+# TimerPi cloud server (VENUE-CLOUD §10): unprivileged LXC, Debian Trixie,
+# x86-64, behind a reverse proxy that terminates HTTPS (Caddyfile).
+[Unit]
+Description=TimerPi cloud server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=timerpi
+Group=timerpi
+WorkingDirectory=/opt/timerpi
+ExecStart=/opt/timerpi/bin/timerpi
+Environment=TIMERPI_ROLE=cloud
+Environment=TIMERPI_HTTP_PORT=8080
+Environment=TIMERPI_DATA_DIR=/var/lib/timerpi
+StateDirectory=timerpi
+RuntimeDirectory=timerpi
+ProtectSystem=strict
+ReadWritePaths=/var/lib/timerpi
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -32,10 +32,6 @@ type Config struct {
 	// operator's rename request (the hostname/mDNS work in the mesh agent
 	// applies it).
 	DeviceName string `json:"device_name,omitempty"`
-	// Deprecated: the old appliance operator password. Ignored since the
-	// event model (supervisor + room passwords); kept so older config
-	// files still load.
-	AuthPassword string `json:"auth_password,omitempty"`
 	// DefaultTheme is the appliance-wide ftl theme used by surfaces that
 	// have nothing stored in the browser (B7: server-side defaults).
 	DefaultTheme string `json:"default_theme,omitempty"`
@@ -48,6 +44,20 @@ type Config struct {
 	// else gets HTTP 421. List proxy domains here when the appliance is
 	// exposed to a network where rebinding matters.
 	AllowedHosts []string `json:"allowed_hosts,omitempty"`
+
+	// Role is "box" (default: a Raspberry Pi at a venue) or "cloud" (the
+	// public server). TIMERPI_ROLE overrides it at launch. VENUE-CLOUD §9.
+	Role string `json:"role,omitempty"`
+	// Venue mesh radio settings (VENUE-CLOUD §11.1): Wi-Fi country and the
+	// 2.4 GHz / 5 GHz channels. Zero values mean the defaults (GB, 13, 36).
+	WifiCountry   string `json:"wifi_country,omitempty"`
+	MeshChannel24 int    `json:"mesh_channel_24,omitempty"`
+	MeshChannel5  int    `json:"mesh_channel_5,omitempty"`
+	// CloudURL is the cloud's public base URL (VENUE-CLOUD §1): boxes pair
+	// through it, link the event to it, take updates from it, and put it in
+	// the audience QR (phones reach TimerPi only through the cloud). Empty
+	// = no cloud (an offline venue).
+	CloudURL string `json:"cloud_url,omitempty"`
 
 	// dataDir is the resolved data directory this config was loaded from.
 	// Unexported (JSON ignores it) and never persisted: the data dir is
@@ -85,15 +95,11 @@ func resolveDataDir(getenv func(string) string) string {
 	return defaultDataDir
 }
 
-// defaults computes the in-memory default Config (before the file load).
-func defaults(getenv func(string) string) Config {
+// defaults computes the in-memory default Config (before the file load;
+// LoadConfig applies the env port override after it).
+func defaults() Config {
 	var c Config
 	c.HTTPPort = defaultPort
-	if raw := portEnv(getenv); raw != "" {
-		if p, err := strconv.Atoi(raw); err == nil && p > 0 && p < 65536 {
-			c.HTTPPort = p
-		}
-	}
 	c.Title = defaultTitle
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		c.DeviceName = hn
@@ -111,7 +117,7 @@ func LoadConfig() {
 	confMu.Lock()
 	defer confMu.Unlock()
 
-	conf = defaults(os.Getenv)
+	conf = defaults()
 	conf.dataDir = dir
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -131,9 +137,6 @@ func LoadConfig() {
 		if p, err := strconv.Atoi(raw); err == nil && p > 0 && p < 65536 {
 			conf.HTTPPort = p
 		}
-	}
-	if d := strings.TrimSpace(os.Getenv("TIMERPI_DATA_DIR")); d != "" {
-		conf.dataDir = d
 	}
 
 	// Defaults for fields an old/partial config may not carry.
@@ -165,7 +168,7 @@ func SaveConfig() error {
 // Atomic: encode to a unique temp sidecar in the same directory and rename
 // over config.json, so a crash mid-write cannot leave a truncated file.
 // os.CreateTemp gives the sidecar 0600, and the rename preserves it — the
-// password lives in here, so the file must not be world-readable.
+// file must not be world-readable.
 func saveLocked() error {
 	dir := conf.dataDir
 	if dir == "" {
@@ -189,12 +192,6 @@ func saveLocked() error {
 	if err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("writing config file: %w", err)
-	}
-	// The password lives in here: 0600 before the rename makes it land
-	// with the right mode atomically.
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("chmod config file: %w", err)
 	}
 	if err := os.Rename(tmpPath, configFile(dir)); err != nil {
 		os.Remove(tmpPath)
@@ -275,8 +272,6 @@ func SetDeviceName(name string) error {
 	return SaveConfig()
 }
 
-
-
 // DefaultTheme returns the appliance default theme - what operator pages
 // fall back to when the browser has nothing stored.
 // Product default is BLUE-FUTURE (deep-space navy HUD; the owner asked for
@@ -316,24 +311,12 @@ func sanitizeTheme(name string) string {
 	return name
 }
 
-
 // AllowedHosts returns the operator-configured extra Host names (copy).
 func AllowedHosts() []string {
 	confMu.RLock()
 	defer confMu.RUnlock()
 	return append([]string(nil), conf.AllowedHosts...)
 }
-
-// ---------------------------------------------------------------------------
-// Operator-password session tokens (routes/auth.go + ws join frames)
-
-// authEntropy is the token domain separator: changing it (deliberately, per
-// release) invalidates every issued session cookie at once.
-const authEntropy = "timerpi/auth/v1"
-
-
-
-
 
 // SetAllowedHosts validates and persists the Host allow-list
 // (whitespace/comma separated input, as from a settings form).

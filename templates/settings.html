@@ -1,12 +1,12 @@
 {{- /*
-  settings.html — device identity / mesh page (route GET /settings).
-  Standalone document like display.html (L0 shell: tokens only). Agent H;
-  recreated verbatim from routes/network.go netVM after the original was
-  lost with its cancelled session.
+  settings.html — box settings: device identity, software, mesh radio,
+  role, hostname, operator password, default theme, OSC bridge and the
+  live mesh/peers panel (route GET /settings). Same app shell as the event
+  pages ({{template "head"}}); behaviour in /src/settings.js.
 
   Data: netVM { Page, Title, Hostname, DeviceName, Role, State, Override,
   Epoch, Version, Port, TXT, Primary, PrimaryEpoch, Peers[] {Host, Addr,
-  Role, Epoch, Age, IsPrimary}, OK, Err }.
+  Role, Epoch, Age, IsPrimary}, OK, Err, mesh fields }.
 
   Handles: POST /api/network/hostname {name} · POST /api/network/role
   {force} · poll GET /frag/network every 5 s into #net-panel.
@@ -15,305 +15,180 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TimerPi — {{.Title}}</title>
-<link rel="stylesheet" href="{{asset "/css/timerpi.css"}}">
-<link rel="stylesheet" href="/ftl/dist/{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}.css">
+{{template "head" .}}
 <script defer src="{{asset "/src/htmax.min.js"}}"></script>
-<style>
-  /* Settings-page glue: two-column identity + peers, phone stacking. */
-  .tp-net {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 4vh 4vw;
-    display: grid;
-    gap: 1.25rem;
-  }
-  .tp-net .net-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.25rem;
-  }
-  .tp-net .tp-note { min-height: 1.6em; }
-  .tp-net table.net-peers td, .tp-net table.net-peers th { padding: .55rem .75rem; }
-  .tp-net .net-role-chip { white-space: nowrap; }
-  @media (max-width: 760px) {
-    .tp-net table.net-peers { font-size: .95rem; }
-  }
-</style>
-<script>
-  // PLAN §11.6: OSC bridge settings (global kv via /api/osc).
-  document.addEventListener('DOMContentLoaded', function () {
-    var status = document.getElementById('osc-status');
-    var say = function (msg, cls) {
-      status.textContent = msg;
-      status.className = 'field-hint' + (cls ? ' ' + cls : '');
-    };
-    fetch('/api/osc').then(function (r) { return r.json(); }).then(function (j) {
-      if (!j || !j.ok || !j.config) return;
-      document.getElementById('osc-in-enabled').value = j.config.in.enabled ? '1' : '';
-      document.getElementById('osc-in-port').value = j.config.in.port || '';
-      document.getElementById('osc-in-allow').value = j.config.in.allow || '';
-      document.getElementById('osc-out-enabled').value = j.config.out.enabled ? '1' : '';
-      document.getElementById('osc-out-host').value = j.config.out.host || '';
-      document.getElementById('osc-out-port').value = j.config.out.port || '';
-    }).catch(function () {});
-    document.getElementById('osc-save').addEventListener('click', function () {
-      fetch('/api/osc', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          in: { enabled: document.getElementById('osc-in-enabled').value === '1', port: document.getElementById('osc-in-port').value.trim(), allow: document.getElementById('osc-in-allow').value.trim() },
-          out: { enabled: document.getElementById('osc-out-enabled').value === '1', host: document.getElementById('osc-out-host').value.trim(), port: document.getElementById('osc-out-port').value.trim() }
-        })
-      }).then(function (r) { return r.json().then(function (j) { return { code: r.code || r.status, j: j }; }); })
-        .then(function (x) { say(x.j.ok ? 'Bridge saved — listener re-synced.' : (x.j.error || 'save failed'), x.j.ok ? 'field-hint' : 'field-error'); })
-        .catch(function () { say('network error', 'field-error'); });
-    });
-    document.getElementById('osc-test').addEventListener('click', function () {
-      say('Sending…');
-      fetch('/api/osc/test', { method: 'POST' }).then(function (r) { return r.json().then(function (j) { return { code: r.status, j: j }; }); })
-        .then(function (x) { say(x.j.ok ? 'Packet sent to ' + x.j.sent + ' (UDP: no ack from CuTePi).' : (x.j.error || 'test failed'), x.j.ok ? 'field-hint' : 'field-error'); })
-        .catch(function () { say('network error', 'field-error'); });
-    });
-  });
-</script>
 </head>
-<body class="app" data-page="settings">
-<header class="bar">
-  <div class="bar-left">
-    <a class="tp-brand" href="/"><img src="/img/timerpi.svg" alt="TimerPi" style="height:1.6em"></a>
-    <strong>{{.Title}} · {{.Hostname}}</strong>
-  </div>
-  <div class="bar-right">
-    <span class="lamp lamp-ok" title="mesh page"></span>
-    <a class="btn btn-sm" href="/box" title="Change the box password or sign out">Box password</a>
-    <a class="btn btn-sm" href="/">Shows</a>
+<body class="app tp-shell" data-page="settings">
+<header class="app-bar">
+  <a class="nav-brand tp-brand" href="/" title="Home"><img src="/img/timerpi.svg" alt="TimerPi"></a>
+  <nav class="nav">
+    <span class="nav-item tp-bar-title">Box settings · {{.Hostname}}</span>
+  </nav>
+  <div class="cluster push">
+    <a class="nav-item" href="/box" title="Change the box password or sign out">Box password</a>
+    <a class="nav-item" href="/">Shows</a>
   </div>
 </header>
+<aside class="app-rail" aria-hidden="true"></aside>
+<main class="app-main">
+  <div class="tp-page stack is-gap-l">
+    <h1 class="tp-hero-title">Box settings</h1>
 
-<main class="main tp-net">
-  <h1>DEVICE IDENTITY</h1>
-  <div id="net-note" class="tp-note">
-    {{if .OK}}<div class="alert alert-success" role="alert">{{.OK}}</div>{{end}}
-    {{if .Err}}<div class="field-error" role="alert">{{.Err}}</div>{{end}}
+    <div class="grid" style="--grid-min: 22rem">
+      <section class="panel stack" aria-labelledby="id-h">
+        <h2 class="panel-header" id="id-h">Identity</h2>
+        <dl class="props">
+          <dt>Hostname</dt><dd class="mono">{{.Hostname}}</dd>
+          <dt>Device name</dt><dd class="mono">{{if .DeviceName}}{{.DeviceName}}{{else}}—{{end}}</dd>
+          <dt>Version</dt><dd class="mono">{{.Version}}</dd>
+          <dt>HTTP + WS port</dt><dd class="mono">{{.Port}}</dd>
+          <dt>Role</dt><dd><span class="badge">{{.Role}}</span> ({{.State}})</dd>
+          <dt>Authority epoch</dt><dd class="mono">{{.Epoch}}</dd>
+          <dt>Announces</dt><dd class="mono">{{.TXT}}</dd>
+          <dt>Primary</dt><dd class="mono">{{if .Primary}}{{.Primary}} · epoch {{.PrimaryEpoch}}{{else}}—{{end}}</dd>
+        </dl>
+      </section>
+
+      <section class="panel stack" id="upd-panel" aria-labelledby="upd-h">
+        <h2 class="panel-header" id="upd-h">Software</h2>
+        <p class="field-hint">Boxes update themselves for 5 minutes after they boot. If that didn't happen,
+          install the newest build from the cloud or another box here.</p>
+        <dl class="props">
+          <dt>Version</dt><dd class="mono">{{.Version}}</dd>
+          <dt>Updates</dt><dd id="upd-status" aria-live="polite">Checking for updates…</dd>
+        </dl>
+        <div class="cluster"><button type="button" class="btn btn-primary" id="upd-btn" hidden>UPDATE</button></div>
+      </section>
+    </div>
+
+    <section class="panel stack" aria-labelledby="mesh-h">
+      <h2 class="panel-header" id="mesh-h">Venue mesh radio</h2>
+      <p class="field-hint">The boxes mesh over Wi-Fi (network <code>timerpi</code>, 20 MHz). The built-in
+        Wi-Fi starts on 2.4 GHz at every boot; a USB Wi-Fi adapter adds the other band. Changes apply at the next reboot.</p>
+      <form id="mesh-form" class="stack">
+        <div class="grid grid-sm">
+          <div class="field"><label class="label" for="mesh-country">Wi-Fi country</label>
+            <input class="input mono" id="mesh-country" value="{{.Country}}" maxlength="2" autocomplete="off"></div>
+          <div class="field"><label class="label" for="mesh-ch24">2.4 GHz channel</label>
+            <select class="select" id="mesh-ch24">{{range .Ch24Options}}<option value="{{.}}"{{if eq . $.Ch24}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+          <div class="field"><label class="label" for="mesh-ch5">5 GHz channel</label>
+            <select class="select" id="mesh-ch5">{{range .Mesh5Channels}}<option value="{{.}}"{{if eq . $.Ch5}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+        </div>
+        <div class="cluster"><button type="submit" class="btn btn-primary">Save radio</button></div>
+      </form>
+    </section>
+
+    <div class="grid" style="--grid-min: 22rem">
+      <section class="panel stack" aria-labelledby="rename-h">
+        <h2 class="panel-header" id="rename-h">Rename device</h2>
+        <form id="net-rename" class="field">
+          <label class="label" for="net-rename-name">New hostname</label>
+          <div class="input-group">
+            <input type="text" id="net-rename-name" name="name" class="input" placeholder="{{.Hostname}}" required
+                   pattern="[A-Za-z0-9][A-Za-z0-9-]{1,62}" aria-describedby="net-rename-hint">
+            <button type="submit" class="btn btn-primary">Rename</button>
+          </div>
+          <span class="field-hint" id="net-rename-hint">Renames this TimerPi and re-announces mDNS so the crew reaches it at the new
+            <code>&lt;name&gt;.local</code> immediately. 2–63 characters, letters/digits/hyphens.</span>
+        </form>
+      </section>
+
+      <section class="panel stack" aria-labelledby="theme-h">
+        <h2 class="panel-header" id="theme-h">Appliance default theme</h2>
+        <div class="field">
+          <label class="label" for="tp-def-theme">Default theme</label>
+          <div class="input-group">
+            <select id="tp-def-theme" class="select"></select>
+            <button id="tp-def-theme-save" class="btn" type="button">Save default</button>
+          </div>
+          <span class="field-hint">Which ftl bundle a freshly-opened operator page falls back to (per-browser picks still win).</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- PLAN §11.6 phase 6: the CuTePi/QLab destination pairing. UDP OSC is
+         fire-and-forget (no ack from CuTePi), so the test button proves the
+         packet left — not that the peer acted. -->
+    <section class="panel stack" aria-labelledby="osc-h">
+      <h2 class="panel-header" id="osc-h">CuTePi media bridge (OSC)</h2>
+      <p class="field-hint">Pair a CuTePi media wall: cue starts fire its QLab
+        channel (<code>/cue/&lt;pos&gt;/start</code>) and BLANK cuts it to the panic
+        holding image. Off by default — enable only on a trusted control LAN
+        (OSC carries no authentication). UDP has no ack: the test button
+        proves the packet left, never that the peer acted.</p>
+      <div class="grid">
+        <div class="stack is-gap-s">
+          <div class="field-row">
+            <label class="label" for="osc-in-enabled">Inbound listener</label>
+            <span class="field-hint">QLab/Companion → TimerPi</span>
+            <label class="switch"><input type="checkbox" id="osc-in-enabled"><span class="switch-track"><span class="switch-thumb"></span></span></label>
+          </div>
+          <div class="field">
+            <label class="label" for="osc-in-port">Inbound port</label>
+            <input class="input mono" id="osc-in-port" placeholder="9000" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label class="label" for="osc-in-allow">Accept from</label>
+            <input class="input mono" id="osc-in-allow" placeholder="192.168.1.20, 10.0.0.0/24" aria-describedby="osc-in-allow-hint">
+            <span class="field-hint" id="osc-in-allow-hint">IPs or CIDRs, comma-separated; empty = anyone.</span>
+          </div>
+        </div>
+        <div class="stack is-gap-s">
+          <div class="field-row">
+            <label class="label" for="osc-out-enabled">Outbound</label>
+            <span class="field-hint">TimerPi → CuTePi</span>
+            <label class="switch"><input type="checkbox" id="osc-out-enabled"><span class="switch-track"><span class="switch-thumb"></span></span></label>
+          </div>
+          <div class="field">
+            <label class="label" for="osc-out-host">CuTePi host</label>
+            <input class="input mono" id="osc-out-host" placeholder="cuitepi.local">
+          </div>
+          <div class="field">
+            <label class="label" for="osc-out-port">QLab port</label>
+            <input class="input mono" id="osc-out-port" placeholder="53000" inputmode="numeric">
+          </div>
+        </div>
+      </div>
+      <div class="cluster">
+        <button type="button" class="btn btn-primary" id="osc-save">Save bridge</button>
+        <button type="button" class="btn" id="osc-test">Send test packet</button>
+      </div>
+    </section>
+
+    <section class="panel stack" id="net-panel" aria-live="off"
+             hx-get="/frag/network" hx-trigger="every 5s" hx-swap="innerHTML">
+      {{template "frag-network" .}}
+    </section>
+    <p class="text-muted">The mesh panel polls live; the numbers update without a reload.</p>
+
+    <section class="panel is-danger stack" aria-labelledby="danger-h">
+      <h2 class="panel-header" id="danger-h">Danger zone</h2>
+      <div class="field">
+        <label class="label" for="net-role">Role override</label>
+        <select id="net-role" class="select">
+          <option value="auto" {{if eq .Override "auto"}}selected{{end}}>AUTO — first device up holds authority</option>
+          <option value="primary" {{if eq .Override "primary"}}selected{{end}}>PRIMARY — always authority (split-brain risk documented)</option>
+          <option value="member" {{if eq .Override "member"}}selected{{end}}>MEMBER — never claim, never takeover</option>
+        </select>
+        <span class="field-hint">Applies at once and persists across reboots. Auto is correct for single-appliance venues.</span>
+      </div>
+      <form id="auth-form" class="field">
+        <label class="label" for="auth-pw">Operator password</label>
+        <div class="input-group">
+          <input type="password" id="auth-pw" class="input" autocomplete="new-password"
+                 placeholder="New password (blank = open access)" aria-describedby="auth-pw-hint">
+          <button type="submit" class="btn btn-danger">Save password</button>
+        </div>
+        <span class="field-hint" id="auth-pw-hint">Gates operator surfaces (shows, dashboards, settings) behind this password.
+          <em>Stage displays (<code>/d/…</code>) never need it</em> — a TV must not re-login after a power
+          cut. Empty = open access. Changing it signs out every other device immediately.</span>
+      </form>
+    </section>
   </div>
-
-  <section class="panel">
-    <h2>IDENTITY</h2>
-    <dl class="field-grid">
-      <div class="field"><dt>Hostname</dt><dd class="mono">{{.Hostname}}</dd></div>
-      <div class="field"><dt>Device name</dt><dd class="mono">{{if .DeviceName}}{{.DeviceName}}{{else}}—{{end}}</dd></div>
-      <div class="field"><dt>Version</dt><dd class="mono">{{.Version}}</dd></div>
-      <div class="field"><dt>HTTP + WS port</dt><dd class="mono">{{.Port}}</dd></div>
-      <div class="field"><dt>Role</dt><dd><span class="net-role-chip lamp">{{.Role}}</span> ({{.State}})</dd></div>
-      <div class="field"><dt>Authority epoch</dt><dd class="mono">{{.Epoch}}</dd></div>
-      <div class="field"><dt>Announces</dt><dd class="mono text-truncate">{{.TXT}}</dd></div>
-      <div class="field"><dt>Primary</dt><dd class="mono">{{if .Primary}}{{.Primary}} · epoch {{.PrimaryEpoch}}{{else}}—{{end}}</dd></div>
-    </dl>
-  </section>
-
-  <section class="panel">
-    <h2>ROLE OVERRIDE</h2>
-    <div class="field">
-      <select id="net-role" class="select input-sm">
-        <option value="auto" {{if eq .Override "auto"}}selected{{end}}>AUTO — first device up holds authority</option>
-        <option value="primary" {{if eq .Override "primary"}}selected{{end}}>PRIMARY — always authority (split-brain risk documented)</option>
-        <option value="member" {{if eq .Override "member"}}selected{{end}}>MEMBER — never claim, never takeover</option>
-      </select>
-      <p class="field-hint">Role override persists across reboots. Auto is correct for single-appliance venues.</p>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>RENAME DEVICE</h2>
-    <p class="field-hint">Renames this TimerPi and re-announces mDNS so the crew reaches it at the new
-      <code>&lt;name&gt;.local</code> immediately. Section 2–63 characters, letters/digits/hyphens.</p>
-    <form id="net-rename" class="custom-time" hx-post="/api/network/hostname" hx-target="#net-note" hx-swap="innerHTML">
-      <input type="text" name="name" class="input" placeholder="{{.Hostname}}" aria-label="New hostname" required
-             pattern="[A-Za-z0-9][A-Za-z0-9-]{1,62}">
-      <button type="submit" class="btn btn-primary">Rename</button>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>OPERATOR PASSWORD</h2>
-    <p class="field-hint">Gates operator surfaces (shows, dashboards, settings) behind this password.
-      <em>Stage displays (<code>/d/…</code>) never need it</em> — a TV must not re-login after a power
-      cut. Empty = open access. Changing it signs out every other device immediately.</p>
-    <form id="auth-form" class="custom-time">
-      <input type="password" id="auth-pw" class="input" autocomplete="new-password"
-             placeholder="New password (blank = open access)" aria-label="New operator password">
-      <button type="submit" class="btn btn-primary">Save password</button>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>APPLIANCE DEFAULT THEME</h2>
-    <p class="field-hint">Which ftl bundle a freshly-opened operator page falls back to (per-browser picks still win).</p>
-    <div class="row is-items-center is-gap-s">
-      <select id="tp-def-theme" class="select input-sm" aria-label="Appliance default theme"></select>
-      <button id="tp-def-theme-save" class="btn btn-sm" type="button">Save default</button>
-      <span id="tp-def-theme-status" class="field-hint" aria-live="polite"></span>
-    </div>
-  </section>
-
-  <!-- PLAN §11.6 phase 6: the CuTePi/QLab destination pairing. UDP OSC is
-       fire-and-forget (no ack from CuTePi), so the test button proves the
-       packet left — not that the peer acted. -->
-  <section class="panel">
-    <h2>CUTEPI MEDIA BRIDGE (OSC)</h2>
-    <p class="field-hint">Pair a CuTePi media wall: cue starts fire its QLab
-      channel (<code>/cue/&lt;pos&gt;/start</code>) and BLANK cuts it to the panic
-      holding image. Off by default — enable only on a trusted control LAN
-      (OSC carries no authentication). UDP has no ack: the test button
-      proves the packet left, never that the peer acted.</p>
-    <div class="field-grid">
-      <div class="field">
-        <label class="label" for="osc-in-enabled">Inbound listener (QLab/Companion → TimerPi)</label>
-        <select class="select input-sm" id="osc-in-enabled">
-          <option value="">Off</option>
-          <option value="1">On</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="label" for="osc-in-port">Inbound port</label>
-        <input class="input input-sm mono" id="osc-in-port" placeholder="9000" inputmode="numeric">
-      </div>
-      <div class="field">
-        <label class="label" for="osc-in-allow">Accept from (IPs or CIDRs, comma-separated; empty = anyone)</label>
-        <input class="input input-sm mono" id="osc-in-allow" placeholder="192.168.1.20, 10.0.0.0/24">
-      </div>
-      <div class="field">
-        <label class="label" for="osc-out-enabled">Outbound (TimerPi → CuTePi)</label>
-        <select class="select input-sm" id="osc-out-enabled">
-          <option value="">Off</option>
-          <option value="1">On</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="label" for="osc-out-host">CuTePi host</label>
-        <input class="input input-sm mono" id="osc-out-host" placeholder="cuitepi.local">
-      </div>
-      <div class="field">
-        <label class="label" for="osc-out-port">QLab port</label>
-        <input class="input input-sm mono" id="osc-out-port" placeholder="53000">
-      </div>
-    </div>
-    <div class="cluster" style="margin-top:.6rem">
-      <button type="button" class="btn btn-primary" id="osc-save">Save bridge</button>
-      <button type="button" class="btn" id="osc-test">Send test packet</button>
-      <span id="osc-status" class="field-hint" aria-live="polite"></span>
-    </div>
-  </section>
-
-  <section class="panel" id="net-panel"
-           hx-get="/frag/network" hx-trigger="load, every 5s" hx-swap="innerHTML">
-    <h2>PEERS ON THIS NETWORK</h2>
-    {{if .Peers}}
-    <table class="table net-peers">
-      <thead><tr><th>HOST</th><th>ADDR</th><th>ROLE</th><th>EPOCH</th><th>SEEN</th></tr></thead>
-      <tbody id="net-peer-rows">
-        {{range .Peers}}
-        <tr>
-          <td class="mono">{{.Host}}</td>
-          <td class="mono">{{.Addr}}</td>
-          <td>{{.Role}}{{if .IsPrimary}} <span class="lamp lamp-ok net-role-chip">PRIMARY</span>{{end}}</td>
-          <td class="mono">{{.Epoch}}</td>
-          <td class="text-muted">{{.Age}} ago</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
-    {{else}}
-    <p class="text-muted" id="net-peer-empty">No other TimerPi devices detected in the last 30 s.
-      Discovery re-checks every 5 s.</p>
-    {{end}}
-  </section>
-
-  <p class="text-muted">This panel polls live; the numbers update without a reload.</p>
 </main>
-
-<script>
-// Role override + rename handlers post the raw JSON these endpoints take
-// (htmx form fields would need rework server-side; endpoints are JSON APIs).
-// showNote writes the status line with textContent only (no markup from
-// the server ever reaches innerHTML).
-function showNote(ok, text) {
-  var note = document.getElementById('net-note');
-  if (!note) return;
-  var div = document.createElement('div');
-  div.className = ok ? 'alert alert-success' : 'field-error';
-  div.setAttribute('role', 'alert');
-  div.textContent = text;
-  note.replaceChildren(div);
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-  var roleSel = document.getElementById('net-role');
-  if (roleSel) roleSel.addEventListener('change', function () {
-    fetch('/api/network/role', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ force: roleSel.value }),
-    }).then(function (r) {
-      // Errors come back as {error} with a 4xx/5xx status: branch on the
-      // status, not on ok (BUGLOG RW51: a 400 used to say "saved").
-      return r.json().catch(function () { return {}; }).then(function (out) { return { ok: r.ok && out.ok !== false, out: out }; });
-    }).then(function (x) {
-      showNote(x.ok, x.ok ? 'Role override saved: ' + roleSel.value : (x.out.error || 'Not saved'));
-      if (x.ok) setTimeout(function () { window.location.reload(); }, 900);
-    }).catch(function () { showNote(false, 'Network error — not saved'); });
-  });
-
-  // Appliance default theme (B7): fetched list, DB-persisted selection.
-  var themeSel = document.getElementById('tp-def-theme');
-  if (themeSel) {
-    fetch('/api/theme').then(function (r) { return r.json(); }).then(function (j) {
-      var list = (j.themes || []).slice().sort();
-      for (var i = 0; i < list.length; i++) {
-        var o = document.createElement('option');
-        o.value = list[i]; o.textContent = list[i];
-        if (list[i] === j.fallback) o.textContent += ' (bundled default)';
-        themeSel.appendChild(o);
-      }
-      if (j.current) themeSel.value = j.current;
-    });
-    document.getElementById('tp-def-theme-save').addEventListener('click', function () {
-      fetch('/api/theme', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ theme: themeSel.value }),
-      }).then(function (r) { return r.json(); }).then(function (j) {
-        var el = document.getElementById('tp-def-theme-status');
-        if (el) el.textContent = j.ok ? 'Saved — fresh browsers open in “' + (j.theme || 'blue-future (product default)') + '”' : (j.error || 'save failed');
-      });
-    });
-  }
-
-  // Operator password (A1): saves, sets the fresh auth token in
-  // localStorage so THIS device keeps its controls join, then reloads the
-  // (possibly now-gated) page.
-  var authForm = document.getElementById('auth-form');
-  if (authForm) authForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var pw = document.getElementById('auth-pw').value;
-    fetch('/api/auth/password', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pw: pw }),
-    }).then(function (r) { return r.json(); }).then(function (out) {
-      if (out.ok) {
-        if (out.token) {
-          try { localStorage.setItem('tp.atoken', out.token); } catch (err) { /* private mode */ }
-        } else {
-          try { localStorage.removeItem('tp.atoken'); } catch (err) { /* */ }
-        }
-        setTimeout(function () { window.location.reload(); }, 400);
-      }
-    });
-  });
-});
-</script>
+<footer class="app-status"><span class="text-muted">TimerPi · {{.Hostname}}</span><span class="text-muted push mono">{{.Version}}</span></footer>
+<div class="toast-region" popover="manual" id="toast-region"></div>
+<script type="module" src="{{asset "/src/settings.js"}}"></script>
 </body>
 </html>
 {{end}}

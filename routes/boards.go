@@ -343,7 +343,7 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		// chrome is operator furniture, not display furniture — the REST is
 		// already behind A1's AuthGate, so this just stops shipping a toolbar
 		// that can only ever answer 401s.
-		Editable:   c.Query("edit") == "1" && d.superOfShow(c, showID), // layouts: SuperOperator only (U25)
+		Editable:   c.Query("edit") == "1" && d.superOfShow(c, showID), // layouts: Event Technician only (U25)
 		LayoutJSON: template.JS(board.Layout),
 	}
 }

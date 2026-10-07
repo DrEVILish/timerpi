@@ -318,7 +318,6 @@ type dayRowVM struct {
 	DurFmt   string
 	StartFmt string
 	EndFmt   string
-	HoldFmt  string
 	Color    string
 	IsBreak  bool
 	IsDone   bool
@@ -348,7 +347,6 @@ func dayRows(pd *views.PageData) []dayRowVM {
 			DurFmt:   c.DurFmt,
 			StartFmt: c.StartFmt,
 			EndFmt:   c.EndFmt,
-			HoldFmt:  c.HoldFmt,
 			Color:    c.Color,
 			IsBreak:  c.IsBreak,
 			IsDone:   seg.IsDone,

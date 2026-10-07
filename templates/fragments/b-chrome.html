@@ -1,7 +1,6 @@
 {{- /*
   b-chrome.html — display-board chrome (Agent N). Dot is *views.BoardPage.
-  frag-b-chrome: offline strip (own id `b-offline`, canonical strip wording
-  shared with base / display / d-chrome — keep the four in voice) + QR join
+  frag-b-chrome: QR join
   card (d-chrome pattern: mini QR of THIS board URL, control-room link,
   <hostname>.local hint).
   frag-b-toolbar: operator compose chrome (rendered only when .Editable, i.e.
@@ -45,26 +44,26 @@
 <div class="b-palette b-chrome" id="b-palette" hidden>
   <span class="b-palette-title">Add widget</span>
   <div class="b-palette-list" id="b-palette-list" role="list">
-    <button type="button" data-add="countdown" role="listitem">Countdown</button>
-    <button type="button" data-add="cuelabel" role="listitem">Cue label</button>
-    <button type="button" data-add="speaker" role="listitem">Speaker</button>
-    <button type="button" data-add="nextup" role="listitem">Next up</button>
-    <button type="button" data-add="nownext" role="listitem">Current &amp; next</button>
-    <button type="button" data-add="wallclock" role="listitem">Wall clock</button>
-    <button type="button" data-add="progress" role="listitem">Cue progress</button>
-    <button type="button" data-add="dayprogress" role="listitem">Day progress</button>
-    <button type="button" data-add="messages" role="listitem">Messages</button>
-    <button type="button" data-add="showtitle" role="listitem">Show title</button>
-    <button type="button" data-add="rate" role="listitem">Rate chip</button>
-    <button type="button" data-add="schedule" role="listitem">Schedule</button>
-    <button type="button" data-add="notice" role="listitem">Notice</button>
-    <button type="button" data-add="poll" role="listitem">Audience item</button>
-    <button type="button" data-add="qa" role="listitem">Q&amp;A wall</button>
-    <button type="button" data-add="wordcloud" role="listitem">Word cloud</button>
-    <button type="button" data-add="map" role="listitem">Map</button>
-    <button type="button" data-add="joinqr" role="listitem">Join QR</button>
-    <button type="button" data-add="rooms" role="listitem">All rooms now</button>
-    <button type="button" data-add="eventschedule" role="listitem">Event schedule</button>
+    <button class="btn btn-sm" type="button" data-add="countdown" role="listitem">Countdown</button>
+    <button class="btn btn-sm" type="button" data-add="cuelabel" role="listitem">Cue label</button>
+    <button class="btn btn-sm" type="button" data-add="speaker" role="listitem">Speaker</button>
+    <button class="btn btn-sm" type="button" data-add="nextup" role="listitem">Next up</button>
+    <button class="btn btn-sm" type="button" data-add="nownext" role="listitem">Current &amp; next</button>
+    <button class="btn btn-sm" type="button" data-add="wallclock" role="listitem">Wall clock</button>
+    <button class="btn btn-sm" type="button" data-add="progress" role="listitem">Cue progress</button>
+    <button class="btn btn-sm" type="button" data-add="dayprogress" role="listitem">Day progress</button>
+    <button class="btn btn-sm" type="button" data-add="messages" role="listitem">Messages</button>
+    <button class="btn btn-sm" type="button" data-add="showtitle" role="listitem">Show title</button>
+    <button class="btn btn-sm" type="button" data-add="rate" role="listitem">Rate chip</button>
+    <button class="btn btn-sm" type="button" data-add="schedule" role="listitem">Schedule</button>
+    <button class="btn btn-sm" type="button" data-add="notice" role="listitem">Notice</button>
+    <button class="btn btn-sm" type="button" data-add="poll" role="listitem">Audience item</button>
+    <button class="btn btn-sm" type="button" data-add="qa" role="listitem">Q&amp;A wall</button>
+    <button class="btn btn-sm" type="button" data-add="wordcloud" role="listitem">Word cloud</button>
+    <button class="btn btn-sm" type="button" data-add="map" role="listitem">Map</button>
+    <button class="btn btn-sm" type="button" data-add="joinqr" role="listitem">Join QR</button>
+    <button class="btn btn-sm" type="button" data-add="rooms" role="listitem">All rooms now</button>
+    <button class="btn btn-sm" type="button" data-add="eventschedule" role="listitem">Event schedule</button>
   </div>
   <span class="b-palette-title">Canvas</span>
   <div class="cluster is-gap-2xs">

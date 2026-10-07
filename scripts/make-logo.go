@@ -19,6 +19,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 var (
@@ -32,17 +33,7 @@ var (
 // aa coverage of pixel center (x,y) inside circle cx,cy,r.
 func circleCoverage(x, y, cx, cy, r float64) float64 {
 	d := math.Hypot(x-cx, y-cy)
-	return clamp((r+0.5)-d, 0, 1)
-}
-
-func clamp(v, lo, hi float64) float64 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
+	return min(max((r+0.5)-d, 0), 1)
 }
 
 func lerp(a, b color.RGBA, t float64) color.RGBA {
@@ -63,7 +54,7 @@ func draw(img *image.RGBA, s int) {
 			dx := math.Max(math.Abs(fx-r)-(r-corner), 0)
 			dy := math.Max(math.Abs(fy-r)-(r-corner), 0)
 			d := math.Hypot(dx, dy) - corner
-			cov := clamp(-d+0.5, 0, 1)
+			cov := min(max(-d+0.5, 0), 1)
 			if cov > 0 {
 				px(x, y, lerp(color.RGBA{0, 0, 0, 0}, bg, cov))
 			}
@@ -78,9 +69,9 @@ func draw(img *image.RGBA, s int) {
 			fx, fy := float64(x)+0.5, float64(y)+0.5
 			d := math.Hypot(fx-r, fy-r)
 			if d < ringR*0.94 {
-				px(x, y, lerp(px2v(img, x, y), face, clamp(ringR*0.94-d, 0, 1)))
+				px(x, y, lerp(px2v(img, x, y), face, min(max(ringR*0.94-d, 0), 1)))
 			}
-			if cov := clamp(ringW+0.5-math.Abs(d-ringR), 0, 1); cov > 0 {
+			if cov := min(max(ringW+0.5-math.Abs(d-ringR), 0), 1); cov > 0 {
 				px(x, y, lerp(px2v(img, x, y), purple, cov))
 			}
 		}
@@ -122,9 +113,9 @@ func line(img *image.RGBA, cx, cy, tx, ty, w float64, c color.RGBA) {
 			// distance from segment (cx,cy)-(tx,ty)
 			vx, vy := tx-cx, ty-cy
 			l2 := vx*vx + vy*vy
-			t := clamp(((fx-cx)*vx+(fy-cy)*vy)/l2, 0, 1)
+			t := min(max(((fx-cx)*vx+(fy-cy)*vy)/l2, 0), 1)
 			d := math.Hypot(fx-(cx+t*vx), fy-(cy+t*vy))
-			if cov := clamp(w+0.5-d, 0, 1); cov > 0 {
+			if cov := min(max(w+0.5-d, 0), 1); cov > 0 {
 				img.SetRGBA(x, y, lerp(px2v(img, x, y), c, cov))
 			}
 		}
@@ -135,7 +126,7 @@ func main() {
 	for _, size := range []int{192, 512} {
 		img := image.NewRGBA(image.Rect(0, 0, size, size))
 		draw(img, size)
-		out := filepath.Join("public", "img", "timerpi-"+itoa(size)+".png")
+		out := filepath.Join("public", "img", "timerpi-"+strconv.Itoa(size)+".png")
 		f, err := os.Create(out)
 		if err != nil {
 			println("create:", err.Error())
@@ -148,16 +139,4 @@ func main() {
 		f.Close()
 		println("wrote", out)
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }

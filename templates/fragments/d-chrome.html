@@ -15,16 +15,41 @@
                  it on every page (renderMessage runs for all pages).
 */ -}}
 {{define "frag-dv-chrome"}}
-<div class="tp-offline" id="tp-offline">
-  <div>
-    <h2>LINK DOWN</h2>
-    <p>Server unreachable — working from the local copy.</p>
-    <p class="text-muted">Reconnects automatically when the link returns.</p>
-  </div>
-</div>
+{{template "frag-offline"}}
 
 <div class="tp-stage-message" id="tp-live-msg" hidden><div></div></div>
 
 {{- /* No join card: screens never show the room code or the control-room
      link (STATUS U5). Operators add screens from the Screens page. */ -}}
+{{end}}
+
+{{- /*
+  frag-offline — the one LINK DOWN overlay (C2 wording), shared by the stage,
+  variant, board and dashboard pages. JS toggles .is-visible on #tp-offline
+  (timerpi.js mesh poll; board.js / the variant module for the pre-snapshot
+  hole). The overlay is our shell; the content is ftl .empty-state.is-offline.
+  No aria-hidden: the visible overlay carries announced content.
+*/ -}}
+{{define "frag-offline"}}
+<div class="tp-offline" id="tp-offline">
+  <div class="empty-state is-offline" role="status">
+    <svg class="icon empty-state-icon" aria-hidden="true"><use href="/ftl/assets/icons/icons.svg#icon-cloud-off"/></svg>
+    <h2 class="empty-state-title">LINK DOWN</h2>
+    <p class="empty-state-hint">Server unreachable — working from the local copy.</p>
+    <p class="empty-state-hint">Reconnects automatically when the link returns.</p>
+  </div>
+</div>
+{{end}}
+
+{{- /*
+  frag-waiting — the orphaned-display waiting room (display, variants,
+  board). Visibility is purely body[data-waiting] (waiting.js applyWaiting).
+  ftl .splash on a black stage; the art is our logo.
+*/ -}}
+{{define "frag-waiting"}}
+<div class="splash tp-waiting" id="tp-waiting" aria-hidden="true">
+  <div class="splash-art" aria-hidden="true"></div>
+  <p class="splash-title">WAITING FOR CONNECTION…</p>
+  <p class="splash-message">This screen has no show<span id="tp-waiting-name"></span>. A control room on this network can capture it from the Screens gallery.</p>
+</div>
 {{end}}

@@ -47,6 +47,7 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		Name  string `json:"name"`
 		Host  string `json:"host"`
 		Token string `json:"token"`
+		Code  string `json:"code"` // a box's pairing code (VENUE-CLOUD §4)
 	}
 	_ = c.ShouldBindJSON(&body) // form fallback below keeps curl honest
 	if body.Name == "" {
@@ -61,7 +62,15 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "too many screens registering from this address"})
 		return
 	}
-	if err := d.Store.RegisterWaitingToken(body.Name, body.Host, body.Token); err != nil {
+	register := func() error { return d.Store.RegisterWaitingToken(body.Name, body.Host, body.Token) }
+	if body.Code != "" {
+		if body.Token == "" || !timerpi.ValidPairCode(body.Code) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "a box registers with a token and a 6-digit code"})
+			return
+		}
+		register = func() error { return d.Store.RegisterBoxWaiting(body.Name, body.Host, body.Token, body.Code) }
+	}
+	if err := register(); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, timerpi.ErrWaitingFull) {
 			status = http.StatusTooManyRequests
@@ -83,7 +92,7 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "name required"})
 		return
 	}
-	code, screen, err := d.Store.ClaimWaitingToken(c.Query("name"), c.Query("host"), c.Query("token"))
+	code, screen, isBox, err := d.Store.ClaimWaitingBox(c.Query("name"), c.Query("host"), c.Query("token"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
@@ -96,7 +105,15 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 			key, _ = d.Store.ScreenKey(sid, screen)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "assigned": code, "screen": screen, "key": key})
+	out := gin.H{"ok": true, "assigned": code, "screen": screen, "key": key}
+	if isBox && code != "" {
+		// A paired box also gets its event: the mesh key signs its
+		// announcements and the cloud link (VENUE-CLOUD §4–§5).
+		if p, ok := d.boxPairing(code); ok {
+			out["pairing"] = p
+		}
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // waitingJSON is the operator list shape.
@@ -134,38 +151,51 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad waiting id"})
 		return
 	}
-	// PLAN §11.2 capture modal: the operator names the screen and sets its
-	// Theme / Room(location) / Layout in one step; the config lands on the
-	// screens registry BEFORE the display hops, so its first join already
-	// carries theme + board assignment.
-	var body struct {
-		Code     string `json:"code"`
-		Name     string `json:"name"`
-		Theme    string `json:"theme"`
-		Room     string `json:"room"`
-		BoardID  int64  `json:"boardId"`
-		Template string `json:"template"` // §Layout round: template drives the board
-		Kind     string `json:"kind"`     // audience | walkin | presenter
-		Rotation int    `json:"rotation"` // 0/90/180/270
-	}
+	var body captureBody
 	_ = c.ShouldBindJSON(&body)
+	code, name, ok := d.captureWaiting(c, id, body)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "code": code, "name": name})
+}
+
+// captureBody is the capture modal: the operator names the screen and sets
+// its theme, location, layout, display type and rotation in one step.
+type captureBody struct {
+	Code     string `json:"code"` // the room's code
+	Name     string `json:"name"`
+	Theme    string `json:"theme"`
+	Room     string `json:"room"` // the screen's location label
+	BoardID  int64  `json:"boardId"`
+	Template string `json:"template"` // §Layout round: template drives the board
+	Kind     string `json:"kind"`     // audience | walkin | presenter
+	Rotation int    `json:"rotation"` // 0/90/180/270
+}
+
+// captureWaiting assigns waiting row id to a room with the modal's
+// settings. It answers the error itself and returns ok=false on failure.
+func (d *Deps) captureWaiting(c *gin.Context, id int64, body captureBody) (string, string, bool) {
+	// PLAN §11.2 capture modal: the config lands on the screens registry
+	// BEFORE the display hops, so its first join already carries theme +
+	// board assignment.
 	sid, ok := timerpi.ResolveShowID(d.Store, body.Code)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown show code"})
-		return
+		return "", "", false
 	}
 	sh, err := d.Store.GetShow(sid)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown show code"})
-		return
+		return "", "", false
 	}
 	if !d.superOfShow(c, sid) { // screens: SuperOperator only (STATUS U25)
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "only the SuperOperator sets up screens"})
-		return
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "only the Event Technician sets up screens"})
+		return "", "", false
 	}
 	if !timerpi.ValidScreenKind(body.Kind) || !timerpi.ValidRotation(body.Rotation) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad display type or rotation"})
-		return
+		return "", "", false
 	}
 	w, err := d.Store.GetWaiting(id)
 	if err != nil {
@@ -174,7 +204,7 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{"ok": false, "error": "waiting display gone"})
-		return
+		return "", "", false
 	}
 	// The operator names the screen; blank = keep the display's own name.
 	name := timerpi.SanitizeScreenName(body.Name)
@@ -183,7 +213,7 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 	}
 	if !screenThemeRe.MatchString(body.Theme) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
-		return
+		return "", "", false
 	}
 	boardID := body.BoardID
 	tplKey := ""
@@ -191,13 +221,13 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		k, known := templateKey(tpl)
 		if !known {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
-			return
+			return "", "", false
 		}
 		tplKey, boardID = k, 0 // the screen shows the built-in directly (U10)
 	}
 	if boardID < 0 || !d.boardKnown(sid, boardID) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
-		return
+		return "", "", false
 	}
 	// Take the waiting row first (RW38): a second operator capturing the
 	// same screen loses here, before writing any config of its own.
@@ -208,24 +238,24 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 			status, msg = http.StatusConflict, "someone else just set this screen up"
 		}
 		c.JSON(status, gin.H{"ok": false, "error": msg})
-		return
+		return "", "", false
 	}
 	if err := d.Store.SetScreenConfig(sid, name, body.Theme, boardID, body.Room); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
+		return "", "", false
 	}
 	if err := d.Store.SetScreenLook(sid, name, body.Kind, body.Rotation); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
+		return "", "", false
 	}
 	if tplKey != "" {
 		if err := d.Store.SetScreenTemplate(sid, name, tplKey); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-			return
+			return "", "", false
 		}
 	}
 	d.notifyControls(sid)
-	c.JSON(http.StatusOK, gin.H{"ok": true, "code": sh.Code, "name": name})
+	return sh.Code, name, true
 }
 
 // DELETE /api/waiting/:id — dismiss a waiting row (the display keeps

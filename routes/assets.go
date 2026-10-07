@@ -189,7 +189,7 @@ func (d *Deps) apiAssetDelete(c *gin.Context) {
 		allowed = d.isSuper(c, ev)
 	}
 	if !allowed {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "only the event's SuperOperator may delete its images"})
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "only the event's Event Technician may delete its images"})
 		return
 	}
 	if err := d.Store.DeleteAsset(id); err != nil {

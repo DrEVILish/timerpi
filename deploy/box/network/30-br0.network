@@ -1,0 +1,16 @@
+# DHCP from the venue router; without one (offline show) the box keeps a
+# link-local address, so mDNS discovery and the election still work.
+[Match]
+Name=br0
+
+[Link]
+RequiredForOnline=no
+
+[Network]
+DHCP=ipv4
+LinkLocalAddressing=yes
+ConfigureWithoutCarrier=yes
+MulticastDNS=no
+
+[DHCPv4]
+ClientIdentifier=mac

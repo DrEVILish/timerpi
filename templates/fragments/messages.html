@@ -21,18 +21,13 @@
 
     <form class="cluster is-gap-s" data-cmd="addMsg">
       <input class="input" type="text" name="text" placeholder="Message to stage…" aria-label="Message text" required>
-      <!-- Fix-3: vocabulary fix — core has no .select-sm; sizing pair is .select.input-sm.
-           Palette: purple-led per owner brand decision — #7C3AED is brand & default;
-           amber/red kept only as SPEC timer-alert state semantics (caution/WRAP-UP),
-           not brand; neon green #44ff88 removed (green is logo-artwork-only). -->
-      <select class="select input-sm" name="color" aria-label="Message color">
-        <option value="#7C3AED" selected>Brand</option>
-        <option value="">Theme</option>
-        <option value="#ffaa00">Amber</option>
-        <option value="#ff4444">Red</option>
-      </select>
-      <label class="row is-items-center is-gap-2xs" title="Put it on every display immediately (unchecked = queue it for the Show button)">
-        <input type="checkbox" name="show" value="true" checked style="width:auto"> Show now
+      <!-- Colour: the shared swatch picker (swatches.js) fills the host and
+           writes the hidden input. Brand #7C3AED is the default; Theme ('')
+           follows the theme; amber/red are the SPEC alert semantics. -->
+      <input type="hidden" id="msg-color" name="color" value="#7C3AED">
+      <div data-swatches-for="msg-color"></div>
+      <label class="check" title="Put it on every display immediately (unchecked = queue it for the Show button)">
+        <input class="checkbox" type="checkbox" name="show" value="true" checked> Show now
       </label>
       <button class="btn btn-sm btn-primary" type="submit">Add</button>
     </form>

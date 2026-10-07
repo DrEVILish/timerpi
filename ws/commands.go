@@ -96,6 +96,9 @@ func (h *Hub) engDone(s *session, action, detail string, errOf func(error), opEr
 	h.logAction(s, action, detail)
 }
 
+// FlashMS is how long a presenter flash lasts.
+const FlashMS = 5000
+
 func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf func(error)) {
 	// A1: with the operator password set, all commands belong to a live
 	// operator login — the possibly-unauthenticated display/mesh roles are
@@ -112,6 +115,14 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 	if s.role != "controls" {
 		s.sendErr("role " + s.role + " is read-only")
 		return
+	}
+	// The cloud's copy of an event running at a venue takes no commands
+	// unless they go through the link (venue.go).
+	if gate := h.hooks().gate; gate != nil {
+		if err := gate(s.showID); err != nil {
+			s.sendErr(err.Error())
+			return
+		}
 	}
 	args := map[string]any{}
 	if len(rawArgs) > 0 {
@@ -160,6 +171,11 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 			oscbridge.FireOut("go", 0)
 		}
 		errOf(eng.Notify())
+	case "flash":
+		// Presenter screens blink the timer for a few seconds (2026-10-07):
+		// a transient frame, nothing stored.
+		h.logAction(s, "flash", "")
+		h.fanout(s.showID, marshalFrame("t", "flash", "ms", FlashMS))
 	case "jump":
 		// jump default = arm without starting; start:true begins now.
 		if argBool(args, "start") {
@@ -402,6 +418,12 @@ func (h *Hub) commandCueEdit(s *session, eng *timerpi.Engine, args map[string]an
 	if v, ok := stringArg(args, "location"); ok {
 		cue.Location = v
 	}
+	if _, ok := args["alertFlash1"]; ok {
+		cue.AlertFlash1 = argBool(args, "alertFlash1")
+	}
+	if _, ok := args["alertFlash2"]; ok {
+		cue.AlertFlash2 = argBool(args, "alertFlash2")
+	}
 	if v, ok := int64Arg(args, "holdMS"); ok {
 		cue.HoldMS = v
 	}
@@ -511,10 +533,10 @@ func cuesSignature(cues []timerpi.Cue) string {
 	// At zero, alert or note until a reload because only the title,
 	// duration, type and timer were compared.
 	for _, c := range cues {
-		fmt.Fprintf(&b, "%d|%d|%q|%d|%s|%s|%q|%q|%d|%d|%s|%s|%s|%q|%q|%q;",
+		fmt.Fprintf(&b, "%d|%d|%q|%d|%s|%s|%q|%q|%d|%d|%s|%s|%s|%q|%q|%q|%t|%t;",
 			c.Pos, c.ID, c.Label, c.DurationMS, c.Kind, c.TimerKind,
 			c.Speaker, c.Location, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
-			c.EndAction, c.Notes, c.Tags, c.Color)
+			c.EndAction, c.Notes, c.Tags, c.Color, c.AlertFlash1, c.AlertFlash2)
 	}
 	return b.String()
 }
@@ -565,25 +587,11 @@ func currentSignature(snap timerpi.Snapshot) string {
 // Args helpers — JSON numbers arrive as float64; missing → ok=false.
 
 func argInt(args map[string]any, key string) int64 {
-	v, _ := int64Arg(args, key)
+	v, _ := timerpi.ArgInt64(args, key)
 	return v
 }
 
-func int64Arg(args map[string]any, key string) (int64, bool) {
-	switch v := args[key].(type) {
-	case float64:
-		// NaN or past float precision: refuse rather than let the
-		// platform-defined int64 conversion pick a value (BUGLOG RW30).
-		if !(v > -(1<<53) && v < 1<<53) {
-			return 0, false
-		}
-		return int64(v), true
-	case nil:
-		return 0, false
-	default:
-		return 0, false
-	}
-}
+var int64Arg = timerpi.ArgInt64
 
 func argBool(args map[string]any, key string) bool {
 	switch v := args[key].(type) {

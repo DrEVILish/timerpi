@@ -67,8 +67,11 @@ export async function run(t) {
   await pg.waitForTimeout(600);
   await pg.fill('form[data-cmd="addMsg"] input[name=text]', 'Later');
   await pg.uncheck('form[data-cmd="addMsg"] input[name=show]');
+  // Colour is an ftl swatch picker (re-mounted after the panel's swap).
+  await pg.click('#messages-panel .swatches label.swatch[title="Red"]');
   await pg.click('form[data-cmd="addMsg"] button[type=submit]');
   await pg.waitForTimeout(900);
+  t.check('the colour picker is back after the swap', !!(await pg.$('#messages-panel .swatches input:checked[value="#7C3AED"]')));
   let list = await items();
   t.check(`queued message is listed (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /queued/.test(s)));
   await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="showMsg"]');
@@ -76,5 +79,12 @@ export async function run(t) {
   list = await items();
   t.check(`showing a queued message keeps the list (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
   t.check('the badge counts both', (await pg.textContent('#messages-panel .badge')).trim() === '2');
+  const sj = await snap();
+  const cols = Object.fromEntries((sj.messages ?? sj.snapshot?.messages ?? []).map((m) => [m.text, m.color]));
+  t.check(`message colours: Brand by default, Red when picked (${JSON.stringify(cols)})`, cols['On now'] === '#7C3AED' && cols.Later === '#ff4444');
+  t.check('footer connection is an ftl .connection, live', await pg.$eval('#conn-label', (e) => e.classList.contains('connection') && e.dataset.state === 'live'));
+  await pg.click('[popovertarget="tp-theme-pop"]');
+  t.check('Change Theme opens the ftl dropdown popover', await pg.$eval('#tp-theme-pop', (e) => e.matches(':popover-open') && !!e.querySelector('#theme-select option')));
+  await pg.keyboard.press('Escape');
   t.check('no page errors', errs.length === 0);
 }

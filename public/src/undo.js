@@ -38,6 +38,7 @@ export function createUndo(bus) {
           autoContinue: !!cue.autoContinue,
           alert1MS: cue.alert1MS || 0, alert2MS: cue.alert2MS || 0,
           alertColor1: cue.alertColor1 || '', alertColor2: cue.alertColor2 || '',
+          alertFlash1: !!cue.alertFlash1, alertFlash2: !!cue.alertFlash2,
           color: cue.color || '', notes: cue.notes || '',
         },
       });

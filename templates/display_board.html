@@ -23,7 +23,7 @@
   <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
   <span class="b-topbar-show">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
   <span class="b-topbar-board">{{.Board.Name}}</span>
-  <span class="b-link" id="b-link" data-online="1">LINK LIVE</span>
+  <span class="connection b-link" id="b-link" data-state="live">LINK LIVE</span>
 </div>
 
 {{if .Editable}}{{template "frag-b-toolbar" .}}
@@ -59,22 +59,12 @@
 <!-- Owner round: display outputs carry NO buttons. The offline strip is a
      status (not a control); the compose chrome (palette/toolbar/join card)
      renders ONLY for the gallery editor iframe (?edit=1&preview=1). -->
-<div class="b-offline" id="b-offline">
-  <div>
-    <h2>LINK DOWN</h2>
-    <p>Server unreachable — working from the local copy.</p>
-    <p class="text-muted">Reconnects automatically when the link returns.</p>
-  </div>
-</div>
+{{template "frag-offline"}}
 {{if .Editable}}{{template "frag-b-chrome" .}}{{end}}
 
 <script type="application/json" id="b-layout">{{.LayoutJSON}}</script>
 <div class="toast-region" popover="manual" id="toast-region"></div>
-<div class="tp-waiting" id="tp-waiting" aria-hidden="true">
-  <img src="/img/timerpi.svg" alt="">
-  <h2>WAITING FOR CONNECTION…</h2>
-  <p class="text-muted">This screen has no show<span id="tp-waiting-name"></span>. A control room on this network can capture it from the Screens gallery.</p>
-</div>
+{{template "frag-waiting"}}
 <!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
 <div class="tp-blanked" aria-hidden="true">
   <img src="/img/timerpi.svg" alt="">

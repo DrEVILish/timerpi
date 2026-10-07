@@ -1,0 +1,8 @@
+[Match]
+Name=bat0
+
+[Network]
+Bridge=br0
+
+[Link]
+RequiredForOnline=no

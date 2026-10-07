@@ -1,0 +1,9 @@
+# Any box may be wired: eth0 is always a bridge port (idle without a cable).
+[Match]
+Name=eth0
+
+[Network]
+Bridge=br0
+
+[Link]
+RequiredForOnline=no

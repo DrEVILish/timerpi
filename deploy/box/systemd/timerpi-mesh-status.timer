@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the TimerPi venue mesh status every 10 s
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

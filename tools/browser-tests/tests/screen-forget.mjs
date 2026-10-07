@@ -25,7 +25,7 @@ export async function run(t) {
   t.check('no separate "Forget" text button remains', (await pg.$$('.tp-scr button')).length > 0 &&
     !(await pg.$$eval('.tp-scr button', (bs) => bs.some((b) => b.textContent.trim() === 'Forget'))));
   await x.click();
-  await pg.click('.tp-dlg-actions .btn-danger');
+  await pg.click('dialog.modal .modal-footer .btn-danger');
   await pg.waitForTimeout(1200);
   const list = await (await ctx.request.get(`${t.base}/api/shows/${room}/screens`)).json();
   t.check('the screen is gone after confirming', !list.screens.some((s) => s.name === 'Old TV'));
@@ -37,7 +37,7 @@ export async function run(t) {
   await tv.goto(`${t.base}/d/${room}?screen=Live+TV`);
   await pg.waitForSelector('button[aria-label="Forget screen Live TV"]', { timeout: 10000 });
   await pg.click('button[aria-label="Forget screen Live TV"]');
-  await pg.click('.tp-dlg-actions .btn-danger');
+  await pg.click('dialog.modal .modal-footer .btn-danger');
   await tv.waitForURL(/\/d\/\?screen=/, { timeout: 8000 }).catch(() => {});
   t.check(`the open tab went back to the ready screen (${tv.url().replace(t.base, '')})`, /\/d\/\?screen=Live/.test(tv.url()));
   await pg.waitForTimeout(2500);

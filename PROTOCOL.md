@@ -32,7 +32,8 @@
 | `GET /a/:code` | audience | Phone page (open) |
 | `GET /zone/:name` | — | Retired (STATUS C10); 302 to `/`. The event walk-in replaces it |
 | `GET /favicon.ico` | browser | 301 to `/img/timerpi.svg` |
-| `GET /health` | probe | `{ok, version:"2.0", uptime, device, title, sessions:{connected}}` |
+| `GET /health` | probe | `{ok, version, proto, role:"box"\|"cloud", uptime, device, title, sessions:{connected}}` |
+| `GET /api/update/manifest?arch=` · `GET /api/update/binary?arch=` | open. Signed build for the boot-time updater: a published release in `<data>/releases/<arch>/`, else this binary (when its manifest is beside it). Manifest `{version, arch, sha256, size, sig}`, ed25519 over `timerpi-update/1\n<version>\n<arch>\n<sha256>\n<size>` |
 
 Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`), `/assets/:id` (uploaded blobs, public).
 
@@ -51,14 +52,15 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 |---|---|
 | `POST /api/events {name, password, rooms[]}` | Create (password ≥ 4 chars). Sets the supervisor session. → `{code, codeFmt, admin}` |
 | `GET /api/events/:code` | Lobby data: `{event:{code, name, theme, mapAsset, hasSuperPassword, isSuper, rooms[{code, name, pos, hasPassword, canModerate}]}}` |
-| `POST /api/events/:code/login {pw}` | Supervisor sign-in |
+| `POST /api/events/:code/login {pw, now?}` | Event Technician sign-in. `now` (browser ms) sets a box's clock when it was never set |
 | `POST /api/events/:code/rooms/:room/login {pw}` | Moderator sign-in (`pw` empty when the room has none) → `{room:"/c/<code>"}` |
-| `PATCH /api/events/:code {name?, theme?, password?}` · `DELETE /api/events/:code` | super |
+| `PATCH /api/events/:code {name?, theme?, password?, endsAt?}` · `DELETE /api/events/:code` | super. `endsAt` epoch ms (0 clears); screens release at end + 4 h |
 | `GET /api/events/:code/live` | super. Per room: running, paused, overtime, remainingMS, active/next label, blanked, sessions, screens |
 | `POST /api/events/:code/verb {verb, room?}` | super. `go next prev pause resume reset blank unblank`; no `room` = every room |
 | `POST /api/events/:code/rooms {name}` · `PATCH …/rooms/:room {name?, password?, clearPassword?, pos?}` · `DELETE …/rooms/:room` | super. Room admin |
 | `POST /api/events/:code/room-password {password}` | super. Same moderator password for every room ("" clears all) |
 | `POST /api/events/:code/map {assetId}` | super. Event map (0 clears) |
+| `POST /api/events/:code/pair {pairCode, code, kind, template, rotation, name?, theme?, room?}` | super. Pair the box showing `pairCode` (6 digits, registered in the last minute) as a screen of room `code`; 10 tries/min per event |
 | `POST /api/events/:code/rooms/import` (multipart `file`) | super. Room from a `.timerpi.json` bundle |
 
 ### Rooms (shows)
@@ -91,7 +93,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}` |
 | `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
 | `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | Layouts `{v, rows, orientation, widgets[]}`. `PUT {name?, layout?}` is validated (types, overlap, limits) |
-| `POST /api/waiting/register {name,host,token}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>` |
+| `POST /api/waiting/register {name,host,token,code?}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>`. A box registers with its pairing `code`; once paired, its `mine` also carries `pairing:{event, eventName, meshKey, endsAt, room}` (boxes only) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session; capture needs moderator access to the room. A screen already captured into another room → 409 |
 
 ### Audience interactions (`routes/audience.go`, model in `timerpi/polls.go`)
@@ -108,19 +110,28 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `POST …/polls/:pid/spotlight {entry}` | mod. Q&A spotlight (0 clears; spotlighting approves) |
 | `POST …/polls/:entry/moderate {status: pending\|approved\|answered\|dismissed}` | mod. Word-cloud approval covers every identical word |
 | `DELETE …/polls/:pid` | mod. Item (with entries) or one entry |
+| `POST …/polls/:pid/reset` | mod. Clear an item's votes, entries and spotlight; results go back to voting; targets unchanged |
+| `GET /api/shows/:ident/polls/export` | mod. CSV download (UTF-8 BOM): Item, Type, Question, Response, Count, Status, Time — one row per option or entry |
 | `POST …/polls/:pid/state {state}` | Legacy single verb (hidden / open / results on the audience target) |
-| `GET /api/audience/:code` | open. `{data:{poll}}` — the audience-target item only |
+| `GET /api/audience/:code` | open. `{data:{poll}, paused?}` — the audience-target item only. On the cloud, a venue event's item is the venue's; `paused:true` while its link is down (votes/asks then answer 503 `{paused:true}`) |
+| `GET /api/pairing/status?event=CODE` | open. `{exists, released, endsAt, now}` — boxes poll it to learn their event ended or was deleted |
+| `GET /api/pairing/self` · `GET /d/box` | box only, loopback only. The box's own screen: `{name, code?, paired, eventName, target}`; `/d/box` shows the code or frames the target |
+| `GET /api/link?event=CODE` (WebSocket) · `POST /api/link/register {meshKey, bundle}` · `GET /api/link/bundle?event=CODE` | Signed `X-TimerPi-Auth: <unix s>.<hex HMAC-SHA256(mesh key, "timerpi-link/1\|purpose\|event\|s")>`. Link and register on the cloud only; the bundle (the whole event copy) from the cloud or a primary. Link frames: venue→cloud `bundle`, `air {room, poll}`, `res`, `ws`, `ws-close`, `final`; cloud→venue `req {method, path, header, body, as, peer}`, `ws-open {as, text: join}`, `ws`, `ws-close`, `final-ok`, see `routes/link.go` |
 | `POST /api/audience/:code/vote {pollId, choice, peer}` | open. Poll/quiz choice, or upvote (`pollId` = entry). 1 per 300 ms per peer; 600/s per room → 429 + Retry-After |
 | `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
 | `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
 
-**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending}`. Word-cloud children aggregate identical words; `upvotes` = senders.
+**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[]}`. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
 
 ### Box, assets, OSC
 | Method & path | Notes |
 |---|---|
 | `GET /api/theme` · `POST /api/theme` (box) | Box default theme (+ installed list from `ftl-themes/dist`) |
-| `GET /api/network` · `POST /api/network/hostname\|role` · `GET /frag/network` | box. Device identity / mesh |
+| `GET /api/network` · `POST /api/network/hostname\|role` · `GET /frag/network` | box. Device identity / mesh (identity carries `proto`, `updateNeeded`; peers carry `proto`, `foreign`) |
+| `GET /api/network/update` · `POST /api/network/update` | box. The UPDATE button: `{current, available, source, updating}`; POST installs the newest signed build now (409 while a timer runs or an install is under way, 404 when nothing is newer) and restarts |
+| `POST /api/network/mesh {country, ch24, ch5}` | box. Venue mesh radio: two-letter country, 2.4 GHz 1–13, 5 GHz 36/40/44/48; applied at the next boot |
+
+mDNS (`_timerpi._tcp`) TXT: `host role ver epoch boot proto event sig`. A paired box sends `event` and `sig` (HMAC-SHA256 with the event mesh key over host, role, epoch, proto, event, boot; first 32 hex); only same-event signed peers count; an unpaired box announces role `unpaired`. The leading box also answers `timerpi.local`. A box ignores peers whose `proto` differs from its own (v2 boxes send none) for the election and takeover; a peer with a higher `proto` sets `updateNeeded`.
 | `GET/POST /api/assets?event=CODE` (SuperOperator) or `?room=CODE` (moderator) · `DELETE /api/assets/:id` | Images belong to an event: list = that event's plus legacy unowned ones; upload (sniffed image type, 4 MiB) is owned by the named event; delete needs the owning event's SuperOperator (legacy: box admin) |
 | `GET/POST /api/osc` · `POST /api/osc/test` | box. OSC bridge settings · send test packet |
 
@@ -144,7 +155,7 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `state` | `snapshot` (full; newer `updatedAt` wins) | room bucket |
 | `schedule` | `rows[{pos,startMS,endMS,holdMS,isBreak}]`, `totalMS`, `dayStartTS` | room bucket |
 | `oob` | `html`, `target` (`#cuelist #tp-daybar #messages-panel #tp-now #d-stage #share-panel`) | room bucket |
-| `poll` | `{v:1, poll: PollView\|null, presenter: PollView\|null, ts}`. Phones get `poll` (audience target) only | audience + room buckets |
+| `poll` | `{v:1, poll: PollView\|null, presenter: PollView\|null, paused?, ts}`. Phones get `poll` (audience target) only; `paused` on the cloud while a venue event's link is down | audience + room buckets |
 | `polls` | (refresh hint after any interaction change) | controls |
 | `peers` | `[{peerId, role, joinedAt, screen}]` | room bucket |
 | `display` | `{theme}` | targeted screen |
@@ -153,13 +164,14 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `screen-look` | `{kind, rotation}` | targeted screen (also on join) |
 | `screens` | (refresh hint) | controls |
 | `signal` | `{from, data}` (WebRTC relay) | target peer |
-| `pong` | `{serverTime}` | sender |
+| `flash` | `{ms}` — presenter screens blink the timer for `ms` | room bucket |
+| `pong` | `{serverTime}` | sender (the footer's ping is this round trip) |
 | `err` | `{message}`. "session deleted …" is terminal | sender |
 
 Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `pausedElapsedMS` and `serverTime`.
 
 ### Client → server
-- `{"t":"ping"}`. Client pings every 20 s; the server pings every 30 s and drops after 75 s of silence.
+- `{"t":"ping"}`. Screens ping every 20 s, operator pages every 5 s (and on join); the server pings every 30 s and drops after 75 s of silence.
 - `{"t":"signal","to":"<peerId>","data":{…}}` (not allowed on the audience lane).
 - `{"v":1,"t":"cmd","action":…,"args":{…}}`. Only `controls` sessions may send commands; every other role is read-only. Unknown roles are refused at join:
 
@@ -170,6 +182,7 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
 | `pause` (toggle) · `reset` · `next` · `prev` | — |
 | `rate` | `{rate}` ×0.5–×2.0 (clamped) |
 | `blank` · `unblank` | — |
+| `flash` | — (transient: fans out a `flash` frame, nothing stored) |
 | `settings` | `{title?}` · `{ts}` (day starts now) · `{dayStart:"HH:MM"}` |
 | `cueAdd` | `{label, durationMS, …}` |
 | `cueEdit` | `{pos, …any cue field…, startAt:"HH:MM"\|""}` |
@@ -187,7 +200,7 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
             "anchorTS":0,"pausedElapsedMS":0,"rate":1.0,"dayStartTS":0},
  "cues":[{"id":1,"pos":1,"label":"Welcome","durationMS":600000,"kind":"session",
           "tags":"VT GFX","speaker":"Leslie","holdMS":0,"timerKind":"COUNTDOWN",
-          "alert1MS":90000,"alert2MS":0,"alertColor1":"#ffaa00","alertColor2":"#ff4444",
+          "alert1MS":90000,"alert2MS":0,"alertColor1":"#ffaa00","alertColor2":"#ff4444","alertFlash1":false,"alertFlash2":false,
           "endAction":"HOLD","autoContinue":false,"startAt":"","notes":"","color":"",
           "updatedAt":0}],
  "messages":[{"id":1,"text":"WRAP UP","color":"","shownAt":1}],

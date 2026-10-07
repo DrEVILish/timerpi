@@ -5,8 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/tealeg/xlsx/v3"
 	"github.com/xuri/excelize/v2"
+
+	"timerpi/timerpi"
 )
 
 // newXLSX builds an in-memory .xlsx workbook byte buffer: one sheet per
@@ -64,12 +65,12 @@ func TestParseXLSX_BasicSynonymsAndRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseXLSX: %v", err)
 	}
-	want := []Cue{
+	want := []timerpi.Cue{
 		{
 			Label: "Keynote", DurationMS: 65500, Kind: "session",
 			Speaker: "Amy", Notes: "mics",
-			Alert1MS: 30000, Alert2MS: 10000, HoldMS: 5000,
-			EndAction: "OVERTIME", AutoContinue: true,
+			Alert1MS: 30000, Alert2MS: 10000, // BUFFER/CONTINUE columns ignored
+			EndAction: "OVERTIME",
 		},
 		{
 			Label: "Technical talk", DurationMS: 300000, Kind: "break",
@@ -78,7 +79,7 @@ func TestParseXLSX_BasicSynonymsAndRows(t *testing.T) {
 		{Label: "Only label"},
 		{
 			Label: "Changeover strip", DurationMS: 120000, Kind: "break",
-			Speaker: "Ops", HoldMS: 30000, EndAction: "BLANK", AutoContinue: true,
+			Speaker: "Ops", EndAction: "BLANK",
 		},
 	}
 	if !reflect.DeepEqual(cues, want) {
@@ -132,7 +133,7 @@ func TestParseXLSX_ExampleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseXLSX(example): %v", err)
 	}
-	if want := exampleCuesFromRows(); !reflect.DeepEqual(cues, want) {
+	if want := exampleCues; !reflect.DeepEqual(cues, want) {
 		t.Fatalf("example round-trip mismatch\n got: %#v\nwant: %#v", cues, want)
 	}
 }
@@ -161,33 +162,17 @@ func TestParseKinds(t *testing.T) {
 	}
 }
 
-// TestParseXLS_BestEffort exercises the legacy path. Note (see
-// NOTES-importdocs.md): tealeg/xlsx v3 opens OOXML documents — it happily
-// reads TimerPi's own exports and .xlsx-family files, but it is best-effort
-// for true BIFF .xls uploads, which will error with a re-save hint.
+// TestParseXLS_BestEffort exercises the legacy path: an .xlsx that merely
+// carries an .xls name is read as XLSX; true BIFF .xls uploads error with a
+// re-save hint.
 func TestParseXLS_BestEffort(t *testing.T) {
-	book := xlsx.NewFile()
-	sheet, err := book.AddSheet("Cues")
-	if err != nil {
-		t.Fatalf("AddSheet: %v", err)
-	}
-	rows := [][]string{{"Label", "Duration", "Speaker"}, {"Keynote", "1m5s", "Amy"}, {"Break", "65", ""}}
-	for _, vals := range rows {
-		r := sheet.AddRow()
-		for _, v := range vals {
-			c := r.AddCell()
-			c.SetString(v)
-		}
-	}
-	var buf bytes.Buffer
-	if err := book.Write(&buf); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	cues, err := ParseXLS(buf.Bytes())
+	data := newXLSX(t, sheetDef{name: "Cues", rows: [][]string{
+		{"Label", "Duration", "Speaker"}, {"Keynote", "1m5s", "Amy"}, {"Break", "65", ""}}})
+	cues, err := ParseXLS(data)
 	if err != nil {
 		t.Fatalf("ParseXLS: %v", err)
 	}
-	want := []Cue{
+	want := []timerpi.Cue{
 		{Label: "Keynote", DurationMS: 65000, Speaker: "Amy"},
 		{Label: "Break", DurationMS: 65000},
 	}

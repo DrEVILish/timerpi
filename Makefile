@@ -1,15 +1,35 @@
 # TimerPi — build targets.
 #
 # Native build is for the dev container; build-arm64 cross-compiles for the
-# Pi (64-bit Raspberry Pi OS bookworm). go-sqlite3 needs CGO on both.
+# Pi (64-bit Raspberry Pi OS Lite, Trixie); build-amd64 is the cloud server
+# (Debian Trixie, x86-64). go-sqlite3 needs CGO on all of them.
+#
+# VERSION names the build (buildinfo.Version). A release is signed for the
+# boot-time updater (VENUE-CLOUD §14):
+#   make release VERSION=3.0.0 RELEASE_KEY=~/timerpi-release.key
 
 BINARY := bin/timerpi
 CROSS_CC := aarch64-linux-gnu-gcc
+VERSION ?= 3.0.0-dev
+LDFLAGS := -X timerpi/buildinfo.Version=$(VERSION)
 
-.PHONY: build build-arm64 run test fmt vet clean install-pi
+.PHONY: build build-arm64 build-amd64 release run test fmt vet clean install-pi
 
 build:
-	go build -o $(BINARY) .
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+# Cloud server build (x86-64). Build it on Debian Trixie (or a Trixie
+# container) so it links against the host's glibc.
+build-amd64:
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/timerpi-amd64 .
+
+# Signed release for both architectures: binaries + manifests in bin/.
+# Publish them on the cloud under <data>/releases/<arch>/ (docs/OPS.md).
+release: build-arm64 build-amd64
+	@test -n "$(RELEASE_KEY)" || { echo "release: set RELEASE_KEY=<private key file>"; exit 1; }
+	@case "$(VERSION)" in *dev*) echo "release: VERSION must be a release number, not $(VERSION)"; exit 1;; esac
+	go run ./tools/release sign -key $(RELEASE_KEY) -bin bin/timerpi-arm64 -version $(VERSION) -arch arm64
+	go run ./tools/release sign -key $(RELEASE_KEY) -bin bin/timerpi-amd64 -version $(VERSION) -arch amd64
 
 # splash-draw: framebuffer splash binary (advisory; true target is arm64).
 build-splash:
@@ -18,7 +38,7 @@ build-splash:
 # Cross-compile for Pi 4/5 (arm64). Needs the aarch64 cross toolchain on
 # this machine (the Pi itself needs no toolchain).
 build-arm64:
-	CGO_ENABLED=1 CC=$(CROSS_CC) GOOS=linux GOARCH=arm64 go build -o bin/timerpi-arm64 .
+	CGO_ENABLED=1 CC=$(CROSS_CC) GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/timerpi-arm64 .
 
 # Splash for the Pi: pure Go (no CGO) framebuffer drawing.
 build-splash-arm64:
@@ -26,7 +46,7 @@ build-splash-arm64:
 
 # Dev run: separate data dir so the dev checkout never touches /var/lib.
 run:
-	TIMERPI_DATA_DIR=./data TIMERPI_HTTP_PORT=8080 go run .
+	TIMERPI_DATA_DIR=./data TIMERPI_HTTP_PORT=8080 TIMERPI_ROLE=cloud go run . # many events, like the cloud
 
 test:
 	go test ./...

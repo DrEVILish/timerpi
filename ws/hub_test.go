@@ -20,7 +20,6 @@ import (
 
 	"timerpi/routes"
 	"timerpi/timerpi"
-	"timerpi/views"
 )
 
 // testServer boots the full stack: real SQLite, engine registry, hub over
@@ -562,7 +561,6 @@ func TestSessionChurn(t *testing.T) {
 }
 
 // Keep the providers referenced (compile anchor for the views contract).
-var _ = views.ShowVM{}
 var _ = http.StatusOK
 
 // TestUndoRestoreChain — B3's deletion-undo rides: add (appends at the end)

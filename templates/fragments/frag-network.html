@@ -1,27 +1,76 @@
 {{define "frag-network"}}{{- /*
   frag-network — the live mesh panel fragment (GET /frag/network, htmx
-  poll target for #net-panel on the settings page). Swaps INSIDE the
-  section (renderNetFrag targets with hx-swap="innerHTML").
+  poll target for #net-panel on the settings page; also rendered inline
+  there on first load). Swaps INSIDE the section (hx-swap="innerHTML").
   Data: netVM (same shape as settings.html).
 */ -}}
 {{- if .Err -}}
-<p class="text-muted" role="alert">{{.Err}}</p>
+<div class="empty-state is-error" role="alert"><span class="empty-state-title">Mesh unavailable</span><span class="empty-state-hint">{{.Err}}</span></div>
 {{- else -}}
-<table class="table net-peers">
-  <thead><tr><th>HOST</th><th>ADDR</th><th>ROLE</th><th>EPOCH</th><th>SEEN</th></tr></thead>
+{{- if .UpdateNeeded}}
+<div class="alert alert-info" role="status">A box with a newer TimerPi is on this network. This box updates itself at its next boot; until then it stays out of the newer boxes' mesh.</div>
+{{- end}}
+<h2 class="panel-header">Venue mesh</h2>
+{{- if .MeshRan}}
+<div class="table-wrap" tabindex="0" role="region" aria-label="Mesh radios">
+<table class="table">
+  <thead><tr><th>RADIO</th><th>BAND</th><th>CHANNEL</th><th>STATE</th></tr></thead>
+  <tbody>
+    {{range .Mesh.Legs}}
+    <tr>
+      <td class="mono">{{.Iface}}{{if .USB}} <span class="badge">USB</span>{{else}} <span class="badge">built-in</span>{{end}}</td>
+      <td>{{.Band}}</td>
+      <td class="mono">{{.Channel}}</td>
+      <td>{{if .Error}}<span class="status status-error">{{.Error}}</span>{{else}}<span class="status status-ok">on the mesh</span>{{end}}</td>
+    </tr>
+    {{else}}
+    <tr class="table-empty"><td colspan="4"><div class="empty-state"><span class="empty-state-title">No radio is on the mesh.</span></div></td></tr>
+    {{end}}
+  </tbody>
+</table>
+</div>
+{{range .Mesh.Notes}}<p class="field-hint">{{.}}</p>{{end}}
+<p class="field-hint">{{if .Mesh.Wired}}Wired: this box bridges the mesh to the router (batman gateway).{{else}}Not wired: this box reaches the router through the mesh.{{end}} Wi-Fi country {{.Mesh.Country}}.</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Other boxes on the mesh">
+<table class="table">
+  <thead><tr><th>OTHER BOX (MAC)</th><th>LINK</th><th>VIA</th><th>RADIO</th><th>SEEN</th></tr></thead>
+  <tbody>
+    {{range .Mesh.Originators}}
+    <tr>
+      <td class="mono">{{.MAC}}</td>
+      <td class="mono">{{.TQ}}/255</td>
+      <td class="mono">{{if eq .Via .MAC}}direct{{else}}{{.Via}}{{end}}</td>
+      <td class="mono">{{.Iface}}</td>
+      <td class="text-muted">{{.SeenS}} s ago</td>
+    </tr>
+    {{else}}
+    <tr class="table-empty"><td colspan="5"><div class="empty-state"><span class="empty-state-title">No other box on the mesh yet.</span></div></td></tr>
+    {{end}}
+  </tbody>
+</table>
+</div>
+{{- else}}
+<div class="empty-state"><span class="empty-state-title">The venue mesh isn't set up on this machine.</span><span class="empty-state-hint">No timerpi-mesh status.</span></div>
+{{- end}}
+<h2 class="panel-header">Peers on this network</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Peers on this network">
+<table class="table">
+  <thead><tr><th>HOST</th><th>ADDR</th><th>ROLE</th><th>VERSION</th><th>EPOCH</th><th>SEEN</th></tr></thead>
   <tbody>
     {{range .Peers}}
     <tr>
       <td class="mono">{{.Host}}</td>
       <td class="mono">{{.Addr}}</td>
-      <td>{{.Role}}{{if .IsPrimary}} <span class="lamp lamp-ok">PRIMARY</span>{{end}}</td>
+      <td>{{.Role}}{{if .IsPrimary}} <span class="badge badge-accent">PRIMARY</span>{{end}}</td>
+      <td class="mono">{{.Ver}}{{if .Foreign}} <span class="badge badge-warning" title="Another TimerPi major version: ignored until both run the same">other version</span>{{end}}</td>
       <td class="mono">{{.Epoch}}</td>
       <td class="text-muted">{{.Age}} ago</td>
     </tr>
     {{else}}
-    <tr><td colspan="5" class="text-muted">No other TimerPi devices detected in the last 30 s.</td></tr>
+    <tr class="table-empty"><td colspan="6"><div class="empty-state"><span class="empty-state-title">No other TimerPi devices detected in the last 30 s.</span><span class="empty-state-hint">Discovery re-checks every 5 s.</span></div></td></tr>
     {{end}}
   </tbody>
 </table>
+</div>
 {{- end -}}
 {{end}}

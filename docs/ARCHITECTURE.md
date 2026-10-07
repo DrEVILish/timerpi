@@ -38,13 +38,19 @@ routes/              every HTTP route (pages, REST, auth, screens, boards, audie
 boards/              layout ("board") model, widget registry, built-in templates
 views/               view-model structs + formatting helpers for templates
 importdocs/          XLSX/CSV/JSON running-order import + example files
-mesh/  mdns/         device mesh (primary election, takeover) + mDNS announce/browse
+mesh/  mdns/         device mesh (primary election, takeover) + mDNS announce/browse (TXT proto filter)
+meshradio/           venue mesh radios: the radio rule, iw/batctl parsing (`timerpi mesh`)
+update/  buildinfo/  boot-time signed updates + rollback; version and protocol major
+venue/               a box's event life: pairing, event copy, release, timerpi.local, clock, cloud link (VENUE-CLOUD §8a)
 oscbridge/           OSC codec + UDP listener + outbound hooks (CuTePi/QLab)
 drm/                 native KMS/fbdev countdown renderer for the Pi's HDMI
 templates/           pages + fragments (*.html)
 public/              css/, src/ (JS modules), img/
 third_party/ftl-themes/   theme bundles (git submodule — see §9)
 scripts/ systemd/    install, update, backup, restore, healthcheck, splash
+deploy/box/          networkd (bat0, br0), mesh units, udev rule, nft filter (installer copies them)
+deploy/cloud/        cloud unit (TIMERPI_ROLE=cloud) + Caddyfile
+tools/release/       release key + manifest signing
 docs/                product, architecture, runbooks; docs/archive/ = historical notes
 ```
 
@@ -210,7 +216,8 @@ template, JS or CSS change.
 | Target | How |
 |---|---|
 | Dev | `make run`. Port 8080, data in `./data` |
-| Linux server / Pi | `make build` (or `build-arm64`), `timerpi.service`. Data in `/var/lib/timerpi`. Port via `TIMERPI_HTTP_PORT` |
+| Pi (box) | `make build-arm64`, `scripts/install-pi.sh` (Raspberry Pi OS Lite, Trixie): `timerpi.service` + the venue mesh (`timerpi-mesh.service`, systemd-networkd). Data in `/var/lib/timerpi`. Port via `TIMERPI_HTTP_PORT` |
+| Cloud | `make build-amd64`, `deploy/cloud/timerpi.service` (`TIMERPI_ROLE=cloud`: no mesh, mDNS, DRM, OSC) behind Caddy. [OPS.md](OPS.md) §8 |
 | Screens | Any browser in kiosk mode pointed at `/d/`. The Pi's own HDMI can instead run the native DRM countdown (`TIMERPI_DISPLAY`) |
 
 Runbooks: [OPS.md](OPS.md), [PI-DEPLOY.md](PI-DEPLOY.md), [HW-DRILLS.md](HW-DRILLS.md).

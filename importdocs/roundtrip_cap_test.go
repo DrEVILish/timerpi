@@ -16,7 +16,7 @@ func TestJSONRoundTripKeepsTimerKindAndLocation(t *testing.T) {
 		{Label: "Stopwatch", DurationMS: 60000, TimerKind: timerpi.TimerCountStop, StartAt: "09:30"},
 		{Label: "Coffee", DurationMS: 900000, Kind: timerpi.KindBreak, TimerKind: timerpi.TimerClock, Location: "Great Hall"},
 	}
-	raw, err := json.Marshal(FromTimerpiCues(src))
+	raw, err := json.Marshal(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestDurationsOverSevenDaysRefused(t *testing.T) {
 	if ms, err := ParseDurationMS("168h"); err != nil || ms != 7*24*3600*1000 {
 		t.Errorf("168h = %d, %v; want exactly 7 days", ms, err)
 	}
-	for _, doc := range []string{`[{"label":"x","durationMS":1e30}]`, `[{"label":"x","hold":"200h"}]`} {
+	for _, doc := range []string{`[{"label":"x","durationMS":1e30}]`, `[{"label":"x","alert1":"200h"}]`} {
 		if _, err := ParseJSON([]byte(doc)); err == nil || !strings.Contains(err.Error(), "7 days") {
 			t.Errorf("ParseJSON(%s) err = %v, want the 7-day refusal", doc, err)
 		}

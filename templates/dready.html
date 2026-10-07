@@ -18,11 +18,11 @@
 <body class="tp-display" data-page="dready" data-waiting="1">
 <!-- PLAN §11.3: the READY surface IS the waiting overlay (visibility is
      purely body[data-waiting], same pattern as the blackout). -->
-<div class="tp-waiting" id="tp-waiting">
-  <img src="/img/timerpi.svg" alt="">
-  <h2>READY FOR SHOW OPERATOR</h2>
+<div class="splash tp-waiting" id="tp-waiting" role="status">
+  <div class="splash-art" aria-hidden="true"></div>
+  <p class="splash-title">READY FOR SHOW OPERATOR</p>
   <p class="tp-ready-id">This screen is <strong id="tp-ready-name" class="tp-ready-name">…</strong></p>
-  <p class="text-muted">This screen is unassigned. Any operator on this
+  <p class="splash-message">This screen is unassigned. Any operator on this
     network can capture it into a show from the Screens gallery.</p>
 </div>
 <!-- Unversioned on purpose: the appliance serves everything no-cache, and

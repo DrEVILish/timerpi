@@ -29,7 +29,8 @@
 package timerpi
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 )
 
 // MaxSyncTombstones caps the delete tombstones travelling in one sync body
@@ -50,13 +51,9 @@ func CapTombstones(ts []CueTombstone, max int) []CueTombstone {
 	if max <= 0 || len(ts) <= max {
 		return ts
 	}
-	cp := make([]CueTombstone, len(ts))
-	copy(cp, ts)
-	sort.Slice(cp, func(i, j int) bool {
-		if cp[i].UpdatedAt != cp[j].UpdatedAt {
-			return cp[i].UpdatedAt > cp[j].UpdatedAt
-		}
-		return cp[i].ID > cp[j].ID
+	cp := slices.Clone(ts)
+	slices.SortFunc(cp, func(a, b CueTombstone) int {
+		return cmp.Or(cmp.Compare(b.UpdatedAt, a.UpdatedAt), cmp.Compare(b.ID, a.ID))
 	})
 	return cp[:max]
 }
@@ -179,11 +176,8 @@ func MergeCues(serverCues, incomingCues []Cue, tombstones []CueTombstone) (merge
 	// (two winners claiming one slot after divergent reorders, or an add
 	// landing on an occupied slot) break by ID for determinism — this is
 	// the accepted interleave point.
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Pos != out[j].Pos {
-			return out[i].Pos < out[j].Pos
-		}
-		return out[i].ID < out[j].ID
+	slices.SortStableFunc(out, func(a, b Cue) int {
+		return cmp.Or(cmp.Compare(a.Pos, b.Pos), cmp.Compare(a.ID, b.ID))
 	})
 	for i := range out {
 		out[i].Pos = int64(i + 1)
@@ -251,12 +245,12 @@ func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 				label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 				timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
 				end_action = ?, autocontinue = ?, notes = ?, color = ?, start_at = ?, day = ?,
-				location = ?, updated_at = ?
+				location = ?, alert_flash1 = ?, alert_flash2 = ?, updated_at = ?
 				WHERE id = ? AND show_id = ?`,
 				c.Label, c.DurationMS, c.Kind, c.Tags, c.Speaker, c.HoldMS,
 				c.TimerKind, c.Alert1MS, c.Alert2MS, c.AlertColor1, c.AlertColor2,
 				c.EndAction, b2i(c.AutoContinue), c.Notes, c.Color, c.StartAt, c.Day,
-				c.Location, stamp, c.ID, showID); err != nil {
+				c.Location, b2i(c.AlertFlash1), b2i(c.AlertFlash2), stamp, c.ID, showID); err != nil {
 				return err
 			}
 			delete(keep, c.ID) // a duplicate ID later in cues is inserted fresh
@@ -289,27 +283,12 @@ func cuesSameContent(a, b Cue) bool {
 	return cuesEqualContent(a, b)
 }
 
-// cuesEqualContent compares the operator-visible fields (identity excluded
-// — the caller already knows the IDs match; Pos included so a pure
-// server-side reorder of an otherwise untouched row still counts as a
-// remote change worth reporting).
+// cuesEqualContent compares every field except identity and bookkeeping
+// (ID, ShowID, UpdatedAt, Day — the caller already knows the IDs match);
+// Pos included so a pure server-side reorder of an otherwise untouched row
+// still counts as a remote change worth reporting.
 func cuesEqualContent(a, b Cue) bool {
-	return a.Label == b.Label &&
-		a.DurationMS == b.DurationMS &&
-		a.Kind == b.Kind &&
-		a.Tags == b.Tags &&
-		a.Speaker == b.Speaker &&
-		a.HoldMS == b.HoldMS &&
-		a.TimerKind == b.TimerKind &&
-		a.Alert1MS == b.Alert1MS &&
-		a.Alert2MS == b.Alert2MS &&
-		a.AlertColor1 == b.AlertColor1 &&
-		a.AlertColor2 == b.AlertColor2 &&
-		a.EndAction == b.EndAction &&
-		a.AutoContinue == b.AutoContinue &&
-		a.Notes == b.Notes &&
-		a.Color == b.Color &&
-		a.StartAt == b.StartAt &&
-		a.Location == b.Location &&
-		a.Pos == b.Pos
+	a.ID, a.ShowID, a.UpdatedAt, a.Day = 0, 0, 0, 0
+	b.ID, b.ShowID, b.UpdatedAt, b.Day = 0, 0, 0, 0
+	return a == b
 }

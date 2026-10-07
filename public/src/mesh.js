@@ -106,11 +106,14 @@ export class Mesh {
     this._heartbeatTimer = setInterval(() => this._heartbeat(), 3000);
     // App-level 20 s ping (PROTOCOL §hub / CONTRACT-UI §5): keeps the
     // documented channel alive and re-anchors clockOffset via `pong`.
-    this._pingTimer = setInterval(() => {
-      if (this.serverOnline()) {
-        try { this._ws.send(JSON.stringify({ t: 'ping' })); } catch { /* raced a close */ }
-      }
-    }, 20000);
+    // Operator pages ping every 5 s so the footer shows a live round trip.
+    this._pingTimer = setInterval(() => this._ping(), this.role === 'display' ? 20000 : 5000);
+  }
+
+  _ping() {
+    if (!this.serverOnline()) return;
+    this._pingAt = performance.now();
+    try { this._ws.send(JSON.stringify({ t: 'ping' })); } catch { /* raced a close */ }
   }
 
   _reconnectNow() {
@@ -256,6 +259,7 @@ export class Mesh {
           this._connectToAllKnown();
           this._reElect();
           this._postReconnectSync();
+          this._ping(); // first round trip for the footer
           break;
         }
         case 'screen-rename': {
@@ -295,6 +299,7 @@ export class Mesh {
           break;
         case 'pong':
           if (m.serverTime) this.clockOffset = m.serverTime - Date.now();
+          if (this._pingAt) { this.rtt = Math.round(performance.now() - this._pingAt); this._pingAt = 0; this.onStatusChange(); }
           break;
         case 'err':
           this.onLog('error', m.message || 'server error');

@@ -11,24 +11,23 @@
 package routes
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skip2/go-qrcode"
 
 	"timerpi/config"
 	"timerpi/timerpi"
 )
-
-// jsonMarshal saves an import alias in one place (polls REST).
-func jsonMarshal(v any) ([]byte, error) { return json.Marshal(v) }
 
 func registerAudienceRoutes(r gin.IRouter, d *Deps) {
 	g := r.Group("/api/audience/:code")
@@ -50,6 +49,8 @@ func registerAudienceRoutes(r gin.IRouter, d *Deps) {
 	ig.POST("/:pid/moderate", d.apiPollModerate)
 	ig.POST("/:pid/state", d.apiPollSetState) // legacy single-verb transport
 	ig.DELETE("/:pid", d.apiPollDelete)
+	ig.POST("/:pid/reset", d.apiPollReset)
+	ig.GET("/export", d.apiPollExport)
 }
 
 // pollsChanged fans the change out: the on-air delta to phones + screens,
@@ -98,29 +99,10 @@ var (
 )
 
 // soak: per-show accept budget (requests/s) — beyond it the lane answers
-// 429 and phones back off with jitter (PLAN §11.5). Overridable in tests.
-var audSoakPerSec = 600
+// 429 and phones back off with jitter (PLAN §11.5).
+const audSoakPerSec = 600
 
-var soak struct {
-	sync.Mutex
-	cur map[int64]int
-	sec int64
-}
-
-func soakAllowed(showID int64, now int64) bool {
-	sec := now / 1000
-	soak.Lock()
-	defer soak.Unlock()
-	if soak.cur == nil {
-		soak.cur = map[int64]int{}
-	}
-	if soak.sec != sec {
-		soak.sec = sec
-		soak.cur = map[int64]int{}
-	}
-	soak.cur[showID]++
-	return soak.cur[showID] <= audSoakPerSec
-}
+var soak = &windowLimiter{max: audSoakPerSec, window: time.Second, bound: 10_000}
 
 func (d *Deps) resolveAudienceCode(c *gin.Context) (int64, bool) {
 	if d.Store == nil {
@@ -183,7 +165,7 @@ func (d *Deps) apiAudienceAsk(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Sending too fast — wait a moment"})
 		return
 	}
-	if !soakAllowed(id, now) { // per-room budget covers submissions too (RW4)
+	if !soak.allow(strconv.FormatInt(id, 10), time.UnixMilli(now)) { // per-room budget covers submissions too (RW4)
 		askGuard.release(peer, now)
 		c.Header("Retry-After", "1")
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "room is busy — try again in a moment"})
@@ -226,7 +208,7 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "voting too fast"})
 		return
 	}
-	if !soakAllowed(id, now) {
+	if !soak.allow(strconv.FormatInt(id, 10), time.UnixMilli(now)) {
 		voteGuard.release(peer, now)
 		c.Header("Retry-After", "1")
 		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "room is busy — try again in a moment"})
@@ -258,11 +240,15 @@ func (d *Deps) apiAudienceQR(c *gin.Context) {
 		return
 	}
 	scheme := "https"
-	if c.Request.TLS == nil {
+	if c.Request.TLS == nil && !strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
 		scheme = "http"
 	}
-	url := fmt.Sprintf("%s://%s/a/%s", scheme, c.Request.Host, sh.Code)
-	png, err := qrPNG(url, 320)
+	base := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	if cloud := config.CloudURL(); cloud != "" && !d.isCloud() {
+		base = cloud // phones reach TimerPi only through the cloud (VENUE-CLOUD §1)
+	}
+	url := base + "/a/" + sh.Code
+	png, err := qrcode.Encode(url, qrcode.Medium, 320)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false})
 		return
@@ -317,7 +303,7 @@ func (d *Deps) apiPollCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad body"})
 		return
 	}
-	opts, _ := jsonMarshal(body.cleanOptions())
+	opts, _ := json.Marshal(body.cleanOptions())
 	p := timerpi.Poll{ShowID: id, Kind: body.Kind, Question: timerpi.ClipUTF8(body.Question, 200),
 		Options: string(opts), Correct: -1, AutoApprove: body.AutoApprove != nil && *body.AutoApprove}
 	if body.Correct != nil {
@@ -523,4 +509,81 @@ func (d *Deps) audiencePage(c *gin.Context) {
 		"Page": "audience", "Show": gin.H{"Code": sh.Code, "Title": sh.Title},
 		"DefaultTheme": config.DefaultTheme(),
 	})
+}
+
+// POST /api/shows/:ident/polls/:pid/reset — clear an item's votes and
+// submissions; the item and where it is shown stay.
+func (d *Deps) apiPollReset(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	pid, ok := pollParam(c)
+	if !ok {
+		return
+	}
+	d.pollResult(c, id, fmt.Sprintf("clear %d", pid), d.Store.ResetPoll(id, pid))
+}
+
+// GET /api/shows/:ident/polls/export — every item's responses as CSV
+// (one row per poll option, one per submission).
+func (d *Deps) apiPollExport(c *gin.Context) {
+	id, ok := d.requireShowGated(c)
+	if !ok {
+		return
+	}
+	rows, err := d.Store.ExportRows(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	title := "room"
+	if sh, err := d.Store.GetShow(id); err == nil && sh.Title != "" {
+		title = sh.Title
+	}
+	var buf bytes.Buffer
+	buf.WriteString("\ufeff") // Excel reads the file as UTF-8
+	w := csv.NewWriter(&buf)
+	_ = w.Write([]string{"Item", "Type", "Question", "Response", "Count", "Status", "Time"})
+	for _, r := range rows {
+		ts := ""
+		if r.Ts > 0 {
+			ts = time.UnixMilli(r.Ts).Format("2006-01-02 15:04:05")
+		}
+		_ = w.Write([]string{strconv.FormatInt(r.ItemID, 10), r.Kind, csvCell(r.Question), csvCell(r.Response),
+			strconv.FormatInt(r.Count, 10), r.Status, ts})
+	}
+	w.Flush()
+	name := exportName(title) + "-audience-" + time.Now().Format("2006-01-02") + ".csv"
+	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
+}
+
+// csvCell keeps audience text from running as a spreadsheet formula.
+func csvCell(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
+// exportName is a file-name-safe version of the room title.
+func exportName(title string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = "room"
+	}
+	if len(out) > 40 {
+		out = strings.Trim(out[:40], "-")
+	}
+	return out
 }

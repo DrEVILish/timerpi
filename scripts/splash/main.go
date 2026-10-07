@@ -37,6 +37,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"flag"
 	"fmt"
 	"image"
@@ -133,7 +134,7 @@ func main() {
 
 	var (
 		imgPath = flag.String("image", defaultImage, "PNG file to draw centered on the framebuffer")
-		fbDev   = flag.String("fb", firstNonEmpty(os.Getenv("FBDEV"), defaultFbDev), "framebuffer device")
+		fbDev   = flag.String("fb", cmp.Or(os.Getenv("FBDEV"), defaultFbDev), "framebuffer device")
 		ready   = flag.String("ready", defaultReady, "readiness file: appear → fade out, release, exit")
 		timeout = flag.Duration("timeout", 45*time.Second, "wait cap for the ready file (-1 = forever)")
 		fork    = flag.Bool("fork", false, "detach the worker and return (service entry point)")
@@ -458,14 +459,4 @@ func runClear(fbDev string) {
 func readyFile(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// firstNonEmpty returns the first non-empty string (env-then-flag rule).
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

@@ -25,8 +25,8 @@ export async function run(t) {
   const sup = await ctx.newPage();
   await sup.goto(`${t.base}/e/${event}/admin`);
   await sup.click(`tr[data-room="${room}"] [data-room-dup]`);
-  await sup.fill('.tp-dlg input', 'Stark 2');
-  await sup.click('.tp-dlg-actions .btn-primary');
+  await sup.fill('dialog.modal input', 'Stark 2');
+  await sup.click('dialog.modal .modal-footer .btn-primary');
   await sup.waitForTimeout(1500);
   const lobby = await (await ctx.request.get(`${t.base}/api/events/${event}`)).json();
   t.check(`Duplicate made "Stark 2" (${lobby.event.rooms.map((r) => r.name).join(', ')})`, lobby.event.rooms.some((r) => r.name === 'Stark 2'));

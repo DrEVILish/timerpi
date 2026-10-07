@@ -153,8 +153,7 @@ func (d EngineDeps) withDefaults() EngineDeps {
 		d.Messages = func() ([]Message, error) { return nil, nil }
 	}
 	if d.Stamp == nil {
-		stamp := d.Now
-		d.Stamp = func() int64 { return stamp() }
+		d.Stamp = d.Now
 	}
 	if d.Save == nil {
 		d.Save = func(Runtime) error { return nil }
@@ -251,21 +250,24 @@ const maxArgInt = 1 << 53
 
 // argInt reads an int-ish arg (JSON numbers arrive as float64); missing → 0.
 func argInt(args map[string]any, key string) int64 {
-	if args == nil {
-		return 0
-	}
+	v, _ := ArgInt64(args, key)
+	return v
+}
+
+// ArgInt64 reads an integer arg; ok is false when missing or invalid.
+func ArgInt64(args map[string]any, key string) (int64, bool) {
 	switch v := args[key].(type) {
 	case float64:
 		if !(v > -maxArgInt && v < maxArgInt) { // NaN or past float precision: refuse (RW30)
-			return 0
+			return 0, false
 		}
-		return int64(v)
+		return int64(v), true
 	case int64:
-		return v
+		return v, true
 	case int:
-		return int64(v)
+		return int64(v), true
 	}
-	return 0
+	return 0, false
 }
 
 // argFloat reads a float arg; missing/invalid → 0.
@@ -433,62 +435,13 @@ func (e *Engine) Tick(nowMS int64) error {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot / timer frame
+// Snapshot
 
 // Snapshot builds the current wire state.
 func (e *Engine) Snapshot() (Snapshot, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.snapshotLocked()
-}
-
-// Timer is the small frame for the display path
-// (`{"t":"timer", …}`): what the digits need beyond the state snapshot.
-func (e *Engine) Timer() (TimerFrame, error) {
-	e.mu.Lock()
-	cues, err := e.cuesLocked()
-	rt, now := e.rt, e.now()
-	e.mu.Unlock()
-	if err != nil {
-		return TimerFrame{}, err
-	}
-	return timerFrame(cueAtPos(cues, rt.ActivePos), rt, now), nil
-}
-
-// TimerFrame is the small JSON timer frame: {remainingMS, overtime,
-// alertState, rate} plus render hints (blank/paused/timerKind/alertColor).
-type TimerFrame struct {
-	RemainingMS int64   `json:"remainingMS"`
-	Overtime    bool    `json:"overtime"`
-	AlertState  int     `json:"alertState"`
-	AlertColor  string  `json:"alertColor"`
-	Rate        float64 `json:"rate"`
-	Paused      bool    `json:"paused"`
-	Blank       bool    `json:"blank"`
-	TimerKind   string  `json:"timerKind"`
-}
-
-func timerFrame(c *Cue, rt Runtime, now int64) TimerFrame {
-	rem, overtime, alert := DisplayedRemaining(c, rt, now)
-	tk := ""
-	if c != nil {
-		tk = c.TimerKind
-	}
-	blank := c != nil && !rt.Running && rem <= 0 && c.EndAction == EndBlank && c.TimerKind == TimerCountdown
-	if blank {
-		rem = 0
-		overtime = false
-	}
-	return TimerFrame{
-		RemainingMS: rem,
-		Overtime:    overtime,
-		AlertState:  alert,
-		AlertColor:  AlertColor(c, alert),
-		Rate:        rt.Rate,
-		Paused:      rt.Paused,
-		Blank:       blank,
-		TimerKind:   tk,
-	}
 }
 
 // Notify re-broadcasts the current snapshot — the hub calls it after cue or
@@ -596,7 +549,6 @@ func (e *Engine) startLocked(pos int64) error {
 		}
 		// Fresh anchor of a fully-consumed zero-duration row would cross
 		// instantly; that is handled by Tick, not here.
-		_ = now
 	}
 	e.rt.ActivePos = c.Pos
 	e.activeID = c.ID
@@ -630,7 +582,7 @@ func (e *Engine) pauseLocked() error {
 	if !e.rt.Running || e.rt.Paused {
 		return nil // friendly no-op
 	}
-	e.rt.PausedElapsedMS = cueElapsedMS(nil, e.rt, e.now())
+	e.rt.PausedElapsedMS = cueElapsedMS(e.rt, e.now())
 	e.rt.Paused = true
 	return nil
 }
@@ -754,7 +706,7 @@ func (e *Engine) setRateLocked(rate float64) error {
 	// path to the ×0.5–×2.0 contract the dashboard offers.
 	rate = ClampRate(rate)
 	if e.rt.Running && !e.rt.Paused && e.rt.AnchorTS > 0 {
-		e.rt.PausedElapsedMS = cueElapsedMS(nil, e.rt, e.now())
+		e.rt.PausedElapsedMS = cueElapsedMS(e.rt, e.now())
 		e.rt.AnchorTS = e.now()
 	}
 	e.rt.Rate = rate
@@ -909,15 +861,8 @@ func neighborsOf(cues []Cue, pos int64) (prev, next int64) {
 	return 0, 0
 }
 
-// nextPosOf returns the next existing position after pos (0 when last).
-func nextPosOf(cues []Cue, pos int64) int64 {
-	_, next := neighborsOf(cues, pos)
-	return next
-}
-
-// cueElapsedMS returns the scaled elapsed of the runtime (cue is unused
-// today; kept in the signature so future per-cue scaling has a seam).
-func cueElapsedMS(_ *Cue, rt Runtime, now int64) int64 {
+// cueElapsedMS returns the scaled elapsed of the runtime.
+func cueElapsedMS(rt Runtime, now int64) int64 {
 	rate := rt.Rate
 	if rate <= 0 {
 		rate = DefaultRate
@@ -981,18 +926,31 @@ func (r *Engines) Get(showID int64) (*Engine, error) {
 	// hasn't manually anchored (manual anchors stay under the operator).
 	// A box switched on the next morning starts the new day straight away
 	// (the first Tick runs the day-rollover check).
-	if e != nil {
-		_ = e.Tick(e.now())
-	}
-	if e != nil && e.deps.Show != nil {
-		if sh, serr := e.deps.Show(); serr == nil {
-			if ts := DayStartTSFrom(sh.DayStart, e.now()); ts != 0 && e.rt.DayStartTS == 0 {
-				_ = e.SetDayStart(ts)
-			}
+	_ = e.Tick(e.now())
+	if sh, serr := e.deps.Show(); serr == nil {
+		if ts := DayStartTSFrom(sh.DayStart, e.now()); ts != 0 && e.rt.DayStartTS == 0 {
+			_ = e.SetDayStart(ts)
 		}
 	}
 	r.byShow[showID] = e
 	return e, nil
+}
+
+// AnyRunning reports whether a timer is running in any loaded show (the
+// boot-time updater never swaps the binary under a live timer).
+func (r *Engines) AnyRunning() bool {
+	r.mu.Lock()
+	list := make([]*Engine, 0, len(r.byShow))
+	for _, e := range r.byShow {
+		list = append(list, e)
+	}
+	r.mu.Unlock()
+	for _, e := range list {
+		if rt := e.Runtime(); rt.Running && !rt.Paused {
+			return true
+		}
+	}
+	return false
 }
 
 // Drop forgets a show's engine (after DeleteShow).

@@ -74,6 +74,7 @@
         <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
         <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
         <button class="btn btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
+        <button class="btn" data-cmd="flash" type="button" title="Flash the timer on presenter screens" aria-label="Flash the timer on presenter screens">FLASH</button>
         <!-- E3: global display blackout — kills every display to STANDBY until
              released. Pressed state follows snapshot show.blanked. -->
         <button class="btn btn-danger" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
@@ -127,7 +128,8 @@
            the Presenter (DSM). Rendered by /src/moderate.js. -->
       <section class="panel tp-aud-main" id="tp-aud-panel">
         <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span>
-          <button class="btn btn-sm btn-primary push" type="button" id="tp-aud-new">+ New item</button></div>
+          <a class="btn btn-sm push" id="tp-aud-export" href="/api/shows/{{.Show.Code}}/polls/export" download title="Download every item's votes and submissions as a CSV file"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Export</a>
+          <button class="btn btn-sm btn-primary" type="button" id="tp-aud-new">+ New item</button></div>
         <div class="tp-onair" id="tp-aud-onair"></div>
         <div id="tp-aud-items" class="stack is-gap-s"></div>
       </section>
@@ -141,8 +143,11 @@
 {{- /* B1: the cue INSPECTOR — one <dialog>, per-show modal over the grid.
    timerpi.js initInspector() fills it from the snapshot and commits ONE
    cueEdit with the full field set (server accepts every field). */ -}}
-<dialog id="tp-aud-editor" class="tp-inspector tp-aud-editor" aria-labelledby="tp-aud-editor-title">
-  <h2 id="tp-aud-editor-title" class="panel-header">New audience item</h2>
+<dialog id="tp-aud-editor" class="modal tp-aud-editor" aria-labelledby="tp-aud-editor-title">
+  <div class="modal-header">
+    <h2 id="tp-aud-editor-title">New audience item</h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
+  </div>
   <form class="stack is-gap-s" method="dialog">
     <div class="segmented" role="group" aria-label="Kind">
       <button type="button" class="segmented-item" data-kind="poll">Poll</button>
@@ -162,23 +167,33 @@
       <button type="button" class="btn btn-sm btn-ghost" id="tp-aud-add-opt">+ Add option</button>
     </div>
     <label class="field-row" id="tp-aud-auto-field">
-      <span class="label">Approve submissions automatically</span>
-      <span class="field-hint">Off = you review each one first</span>
+      <span class="label">Auto Approve</span>
+      <span class="field-hint">Off = you review each submission first</span>
       <input type="checkbox" class="checkbox" id="tp-aud-auto">
     </label>
     <p class="field-error" role="alert" hidden></p>
-    <div class="cluster is-gap-s">
+    <p class="field-hint">Items stay hidden until you show them.</p>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
       <button type="submit" class="btn btn-primary">Save</button>
-      <button type="button" class="btn" data-cancel>Cancel</button>
-      <span class="text-muted">Items stay hidden until you show them.</span>
     </div>
   </form>
 </dialog>
-<dialog id="tp-inspector" class="tp-inspector" aria-labelledby="tp-inspector-title">
-  <h2 id="tp-inspector-title" class="panel-header">Cue <span id="tp-insp-pos" class="mono"></span></h2>
+<dialog id="tp-inspector" class="modal tp-inspector" aria-labelledby="tp-inspector-title">
+  <div class="modal-header">
+    <h2 id="tp-inspector-title">Cue <span id="tp-insp-pos" class="mono"></span></h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
+  </div>
   <form id="tp-insp-form" class="stack is-gap-s">
     <div class="field">
-      <label class="label" for="tp-insp-label">Label</label>
+      <label class="label" for="tp-insp-kind">Type</label>
+      <select class="select" id="tp-insp-kind">
+        <option value="session">Session</option>
+        <option value="break">Break</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for="tp-insp-label">Title</label>
       <input class="input" id="tp-insp-label" type="text" autocomplete="off">
     </div>
     <div class="row is-gap-s">
@@ -187,27 +202,16 @@
         <input class="input" id="tp-insp-speaker" type="text" autocomplete="off">
       </div>
       <div class="field">
-        <label class="label" for="tp-insp-location">Location (breaks: where it's served)</label>
-        <input class="input" id="tp-insp-location" type="text" maxlength="80" autocomplete="off" placeholder="Great Hall">
+        <label class="label" for="tp-insp-location">Location</label>
+        <input class="input" id="tp-insp-location" type="text" maxlength="80" autocomplete="off" placeholder="Great Hall" title="For breaks: where it's served">
       </div>
       <div class="field">
-        <label class="label" for="tp-insp-duration">Duration (H:MM — 30 = 30 min, 30s = seconds)</label>
-        <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off">
+        <label class="label" for="tp-insp-duration">Duration</label>
+        <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off" placeholder="H:MM" title="H:MM — 30 = 30 min, 30s = seconds">
       </div>
-    </div>
-    <div class="field">
-      <label class="label" for="tp-insp-tags">Tags (space separated)</label>
-      <input class="input" id="tp-insp-tags" type="text" autocomplete="off">
     </div>
     <div class="row is-gap-s">
-      <div class="field">
-        <label class="label" for="tp-insp-kind">Row kind</label>
-        <select class="select" id="tp-insp-kind">
-          <option value="session">Session cue</option>
-          <option value="break">Break / interval</option>
-        </select>
-      </div>
-      <div class="field">
+      <div class="field" style="flex:1">
         <label class="label" for="tp-insp-timerKind">Timer</label>
         <select class="select" id="tp-insp-timerKind">
           <option value="COUNTDOWN">Countdown</option>
@@ -215,9 +219,7 @@
           <option value="CLOCK">Wall clock</option>
         </select>
       </div>
-    </div>
-    <div class="row is-gap-s">
-      <div class="field">
+      <div class="field" style="flex:1">
         <label class="label" for="tp-insp-endAction">At zero</label>
         <select class="select" id="tp-insp-endAction">
           <option value="HOLD">Hold at 0:00</option>
@@ -226,7 +228,7 @@
         </select>
       </div>
     </div>
-    <div class="row is-gap-s">
+    <div class="row is-gap-s is-items-end">
       <div class="field">
         <label class="label" for="tp-insp-alert1">Alert 1 (m:ss before zero)</label>
         <input class="input mono" id="tp-insp-alert1" type="text" size="7" autocomplete="off">
@@ -236,8 +238,12 @@
         <input type="hidden" id="tp-insp-alert1Color">
         <div data-swatches-for="tp-insp-alert1Color" aria-labelledby="tp-insp-alert1Color-l"></div>
       </div>
+      <label class="field-row tp-insp-flash">
+        <input type="checkbox" class="checkbox" id="tp-insp-alert1Flash">
+        <span class="label">Flash</span>
+      </label>
     </div>
-    <div class="row is-gap-s">
+    <div class="row is-gap-s is-items-end">
       <div class="field">
         <label class="label" for="tp-insp-alert2">Alert 2 (m:ss before zero)</label>
         <input class="input mono" id="tp-insp-alert2" type="text" size="7" autocomplete="off">
@@ -247,18 +253,22 @@
         <input type="hidden" id="tp-insp-alert2Color">
         <div data-swatches-for="tp-insp-alert2Color" aria-labelledby="tp-insp-alert2Color-l"></div>
       </div>
-    </div>
-    <div class="field">
-      <span class="label" id="tp-insp-color-l">Row colour</span>
-      <input type="hidden" id="tp-insp-color">
-      <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
+      <label class="field-row tp-insp-flash">
+        <input type="checkbox" class="checkbox" id="tp-insp-alert2Flash">
+        <span class="label">Flash</span>
+      </label>
     </div>
     <div class="field">
       <label class="label" for="tp-insp-notes">Cue notes</label>
       <textarea class="input" id="tp-insp-notes" rows="3" aria-label="Cue notes"></textarea>
     </div>
-    <div class="cluster">
-      <button type="button" class="btn btn-ghost" id="tp-insp-cancel">Cancel</button>
+    <div class="field tp-insp-rowcolor">
+      <span class="label" id="tp-insp-color-l">Row colour</span>
+      <input type="hidden" id="tp-insp-color">
+      <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn btn-primary" id="tp-insp-save">Save cue <span class="indicator"></span></button>
     </div>
     <div class="field-error" id="tp-insp-error" role="alert" hidden></div>

@@ -1,0 +1,6 @@
+# Replace timer.example.com with the public name. Caddy gets the
+# certificate itself and passes WebSocket upgrades (/ws) through.
+timer.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}

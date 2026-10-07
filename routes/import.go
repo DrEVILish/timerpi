@@ -10,6 +10,7 @@
 package routes
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -77,7 +78,7 @@ func (d *Deps) apiImport(c *gin.Context) {
 		cues, perr = importdocs.Parse(data, kind)
 	}
 	if len(cues) == 0 && perr == nil {
-		perr = errNoImport("empty document — nothing importable")
+		perr = errors.New("importdocs: empty document — nothing importable")
 	}
 
 	// Document cues → validated domain cues (""-kind rows normalized).
@@ -113,7 +114,7 @@ func (d *Deps) apiImport(c *gin.Context) {
 		return
 	}
 	if len(tcs) == 0 {
-		d.importFragmentErr(c, errNoImport("no cues found in the document"))
+		d.importFragmentErr(c, errors.New("importdocs: no cues found in the document"))
 		return
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8",
@@ -128,21 +129,10 @@ func (d *Deps) importFragmentErr(c *gin.Context, err error) {
 		[]byte(`<div class="alert alert-error">`+html.EscapeString(err.Error())+`</div>`))
 }
 
-// errNoImport wraps plain import errors with the same prefix style the
-// parse layer uses (so fragments read consistently).
-type importError struct{ msg string }
-
-func (e importError) Error() string { return "importdocs: " + e.msg }
-
-func errNoImport(msg string) error { return importError{msg: msg} }
-
 // GET /api/import-example?fmt=xlsx|csv|json AND
 // GET /api/shows/:id/import-example?fmt=… — both per CONTRACT-UI §3 /
 // importdocs NOTES §2; the show variant exists for PROTOCOL REST parity
 // (examples are static documents).
-func (d *Deps) apiImportExample(c *gin.Context)        { serveExample(c) }
-func (d *Deps) apiImportExampleForShow(c *gin.Context) { serveExample(c) }
-
 func serveExample(c *gin.Context) {
 	var (
 		blob  []byte

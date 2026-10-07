@@ -78,13 +78,13 @@ func TestParseCSV_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCSV: %v", err)
 	}
-	want := []Cue{
+	want := []timerpi.Cue{
 		{
 			Label: "Opening, keynote", DurationMS: 65500, Speaker: "Amy",
-			Notes: "says, hi", Alert1MS: 30000, Alert2MS: 10000, HoldMS: 5000,
-			EndAction: "OVERTIME", AutoContinue: true, Kind: "session",
+			Notes: "says, hi", Alert1MS: 30000, Alert2MS: 10000,
+			EndAction: "OVERTIME", Kind: "session",
 		},
-		{Label: "Break", DurationMS: 65000, AutoContinue: true},
+		{Label: "Break", DurationMS: 65000}, // removed Hold/AutoContinue columns are ignored
 		{Label: "VT", DurationMS: 65000, EndAction: "BLANK", Kind: "break"},
 	}
 	if !reflect.DeepEqual(cues, want) {
@@ -139,7 +139,7 @@ func TestParseCSV_ExampleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCSV(example): %v", err)
 	}
-	if want := exampleCuesFromRows(); !reflect.DeepEqual(cues, want) {
+	if want := exampleCues; !reflect.DeepEqual(cues, want) {
 		t.Fatalf("csv example round-trip mismatch\n got: %#v\nwant: %#v", cues, want)
 	}
 }
@@ -159,15 +159,15 @@ func TestParseJSON_ArrayAndWrapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseJSON(array): %v", err)
 	}
-	want := []Cue{
+	want := []timerpi.Cue{
 		{
 			Label: "Keynote", DurationMS: 600000, Tags: "VT GFX", Speaker: "Amy",
-			TimerKind: "COUNTDOWN", EndAction: "HOLD", AutoContinue: true,
+			TimerKind: "COUNTDOWN", EndAction: "HOLD", // autoContinue ignored
 			Alert1MS: 90000,
 		},
 		{
-			Label: "VT", DurationMS: 65000, Kind: "break",
-			HoldMS: 10000, Alert2MS: 90, // numeric values are ALWAYS ms (wire rule)
+			Label: "VT", DurationMS: 65000, Kind: "break", // holdMS ignored
+			Alert2MS: 90, // numeric values are ALWAYS ms (wire rule)
 		},
 	}
 	if !reflect.DeepEqual(cues, want) {
@@ -239,7 +239,7 @@ func TestParseJSON_ExampleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseJSON(example): %v", err)
 	}
-	if want := exampleCuesFromRows(); !reflect.DeepEqual(cues, want) {
+	if want := exampleCues; !reflect.DeepEqual(cues, want) {
 		t.Fatalf("json example round-trip mismatch\n got: %#v\nwant: %#v", cues, want)
 	}
 }
@@ -268,7 +268,7 @@ func TestParseAutoAndFilename(t *testing.T) {
 	}
 	csvData := ExampleCSV()
 	jsonData := ExampleJSON()
-	n := len(exampleCuesFromRows())
+	n := len(exampleCues)
 
 	for _, kind := range []string{"", "auto", "AUTO"} {
 		for _, pair := range []struct {
@@ -305,7 +305,7 @@ func TestParseAutoAndFilename(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter (importdocs.Cue ↔ timerpi.Cue).
+// Adapter (parsed cues → normalized, validated timerpi.Cue).
 
 func TestAdapter(t *testing.T) {
 	raw := []byte(`[
@@ -316,46 +316,22 @@ func TestAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseJSON: %v", err)
 	}
-	tc, err := cues[0].ToTimerpiCue()
-	if err != nil {
-		t.Fatalf("ToTimerpiCue: %v", err)
-	}
-	if tc.Label != "Talk" || tc.DurationMS != 60000 || tc.Kind != "break" ||
-		tc.Alert1MS != 30000 || tc.Alert2MS != 5000 || tc.Color != "#ff0000" ||
-		tc.AutoContinue { // auto-continue is gone (STATUS U42): imports drop it
-		t.Fatalf("adapter field mismatch: %#v", tc)
-	}
-	// Domain Normalize fills defaults for empty fields.
-	if tc.TimerKind != "COUNTDOWN" {
-		t.Errorf("want normalized TimerKind COUNTDOWN, got %q", tc.TimerKind)
-	}
-	if tc.AlertColor1 == "" || tc.AlertColor2 == "" {
-		t.Errorf("want normalized alert colours, got %q %q", tc.AlertColor1, tc.AlertColor2)
-	}
-	if tc.Pos != 0 {
-		t.Errorf("adapter leaves Pos to the db layer, got %d", tc.Pos)
-	}
-	// Batch: order kept, no Pos.
 	got, err := ToTimerpiCues(cues)
-	if err != nil || len(got) != len(cues) || got[0] != tc {
+	if err != nil || len(got) != 1 {
 		t.Fatalf("ToTimerpiCues: %v %#v", err, got)
 	}
-	// And back — lossless but domain-normalized (TimerKind/colours/endAction
-	// defaults are filled by timerpi.Cue.Normalize, that is by design).
-	round := FromTimerpiCue(tc)
-	wantRound := Cue{
+	// Normalize fills TimerKind/colours/endAction defaults; Pos stays 0 for
+	// the db layer; auto-continue is gone (STATUS U42).
+	want := timerpi.Cue{
 		Label: "Talk", DurationMS: 60000, Kind: "break", TimerKind: "COUNTDOWN",
 		Alert1MS: 30000, Alert2MS: 5000, AlertColor1: "#ffaa00",
-		AlertColor2: "#ff4444", EndAction: "HOLD",
-		Color: "#ff0000",
+		AlertColor2: "#ff4444", EndAction: "HOLD", Color: "#ff0000",
 	}
-	if !reflect.DeepEqual(round, wantRound) {
-		t.Fatalf("FromTimerpiCue mismatch\n got: %#v\nwant: %#v", round, wantRound)
+	if got[0] != want {
+		t.Fatalf("ToTimerpiCues mismatch\n got: %#v\nwant: %#v", got[0], want)
 	}
-	// Batch back.
-	all := FromTimerpiCues([]timerpi.Cue{tc})
-	if !reflect.DeepEqual(all, []Cue{wantRound}) {
-		t.Fatalf("FromTimerpiCues mismatch: %#v", all)
+	if _, err := ToTimerpiCues([]timerpi.Cue{{Label: "ok"}, {Label: "bad", Kind: "nope"}}); err == nil || !strings.Contains(err.Error(), "cue 2") {
+		t.Fatalf("want a cue-2 validation error, got %v", err)
 	}
 	// And a whole example document converts without complaint.
 	cues, err = ParseJSON(ExampleJSON())
@@ -366,4 +342,49 @@ func TestAdapter(t *testing.T) {
 	if err != nil || len(docs) != len(cues) {
 		t.Fatalf("ToTimerpiCues(example): %v", err)
 	}
+}
+
+// exampleCues is the expected parse of every Example* document.
+var exampleCues = []timerpi.Cue{
+	{
+		Label: "Opening keynote", DurationMS: 2700000, Kind: "session",
+		Tags: "PRES GFX", Speaker: "Leslie Knope",
+		Notes: "Walk-in music, house lights down", Alert1MS: 300000,
+	},
+	{
+		Label: "Tech outlook talk", DurationMS: 1500000, Kind: "session",
+		Tags: "PRES CAM", Speaker: "Ron Swanson",
+		Notes:    "Slides on the operator laptop, not the big screen",
+		Alert1MS: 120000, EndAction: "HOLD",
+	},
+	{
+		Label: "Coffee break", DurationMS: 600000, Kind: "break",
+		Tags: "COM", Notes: "Catering in the foyer; mics muted",
+		EndAction: "BLANK",
+	},
+	{
+		Label: "Changeover", DurationMS: 120000, Kind: "break",
+		Notes: "Reset stage for the panel", EndAction: "HOLD",
+	},
+	{
+		Label: "VT: highlights reel", DurationMS: 510000, Kind: "session",
+		Tags: "VT", Notes: "Hirez playback, no speaker idle check",
+		EndAction: "BLANK",
+	},
+	{
+		Label: "Panel discussion", DurationMS: 1800000, Kind: "session",
+		Tags: "COM CAM", Speaker: "Panel: City Council",
+		Notes: "4 mics, cards to cue 20:00", Alert1MS: 180000,
+		EndAction: "HOLD",
+	},
+	{
+		Label: "Lunch break", DurationMS: 2700000, Kind: "break",
+		Notes: "Boxes in the loading dock", EndAction: "BLANK",
+	},
+	{
+		Label: "Closing remarks & awards", DurationMS: 900000, Kind: "session",
+		Tags: "PRES GFX", Speaker: "Leslie Knope",
+		Notes: "Award row cards on stand-by", Alert1MS: 120000,
+		EndAction: "OVERTIME",
+	},
 }

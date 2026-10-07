@@ -27,10 +27,11 @@ package timerpi
 // the child row with choice "1".
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -151,6 +152,7 @@ type PollView struct {
 	Spotlight   *PollView  `json:"spotlight,omitempty"` // Q&A: the question in focus
 	Pending     int        `json:"pending,omitempty"`   // moderator view: submissions waiting
 	More        int        `json:"more,omitempty"`      // entries left out of a trimmed public view
+	Waiting     []int64    `json:"waiting,omitempty"`   // public view: ids still pending review (phones keep only these of their own sent list)
 }
 
 // MaxPublicEntries caps the entries a phone or screen frame carries.
@@ -169,12 +171,9 @@ func (v *PollView) Trimmed(max int) *PollView {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.SliceStable(idx, func(a, b int) bool {
-		ca, cb := v.Children[idx[a]], v.Children[idx[b]]
-		if ca.Upvotes != cb.Upvotes {
-			return ca.Upvotes > cb.Upvotes
-		}
-		return ca.ID > cb.ID
+	slices.SortStableFunc(idx, func(a, b int) int {
+		ca, cb := v.Children[a], v.Children[b]
+		return cmp.Or(cmp.Compare(cb.Upvotes, ca.Upvotes), cmp.Compare(cb.ID, ca.ID))
 	})
 	keep := make(map[int]bool, max)
 	for _, i := range idx[:max] {
@@ -195,6 +194,9 @@ func (v *PollView) Trimmed(max int) *PollView {
 type OnAir struct {
 	Audience  *PollView `json:"audience"`
 	Presenter *PollView `json:"presenter"`
+	// Paused: the event runs at a venue and the cloud has lost its link,
+	// so phones show "audience paused" (VENUE-CLOUD §6).
+	Paused bool `json:"paused,omitempty"`
 }
 
 func (d *DB) normalizePoll(p *Poll) error {
@@ -724,6 +726,9 @@ func (d *DB) itemView(p Poll, moderator bool) PollView {
 			_ = d.Get(&total, `SELECT COUNT(*) FROM polls WHERE parent = ? AND state IN (?, ?)`, p.ID, StateOpen, StateAnswered)
 		}
 		v.Total = total
+		if !moderator {
+			_ = d.Select(&v.Waiting, `SELECT id FROM polls WHERE parent = ? AND state = ?`, p.ID, StateHidden)
+		}
 	}
 	return v
 }
@@ -778,12 +783,14 @@ func (d *DB) childViews(p Poll, moderator bool) []PollView {
 		}
 	}
 	// Loudest first; answered questions sink below open ones.
-	sort.SliceStable(out, func(i, j int) bool {
-		ai, aj := out[i].State == StateAnswered, out[j].State == StateAnswered
-		if ai != aj {
-			return !ai
+	answered := func(p PollView) int {
+		if p.State == StateAnswered {
+			return 1
 		}
-		return out[i].Upvotes > out[j].Upvotes
+		return 0
+	}
+	slices.SortStableFunc(out, func(a, b PollView) int {
+		return cmp.Or(answered(a)-answered(b), cmp.Compare(b.Upvotes, a.Upvotes))
 	})
 	return out
 }
@@ -905,4 +912,100 @@ func (d *DB) AudienceRead(showID int64) (*AudienceVisible, error) {
 
 func atoi64(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+}
+
+// ResetPoll clears an item's responses and keeps the item: its votes, its
+// entries (with their upvotes) and the spotlight go; shown results go back
+// to voting. Where it is shown is unchanged.
+func (d *DB) ResetPoll(showID, id int64) error {
+	defer d.airDirty(showID)
+	p, err := d.GetPoll(showID, id)
+	if err != nil {
+		return err
+	}
+	if p.Parent != 0 {
+		return fmt.Errorf("timerpi: clear works on an item, not one entry")
+	}
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM votes WHERE poll_id = ? OR poll_id IN (SELECT id FROM polls WHERE parent = ?)`, id, id); err != nil {
+		return fmt.Errorf("timerpi: clear votes: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM polls WHERE show_id = ? AND parent = ?`, showID, id); err != nil {
+		return fmt.Errorf("timerpi: clear entries: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE polls SET spot = 0, updated = ?,
+		state = CASE WHEN state = ? THEN ? ELSE state END WHERE id = ?`,
+		nowMS(), StateResults, StateOpen, id); err != nil {
+		return fmt.Errorf("timerpi: clear item: %w", err)
+	}
+	return tx.Commit()
+}
+
+// ExportRow is one line of the audience export: an option's votes, or one
+// submission with its upvotes.
+type ExportRow struct {
+	ItemID   int64
+	Kind     string
+	Question string
+	Response string
+	Count    int64
+	Status   string
+	Ts       int64
+}
+
+// ExportRows lists every item of the room with its responses, oldest item
+// first: poll and quiz options with their vote counts (the quiz answer
+// marked "correct"), and every submission as sent, with its state.
+func (d *DB) ExportRows(showID int64) ([]ExportRow, error) {
+	items, err := d.ListItems(showID)
+	if err != nil {
+		return nil, err
+	}
+	out := []ExportRow{}
+	for _, p := range items {
+		if p.Kind == KindPoll || p.Kind == KindQuiz {
+			v := d.itemView(p, true)
+			for i, o := range v.Options {
+				st := ""
+				if p.Kind == KindQuiz && int64(i) == p.Correct {
+					st = "correct"
+				}
+				var n int64
+				if i < len(v.Counts) {
+					n = v.Counts[i]
+				}
+				out = append(out, ExportRow{p.ID, p.Kind, p.Question, o, n, st, p.Ts})
+			}
+			if len(v.Options) == 0 {
+				out = append(out, ExportRow{ItemID: p.ID, Kind: p.Kind, Question: p.Question, Ts: p.Ts})
+			}
+			continue
+		}
+		var rows []struct {
+			Question string `db:"question"`
+			State    string `db:"state"`
+			Ts       int64  `db:"ts"`
+			N        int64  `db:"n"`
+		}
+		if err := d.Select(&rows, `SELECT p.question, p.state, p.ts, COUNT(v.id) n
+			FROM polls p LEFT JOIN votes v ON v.poll_id = p.id
+			WHERE p.parent = ? GROUP BY p.id ORDER BY p.id`, p.ID); err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			out = append(out, ExportRow{ItemID: p.ID, Kind: p.Kind, Question: p.Question, Ts: p.Ts})
+		}
+		for _, r := range rows {
+			st := map[string]string{StateHidden: "pending", StateOpen: "approved", StateAnswered: "answered", StateDismissed: "dismissed"}[r.State]
+			if st == "" {
+				st = r.State
+			}
+			out = append(out, ExportRow{p.ID, p.Kind, p.Question, r.Question, r.N, st, r.Ts})
+		}
+	}
+	return out, nil
 }

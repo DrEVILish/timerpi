@@ -737,17 +737,7 @@ func (d *Deps) apiPresetExport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": jerr.Error()})
 		return
 	}
-	slug := strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			return r
-		}
-		return '-'
-	}, strings.ToLower(p.Name))
-	slug = strings.Trim(strings.ReplaceAll(slug, "--", "-"), "-")
-	if slug == "" {
-		slug = "preset"
-	}
-	c.Header("Content-Disposition", `attachment; filename="timerpi-`+slug+`.json"`)
+	c.Header("Content-Disposition", `attachment; filename="timerpi-`+exportName(p.Name)+`.json"`)
 	c.Data(http.StatusOK, "application/json; charset=utf-8", b)
 }
 

@@ -13,7 +13,6 @@ import (
 	"hash/fnv"
 	"io"
 	"io/fs"
-	"os"
 	"regexp"
 	"sort"
 	"sync"
@@ -23,9 +22,6 @@ var (
 	revOnce sync.Once
 	rev     string
 )
-
-// SetPublicDir computes the revision from the public/ tree on disk.
-func SetPublicDir(dir string) { SetPublicFS(os.DirFS(dir)) }
 
 // SetPublicFS computes the revision from a public/ tree (disk or the
 // embedded copy). The first call wins; safe to call again.

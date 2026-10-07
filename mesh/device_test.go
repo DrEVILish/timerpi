@@ -808,3 +808,89 @@ func (k *testKit) bestPrimaryForTest() *mdns.Peer {
 	c := *p
 	return &c
 }
+
+// VENUE-CLOUD §9: a box on another protocol major never counts for the
+// election; one on a newer major means this box needs an update.
+func TestForeignProtoIgnored(t *testing.T) {
+	kit := newKit(t, func(o *Options) { o.Proto = 3; o.DBPath = filepath.Join(t.TempDir(), "timerpi.db") })
+	kit.dev.claimedEpoch = 9000
+	_ = kit.dev.store.SetInt64(KeyClaimedEpoch, 9000)
+
+	old := peer("pi-v2", "primary", 500, "192.168.1.10") // v2 box: no proto
+	newer := peer("pi-v4", "primary", 400, "192.168.1.11")
+	newer.TXT["proto"] = "4"
+	same := peer("pi-v3", "primary", 600, "192.168.1.12")
+	same.TXT["proto"] = "3"
+
+	if st := kit.evaluate(t, []mdns.Peer{old}); st == StateMember {
+		t.Fatal("yielded to a v2 primary")
+	}
+	if id, _ := kit.dev.Status(); id.UpdateNeeded {
+		t.Error("an older box made us want an update")
+	}
+	if st := kit.evaluate(t, []mdns.Peer{old, newer, same}); st != StateMember {
+		t.Fatalf("want member of the v3 primary, got %s", st)
+	}
+	id, peers := kit.dev.Status()
+	if !id.UpdateNeeded || id.PrimaryHost != "pi-v3" {
+		t.Errorf("identity = %+v", id)
+	}
+	foreign := 0
+	for _, p := range peers {
+		if p.Foreign {
+			foreign++
+		}
+	}
+	if len(peers) != 3 || foreign != 2 {
+		t.Errorf("peers = %+v", peers)
+	}
+	if _, meta := kit.ann.last(); meta.Proto != 3 {
+		t.Errorf("we announce proto %d", meta.Proto)
+	}
+}
+
+// VENUE-CLOUD §5 (closes BUGLOG RW15): paired boxes sign announcements with
+// the event mesh key; only same-event signed peers count; an unpaired box
+// never leads.
+func TestSignedAnnouncements(t *testing.T) {
+	key := []byte("event-mesh-key-0123456789abcdef!")
+	signed := func(host string, epoch int64, event string, k []byte) mdns.Peer {
+		p := peer(host, "primary", epoch, "192.168.1.20")
+		meta, _ := mdns.MetaFromMap(p.TXT)
+		meta.Event = event
+		meta.Sig = SignAnnouncement(k, meta)
+		p.TXT = mdns.DecodeTXT(meta.EncodeTXT())
+		return p
+	}
+	auth := func(ev string, k []byte) func() (string, []byte) { return func() (string, []byte) { return ev, k } }
+
+	kit := newKit(t, func(o *Options) { o.Auth = auth("EVT12345", key); o.DBPath = filepath.Join(t.TempDir(), "timerpi.db") })
+	kit.dev.claimedEpoch = 9000
+	_ = kit.dev.store.SetInt64(KeyClaimedEpoch, 9000)
+
+	forged := signed("pi-evil", 1, "EVT12345", []byte("not-the-key-at-all-not-the-key!!"))
+	other := signed("pi-other", 2, "OTHER999", []byte("other-event-key-other-event-key!"))
+	unsigned := peer("pi-plain", "primary", 3, "192.168.1.30")
+	if st := kit.evaluate(t, []mdns.Peer{forged, other, unsigned}); st == StateMember {
+		t.Fatal("followed a forged, foreign or unsigned primary")
+	}
+	good := signed("pi-good", 500, "EVT12345", key)
+	if st := kit.evaluate(t, []mdns.Peer{forged, good}); st != StateMember {
+		t.Fatalf("didn't follow the signed primary of our event: %s", st)
+	}
+	if _, meta := kit.ann.last(); meta.Event != "EVT12345" || meta.Sig != SignAnnouncement(key, mdns.ServiceMeta{Host: meta.Host, Role: meta.Role, Epoch: meta.Epoch, Proto: meta.Proto, Event: meta.Event, Boot: meta.Boot}) {
+		t.Errorf("our announcement isn't signed: %+v", meta)
+	}
+
+	// Unpaired: never claims, even alone past the grace window.
+	lone := newKit(t, func(o *Options) { o.Auth = auth("", nil) })
+	for i := 0; i < 20; i++ {
+		if st := lone.evaluate(t, nil); st != StateIdle {
+			t.Fatalf("an unpaired box became %s", st)
+		}
+		lone.clk.advance(time.Second)
+	}
+	if _, meta := lone.ann.last(); meta.Role != "unpaired" || meta.Event != "" {
+		t.Errorf("unpaired box announces %+v", meta)
+	}
+}

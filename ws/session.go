@@ -5,6 +5,7 @@
 package ws
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ type session struct {
 	done        chan struct{}
 	closeMu     sync.Once
 	httpCookies map[string]string // upgrade-request cookies (per-show gate)
+	joinRaw     []byte            // the join frame as sent (the cloud tunnel replays it)
+	handoff     chan struct{}     // closed: stop writing, the link takes the socket
+	writerExit  chan struct{}     // closed when writeLoop has returned
 	id          string            // peerId (client-supplied or generated)
 	role        string
 	screen      string // F1: stable display name (?screen=), "" = anonymous
@@ -55,6 +59,8 @@ func (h *Hub) runSession(conn *websocket.Conn, httpCookies map[string]string) {
 		done:        make(chan struct{}),
 		active:      h.nowFn(),
 		httpCookies: httpCookies,
+		handoff:     make(chan struct{}),
+		writerExit:  make(chan struct{}),
 	}
 	conn.SetReadLimit(maxFrameBytes)
 	conn.SetPongHandler(func(string) error {
@@ -63,7 +69,10 @@ func (h *Hub) runSession(conn *websocket.Conn, httpCookies map[string]string) {
 	})
 	go s.writeLoop()
 
-	if h.readJoin(s) && h.register(s) {
+	if h.readJoin(s) && h.tunnelled(s) {
+		return // the link owns the socket now
+	}
+	if s.role != "" && h.register(s) {
 		if err := s.readLoop(); err != nil {
 			h.logf("ws: session %s ended: %v", s.id, readErrString(err))
 		}
@@ -103,6 +112,7 @@ func (h *Hub) readJoin(s *session) bool {
 		s.sendErr("first frame must be a join frame")
 		return false
 	}
+	s.joinRaw = raw
 	showID, code, rerr := resolveJoinShow(h.store, j.Show)
 	if rerr != nil {
 		s.sendErr(rerr.Error())
@@ -191,7 +201,7 @@ func orGenID(peerID string) string {
 		return peerID
 	}
 	var b [4]byte
-	_, _ = randRead(b[:])
+	_, _ = rand.Read(b[:])
 	return fmt.Sprintf("s-%x", b)
 }
 
@@ -375,36 +385,6 @@ func peersFromLocked(sh *showHub, except *session) peerViews {
 	return peers
 }
 
-// ScreenLive is one screen's live presence (hub view for the F1 panel).
-type ScreenLive struct {
-	Name      string
-	Peers     int
-	Roles     []string
-	Connected bool
-}
-
-// liveScreens groups a show's live sessions by screen name ("" skipped —
-// anonymous displays are peers, not managed screens). Callers hold h.mu.
-func liveScreensLocked(sh *showHub) map[string]*ScreenLive {
-	out := map[string]*ScreenLive{}
-	for ses := range sh.sessions {
-		if ses.screen == "" {
-			continue
-		}
-		lv, ok := out[ses.screen]
-		if !ok {
-			lv = &ScreenLive{Name: ses.screen}
-			out[ses.screen] = lv
-		}
-		lv.Peers++
-		lv.Roles = append(lv.Roles, ses.role)
-	}
-	for _, lv := range out {
-		lv.Connected = lv.Peers > 0
-	}
-	return out
-}
-
 // SendToScreen fans frames to every live session joined under a screen
 // name (F1 targeted push: theme/board assignment). Returns the session
 // count reached.
@@ -470,8 +450,11 @@ func (s *session) sendErr(msg string) {
 func (s *session) writeLoop() {
 	ping := time.NewTicker(pingInterval)
 	defer ping.Stop()
+	defer close(s.writerExit)
 	for {
 		select {
+		case <-s.handoff:
+			return // the cloud tunnel owns the socket now (venue.go)
 		case <-ping.C:
 			if s.activeAgeMs(s.hub.nowFn()) > int64(readDeadline/time.Millisecond) {
 				s.kill()

@@ -43,18 +43,16 @@ func TestHomePageOpenDisplay(t *testing.T) {
 		t.Fatalf("home: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`href="/d/"`, `Open a screen`, `data-kiosk`, `id="join-form"`, `id="create-form"`, `Supervisor password`} {
+	for _, sub := range []string{`href="/d/"`, `Open a screen`, `data-kiosk`, `id="join-form"`, `id="create-form"`, `Event Technician Password`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("home missing %q", sub)
 		}
 	}
 }
 
-// The home Open Display button and the dashboard nav Display link are the
-// SAME entity (one kiosk-window affordance, one display surface family):
-// the dashboard nav says "Back to Shows" (you are inside a show) and its
-// display link reads "Open Display" with the monitor icon; /d/ carries the
-// tap-to-fullscreen contract every display page has.
+// The room page's app bar has no "Open Display" link (2026-10-07: it
+// opened the legacy /d/<room> page, not a new screen; screens are opened
+// on /d/ from the home or Screens page and set up there).
 func TestNavDisplayEntity(t *testing.T) {
 	ts := newAPITest(t)
 	code, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
@@ -62,9 +60,14 @@ func TestNavDisplayEntity(t *testing.T) {
 		t.Fatalf("dashboard: %d", code)
 	}
 	s := string(body)
-	for _, sub := range []string{`Open Display`, `data-kiosk`, `href="/d/` + ts.showCode + `"`, `Change Theme`, `Leave event`} {
+	for _, sub := range []string{`Change Theme`, `Leave event`} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("dashboard appbar missing %q", sub)
+		}
+	}
+	for _, gone := range []string{`Open Display`, `href="/d/` + ts.showCode + `"`} {
+		if strings.Contains(s, gone) {
+			t.Errorf("dashboard still has %q", gone)
 		}
 	}
 	if strings.Contains(s, "Back to Shows") {
@@ -109,5 +112,23 @@ func TestDisplayReadyCaptureLoop(t *testing.T) {
 	code, b = ts.call("GET", "/api/waiting/mine?name=Screen-DREADY&host=timerpi.local", nil, "")
 	if code != 200 || strings.Contains(string(b), `"assigned":"`+ts.showCode+`"`) {
 		t.Fatalf("second poll re-served: %d %s", code, b)
+	}
+}
+
+// The footer carries the Event ID and a ping readout, not the session code
+// (2026-10-07).
+func TestRoomFooterEventID(t *testing.T) {
+	ts := newAPITest(t)
+	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
+	s := string(body)
+	foot := s[strings.Index(s, `<footer class="app-status">`):]
+	foot = foot[:strings.Index(foot, `</footer>`)]
+	for _, want := range []string{`Event ID`, `id="conn-ping"`} {
+		if !strings.Contains(foot, want) {
+			t.Errorf("footer missing %q: %s", want, foot)
+		}
+	}
+	if strings.Contains(foot, `Session`) {
+		t.Errorf("footer still shows the session: %s", foot)
 	}
 }

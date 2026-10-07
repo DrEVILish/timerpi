@@ -26,6 +26,14 @@ var openRoutes = map[string]bool{
 	"GET /api/shows/:ident/screens/self":       true,
 	"GET /api/shows/:ident/walkin":             true,
 	"GET /api/theme":                           true,
+	"GET /api/pairing/self":                    true, // loopback only (pairing.go)
+	"GET /d/box":                               true,
+	"GET /api/link":                            true, // signed by the venue (link.go)
+	"GET /api/link/bundle":                     true,
+	"POST /api/link/register":                  true,
+	"GET /api/pairing/status":                  true, // boxes poll it (VENUE-CLOUD §3)
+	"GET /api/update/binary":                   true, // signed builds for other boxes (VENUE-CLOUD §14)
+	"GET /api/update/manifest":                 true,
 	"GET /api/waiting/mine":                    true,
 	"GET /assets/:id":                          true,
 	"GET /box":                                 true,

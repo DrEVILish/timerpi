@@ -18,17 +18,22 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/buildinfo"
 	"timerpi/config"
+	"timerpi/drm"
 	"timerpi/mesh"
 	"timerpi/oscbridge"
 	"timerpi/routes"
 	"timerpi/timerpi"
+	"timerpi/update"
+	"timerpi/venue"
 	"timerpi/views"
 	"timerpi/ws"
 )
@@ -43,6 +48,11 @@ const readyDir = "/run/timerpi" // EPHEMERAL (tmpfs) — splash handshake dir
 var webFiles embed.FS
 
 func main() {
+	// `timerpi mesh [status]` sets up the venue mesh radios (root, from
+	// timerpi-mesh.service / udev / the status timer); see meshradio.
+	if len(os.Args) > 1 && os.Args[1] == "mesh" {
+		os.Exit(runMesh(os.Args[2:]))
+	}
 	os.Exit(run())
 }
 
@@ -55,6 +65,20 @@ func run() int {
 	flag.Parse()
 
 	config.LoadConfig()
+	cloud := config.IsCloud()
+	log.Printf("timerpi: %s, role %s, protocol %d", buildinfo.Version, config.Role(), buildinfo.Proto)
+
+	// A box that just updated: a new build that keeps failing to start is
+	// replaced by the previous one (update.Rollback, VENUE-CLOUD §14).
+	self, _ := os.Executable()
+	if !cloud && self != "" {
+		if rolled, err := update.Rollback(self); err != nil {
+			log.Printf("timerpi: update rollback: %v", err)
+		} else if rolled {
+			log.Printf("timerpi: the new build failed to start; restored the previous one, restarting")
+			return 1
+		}
+	}
 
 	// Release mode default; -debug or GIN_MODE opts out.
 	if os.Getenv("GIN_MODE") == "" && !*debug {
@@ -74,6 +98,9 @@ func run() int {
 	// BLANK routes the panic image. Target read per event from settings.
 	engines.OnStart = func(showID, pos int64) { oscbridge.FireOut("cue", pos) }
 	oscbridge.Target = func() string {
+		if cloud {
+			return "" // the cloud never fires a venue's media player
+		}
 		kv, err := db.AllSettings()
 		if err != nil || kv["osc.out.enabled"] != "1" {
 			return ""
@@ -95,7 +122,7 @@ func run() int {
 	var tmplSet *views.Set
 	var public fs.FS
 	if *devTmpl {
-		tmplSet, err = views.New(findTemplates())
+		tmplSet, err = views.New(routes.FindDir("templates"))
 	} else {
 		tmplSet, err = views.NewFS(webFiles)
 		public, _ = fs.Sub(webFiles, "public")
@@ -126,8 +153,25 @@ func run() int {
 	defer hub.Stop()
 	defer hub.CloseAll() // runs first: live sockets close before the hub stops
 
-	// Wire the hub counter into /health.
-	routes.SessionsCount = hub.Sessions
+	// The updater: runs at boot (below) and backs the network page's UPDATE
+	// button. Boxes only.
+	var checker *update.Checker
+	if !cloud && self != "" {
+		checker = &update.Checker{
+			Self: self, Current: buildinfo.Version, Arch: runtime.GOARCH, Key: update.PublicKey(),
+			Busy:    engines.AnyRunning,
+			Uptime:  update.Uptime,
+			Restart: func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) },
+		}
+	}
+
+	// The box's event life (venue: pairing, event copy, release, the cloud
+	// link). Boxes only; its mesh and routes are set once they exist.
+	var agent *venue.Agent
+	if !cloud {
+		hostname, _ := os.Hostname()
+		agent = &venue.Agent{Store: db, Hub: hub, Port: config.HTTPPort(), Name: hostname, CloudURL: config.CloudURL}
+	}
 
 	// Device mesh (Agent H): mDNS announce/browse + PRIMARY claim/takeover.
 	// Degrades to 503 identity endpoints if mesh fails to start — the
@@ -136,12 +180,20 @@ func run() int {
 	// announcements another box could react to.
 	var meshYB *mesh.Device
 	meshErr := fmt.Errorf("disabled by TIMERPI_MESH=off")
-	if !strings.EqualFold(os.Getenv("TIMERPI_MESH"), "off") {
+	switch {
+	case cloud:
+		meshErr = fmt.Errorf("the cloud has no venue mesh")
+	case !strings.EqualFold(os.Getenv("TIMERPI_MESH"), "off"):
 		meshYB, meshErr = mesh.New(mesh.Options{
 			Port:    config.HTTPPort(),
-			Version: "v1",
+			Version: buildinfo.Version,
+			Proto:   buildinfo.Proto,
+			Auth:    agent.MeshAuth, // signed announcements (VENUE-CLOUD §5)
 			DBPath:  filepath.Join(dataDir, "timerpi.db"),
 		})
+	}
+	if checker != nil {
+		checker.Sources = func() []string { return updateSources(meshYB) }
 	}
 	if meshErr != nil {
 		log.Printf("timerpi: mesh device off: %v", meshErr)
@@ -158,6 +210,7 @@ func run() int {
 		}()
 		routes.InstallNetwork(&routes.NetworkDeps{
 			Device:     meshYB,
+			Updater:    checker,
 			Tmpl:       tmplSet,
 			ReloadTmpl: *devTmpl,
 		})
@@ -165,7 +218,10 @@ func run() int {
 
 	// HDMI renderer (drm/): runs the 50 fps present loop when
 	// TIMERPI_DISPLAY selects drm/fb; off/absent → headless as usual.
-	_, drmClock := startDRMClock(engines, db)
+	var drmClock *drm.Clock
+	if !cloud {
+		_, drmClock = startDRMClock(engines, db)
+	}
 	if drmClock != nil {
 		// stop cancels the loop, waits for it, then closes the backend
 		// (BUGLOG RW47: closing first could crash a shutdown mid-frame).
@@ -173,14 +229,32 @@ func run() int {
 		defer stopDRM()
 	}
 
-	g := routes.New(&routes.Deps{
+	deps := &routes.Deps{
 		Engines:    engines,
 		Store:      db,
 		Hub:        hub,
 		Tmpl:       tmplSet,
 		ReloadTmpl: *devTmpl,
 		Public:     public,
-	})
+	}
+	g := routes.New(deps)
+	relCtx, relCancel := context.WithCancel(context.Background())
+	defer relCancel()
+	deps.StartReleaser(relCtx) // events end: screens released at end + 4 h
+	if cloud {
+		// A venue event's audience comes from its venue; its operators go
+		// through the link; its copy here takes no commands (link.go).
+		hub.SetPollsFunc(deps.WrapPolls(db.OnAirNow))
+		hub.SetTunnel(deps.Tunnel)
+		hub.SetCommandGate(deps.CommandGate)
+	} else {
+		agent.Srv, agent.Handler, agent.Mesh = deps, g, meshYB
+		deps.BoxSelf = func() any { return agent.Self() }
+		deps.BoxEvent = func() string { return agent.Pairing().Event }
+		deps.OnRelease = agent.OnRelease
+		deps.ClockHint = agent.ClockHint
+		go agent.Run(relCtx)
+	}
 
 	addr := fmt.Sprintf(":%d", config.HTTPPort())
 	// Slow bodies and idle keep-alives can't hold connections forever
@@ -214,6 +288,20 @@ func run() int {
 	// the framebuffer instead of hitting its 45 s timeout. /run is
 	// ephemeral tmpfs; never configured for persistence.
 	readyFile := writeReadyFile()
+
+	// Boot-time updates (boxes only): look for a newer signed build on the
+	// cloud and the mesh during the first 5 minutes after the machine boots,
+	// then never again until the next reboot. A build that has served for a
+	// minute is confirmed, so it won't be rolled back.
+	if checker != nil {
+		go func() {
+			time.Sleep(time.Minute)
+			update.Confirm(self)
+		}()
+		updCtx, updCancel := context.WithCancel(context.Background())
+		defer updCancel()
+		go checker.Run(updCtx)
+	}
 
 	// Graceful shutdown: release listeners cleanly so systemd restarts
 	// without orphaned sockets and mesh peers see the close.
@@ -269,23 +357,4 @@ func removeReadyFile(path string) {
 		return
 	}
 	_ = os.Remove(path) // /run is ephemeral anyway; no persistence ever
-}
-
-// findTemplates resolves the checkout-relative template root (mirrors
-// routes.findDir; kept local to avoid exporting that helper).
-func findTemplates() string {
-	for _, c := range []string{"templates", exeJoin("templates")} {
-		if st, err := os.Stat(c); err == nil && st.IsDir() {
-			return c
-		}
-	}
-	return "templates"
-}
-
-func exeJoin(name string) string {
-	exe, err := os.Executable()
-	if err != nil {
-		return name
-	}
-	return filepath.Join(filepath.Dir(exe), name)
 }

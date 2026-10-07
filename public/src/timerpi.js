@@ -18,12 +18,12 @@ import {
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
 } from './engine.js';
 import { createUndo } from './undo.js';
-import { applyTheme, applyIconTheme, setThemeVersion, initClientLog } from './theme.js';
+import { applyTheme, applyIconTheme, loadThemeVersion, initClientLog } from './theme.js';
+import { api, toast, setText, el } from './ui.js';
 import { applyWaiting } from './waiting.js';
-import { tpConfirm, tpPrompt } from './dialog.js';
 import { swatchPicker } from './swatches.js';
-import { initModerate, refresh as moderateRefresh } from './moderate.js';
-import { initScreens as initScreensPage, pull as screensPull } from './screens.js';
+import { initModerate, refresh as moderateRefresh, paintTabBadge } from './moderate.js';
+import { initScreens } from './screens.js';
 
 const THEME_KEY = 'timerpi.theme';
 // Product default is BLUE-FUTURE (owner-favourite sci-fi HUD). The html attr
@@ -45,10 +45,6 @@ const undo = createUndo({
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-function setText(el, text) {
-  if (el && el.textContent !== text) el.textContent = text;
-}
-
 function setState(el, state) {
   if (el && el.dataset.state !== state) el.dataset.state = state;
 }
@@ -62,36 +58,6 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-function toast(text, kind = 'info') {
-  // C2 drill UX: a flapping link (or a reconnect storm's err frames) must
-  // not stack identical popups — swallow an exact repeat inside 4 s.
-  const now = Date.now();
-  if (toast.last && toast.last.text === text && toast.last.kind === kind
-      && now - toast.last.at < 4000) return;
-  toast.last = { text, kind, at: now };
-  const region = $('#toast-region');
-  if (!region) return;
-  // Decode a manual popover region once, so toasts are actually visible
-  // (base/display ship .toast-region[popover=manual]; a closed popover is
-  // display:none — CONTRACT.md "Toasts over a modal"). Guarded for browsers
-  // without the Popover API.
-  if (typeof region.showPopover === 'function' && !region.open) {
-    try { region.showPopover(); } catch { /* display lock: fall back in flow */ }
-  }
-  const el = document.createElement('div');
-  // core ships .toast-success/.toast-danger only; 'info' uses the base .toast.
-  el.className = kind === 'info' ? 'toast' : `toast toast-${kind}`;
-  el.textContent = text;
-  region.appendChild(el);
-  setTimeout(() => {
-    el.remove();
-    // Release the top layer once the region drains.
-    if (!region.children.length && region.open && typeof region.hidePopover === 'function') {
-      try { region.hidePopover(); } catch { /* */ }
-    }
-  }, 4000);
-}
-
 /* ------------------------------------------------------------ theme picker -- */
 async function initTheme() {
   // Non-default stored theme: clean up the double-bundle the bootstrap left
@@ -101,27 +67,17 @@ async function initTheme() {
   // sprite's name as data — applyIconTheme rewrites <use> hrefs per theme),
   // and oob swaps add new <use> nodes; the swap handler re-runs this.
   applyIconTheme(current);
-  // Change Theme dropdown closes when the user clicks/taps anywhere else.
-  document.addEventListener('click', (e) => {
-    document.querySelectorAll('details.tp-theme-menu[open]').forEach((d) => {
-      if (!d.contains(e.target)) d.removeAttribute('open');
-    });
-  });
   const select = $('#theme-select');
   if (!select) return;
-  try {
-    const res = await fetch('/ftl/dist/themes.json');
-    const themes = await res.json();
-    if (Array.isArray(themes) && themes[0]?.version) setThemeVersion(themes[0].version);
-    select.innerHTML = '';
-    for (const t of themes) {
-      const opt = document.createElement('option');
-      opt.value = t.dataTheme;
-      opt.textContent = t.label + (t.scheme === 'light' ? ' light' : '');
-      opt.title = (t.description || '') + (t.tint ? ` — tint ${t.tint}` : '');
-      select.appendChild(opt);
-    }
-  } catch { /* picker stays sparse; bootstrap script already applied the theme */ }
+  const themes = await loadThemeVersion();
+  // Offline: the picker stays sparse; bootstrap script already applied the theme.
+  if (Array.isArray(themes)) {
+    select.replaceChildren(...themes.map((t) => el('option', {
+      value: t.dataTheme,
+      text: t.label + (t.scheme === 'light' ? ' light' : ''),
+      title: (t.description || '') + (t.tint ? ` — tint ${t.tint}` : ''),
+    })));
+  }
   select.value = current;
   select.addEventListener('change', () => {
     const slug = select.value || 'blue-future';
@@ -129,7 +85,7 @@ async function initTheme() {
     try { localStorage.setItem(THEME_KEY, slug); } catch { /* */ }
     toast(`Theme: ${select.selectedOptions[0]?.textContent || slug}`);
     // The picker lives in the Change Theme dropdown — close it on pick.
-    select.closest('details')?.removeAttribute('open');
+    try { $('#tp-theme-pop')?.hidePopover(); } catch { /* closed */ }
   });
 }
 
@@ -318,13 +274,9 @@ class ClockUI {
     const fragment = document.createDocumentFragment();
     if (!rows.length) {
       // Mirror the server's empty row; the add row in the footer stays.
-      const tr = document.createElement('tr');
-      tr.className = 'tp-cue-empty';
-      const td = document.createElement('td');
-      td.colSpan = 13;
-      td.className = 'text-muted';
-      setText(td, 'No cues yet. Add the first one in the row below, or import a running order.');
-      tr.appendChild(td);
+      const tr = el('tr', { class: 'table-empty' }, el('td', { colspan: 13 }, el('div', { class: 'empty-state' },
+        el('span', { class: 'empty-state-title', text: 'No cues yet' }),
+        el('span', { class: 'empty-state-hint', text: 'Add the first one in the row below, or import a running order.' }))));
       fragment.appendChild(tr);
     }
     for (const c of rows) fragment.appendChild(this.cueRow(c, scheduleByPos.get(c.pos)));
@@ -342,7 +294,7 @@ class ClockUI {
     const td = (cls, edit) => {
       const t = document.createElement('td');
       if (cls) t.className = cls;
-      if (edit) t.dataset.edit = edit;
+      if (edit) { t.dataset.edit = edit; t.classList.add('is-editable'); }
       return t;
     };
     const span = (cls, text) => { const s = document.createElement('span'); s.className = cls; setText(s, text); return s; };
@@ -369,7 +321,7 @@ class ClockUI {
 
     // Long text is clipped in an inner span (cells ignore max-width), with
     // the full text as its tooltip.
-    const clip = (text) => { const sp = span('tp-clip', text); sp.title = text; return sp; };
+    const clip = (text) => { const sp = span('text-truncate', text); sp.title = text; return sp; };
     const who = td('tp-cue-who', isBreak ? 'location' : 'speaker');
     who.appendChild(clip(isBreak ? (c.location || '') : (c.speaker || '')));
 
@@ -641,14 +593,6 @@ function initMesh(showId, role, page) {
             else delete document.documentElement.dataset.rotate;
           }
           break;
-        case 'screens':
-          screensCache.screens = m.screens || [];
-          renderScreens();
-          screensPull();
-          break;
-        case 'peers':
-          screensRefreshSoon(); // live counts changed (a screen joined/left)
-          break;
         case 'display':
           if (m.theme && m.theme !== document.documentElement.getAttribute('data-theme')) {
             // Swap the bundle too, not just the attribute — dist bundles are
@@ -712,24 +656,18 @@ function updateConnection() {
   if (prevOnline === false && online && updateConnection.wasOnline) toast('Server link back — everything resyncs automatically', 'success');
   if (online) updateConnection.wasOnline = true;
   prevOnline = online;
-  const lampWs = $('#lamp-ws'), lampMesh = $('#lamp-mesh');
   const label = $('#conn-label');
-  if (lampWs) {
-    lampWs.classList.toggle('is-on', mesh.serverOnline());
-    lampWs.classList.toggle('is-error', !mesh.serverOnline());
-    lampWs.title = `Server link: ${mesh.wsStatus}`;
-  }
-  if (lampMesh) {
-    const linked = mesh.openPeerIds().length > 0;
-    lampMesh.classList.toggle('is-on', linked);
-    lampMesh.classList.toggle('is-warn', !linked);
-    lampMesh.title = 'Display mesh (WebRTC)';
-  }
   if (label) {
+    // live = server link up; degraded = server down but the mesh carries the
+    // show; reconnecting = first connect; offline = nothing carries it.
+    setState(label, online ? 'live'
+      : mesh.masterId ? 'degraded'
+      : mesh.wsStatus === 'connecting' ? 'reconnecting' : 'offline');
+    label.title = `Server link: ${mesh.wsStatus} · display mesh peers: ${mesh.openPeerIds().length}`;
     setText(label, statusLabel(mesh));
-    const code = $('#conn-code');
-    if (code) setText(code, mesh.snap?.show?.code ? fmtCode(mesh.snap.show.code) : fmtCode(mesh.showId));
   }
+  const ping = $('#conn-ping');
+  if (ping) setText(ping, mesh.serverOnline() && mesh.rtt != null ? `${mesh.rtt} ms` : '—');
   const peersCount = $('#peers-count');
   if (peersCount) setText(peersCount, String(mesh.openPeerIds().length + 1));
 }
@@ -739,7 +677,7 @@ function updateConnection() {
 function updateSharePanel(snap) {
   const qr = $('#share-qr');
   if (qr && qr.dataset.srcTpl) {
-    const url = `${location.origin}${qr.dataset.path || '/d/'}${qr.dataset.show}`;
+    const url = `${qr.dataset.base || location.origin}${qr.dataset.path || '/d/'}${qr.dataset.show}`;
     qr.src = qr.dataset.srcTpl.replace('__DATA__', encodeURIComponent(url));
     qr.dataset.srcTpl = '';
     const link = $('#share-display-link');
@@ -937,16 +875,10 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
       e.preventDefault();
       const hhmm = dsf.querySelector('#tp-day-begins')?.value.trim() || '';
       try {
-        const res = await fetch(`/api/shows/${document.body.dataset.show}/daystart`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ hhmm }),
-        });
-        const j = await res.json();
-        if (!j.ok) { toast(j.error || 'rejected', 'danger'); return; }
+        const j = await api('POST', `/api/shows/${document.body.dataset.show}/daystart`, { hhmm });
         toast(j.anchored ? `Day anchored to ${hhmm} — saved` : 'Schedule saved (clears automation)', 'info');
-      } catch {
-        toast('network error', 'danger');
+      } catch (err) {
+        toast(err.message, 'danger');
       }
       return;
     }
@@ -955,6 +887,7 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     e.preventDefault();
     const args = {};
     for (const [k, v] of new FormData(form)) {
+      if (k.startsWith('tp-sw-')) continue; // swatch radios; their hidden input carries the value
       if (typeof v === 'string' && v.trim() !== '') args[k] = v.trim();
     }
     const sub = e.submitter;
@@ -1104,296 +1037,6 @@ function initDisplayExtras() {
   wake();
 }
 
-/* ------------------------------------------------------------- homepage -- */
-
-/* ------------------------------------------------------- screens (F1/F2) --
- * The operator's screens panel: every display tab self-registers a stable
- * name (mesh.js screenName); rows list live presence and carry a theme +
- * board assignment each. Actions POST to routes/screens.go; registry
- * changes push back here as {t:"screens"} frames (live count also
- * refreshes on peers churn). Presets snapshot the whole registry and move
- * between appliances as plain JSON files.
- */
-
-const screensCache = { screens: [], themes: [], boards: [] };
-let presetsCache = [];
-
-const screensCode = () => document.body.dataset.show || '';
-const screensSel = (row, field) => row.querySelector(`[data-field="${field}"]`);
-
-function renderScreens() {
-  const host = document.getElementById('tp-screens');
-  if (!host) return;
-  const badge = document.getElementById('tp-screens-count');
-  if (badge) badge.textContent = `${screensCache.screens.filter((s) => s.connected).length} live`;
-  host.textContent = '';
-  if (!screensCache.screens.length) {
-    const p = document.createElement('p');
-    p.className = 'text-muted';
-    p.textContent = 'No screens yet — open /d/<code> on a display; it registers itself here.';
-    host.appendChild(p);
-    return;
-  }
-  for (const s of screensCache.screens) {
-    const row = document.createElement('div');
-    row.className = 'tp-screen-row';
-    row.dataset.name = s.name;
-
-    const name = document.createElement('button');
-    name.type = 'button';
-    name.className = 'tp-screen-name';
-    name.textContent = s.name;
-    name.title = 'Click to rename this screen';
-
-    const dot = document.createElement('span');
-    dot.className = 'badge' + (s.connected ? ' badge-accent' : '');
-    dot.textContent = s.connected ? `LIVE ×${s.sessions}` : 'offline';
-
-    const theme = document.createElement('select');
-    theme.className = 'select input-sm';
-    theme.dataset.field = 'theme';
-    theme.setAttribute('aria-label', `Theme for ${s.name}`);
-    theme.appendChild(new Option('Default theme', ''));
-    for (const t of screensCache.themes) theme.appendChild(new Option(t, t));
-    if (s.theme && !screensCache.themes.includes(s.theme)) {
-      theme.appendChild(new Option(`${s.theme} (not installed)`, s.theme));
-    }
-    theme.value = s.theme || '';
-    theme.dataset.stored = theme.value;
-
-    const board = document.createElement('select');
-    board.className = 'select input-sm';
-    board.dataset.field = 'board';
-    board.setAttribute('aria-label', `Board for ${s.name}`);
-    board.appendChild(new Option('Show board', ''));
-    for (const b of screensCache.boards) board.appendChild(new Option(b.name, String(b.id)));
-    if (s.boardId > 0 && !screensCache.boards.some((b) => String(b.id) === String(s.boardId))) {
-      board.appendChild(new Option(`board ${s.boardId} (deleted?)`, String(s.boardId)));
-    }
-    board.value = s.boardId ? String(s.boardId) : '';
-    board.dataset.stored = board.value;
-
-    const mk = (act, label, cls, title) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = cls;
-      btn.dataset.act = act;
-      btn.textContent = label;
-      btn.title = title;
-      return btn;
-    };
-    row.append(name, dot, theme, board,
-      mk('apply', 'Apply', 'btn btn-sm btn-primary', 'Save this theme/board for this screen'),
-      mk('match', 'Match all', 'btn btn-sm', "Copy this screen's config onto every screen"));
-    for (const pr of (s.peers || [])) {
-      const kick = mk('kick', '⏻', 'btn btn-sm btn-icon btn-ghost',
-        `Disconnect ${pr.role} session ${pr.peerId} (stays down until that page reloads)`);
-      kick.dataset.kick = pr.peerId;
-      row.appendChild(kick);
-    }
-    row.appendChild(mk('forget', '✕', 'btn btn-sm btn-icon btn-ghost', 'Forget this screen'));
-    host.appendChild(row);
-  }
-}
-
-function renderPresets() {
-  const host = document.getElementById('tp-presets');
-  if (!host) return;
-  host.textContent = '';
-  if (!presetsCache.length) {
-    const p = document.createElement('p');
-    p.className = 'text-muted';
-    p.textContent = 'No presets saved yet.';
-    host.appendChild(p);
-    return;
-  }
-  for (const pr of presetsCache) {
-    const row = document.createElement('div');
-    row.className = 'tp-screen-row';
-    row.dataset.pid = String(pr.id);
-    const name = document.createElement('span');
-    name.textContent = pr.name;
-    const mk = (pact, label, cls) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = cls;
-      b.dataset.pact = pact;
-      b.textContent = label;
-      return b;
-    };
-    row.append(name,
-      mk('apply', 'Apply', 'btn btn-sm btn-primary'),
-      mk('export', 'Export', 'btn btn-sm'),
-      mk('del', '✕', 'btn btn-sm btn-icon btn-ghost'));
-    host.appendChild(row);
-  }
-}
-
-async function screensRefresh() {
-  if (!document.getElementById('screens-panel')) return;
-  try {
-    const j = await (await fetch(`/api/shows/${screensCode()}/screens`)).json();
-    screensCache.screens = j.screens || [];
-    renderScreens();
-  } catch { /* stale panel beats broken; next push heals it */ }
-}
-
-async function presetsRefresh() {
-  try {
-    const j = await (await fetch(`/api/shows/${screensCode()}/presets`)).json();
-    presetsCache = j.presets || [];
-    renderPresets();
-  } catch { /* keep last list */ }
-}
-
-const screensRefreshSoon = debounce(screensRefresh, 400);
-
-// Selects restore missing stored values as synthetic options, so a
-// mismatched list can never POST an accidental clear — but a failed boot
-// fetch (empty lists, unrendered rows) falls back to the dataset copy.
-function screenRowConfig(row) {
-  const themeSel = screensSel(row, 'theme');
-  const boardSel = screensSel(row, 'board');
-  return {
-    name: row.dataset.name,
-    theme: themeSel?.value || themeSel?.dataset.stored || '',
-    boardId: Number(boardSel?.value || boardSel?.dataset.stored || 0),
-  };
-}
-
-async function screensPost(action, body) {
-  try {
-    const res = await fetch(`/api/shows/${screensCode()}/screens/${action}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) { toast(j.error || `screen ${action} failed`, 'danger'); return false; }
-    return true;
-  } catch {
-    toast('network error', 'danger');
-    return false;
-  }
-}
-
-function initScreens() {
-  // Presets now live on the Screens page (#screens-presets, STATUS U29).
-  const panel = document.getElementById('screens-panel') || document.getElementById('screens-presets');
-  if (!panel || initScreens.bound) return;
-  initScreens.bound = true;
-
-  (async () => {
-    // Each fetch degrades on its own: a dead /api/theme must not stop the
-    // screens list (rows still render; missing options are restored as
-    // synthetic entries by renderScreens).
-    const [t, b] = await Promise.all([
-      fetch('/api/theme').then((r) => r.json()).catch(() => null),
-      fetch(`/api/shows/${screensCode()}/boards`).then((r) => r.json()).catch(() => null),
-    ]);
-    if (t) screensCache.themes = t.themes || [];
-    if (b) screensCache.boards = Array.isArray(b) ? b : (b.boards || []);
-    screensRefresh();
-    presetsRefresh();
-  })();
-
-  $('#tp-screens')?.addEventListener('click', async (e) => {
-    const row = e.target.closest('.tp-screen-row');
-    if (!row) return;
-    const name = row.dataset.name;
-    if (e.target.closest('.tp-screen-name')) {
-      const res = await tpPrompt(null, name, { title: `Rename screen "${name}"`, ok: 'Rename', fields: [{ id: 'to', label: 'New name', value: name }] });
-      const to = res?.to;
-      if (to && to.trim() && to !== name) await screensPost('rename', { from: name, to: to.trim() });
-      return;
-    }
-    const kickBtn = e.target.closest('[data-kick]');
-    if (kickBtn) {
-      if (!(await tpConfirm('That display stays down until its page is reloaded.', { title: `Disconnect session ${kickBtn.dataset.kick}?`, ok: 'Disconnect', danger: true }))) return;
-      try {
-        const res = await fetch(`/api/shows/${screensCode()}/sessions/${encodeURIComponent(kickBtn.dataset.kick)}`, { method: 'DELETE' });
-        const j = await res.json().catch(() => ({}));
-        toast(res.ok ? 'Session disconnected' : (j.error || 'disconnect failed'), res.ok ? 'info' : 'danger');
-        if (res.ok) screensRefresh();
-      } catch { toast('network error', 'danger'); }
-      return;
-    }
-    const act = e.target.closest('[data-act]')?.dataset.act;
-    if (!act) return;
-    if (act === 'apply') {
-      await screensPost('config', screenRowConfig(row));
-    } else if (act === 'match') {
-      // Persist this row's picks first, then copy them onto everyone.
-      const ok = await screensPost('config', screenRowConfig(row));
-      if (ok) await screensPost('match', { from: name });
-    } else if (act === 'forget') {
-      if (await tpConfirm('An open display tab re-registers on its next join.', { title: `Forget screen "${name}"?`, ok: 'Forget', danger: true })) {
-        await screensPost('forget', { name });
-      }
-    }
-  });
-
-  $('#tp-presets')?.addEventListener('click', async (e) => {
-    const row = e.target.closest('.tp-screen-row');
-    const pact = e.target.closest('[data-pact]')?.dataset.pact;
-    if (!row || !pact) return;
-    const pid = row.dataset.pid;
-    if (pact === 'apply') {
-      try {
-        const res = await fetch(`/api/shows/${screensCode()}/presets/${pid}/apply`, { method: 'POST' });
-        const j = await res.json().catch(() => ({}));
-        toast(res.ok ? 'Preset applied to all named screens' : (j.error || 'apply failed'), res.ok ? 'info' : 'danger');
-      } catch { toast('network error', 'danger'); }
-    } else if (pact === 'export') {
-      location.href = `/api/shows/${screensCode()}/presets/${pid}/export`;
-    } else if (pact === 'del') {
-      if (!(await tpConfirm('The preset is removed for every operator of this show.', { title: 'Delete this preset?', ok: 'Delete', danger: true }))) return;
-      try {
-        await fetch(`/api/shows/${screensCode()}/presets/${pid}`, { method: 'DELETE' });
-        presetsRefresh();
-      } catch { toast('network error', 'danger'); }
-    }
-  });
-
-  $('#tp-preset-save')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = e.target.querySelector('input[name="name"]')?.value.trim();
-    if (!name) return;
-    try {
-      const res = await fetch(`/api/shows/${screensCode()}/presets`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) { toast(j.error || 'save failed', 'danger'); return; }
-      toast(`Preset "${name}" saved`, 'info');
-      e.target.reset();
-      presetsRefresh();
-    } catch { toast('network error', 'danger'); }
-  });
-
-  $('#tp-preset-import')?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    try {
-      const text = await file.text();
-      JSON.parse(text);
-      const res = await fetch(`/api/shows/${screensCode()}/presets/import`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: text,
-      });
-      const j = await res.json().catch(() => ({}));
-      toast(res.ok ? `Preset "${j.name}" imported` : (j.error || 'import failed'), res.ok ? 'info' : 'danger');
-      if (res.ok) presetsRefresh();
-    } catch {
-      toast('not a readable JSON preset', 'danger');
-    }
-  });
-}
-
 /* ------------------------------------------------------------ room tabs -- */
 
 // Run · Audience · Setup on the room page. The choice lives in the URL hash
@@ -1509,6 +1152,8 @@ function applyOOB(m) {
     const keep = m.target === '#cuelist' ? saveAddRow() : null;
     target.replaceWith(frag);
     if (keep) restoreAddRow(keep);
+    if (m.target === '#cuelist') markCellSaved();
+    if (m.target === '#messages-panel') mountMsgSwatches();
     window.htmx?.process(frag);
     // The swap replaced #tp-now / #tp-daybar / #cuelist — every cached
     // reference inside them is detached. Re-collect so paint/render
@@ -1623,27 +1268,20 @@ function initAddRow() {
 }
 
 /** The colour popover (U30): ftl `.popover` holding the swatch picker,
-    placed under the element that opened it. */
+    anchored to the element that opened it. */
 function openColorPop(anchor, value, defaultColor, onPick) {
   let pop = $('#tp-color-pop');
   if (!pop) {
-    pop = document.createElement('div');
-    pop.id = 'tp-color-pop';
-    pop.className = 'popover tp-color-pop';
-    pop.setAttribute('popover', '');
+    pop = el('div', { id: 'tp-color-pop', class: 'popover', popover: true });
     document.body.appendChild(pop);
   }
   pop.replaceChildren(swatchPicker({
     value, defaultColor, label: anchor.getAttribute('aria-label') || anchor.title || 'Colour',
     onChange: (v) => { onPick(v); try { pop.hidePopover(); } catch { /* closed */ } },
   }));
-  try { pop.showPopover(); } catch { return; }
-  const r = anchor.getBoundingClientRect();
-  pop.style.position = 'fixed';
-  pop.style.inset = 'auto';
-  pop.style.margin = '0';
-  pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
-  pop.style.top = `${Math.min(r.bottom + 4, innerHeight - pop.offsetHeight - 8)}px`;
+  // `source` makes the dot the implicit anchor: ftl places the popover
+  // beside it where anchor positioning exists, centred elsewhere.
+  try { pop.showPopover({ source: anchor }); } catch { return; }
   pop.querySelector('input:checked, input')?.focus();
 }
 
@@ -1759,47 +1397,82 @@ function startCellEdit(td, opts = {}) {
     const v = cue[field];
     ctl.value = isMS ? (v > 0 || field === 'durationMS' ? fmtDurText(v || 0, unit) : '') : (v || '');
   }
-  ctl.style.width = '100%';
   ctl.setAttribute('aria-label', `${CELL_HINTS[field] || field} for cue ${pos}`);
   const old = [...td.childNodes];
   td.replaceChildren(ctl);
+  td.classList.add('is-editing');
   ctl.focus();
   if (ctl.select) ctl.select();
   if (opts.open && ctl.showPicker) { try { ctl.showPicker(); } catch { /* user gesture */ } }
 
   let ended = false;
-  const finish = (commit) => {
+  // keepOnError: Enter on a bad value keeps the editor open with
+  // aria-invalid (ftl error ring); blur on a bad value reverts.
+  const finish = (commit, keepOnError) => {
     if (ended) return;
-    ended = true;
     const v = ctl.value.trim();
-    ctl.remove();
-    td.replaceChildren(...old); // the next repaint brings the truth
-    const done = () => flushPendingSwap();
-    if (!commit) return done();
-    let val = v;
-    if (isMS) {
+    let val = v, err = '';
+    if (commit && isMS) {
       if (v === '' && field !== 'durationMS') val = 0;
       else {
         val = parseDur(v, unit);
-        if (val == null || val < 0) {
-          toast(field === 'durationMS' ? 'That is not a duration — try 30 (minutes) or 1:30 (h:mm)' : 'Alerts are m:ss, like 5:00', 'danger');
-          return done();
-        }
+        if (val == null || val < 0) err = field === 'durationMS' ? 'That is not a duration — try 30 (minutes) or 1:30 (h:mm)' : 'Alerts are m:ss, like 5:00';
       }
     }
-    if (field === 'label' && v === '') { toast('Cue title cannot be empty', 'danger'); return done(); }
-    if (val !== (cue[field] ?? (isMS ? 0 : ''))) sendCommand('cueEdit', { pos, [field]: val });
+    if (commit && field === 'label' && v === '') err = 'Cue title cannot be empty';
+    if (err) toast(err, 'danger');
+    if (err && keepOnError) { ctl.setAttribute('aria-invalid', 'true'); return; }
+    ended = true;
+    ctl.remove();
+    td.classList.remove('is-editing');
+    td.replaceChildren(...old); // the next repaint brings the truth
+    if (commit && !err && val !== (cue[field] ?? (isMS ? 0 : ''))) {
+      sendCommand('cueEdit', { pos, [field]: val });
+      // ftl cell states: saving until the server's cuelist swap lands
+      // (markCellSaved), which flashes .is-saved on the fresh cell.
+      td.classList.add('is-saving');
+      td.setAttribute('aria-busy', 'true');
+      savingCell = { pos, field };
+      // No swap (mesh-only, offline): don't spin forever.
+      setTimeout(() => { td.classList.remove('is-saving'); td.removeAttribute('aria-busy'); }, 3000);
+    }
     // Replay the cuelist swap deferred while the editor was open — make
     // sure the LAST state wins, not a stale one from before our own edit.
-    done();
+    flushPendingSwap();
   };
   ctl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Enter') { e.preventDefault(); finish(true, true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
+  ctl.addEventListener('input', () => ctl.removeAttribute('aria-invalid'));
   if (choices) ctl.addEventListener('change', () => finish(true));
   ctl.addEventListener('blur', () => finish(true));
   ctl.addEventListener('dblclick', (e) => e.stopPropagation());
+}
+
+/** Messages colour (U30 picker) writes the form's hidden `color`; the
+    #messages-panel oob swap brings a fresh empty host, so applyOOB re-runs it. */
+const MSG_COLORS = [['Brand', '#7C3AED'], ['Amber', '#ffaa00'], ['Red', '#ff4444']];
+function mountMsgSwatches() {
+  const host = $('#messages-panel [data-swatches-for]');
+  const input = host && document.getElementById(host.dataset.swatchesFor);
+  if (!input || host.firstChild) return;
+  host.appendChild(swatchPicker({
+    value: input.value, defaultLabel: 'Theme', presets: MSG_COLORS, custom: false,
+    label: 'Message colour', onChange: (v) => { input.value = v; },
+  }));
+}
+
+/** The cell an inline edit just sent; the next cuelist swap marks it saved. */
+let savingCell = null;
+function markCellSaved() {
+  if (!savingCell) return;
+  const { pos, field } = savingCell;
+  savingCell = null;
+  const td = $(`#cuelist tr[data-pos="${pos}"] td[data-edit="${field}"]`);
+  if (!td) return;
+  td.classList.add('is-saved');
+  setTimeout(() => td.classList.remove('is-saved'), 2000);
 }
 
 /** A row's alert colour dot opens the picker for that cue (U30). */
@@ -1928,7 +1601,6 @@ function initInspector() {
     field('tp-insp-speaker').value = cue.speaker || '';
     field('tp-insp-location').value = cue.location || '';
     field('tp-insp-duration').value = fmtDurText(cue.durationMS || 0);
-    field('tp-insp-tags').value = cue.tags || '';
     field('tp-insp-kind').value = cue.kind === 'break' ? 'break' : 'session';
     field('tp-insp-timerKind').value = cue.timerKind || 'COUNTDOWN';
     field('tp-insp-endAction').value = cue.endAction || 'HOLD';
@@ -1936,6 +1608,8 @@ function initInspector() {
     setColor('tp-insp-alert1Color', cue.alertColor1 || '');
     field('tp-insp-alert2').value = cue.alert2MS ? fmtDurText(cue.alert2MS, 'ms') : '';
     setColor('tp-insp-alert2Color', cue.alertColor2 || '');
+    field('tp-insp-alert1Flash').checked = !!cue.alertFlash1;
+    field('tp-insp-alert2Flash').checked = !!cue.alertFlash2;
     setColor('tp-insp-color', cue.color || '');
     field('tp-insp-notes').value = cue.notes || '';
     const err = field('tp-insp-error');
@@ -1948,8 +1622,7 @@ function initInspector() {
     if (!cue) { toast('Cue not in this snapshot yet', 'danger'); return; }
     openPos = pos;
     fill(cue, cue.label || '');
-    if (typeof dlg.showModal === 'function') dlg.showModal();
-    else dlg.setAttribute('open', '');
+    dlg.showModal();
     field('tp-insp-label').focus();
   }
 
@@ -1967,10 +1640,11 @@ function initInspector() {
     const dur = parseDur(field('tp-insp-duration').value);
     if (dur == null || dur < 0) return fail('Duration is not a time — try 30 (minutes) or 1:30 (h:mm)');
     args.durationMS = dur;
-    args.tags = field('tp-insp-tags').value;
     args.kind = field('tp-insp-kind').value;
     args.timerKind = field('tp-insp-timerKind').value;
     args.endAction = field('tp-insp-endAction').value;
+    args.alertFlash1 = field('tp-insp-alert1Flash').checked;
+    args.alertFlash2 = field('tp-insp-alert2Flash').checked;
     for (const [msKey, colorKey, labelTxt] of [
       ['tp-insp-alert1', 'tp-insp-alert1Color', 'Alert 1'],
       ['tp-insp-alert2', 'tp-insp-alert2Color', 'Alert 2'],
@@ -1998,12 +1672,10 @@ function initInspector() {
   }
 
   function closeInspector() {
-    if (typeof dlg.close === 'function') dlg.close();
-    else dlg.removeAttribute('open');
+    dlg.close();
   }
 
   field('tp-insp-save')?.addEventListener('click', save);
-  field('tp-insp-cancel')?.addEventListener('click', closeInspector);
   dlg.querySelector('form')?.addEventListener('submit', (e) => e.preventDefault());
 }
 
@@ -2189,6 +1861,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('htmx:after:swap', () => {
     clockUI?._collect();
     clockUI?.renderRows();
+    if (page === 'dashboard') mountMsgSwatches();
     // Fresh <use> nodes carry template-default sprite paths — retarget them
     // to the ACTIVE theme's icon bundle (B7-default correctness).
     applyIconTheme(document.documentElement.getAttribute('data-theme') || 'blue-future');
@@ -2202,7 +1875,15 @@ document.addEventListener('DOMContentLoaded', () => {
   initKioskLinks();
   initImportDrop();
 
-  if (page === 'screens') { initScreensPage(); initScreens(); } // + presets (moved from Setup, U29)
+  if (page === 'screens') {
+    initScreens();
+    // The header clock sits in the same place as on the Run tab, so
+    // switching tabs never shifts the bar (no room snapshot here: local time).
+    const tod = $('#tp-tod');
+    if (tod) { const tick = () => setText(tod, fmtTimeOfDay(Date.now())); tick(); setInterval(tick, 1000); }
+    const room = $('#tp-screens-page')?.dataset.room;
+    if (room) api('GET', `/api/shows/${room}/polls`).then((j) => paintTabBadge(j.items || [])).catch(() => {});
+  }
   // C2 (2026-10-04): BOARD pages join the mesh via board.js — they ship
   // their own display-role client with full snapshot adoption. Booting
   // timerpi.js's mesh too meant TWO WS sessions per screen (double join,
@@ -2218,7 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clockUI.start();
     }
   }
-  if (page === 'dashboard') { initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initDragReorder(); initAddRow(); initAlertDots(); initRowMenu(); }
+  if (page === 'dashboard') { initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initDragReorder(); initAddRow(); initAlertDots(); initRowMenu(); mountMsgSwatches(); }
   if (page === 'display') initDisplayExtras();
 
   // Offline indicator toggling (display + dashboard)

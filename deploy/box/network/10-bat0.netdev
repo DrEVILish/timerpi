@@ -1,0 +1,12 @@
+# batman-adv mesh interface (VENUE-CLOUD §11). timerpi-mesh joins the
+# radios to it; gateway mode is set at runtime from the eth0 cable.
+[NetDev]
+Name=bat0
+Kind=batadv
+
+[BatmanAdvanced]
+RoutingAlgorithm=batman-iv
+GatewayMode=client
+BridgeLoopAvoidance=true
+DistributedArpTable=true
+Fragmentation=true

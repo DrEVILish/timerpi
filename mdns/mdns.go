@@ -18,6 +18,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,7 +41,10 @@ const (
 	txtRole  = "role"
 	txtVer   = "ver"
 	txtEpoch = "epoch"
-	txtBoot  = "boot" // per-boot random id: tells our own echo from a same-named box
+	txtBoot  = "boot"  // per-boot random id: tells our own echo from a same-named box
+	txtProto = "proto" // protocol major (VENUE-CLOUD §9)
+	txtEvent = "event" // paired box's event code (VENUE-CLOUD §5)
+	txtSig   = "sig"   // announcement signature (mesh key)
 )
 
 // ServiceMeta is the message carried in the TXT record pair:
@@ -55,6 +59,9 @@ type ServiceMeta struct {
 	Ver   string
 	Epoch int64
 	Boot  string // per-boot random id ("" = not sent)
+	Proto int    // protocol major (0 = not sent; v2 boxes never send it)
+	Event string // the event a paired box belongs to ("" = unpaired)
+	Sig   string // HMAC over the announcement with the event mesh key
 }
 
 // String renders the meta for logs.
@@ -77,6 +84,12 @@ func (m ServiceMeta) EncodeTXT() []string {
 	if m.Boot != "" {
 		out = append(out, txtBoot+"="+m.Boot)
 	}
+	if m.Proto > 0 {
+		out = append(out, txtProto+"="+strconv.Itoa(m.Proto))
+	}
+	if m.Event != "" {
+		out = append(out, txtEvent+"="+m.Event, txtSig+"="+m.Sig)
+	}
 	return out
 }
 
@@ -98,13 +111,19 @@ func DecodeTXT(lines []string) map[string]string {
 // MetaFromTXT rebuilds the ServiceMeta encoded with EncodeTXT. ok is false
 // when the payload lacks a parsable epoch key.
 func MetaFromTXT(lines []string) (ServiceMeta, bool) {
-	kv := DecodeTXT(lines)
+	return MetaFromMap(DecodeTXT(lines))
+}
+
+// MetaFromMap is MetaFromTXT for an already decoded TXT map.
+func MetaFromMap(kv map[string]string) (ServiceMeta, bool) {
 	meta := ServiceMeta{
 		Host: kv[txtHost],
 		Role: kv[txtRole],
 		Ver:  kv[txtVer],
 		Boot: kv[txtBoot],
 	}
+	meta.Proto, _ = strconv.Atoi(kv[txtProto])
+	meta.Event, meta.Sig = kv[txtEvent], kv[txtSig]
 	epoch, err := strconv.ParseInt(kv[txtEpoch], 10, 64)
 	if err != nil {
 		return meta, false
@@ -276,7 +295,9 @@ func localIPs(ifaces []net.Interface) (ips []string, ok bool) {
 			if auto && ipn.IP.IsLoopback() {
 				continue
 			}
-			ips = appendMissing(ips, ipn.IP.String())
+			if ip := ipn.IP.String(); !slices.Contains(ips, ip) {
+				ips = append(ips, ip)
+			}
 		}
 	}
 	return ips, true
@@ -408,11 +429,10 @@ func buildPeers(entries []*zeroconf.ServiceEntry, excludeHost string) []Peer {
 			p.LastSeen = now
 			p.Port = e.Port
 			p.TXT = DecodeTXT(e.Text)
-			for _, ip := range e.AddrIPv4 {
-				p.Addrs = appendMissing(p.Addrs, ip.String())
-			}
-			for _, ip := range e.AddrIPv6 {
-				p.Addrs = appendMissing(p.Addrs, ip.String())
+			for _, ip := range slices.Concat(e.AddrIPv4, e.AddrIPv6) {
+				if a := ip.String(); !slices.Contains(p.Addrs, a) {
+					p.Addrs = append(p.Addrs, a)
+				}
 			}
 		}
 	}
@@ -438,12 +458,23 @@ func normalizeHost(h string) string {
 	return strings.TrimSuffix(h, ".")
 }
 
-// appendMissing appends s unless already present.
-func appendMissing(list []string, s string) []string {
-	for _, v := range list {
-		if v == s {
-			return list
-		}
+// AliasName is the name a venue's primary box answers to (VENUE-CLOUD §5):
+// http://timerpi.local. No box may be named "timerpi" itself.
+const AliasName = "timerpi"
+
+// Alias publishes <name>.local for this machine's addresses (an HTTP
+// service record carries the A/AAAA records). Never fails the caller: no
+// multicast = a no-op stop.
+func Alias(name string, port int) (stop func()) {
+	ips, ok := localIPs(nil)
+	if !ok || len(ips) == 0 {
+		return func() {}
 	}
-	return append(list, s)
+	srv, err := zeroconf.RegisterProxy("TimerPi", "_http._tcp", Domain, port, name, ips, []string{"path=/"}, nil)
+	if err != nil {
+		log.Printf("mdns: alias %s.local rejected: %v", name, err)
+		return func() {}
+	}
+	log.Printf("mdns: answering as %s.local", name)
+	return srv.Shutdown
 }

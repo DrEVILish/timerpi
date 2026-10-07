@@ -4,7 +4,8 @@
  * All DOM text goes through textContent (XSS rule).
  */
 
-/** api(method, path, body?) → parsed JSON; throws Error(message) on !ok. */
+/** api(method, path, body?) → parsed JSON; throws Error(message) on !ok
+ * (err.status = the HTTP status; unset on a network error). */
 export async function api(method, path, body) {
   const opts = { method, headers: {} };
   if (body instanceof FormData) {
@@ -22,28 +23,36 @@ export async function api(method, path, body) {
   let data = {};
   try { data = await res.json(); } catch { /* non-JSON */ }
   if (!res.ok || data.ok === false) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   }
   return data;
 }
 
-/** toast(text, kind) — 'info' | 'success' | 'danger'. */
+/** toast(text, kind) — 'info' | 'success' | 'danger'. The region is a
+ * manual popover (closed = display:none) so toasts sit above modals. */
+let lastToast = null;
 export function toast(text, kind = 'info') {
+  // C2 drill UX: a flapping link (or a reconnect storm's err frames) must
+  // not stack identical popups — swallow an exact repeat inside 4 s.
+  const now = Date.now();
+  if (lastToast && lastToast.text === text && lastToast.kind === kind && now - lastToast.at < 4000) return;
+  lastToast = { text, kind, at: now };
   const region = document.getElementById('toast-region');
   if (!region) return;
-  if (typeof region.showPopover === 'function' && !region.matches(':popover-open')) {
-    try { region.showPopover(); } catch { /* */ }
-  }
+  if (!region.matches(':popover-open')) region.showPopover();
   const el = document.createElement('div');
   el.className = kind === 'info' ? 'toast' : `toast toast-${kind}`;
   el.textContent = text;
   region.appendChild(el);
   setTimeout(() => {
     el.remove();
-    if (!region.children.length && typeof region.hidePopover === 'function') {
-      try { region.hidePopover(); } catch { /* */ }
-    }
-  }, 3500);
+    if (!region.children.length && region.matches(':popover-open')) region.hidePopover();
+  }, 4000);
+}
+
+/** setText(el, text) — write only on change (no needless layout churn). */
+export function setText(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
 }
 
 /** showError(el, msg) — field-error paragraphs. */
@@ -67,23 +76,11 @@ export function normalizeCode(s) {
   return out;
 }
 
-/** fmtCode "ABCD1234" → "ABCD-1234". */
-export function fmtCode(code) {
-  const c = normalizeCode(code);
-  return c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : c;
-}
-
-/** fmtRemaining ms → "m:ss" / "h:mm:ss", negative → "+m:ss" (overtime). */
-export function fmtRemaining(ms) {
-  const over = ms < 0;
-  let s = Math.floor(Math.abs(ms) / 1000);
-  if (!over && ms % 1000 !== 0) s = Math.ceil(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const body = h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
-  return over ? `+${body}` : body;
-}
+/** Any [data-close] inside an ftl modal (<dialog class="modal">) closes it:
+ * the × (.btn-close) and Cancel buttons need no per-dialog wiring. */
+document.addEventListener('click', (e) => {
+  e.target.closest?.('dialog.modal [data-close]')?.closest('dialog').close();
+});
 
 /** el(tag, props, ...children) — tiny DOM builder (strings → text nodes). */
 export function el(tag, props = {}, ...children) {
@@ -122,16 +119,26 @@ export function forgetEvent(code) {
 /**
  * inlineEdit(span, onCommit) — double-click / double-tap / Enter turns a
  * label into an input; Enter or blur commits, Escape cancels. onCommit(text)
- * may throw to revert.
+ * may throw to revert. A table cell (ftl `.table td.is-editable`) edits in
+ * place with ftl's cell states: .is-editing → .is-saving → .is-saved, or
+ * aria-invalid when the save is refused.
  */
 export function inlineEdit(span, onCommit) {
+  const cell = span.tagName === 'TD';
   let lastTap = 0;
   const begin = () => {
     if (span.dataset.editing) return;
     span.dataset.editing = '1';
-    const before = span.textContent;
-    const input = el('input', { class: 'input input-sm tp-inline-input', value: before, 'aria-label': 'New name', maxlength: 80 });
-    span.replaceWith(input);
+    const before = span.textContent.trim();
+    const input = el('input', { class: cell ? 'input' : 'input input-sm tp-inline-input', value: before, 'aria-label': 'New name', maxlength: 80 });
+    if (cell) {
+      span.classList.remove('is-editable', 'is-saved');
+      span.removeAttribute('aria-invalid');
+      span.classList.add('is-editing');
+      span.replaceChildren(input);
+    } else {
+      span.replaceWith(input);
+    }
     input.focus();
     input.select();
     let done = false;
@@ -139,13 +146,34 @@ export function inlineEdit(span, onCommit) {
       if (done) return;
       done = true;
       const text = input.value.trim();
-      input.replaceWith(span);
+      const refocus = cell && document.activeElement === input;
+      if (cell) {
+        span.classList.replace('is-editing', 'is-editable');
+        span.textContent = before;
+        if (refocus) span.focus();
+      } else {
+        input.replaceWith(span);
+      }
       delete span.dataset.editing;
       if (!commit || !text || text === before) return;
       span.textContent = text;
-      try { await onCommit(text); } catch (err) { span.textContent = before; toast(err.message, 'danger'); }
+      if (cell) { span.classList.add('is-saving'); span.setAttribute('aria-busy', 'true'); }
+      try {
+        await onCommit(text);
+        if (cell) {
+          span.classList.add('is-saved');
+          setTimeout(() => span.classList.remove('is-saved'), 2000);
+        }
+      } catch (err) {
+        span.textContent = before;
+        if (cell) span.setAttribute('aria-invalid', 'true');
+        toast(err.message, 'danger');
+      } finally {
+        if (cell) { span.classList.remove('is-saving'); span.removeAttribute('aria-busy'); }
+      }
     };
     input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // the cell's own Enter would reopen the editor
       if (e.key === 'Enter') { e.preventDefault(); finish(true); }
       if (e.key === 'Escape') { e.preventDefault(); finish(false); }
     });

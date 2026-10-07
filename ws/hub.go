@@ -84,6 +84,8 @@ type Hub struct {
 	byShow map[int64]*showHub
 	stop   chan struct{}
 	stopMu sync.Once
+
+	venue venueHooks // cloud ↔ venue link hooks (venue.go)
 }
 
 // showHub is the per-show fanout state.
@@ -127,9 +129,6 @@ func NewHub(engines *timerpi.Engines, render func(string, any) (string, error)) 
 	}
 	return h
 }
-
-// SetRender injects the fragment renderer (main wiring: views.Set).
-func (h *Hub) SetRender(fn func(string, any) (string, error)) { h.render = fn }
 
 // SetStore injects the DB (cue/message CRUD, show rename).
 func (h *Hub) SetStore(db *timerpi.DB) { h.store = db }
@@ -382,12 +381,6 @@ func (h *Hub) showHubLocked(showID int64, eng *timerpi.Engine) *showHub {
 		sh.eng = eng
 	}
 	return sh
-}
-
-func (h *Hub) getShowHub(showID int64) *showHub {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.byShow[showID]
 }
 
 // ---------------------------------------------------------------------------
@@ -841,6 +834,9 @@ func (h *Hub) broadcastPollNow(showID int64) {
 		}
 		on = v
 	}
+	if air := h.hooks().air; air != nil {
+		air(showID, on)
+	}
 	// Phones get the audience target only (hidden by absence); screens and
 	// operators get both targets.
 	audFrame := pollFrame(on, false, h.nowFn())
@@ -880,6 +876,9 @@ func pollFrame(on timerpi.OnAir, withPresenter bool, ts int64) []byte {
 	aud := on.Audience.Trimmed(timerpi.MaxPublicEntries)
 	if withPresenter {
 		return marshalFrame("v", 1, "t", "poll", "poll", aud, "presenter", on.Presenter.Trimmed(timerpi.MaxPublicEntries), "ts", ts)
+	}
+	if on.Paused {
+		return marshalFrame("v", 1, "t", "poll", "poll", aud, "paused", true, "ts", ts)
 	}
 	return marshalFrame("v", 1, "t", "poll", "poll", aud, "ts", ts)
 }

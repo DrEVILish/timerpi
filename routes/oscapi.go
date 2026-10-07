@@ -78,6 +78,9 @@ func (d *Deps) oscSync() error {
 		}
 		addr = "0.0.0.0:" + port
 	}
+	if d.isCloud() {
+		addr = "" // the cloud never listens for a venue's control desk
+	}
 	if err := OscInbound.SetAllow(kv["osc.in.allow"]); err != nil {
 		return err
 	}

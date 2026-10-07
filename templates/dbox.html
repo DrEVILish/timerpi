@@ -1,0 +1,66 @@
+{{- /*
+  dbox.html — GET /d/box: a TimerPi box's own screen (the kiosk opens it on
+  the box itself, http://localhost/d/box). VENUE-CLOUD §4: while the box
+  isn't paired it shows its name and 6-digit pairing code; once paired it
+  shows its screen, served by the event's primary box, in a full-screen
+  frame. It asks /api/pairing/self every 3 s (loopback only), so a
+  takeover, a re-pairing or a release just changes what it shows.
+  Data: .DefaultTheme.
+*/ -}}
+{{define "dbox"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<head>
+{{template "head" .}}
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  .tp-box-code { --readout-size: min(18vh, 14vw); letter-spacing: .08em; }
+  #tp-box-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+</style>
+</head>
+<body class="tp-display" data-page="dbox">
+<div class="splash tp-box-pair" id="tp-box-pair" role="status">
+  <div class="splash-art" aria-hidden="true"></div>
+  <p class="splash-title">Box <strong id="tp-box-name">…</strong></p>
+  <div class="readout readout-lg tp-box-code" id="tp-box-code" aria-label="Pairing code">— — —</div>
+  <p class="splash-message" id="tp-box-hint">To pair this box, type this code on the event page (Pair a box). The code changes every 10 minutes.</p>
+</div>
+<iframe id="tp-box-frame" title="Screen" hidden allow="fullscreen"></iframe>
+<script>
+(function () {
+  var pair = document.getElementById('tp-box-pair');
+  var frame = document.getElementById('tp-box-frame');
+  var shown = '';
+  function show(s) {
+    document.getElementById('tp-box-name').textContent = s.name || '';
+    if (s.code) {
+      document.getElementById('tp-box-code').textContent = s.code.slice(0, 3) + ' ' + s.code.slice(3);
+      document.getElementById('tp-box-hint').textContent = s.eventName
+        ? 'Paired to ' + s.eventName + '. To give this box a screen, type this code on the event page (Pair a box).'
+        : 'To pair this box, type this code on the event page (Pair a box). The code changes every 10 minutes.';
+    }
+    var target = s.paired ? (s.target || '') : '';
+    if (target === shown) return;
+    shown = target;
+    if (target) {
+      frame.src = target;
+      frame.hidden = false;
+      pair.hidden = true;
+    } else {
+      frame.removeAttribute('src');
+      frame.hidden = true;
+      pair.hidden = false;
+      if (s.paired) document.getElementById('tp-box-hint').textContent = 'Paired to ' + (s.eventName || 'an event') + ' — waiting for the main box…';
+    }
+  }
+  function poll() {
+    fetch('/api/pairing/self', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { if (j && j.ok) show(j.self); }).catch(function () {});
+  }
+  poll();
+  setInterval(poll, 3000);
+})();
+</script>
+</body>
+</html>
+{{end}}

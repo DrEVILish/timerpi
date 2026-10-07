@@ -65,34 +65,27 @@
     <img src="/img/timerpi.svg" alt="TimerPi">
   </a>
   <nav class="nav">
-    {{if .Event.Code}}<a class="nav-item tp-crumb" href="/e/{{.Event.Code}}" title="All rooms of this event">{{.Event.Name}} ›</a>{{end}}
-    <a class="nav-item tp-bar-title{{if eq .Nav "screens"}}{{else}} is-active{{end}}" href="/c/{{.Show.Code}}" title="This room's dashboard">{{.Show.Title}}</a>
-    {{if eq .Nav "screens"}}<span class="nav-item is-active">Screens</span>{{end}}
-    {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">SuperOperator</a>{{end}}
+    <span class="breadcrumbs">
+      {{if .Event.Code}}<a class="breadcrumb-item" href="/e/{{.Event.Code}}" title="All rooms of this event">{{.Event.Name}}</a>{{end}}
+      <a class="breadcrumb-item is-current tp-bar-title" href="/c/{{.Show.Code}}" title="This room's dashboard"{{if eq .Page "dashboard"}} aria-current="page"{{end}}>{{.Show.Title}}</a>
+    </span>
+    {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">Event Technician</a>{{end}}
   </nav>
-  {{if eq .Page "dashboard"}}{{/* U34: time of day, top centre */}}<span class="readout readout-sm mono tp-bar-clock" id="tp-tod" title="Time of day">--:--:--</span>{{end}}
+  {{if or (eq .Page "dashboard") (eq .Page "screens")}}{{/* U34: time of day, top centre */}}<span class="readout readout-sm mono tp-bar-clock" id="tp-tod" title="Time of day">--:--:--</span>{{end}}
   <div class="cluster push">
-    {{if .Show.Code}}
-    <!-- The one display affordance: same entity as the home page's Open
-         Display (a kiosk window onto the show's stage). FAR RIGHT. -->
-    <a class="nav-item{{if eq .Nav "display"}} is-active{{end}}" href="/d/{{.Show.Code}}" target="_blank" rel="opener" data-kiosk title="Open this show's display">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-      Open Display
-    </a>
-    {{end}}
     {{if .Event.IsSuper}}{{/* themes: SuperOperator only (STATUS U28) */}}
-    <details class="tp-theme-menu">
-      <summary class="btn btn-sm" title="Change theme">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="9" cy="8" r="1.6"/></svg>
-        Change Theme
-      </summary>
-      <div class="tp-theme-pop">
+    <button class="btn btn-sm" type="button" popovertarget="tp-theme-pop" title="Change theme">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="9" cy="8" r="1.6"/></svg>
+      Change Theme
+    </button>
+    <div class="dropdown" id="tp-theme-pop" popover>
+      <div class="field">
         <label class="label" for="theme-select">Theme</label>
-        <select class="select input-sm" id="theme-select" aria-label="Theme"></select>
+        <select class="select input-sm" id="theme-select"></select>
       </div>
-    </details>
+    </div>
     {{end}}
-    {{if .Event.Code}}<a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and SuperOperator)">Leave event</a>{{else}}<a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>{{end}}
+    {{if .Event.Code}}<a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave event</a>{{else}}<a class="nav-item" href="/logout" title="Sign out of every room and event on this browser">Sign out</a>{{end}}
   </div>
 </header>
 {{end}}
@@ -107,13 +100,12 @@
 {{else}}
 <footer class="app-status">
   <div class="cluster is-gap-s">
-    <span class="lamp" id="lamp-ws" title="Server link"></span>
-    <span class="lamp" id="lamp-mesh" title="Display mesh"></span>
-    <span id="conn-label" class="text-muted">connecting…</span>
+    <span class="connection" id="conn-label" data-state="reconnecting" role="status">connecting…</span>
   </div>
   <div class="cluster is-gap-s push">
     <span class="text-muted">Peers <span class="mono" id="peers-count">1</span></span>
-    <span class="text-muted">Session <span class="mono" id="conn-code">{{if .Share.CodeFmt}}{{.Share.CodeFmt}}{{else}}——{{end}}</span></span>
+    <span class="text-muted">Ping <span class="mono" id="conn-ping">—</span></span>
+    {{if .Event.Code}}<span class="text-muted">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span>{{end}}
     {{if .Show}}{{if .Show.Title}}<span class="mono text-truncate">{{.Show.Title}}</span>{{end}}{{end}}
   </div>
 </footer>
@@ -137,14 +129,8 @@
 {{if eq .Page "screens"}}{{template "page-screens" .}}{{else}}{{template "page-dashboard" .}}{{end}}
 </main>
 {{template "appstatus" .}}
-{{- /* Offline overlay (dashboard instance; display.html keeps its own): JS
-       toggles .is-visible when the server link is down and no mesh peer
-       carries the show. Copy is the canonical strip wording — keep the four
-       strips byte-identical in voice (base / display / d-chrome / b-chrome).
-       No aria-hidden: the visible overlay carries announced content. */ -}}
-<div class="tp-offline" id="tp-offline">
-  <div><h2>LINK DOWN</h2><p>Server unreachable — working from the local copy.</p><p class="text-muted">Reconnects automatically when the link returns.</p></div>
-</div>
+{{- /* Offline overlay: one shared template (fragments/d-chrome.html). */ -}}
+{{template "frag-offline"}}
 <div class="toast-region" popover="manual" id="toast-region"></div>
 <script src="{{asset "/src/htmax.min.js"}}" defer></script>
 <script type="module" src="{{asset "/src/timerpi.js"}}"></script>

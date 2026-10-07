@@ -20,7 +20,7 @@ import (
 // installedThemes lists the vendored ftl dist bundles by filename
 // (authoritative — no hard-coded list to rot).
 func installedThemes() []string {
-	dir := findDir(filepath.Join("third_party", "ftl-themes", "dist"))
+	dir := FindDir(filepath.Join("third_party", "ftl-themes", "dist"))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return []string{"blue-future"}

@@ -44,11 +44,6 @@ type CurrentCue struct {
 	Speaker string
 	DurFmt  string
 	IsBreak bool
-	Kind    string
-	// Over/under vs the computed schedule (A2): DeltaMS is only meaningful
-	// for the row on the clock; DeltaFmt renders it signed (+late/−early).
-	DeltaMS  int64
-	DeltaFmt string
 }
 
 // NextCue is the next-up view (.Next; may be zero).
@@ -61,13 +56,8 @@ type NextCue struct {
 
 // RuntimeVM backs the rate slider and the day-bar anchor (.Runtime).
 type RuntimeVM struct {
-	Running   bool
-	Paused    bool
 	ActivePos int64
-	PrevPos   int64
-	NextPos   int64
-	RatePct   int   // rate × 100 (e.g. 100 = ×1.00)
-	DayStart  int64 `json:"-"` // DayStartTS
+	RatePct   int // rate × 100 (e.g. 100 = ×1.00)
 }
 
 // SegmentVM is one day-bar block (.Schedule.Segments).
@@ -96,64 +86,47 @@ type ScheduleVM struct {
 
 // CueVM is one running-order row (.Cues entries; frag-cuelist).
 type CueVM struct {
-	Pos          int64
-	Label        string
-	DurFmt       string
-	StartFmt     string
-	EndFmt       string
-	StartHM      string // planned start "15:04" (24 h); "" until the day has a start (walk-in schedule, U3)
-	EndHM        string // planned end "15:04" (running order shows HH:MM; StartFmt/EndFmt keep seconds)
-	HoldFmt      string
-	Kind         string
-	IsBreak      bool
-	Tags         []string
-	Speaker      string
-	Location     string // a break's place ("Great Hall", U14)
-	Notes        string
-	Color        string
-	TimerKind    string
-	EndAction    string
-	Alert1Fmt    string
-	Alert2Fmt    string
-	AlertColor1  string
-	AlertColor2  string
-	AutoContinue bool
-	IsNext       bool
-	ID           int64 // row identity (reorder ops)
-	// StartAt mirrors the cue's wall-clock auto-start (E5, "" = off).
-	StartAt string
+	Pos         int64
+	Label       string
+	DurFmt      string
+	StartFmt    string
+	EndFmt      string
+	StartHM     string // planned start "15:04" (24 h); "" until the day has a start (walk-in schedule, U3)
+	EndHM       string // planned end "15:04" (running order shows HH:MM; StartFmt/EndFmt keep seconds)
+	Kind        string
+	IsBreak     bool
+	Tags        []string
+	Speaker     string
+	Location    string // a break's place ("Great Hall", U14)
+	Notes       string
+	Color       string
+	TimerKind   string
+	EndAction   string
+	Alert1Fmt   string
+	Alert2Fmt   string
+	AlertColor1 string
+	AlertColor2 string
+	IsNext      bool
+	ID          int64 // row identity (reorder ops)
 }
 
 // MessageVM is a stage overlay line (.Messages entries; frag-messages).
 type MessageVM struct {
-	ID       int64
-	Text     string
-	Color    string
-	IsShown  bool
-	ShownFmt string
+	ID      int64
+	Text    string
+	Color   string
+	IsShown bool
 }
 
 // ShareVM backs frag-share (.Share). Code is the bare 8-char share code,
-// CodeFmt its 4-4 rendering ("K7QP-M3XB"); DisplayPath/DisplayURL build
-// from the CODE ONLY (Agent L scope change: numeric /d/<id> links are
-// dead routes).
+// CodeFmt its 4-4 rendering ("K7QP-M3XB").
 type ShareVM struct {
-	Code        string // "K7QPM3XB" (bare)
-	CodeFmt     string // "K7QP-M3XB"
-	DisplayPath string // "/d/K7QP-M3XB" ("" when the show is code-less)
-	DisplayURL  string // absolute; may be "" — client JS fills from location
-}
-
-// ShowVM is one homepage list row (.Shows entries; frag-shows).
-type ShowVM struct {
-	ID          int64
-	Code        string // share code ("" pre-backfill rows never render links)
-	Title       string
-	CueCount    int
-	TotalFmt    string
-	UpdatedFmt  string
-	ControlPath string // "/c/<code>"
-	DisplayPath string // "/d/<code>"
+	Code    string // "K7QPM3XB" (bare)
+	CodeFmt string // "K7QP-M3XB"
+	// AudienceBase is where phones join: the cloud on a box that has one
+	// (VENUE-CLOUD §1, phones only reach TimerPi through the cloud); ""
+	// means this server (client JS uses location.origin).
+	AudienceBase string
 }
 
 // PageData is THE template dot: every field may be zero-valued; templates
@@ -185,9 +158,6 @@ type PageData struct {
 	Share    ShareVM
 	Notes    string // per-show day memo (A7; dashboard + daysheet surfaces)
 
-	// Homepage shape:
-	Shows []ShowVM
-
 	// Display page only:
 	Hostname string
 
@@ -209,6 +179,9 @@ type EventRef struct {
 	IsSuper bool // this browser is the event's SuperOperator
 }
 
+// CodeFmt is the Event ID as people read it (XXXX-XXXX).
+func (e EventRef) CodeFmt() string { return timerpi.FmtCode(e.Code) }
+
 // ---------------------------------------------------------------------------
 // Formatting (client parity: public/src/engine.js fmt*).
 
@@ -227,30 +200,11 @@ func FmtDur(ms int64) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-// FmtDurSigned renders a signed delta (+0:35 late, −1:02 early; U+2212
-// reads better than ASCII hyphen). A delta that rounds to zero renders "0".
-func FmtDurSigned(ms int64) string {
-	rounded := (ms + 500) / 1000 // seconds, to-nearest (FmtDur's rule)
-	if rounded == 0 {
-		return "0"
-	}
-	sign := "+"
-	if ms < 0 {
-		sign = "−"
-		ms = -ms
-	}
-	return sign + FmtDur(ms)
-}
-
 // FmtTimeOfDay renders an epoch-ms instant as the local wall clock HH:MM:SS
 // (client Date parity; planned times of day per CONTRACT-UI).
 func FmtTimeOfDay(ms int64) string {
 	return time.UnixMilli(ms).Format("15:04:05")
 }
-
-// FmtCode renders a bare 8-char share code as 4-4 ("K7QP-M3XB"); numeric
-// ids are NOT codes here — the rulebook is timerpi/gen.go (Agent L).
-func FmtCode(code string) string { return timerpi.FmtCode(code) }
 
 // FmtAgo humanizes an epoch-ms instant ("just now", "5m ago").
 func FmtAgo(ms int64) string {
@@ -324,28 +278,15 @@ func ShowData(snap timerpi.Snapshot, nowMS int64, hostname string) *PageData {
 		Hostname:     hostname,
 	}
 	rt := snap.Runtime
-	d.Runtime = RuntimeVM{
-		Running:   rt.Running,
-		Paused:    rt.Paused,
-		ActivePos: rt.ActivePos,
-		PrevPos:   rt.PrevPos,
-		NextPos:   rt.NextPos,
-		RatePct:   int(rt.Rate * 100),
-		DayStart:  rt.DayStartTS,
-	}
+	d.Runtime = RuntimeVM{ActivePos: rt.ActivePos, RatePct: int(rt.Rate * 100)}
 	// The share panel is CODE-ONLY (Agent L): the snapshot's show code is
 	// the whole public address. Code-less shows (pre-backfill rows would
-	// be the only shape) render empty paths; the fragment placeholders
-	// hold the panel open rather than print a dead /d/ link.
+	// be the only shape) render empty; the fragment placeholders hold the
+	// panel open rather than print a dead link.
 	code := timerpi.NormalizeCode(snap.Show.Code)
-	displayPath := ""
-	if code != "" {
-		displayPath = "/d/" + code
-	}
-	d.Share = ShareVM{
-		Code:        code,
-		CodeFmt:     FmtCode(code),
-		DisplayPath: displayPath,
+	d.Share = ShareVM{Code: code, CodeFmt: timerpi.FmtCode(code)}
+	if !config.IsCloud() {
+		d.Share.AudienceBase = config.CloudURL()
 	}
 	d.Notes = snap.Show.Notes
 	d.DayStartHHMM = snap.Show.DayStart
@@ -377,14 +318,6 @@ func ShowData(snap timerpi.Snapshot, nowMS int64, hostname string) *PageData {
 			Speaker: active.Speaker,
 			DurFmt:  FmtDur(active.DurationMS),
 			IsBreak: active.Kind == timerpi.KindBreak,
-			Kind:    active.Kind,
-		}
-		// A2: the runtime schedule computes the on-clock row's projected
-		// real end (over/under vs its scheduled end); the client keeps the
-		// chip live between frag repaints (timerpi.js paint()).
-		if row := schedRowOf(sched, active.Pos); row != nil {
-			d.Current.DeltaMS = row.DeltaMS
-			d.Current.DeltaFmt = FmtDurSigned(row.DeltaMS)
 		}
 	}
 	if next != nil {
@@ -395,13 +328,7 @@ func ShowData(snap timerpi.Snapshot, nowMS int64, hostname string) *PageData {
 	}
 
 	for _, m := range snap.Messages {
-		d.Messages = append(d.Messages, MessageVM{
-			ID:       m.ID,
-			Text:     m.Text,
-			Color:    m.Color,
-			IsShown:  m.ShownAt > 0,
-			ShownFmt: FmtTimeOfDay(m.ShownAt),
-		})
+		d.Messages = append(d.Messages, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color, IsShown: m.ShownAt > 0})
 	}
 	// Hidden (queued) messages are not in the snapshot (shown only);
 	// callers with DB access pour the full list via SetMessages.
@@ -420,20 +347,10 @@ func (d *PageData) SetMessages(msgs []timerpi.Message) {
 	}
 	for _, m := range msgs {
 		if m.ShownAt > 0 {
-			out = append(out, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color, IsShown: true, ShownFmt: FmtTimeOfDay(m.ShownAt)})
+			out = append(out, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color, IsShown: true})
 		}
 	}
 	d.Messages = out
-}
-
-// ActionVM is one E4 log row (kept for future debugging surfaces; the
-// dashboard section was removed by owner decision 2026-10-05).
-type ActionVM struct {
-	TS     int64
-	Ago    string // FmtAgo bucket at render time
-	Actor  string
-	Action string
-	Detail string
 }
 
 // runtimeOf extracts the stored Runtime half of a RuntimeView (schedule
@@ -529,26 +446,23 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 	out := make([]CueVM, 0, len(cues))
 	for _, c := range cues {
 		vm := CueVM{
-			Pos:          c.Pos,
-			ID:           c.ID,
-			Label:        c.Label,
-			DurFmt:       FmtDur(c.DurationMS),
-			Kind:         c.Kind,
-			IsBreak:      c.Kind == timerpi.KindBreak,
-			TimerKind:    c.TimerKind,
-			EndAction:    c.EndAction,
-			AlertColor1:  c.AlertColor1,
-			AlertColor2:  c.AlertColor2,
-			AutoContinue: c.AutoContinue,
-			Speaker:      c.Speaker,
-			Location:     c.Location,
-			Notes:        c.Notes,
-			Color:        c.Color,
-			StartAt:      c.StartAt,
-			HoldFmt:      fmtHold(c.HoldMS),
-			Alert1Fmt:    fmtAlert(c.Alert1MS),
-			Alert2Fmt:    fmtAlert(c.Alert2MS),
-			IsNext:       rt.NextPos == c.Pos,
+			Pos:         c.Pos,
+			ID:          c.ID,
+			Label:       c.Label,
+			DurFmt:      FmtDur(c.DurationMS),
+			Kind:        c.Kind,
+			IsBreak:     c.Kind == timerpi.KindBreak,
+			TimerKind:   c.TimerKind,
+			EndAction:   c.EndAction,
+			AlertColor1: c.AlertColor1,
+			AlertColor2: c.AlertColor2,
+			Speaker:     c.Speaker,
+			Location:    c.Location,
+			Notes:       c.Notes,
+			Color:       c.Color,
+			Alert1Fmt:   fmtAlert(c.Alert1MS),
+			Alert2Fmt:   fmtAlert(c.Alert2MS),
+			IsNext:      rt.NextPos == c.Pos,
 		}
 		vm.Tags = tagsOf(c.Tags)
 		if row := schedRowOf(sched, c.Pos); row != nil {
@@ -567,13 +481,6 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 		out = append(out, vm)
 	}
 	return out
-}
-
-func fmtHold(holdMS int64) string {
-	if holdMS <= 0 {
-		return ""
-	}
-	return FmtDur(holdMS)
 }
 
 func fmtAlert(alertMS int64) string {
@@ -598,7 +505,6 @@ func tagsOf(s string) []string {
 // Set is the parsed template set (base.html + pages + fragments).
 type Set struct {
 	tmpl *template.Template
-	fs   fs.FS
 }
 
 // New parses templates from dir: base/pages at the top level, fragments
@@ -630,12 +536,7 @@ func parse(root fs.FS, label string) (*Set, error) {
 	if err != nil {
 		return nil, fmt.Errorf("views: parsing templates in %s: %w", label, err)
 	}
-	return &Set{tmpl: t, fs: root}, nil
-}
-
-// SubDir is unused by production code; kept for diagnostics.
-func (s *Set) SubDir() string {
-	return "templates"
+	return &Set{tmpl: t}, nil
 }
 
 // Render executes the named template (usually "base" or "display").

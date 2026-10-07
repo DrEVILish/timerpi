@@ -54,14 +54,14 @@ func newTestEngine(t *testing.T, startMS int64, mutateCues func([]Cue)) (*Engine
 	return e, clk
 }
 
-// timerOf is a small helper: engine's Timer frame + a failure message.
-func timerOf(t *testing.T, e *Engine) TimerFrame {
+// timerOf is a small helper: the snapshot's derived runtime view.
+func timerOf(t *testing.T, e *Engine) RuntimeView {
 	t.Helper()
-	tf, err := e.Timer()
+	snap, err := e.Snapshot()
 	if err != nil {
-		t.Fatalf("Timer: %v", err)
+		t.Fatalf("Snapshot: %v", err)
 	}
-	return tf
+	return snap.Runtime
 }
 
 // ---------------------------------------------------------------------------
@@ -177,11 +177,11 @@ func TestZeroCrossingEndActions(t *testing.T) {
 		pos       int64
 		endAction string
 		mutate    func([]Cue)
-		check     func(t *testing.T, e *Engine, tf TimerFrame, rt Runtime)
+		check     func(t *testing.T, e *Engine, tf RuntimeView, rt Runtime)
 	}{
 		{
 			name: "hold", pos: 1, endAction: EndHold,
-			check: func(t *testing.T, e *Engine, tf TimerFrame, rt Runtime) {
+			check: func(t *testing.T, e *Engine, tf RuntimeView, rt Runtime) {
 				if rt.Running || tf.RemainingMS != 0 || tf.Overtime || tf.Blank {
 					t.Fatalf("HOLD after zero: tf=%+v rt=%+v", tf, rt)
 				}
@@ -190,7 +190,7 @@ func TestZeroCrossingEndActions(t *testing.T) {
 		},
 		{
 			name: "overtime", pos: 2, endAction: EndOvertime,
-			check: func(t *testing.T, e *Engine, tf TimerFrame, rt Runtime) {
+			check: func(t *testing.T, e *Engine, tf RuntimeView, rt Runtime) {
 				if !rt.Running || !tf.Overtime || tf.RemainingMS != -30_000 {
 					t.Fatalf("OVERTIME after zero: tf=%+v rt=%+v", tf, rt)
 				}
@@ -199,7 +199,7 @@ func TestZeroCrossingEndActions(t *testing.T) {
 		{
 			name: "blank", pos: 3, endAction: EndBlank,
 			mutate: func(cues []Cue) { cues[2].EndAction = EndBlank },
-			check: func(t *testing.T, e *Engine, tf TimerFrame, rt Runtime) {
+			check: func(t *testing.T, e *Engine, tf RuntimeView, rt Runtime) {
 				if rt.Running || !tf.Blank || tf.RemainingMS != 0 {
 					t.Fatalf("BLANK after zero: tf=%+v rt=%+v", tf, rt)
 				}

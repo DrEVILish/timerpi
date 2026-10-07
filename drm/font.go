@@ -204,16 +204,6 @@ func (a *Atlas) Glyphs() []Glyph {
 	return out
 }
 
-// Covers reports whether every rune of s is baked.
-func (a *Atlas) Covers(s string) bool {
-	for _, r := range s {
-		if _, ok := a.glyphs[r]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 // Width returns the pen width of n cells of this atlas (all renders
 // advance by full cells so digit slots stay internable).
 func (a *Atlas) Width(n int) int { return n * a.CellW }

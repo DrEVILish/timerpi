@@ -38,16 +38,18 @@ The previous docs became append-only logs: three trackers and many handoff notes
 
 - Config is read and written only through `config` getters/setters (RWMutex).
 - `routes.OriginGuard` wraps everything. The WS upgrader's `CheckOrigin` must call `routes.SameOriginRequest`.
-- Static and theme trees resolve relative to the working directory (`routes.findDir`). The systemd unit pins `WorkingDirectory`.
+- Static and theme trees resolve relative to the working directory (`routes.FindDir`). The systemd unit pins `WorkingDirectory`.
 - Share codes are the only public address. Numeric IDs never resolve.
 - User text reaches the DOM through `textContent` only, never `innerHTML`.
 - htmx: **htmx 4 only, vendored in `public/src/`**. Never load from a CDN, and never add a second htmx version.
 - Use ftl-themes component classes and tokens for all UI. `public/css/timerpi.css` is for layout only. Never use the browser's `confirm`/`prompt`; use the `dialog.js` helpers.
+- **Pull components from ftl-themes; don't build fresh ones.** Before writing any UI component (modal, menu, popover, toast, table, tabs, badge, form control…), check `third_party/ftl-themes` (CONTRACT.md, `components-*.html`) and use its markup and classes. Build our own only when ftl-themes has nothing, and then file the gap as a `reviews/upstream-issues/` proposal.
+- **Dialogs are ftl-themes modals. Do not change this.** Every dialog is `<dialog class="modal">` (size with `.modal-sm`/`-lg`/`-xl`), with a `.modal-header` holding the title and a `.btn-close`, and a `.modal-footer` with Cancel (`.btn-secondary`) before the primary action. Buttons that only close carry `data-close` (one handler in `ui.js` closes the dialog). No app-owned dialog chrome: no custom backdrop, border, padding or button row in our CSS; size and spacing come from ftl tokens. This keeps the control surface the same everywhere and across every theme.
 - Display screens carry no operator chrome. Display screens always animate; only the audience page honours `prefers-reduced-motion`.
 
 ## 5. Source control and upstreams
 
-- Push only to `DrEVILish/timerpi`, and only when asked. Work on a branch; never force-push `main`.
+- Push only to `DrEVILish/timerpi`. **Always commit to `main`, test, then push** (owner rule): `go build ./... && go vet ./... && go test ./...` plus the browser tests first. No feature branches; never force-push.
 - **ftl-themes** (`third_party/ftl-themes`, a separate clone, git-ignored): don't push to it. Record problems as `reviews/upstream-issues/<topic>.md` with repro and proposed fix, and file them upstream only when the owner says so. ftl-themes is to become a submodule pinned to an upstream commit (STATUS C2).
 - The same rule applies to **CuTePi** and any other dependency repo.
 
@@ -58,6 +60,6 @@ The previous docs became append-only logs: three trackers and many handoff notes
 | Dev | 8080 (`make run`) | `./data` |
 | Appliance | 80 (`timerpi.service`) | `/var/lib/timerpi` |
 
-Env: `TIMERPI_DATA_DIR`, `TIMERPI_HTTP_PORT` (legacy `CAPACITIMER_HTTP_PORT` still honoured), `TIMERPI_DISPLAY` / `TIMERPI_FBDEV` / `TIMERPI_DISPLAY_SHOW` (native renderer), `TIMERPI_HW_TEST` (hardware tests), `TIMERPI_LAN_ADDR`, `TP_LOAD=1` (audience load harness).
+Env: `TIMERPI_DATA_DIR`, `TIMERPI_HTTP_PORT` (legacy `CAPACITIMER_HTTP_PORT` still honoured), `TIMERPI_DISPLAY` / `TIMERPI_FBDEV` / `TIMERPI_DISPLAY_SHOW` (native renderer), `TIMERPI_HW_TEST` (hardware tests), `TP_LOAD=1` (audience load harness).
 
 Reverse proxy and custom domains work by default (open Host guard). To lock an appliance to its domain, set `allowed_hosts` in `/var/lib/timerpi/config.json` and restart.

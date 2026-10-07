@@ -8,8 +8,7 @@
 {{define "page-screens"}}
 <nav class="tabs tp-room-tabs" aria-label="Room views">
   <a class="tab" href="/c/{{.Show.Code}}">Run</a>
-  <a class="tab" href="/c/{{.Show.Code}}#audience">Audience</a>
-  <a class="tab" href="/c/{{.Show.Code}}#setup">Setup</a>
+  <a class="tab" href="/c/{{.Show.Code}}#audience">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></a>
   <a class="tab is-active" href="/screens/{{.Show.Code}}" aria-current="page">Screens</a>
 </nav>
 <div class="tp-page stack is-gap-l" id="tp-screens-page" data-room="{{.Show.Code}}" data-room-name="{{.Show.Title}}">
@@ -23,12 +22,12 @@
 
   <section class="panel" id="tp-waiting-panel" hidden>
     <div class="panel-header">Waiting to be set up <span class="badge" id="tp-waiting-count">0</span></div>
-    <div id="tp-waiting-list" class="tp-wait-grid"></div>
+    <div id="tp-waiting-list" class="grid" style="--grid-min: 16rem"></div>
   </section>
 
   <section>
     <div class="row is-items-center is-gap-s"><h2 class="tp-section-title">This room's screens</h2><span class="badge" id="tp-gal-count"></span></div>
-    <div id="tp-gal" class="tp-gal mt-m"><p class="text-muted">Loading…</p></div>
+    <div id="tp-gal" class="grid mt-m" style="--grid-min: 19rem"><div class="empty-state is-loading" aria-busy="true"><span class="empty-state-title">Loading screens…</span></div></div>
   </section>
 
   {{- /* Presets: named bundles of this room's screen settings (moved here
@@ -48,8 +47,11 @@
   </section>
 </div>
 
-<dialog id="tp-capture" class="tp-inspector tp-capture" aria-labelledby="tp-capture-title">
-  <h2 id="tp-capture-title" class="panel-header">Set up screen <span class="text-muted" id="tp-capture-host"></span></h2>
+<dialog id="tp-capture" class="modal tp-capture" aria-labelledby="tp-capture-title">
+  <div class="modal-header">
+    <h2 id="tp-capture-title">Set up screen <span class="text-muted" id="tp-capture-host"></span></h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
+  </div>
   <form class="stack is-gap-s" method="dialog">
     <div class="field">
       <label class="label" for="tp-capture-name">Screen name</label>
@@ -57,10 +59,10 @@
     </div>
     <div class="field">
       <span class="label">What is this screen?</span>
-      <div class="tp-kind-pick" id="tp-capture-kind" role="radiogroup" aria-label="Display type">
-        <button type="button" class="tp-kind" data-kind="audience" role="radio"><strong>Audience</strong><span>Projector / main screen the room looks at</span></button>
-        <button type="button" class="tp-kind" data-kind="walkin" role="radio"><strong>Walk-in</strong><span>Poster outside the room or in the foyer</span></button>
-        <button type="button" class="tp-kind" data-kind="presenter" role="radio"><strong>Presenter</strong><span>Faces the speaker: time left, what's next</span></button>
+      <div class="toggle-group tp-kind-group" id="tp-capture-kind" role="radiogroup" aria-label="Display type">
+        <label class="toggle-btn"><input type="radio" name="tp-capture-kind" value="audience"><strong>Audience</strong><small>Projector / main screen the room looks at</small></label>
+        <label class="toggle-btn"><input type="radio" name="tp-capture-kind" value="walkin"><strong>Walk-in</strong><small>Poster outside the room or in the foyer</small></label>
+        <label class="toggle-btn"><input type="radio" name="tp-capture-kind" value="presenter"><strong>Presenter</strong><small>Faces the speaker: time left, what's next</small></label>
       </div>
     </div>
     <div class="field">
@@ -84,9 +86,9 @@
       </div>
     </div>
     <p class="field-error" role="alert" hidden></p>
-    <div class="cluster is-gap-s">
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
       <button type="submit" class="btn btn-primary" id="tp-capture-go">Set up screen</button>
-      <button type="button" class="btn" data-cancel>Cancel</button>
     </div>
   </form>
 </dialog>
@@ -94,8 +96,11 @@
 {{- /* New layout from a built-in (STATUS U11): name it, pick what it starts
   from, tick the screens (same display type, whole event, by room) that
   should use it; then the editor opens on the copy. */ -}}
-<dialog id="tp-layout-copy" class="tp-inspector tp-layout-copy" aria-labelledby="tp-layout-copy-title">
-  <h2 id="tp-layout-copy-title" class="panel-header">New layout</h2>
+<dialog id="tp-layout-copy" class="modal tp-layout-copy" aria-labelledby="tp-layout-copy-title">
+  <div class="modal-header">
+    <h2 id="tp-layout-copy-title">New layout</h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
+  </div>
   <form class="stack is-gap-s" method="dialog">
     <p class="text-muted" id="tp-layout-copy-why">Built-in layouts aren't edited. Name your own copy; it belongs to this event, so every room can use it.</p>
     <div class="field">
@@ -106,22 +111,22 @@
       <label class="label" for="tp-layout-copy-from">Start from</label>
       <select class="select" id="tp-layout-copy-from"></select>
     </div>
-    <fieldset class="field tp-layout-copy-targets">
-      <legend class="label">Screens that should use it</legend>
+    <fieldset class="radio-group">
+      <legend>Screens that should use it</legend>
       <div id="tp-layout-copy-list" class="stack is-gap-xs"></div>
     </fieldset>
     <p class="field-error" role="alert" hidden></p>
-    <div class="cluster is-gap-s">
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
       <button type="submit" class="btn btn-primary">Create and edit</button>
-      <button type="button" class="btn" data-cancel>Cancel</button>
     </div>
   </form>
 </dialog>
 
-<dialog id="tp-screen-edit" class="tp-screen-edit">
-  <div class="tp-modal-bar">
-    <strong id="tp-screen-edit-title">Layout editor</strong>
-    <span class="badge badge-warn" id="tp-screen-edit-shared" hidden></span>
+<dialog id="tp-screen-edit" class="modal tp-screen-edit" aria-labelledby="tp-screen-edit-title">
+  <div class="modal-header">
+    <h2 id="tp-screen-edit-title">Layout editor</h2>
+    <span class="badge badge-warning" id="tp-screen-edit-shared" hidden></span>
     <span class="field-hint tp-edit-legend">
       <span><b aria-hidden="true">⠿</b> drag to move</span>
       <span><b aria-hidden="true">◢</b> drag to resize</span>
@@ -129,7 +134,7 @@
       <span><b aria-hidden="true">🗑</b> remove</span>
       <span>arrow keys nudge · Shift+arrows resize</span>
     </span>
-    <button type="button" class="btn btn-sm btn-primary" id="tp-screen-edit-close">Done</button>
+    <button type="button" class="btn btn-sm btn-primary" id="tp-screen-edit-close" data-close>Done</button>
   </div>
   <iframe id="tp-screen-edit-frame" title="Screen layout editor"></iframe>
 </dialog>

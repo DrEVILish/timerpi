@@ -29,7 +29,9 @@ package mesh
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -134,16 +136,6 @@ type SnapshotSource interface {
 	Snapshot(ctx context.Context, base string, showID int64) (json.RawMessage, error)
 }
 
-// Event reports a role flip (integration hook: the ws hub re-broadcasts its
-// peers frame so browsers/dashboards see the new authority, see
-// (an old handoff note, not kept)).
-type Event struct {
-	Device string `json:"device"`
-	From   State  `json:"from"`
-	To     State  `json:"to"`
-	Role   string `json:"role"` // announced role at the flip instant
-}
-
 // ---------------------------------------------------------------------------
 // Public read models
 
@@ -152,11 +144,13 @@ type PeerView struct {
 	Host    string   `json:"host"`
 	Addrs   []string `json:"addrs"`
 	Port    int      `json:"port"`
-	Role    string   `json:"role"`          // TXT role verbatim
-	Ver     string   `json:"ver,omitempty"` // TXT ver
-	Epoch   int64    `json:"epoch"`         // TXT epoch; 0 when missing/unparsable
-	EpochOK bool     `json:"epochOK"`       // false = peer ships no usable epoch
-	AgeS    int64    `json:"ageS"`          // seconds since last advertisement
+	Role    string   `json:"role"`              // TXT role verbatim
+	Ver     string   `json:"ver,omitempty"`     // TXT ver
+	Epoch   int64    `json:"epoch"`             // TXT epoch; 0 when missing/unparsable
+	EpochOK bool     `json:"epochOK"`           // false = peer ships no usable epoch
+	AgeS    int64    `json:"ageS"`              // seconds since last advertisement
+	Proto   int      `json:"proto,omitempty"`   // TXT proto (0 = v2 box)
+	Foreign bool     `json:"foreign,omitempty"` // another protocol major: ignored
 }
 
 // Identity is this device's mesh identity (GET /api/network core).
@@ -176,6 +170,10 @@ type Identity struct {
 	PrimaryEpoch  int64  `json:"primaryEpoch,omitempty"`
 	PrimaryAddr   string `json:"primaryAddr,omitempty"`
 	LastPrimaryAt int64  `json:"lastPrimaryAt"` // epoch-ms; 0 = never seen
+	Proto         int    `json:"proto,omitempty"`
+	// UpdateNeeded: a box with a newer protocol major is on the network, so
+	// this one can't join it until it updates (at the next reboot).
+	UpdateNeeded bool `json:"updateNeeded,omitempty"`
 }
 
 // Options configures a Device. Zero durations get the defaults above.
@@ -184,35 +182,27 @@ type Options struct {
 	DeviceName string // operator-facing display name (informational)
 	Port       int    // our HTTP+WS port
 	Version    string // short app version (TXT ver)
-	DBPath     string // "<data>/timerpi.db"; "" = persistence off (memory only)
-	ShowID     int64  // show harvested on takeover (default 1 — docs/MESH.md)
+	Proto      int    // protocol major (TXT proto); 0 = no filtering (tests)
+	// Auth returns this box's event and mesh key (VENUE-CLOUD §5). Nil =
+	// no signing (tests, dev servers). With Auth set, only announcements
+	// signed for our event count, and an unpaired box (no key) never leads.
+	Auth   func() (event string, key []byte)
+	DBPath string // "<data>/timerpi.db"; "" = persistence off (memory only)
+	ShowID int64  // show harvested on takeover (default 1 — docs/MESH.md)
 
-	PollEvery     time.Duration
-	Browse        time.Duration
-	GraceWindow   time.Duration
-	TakeoverAfter time.Duration
+	PollEvery time.Duration
 
 	Announcer     Announcer                                        // nil → mdns.Announce adapter
 	Lister        PeerLister                                       // nil → mdns.FindPeers adapter
 	Setter        HostSetter                                       // nil → hostnamectl fallback chain
 	Source        SnapshotSource                                   // nil → HTTP GET adapter
 	ApplySnapshot func(raw json.RawMessage, fromHost string) error // optional; nil = log only
-	OnChange      func(Event)                                      // optional role-flip hook
 	Now           func() time.Time                                 // nil → time.Now (tests inject)
 }
 
 func (o *Options) fill() {
 	if o.PollEvery <= 0 {
 		o.PollEvery = DefaultPollEvery
-	}
-	if o.Browse <= 0 {
-		o.Browse = DefaultBrowse
-	}
-	if o.GraceWindow <= 0 {
-		o.GraceWindow = DefaultGraceWindow
-	}
-	if o.TakeoverAfter <= 0 {
-		o.TakeoverAfter = DefaultTakeoverAfter
 	}
 	if o.ShowID <= 0 {
 		o.ShowID = 1
@@ -257,6 +247,8 @@ type Device struct {
 	lastPrimarySeen time.Time
 	lastPrimary     *mdns.Peer
 	peers           []mdns.Peer
+	foreign         []mdns.Peer // peers on another protocol major (ignored)
+	updateNeeded    bool        // a foreign peer has a newer major
 	peersAt         time.Time
 	annCollides     func() bool
 	annStop         func()
@@ -384,7 +376,7 @@ func (dev *Device) run(ctx context.Context) {
 // Tick polls peers once and evaluates the state machine. Exposed for
 // integration harnesses; run() calls it on the cadence.
 func (dev *Device) Tick(ctx context.Context) error {
-	lctx, cancel := context.WithTimeout(ctx, dev.opts.Browse)
+	lctx, cancel := context.WithTimeout(ctx, DefaultBrowse)
 	defer cancel()
 	peers, err := dev.opts.Lister.ListPeers(lctx)
 	if err != nil {
@@ -416,6 +408,7 @@ func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
 	}
 
 	peers = dev.dropSelfEchoLocked(peers)
+	peers = dev.splitForeignLocked(peers)
 	dev.peers = peers
 	dev.peersAt = dev.now()
 
@@ -519,6 +512,10 @@ func (dev *Device) decideLocked() State {
 		return StateMember
 	}
 
+	if dev.unpairedLocked() {
+		return StateIdle // an unpaired box never leads (VENUE-CLOUD §5)
+	}
+
 	switch dev.state {
 	case StateIdle:
 		if best != nil && bestOK {
@@ -529,7 +526,7 @@ func (dev *Device) decideLocked() State {
 			}
 			return StateMember
 		}
-		if now.Sub(dev.startedAt) >= dev.opts.GraceWindow {
+		if now.Sub(dev.startedAt) >= DefaultGraceWindow {
 			return StatePrimary // grace over, nobody claimed → claim
 		}
 		return StateIdle
@@ -539,7 +536,7 @@ func (dev *Device) decideLocked() State {
 			if dev.lastPrimarySeen.IsZero() {
 				return StateMember // no primary ever seen by this runner
 			}
-			if now.Sub(dev.lastPrimarySeen) > dev.opts.TakeoverAfter {
+			if now.Sub(dev.lastPrimarySeen) > DefaultTakeoverAfter {
 				return StateTakeover // PLAN §5: primary stale > 8 s
 			}
 			return StateMember
@@ -559,7 +556,7 @@ func (dev *Device) decideLocked() State {
 }
 
 // transitionLocked lands a state change: claim (when primary), re-announce
-// (when the advertised role changed), fire the change hook.
+// (when the advertised role changed).
 func (dev *Device) transitionLocked(from, to State) {
 	dev.state = to
 	if to == StatePrimary {
@@ -569,7 +566,6 @@ func (dev *Device) transitionLocked(from, to State) {
 	if newRole != dev.effectiveRole {
 		dev.reannounceLocked()
 	}
-	dev.fireLocked(from, to)
 }
 
 // takeoverLocked promotes self after primary loss and returns the
@@ -625,6 +621,9 @@ func (dev *Device) claimLocked() {
 
 // roleLocked is the effective announced role (override-aware view of state).
 func (dev *Device) roleLocked() string {
+	if dev.unpairedLocked() && (dev.override == "" || dev.override == OverrideAuto) {
+		return "unpaired"
+	}
 	switch dev.override {
 	case OverridePrimary:
 		return "primary"
@@ -632,15 +631,6 @@ func (dev *Device) roleLocked() string {
 		return "display"
 	}
 	return dev.state.AnnounceRole()
-}
-
-// fireLocked emits the change hook (never blocks the state machine).
-func (dev *Device) fireLocked(from, to State) {
-	if dev.opts.OnChange != nil {
-		go func(fromP, toP State, role string, device string) {
-			dev.opts.OnChange(Event{Device: device, From: fromP, To: toP, Role: role})
-		}(from, to, dev.roleLocked(), dev.hostname)
-	}
 }
 
 // reannounceLocked stops the current registration and re-registers with the
@@ -686,13 +676,94 @@ func (dev *Device) teardownAnnounceLocked() {
 
 // announceMetaLocked builds our current TXT payload.
 func (dev *Device) announceMetaLocked() mdns.ServiceMeta {
-	return mdns.ServiceMeta{
+	meta := mdns.ServiceMeta{
 		Host:  dev.hostname,
 		Role:  dev.roleLocked(),
 		Ver:   dev.opts.Version,
 		Epoch: dev.claimedEpoch,
 		Boot:  dev.bootID,
+		Proto: dev.opts.Proto,
 	}
+	if dev.opts.Auth != nil {
+		if ev, key := dev.opts.Auth(); len(key) > 0 {
+			meta.Event = ev
+			meta.Sig = SignAnnouncement(key, meta)
+		}
+	}
+	return meta
+}
+
+// unpairedLocked: signing is on and this box has no event key.
+func (dev *Device) unpairedLocked() bool {
+	if dev.opts.Auth == nil {
+		return false
+	}
+	_, key := dev.opts.Auth()
+	return len(key) == 0
+}
+
+// SignAnnouncement is the TXT sig: HMAC-SHA256 with the event mesh key over
+// every field a stranger could forge to win the election.
+func SignAnnouncement(key []byte, m mdns.ServiceMeta) string {
+	mac := hmac.New(sha256.New, key)
+	fmt.Fprintf(mac, "timerpi-announce/1|%s|%s|%d|%d|%s|%s", m.Host, m.Role, m.Epoch, m.Proto, m.Event, m.Boot)
+	return hex.EncodeToString(mac.Sum(nil))[:32]
+}
+
+// peerSignedFor reports whether peer p announces our event with a valid
+// signature.
+func peerSignedFor(p mdns.Peer, event string, key []byte) bool {
+	if event == "" || p.TXT["event"] != event {
+		return false
+	}
+	m, ok := mdns.MetaFromMap(p.TXT)
+	if !ok {
+		return false
+	}
+	want := SignAnnouncement(key, m)
+	return hmac.Equal([]byte(want), []byte(p.TXT["sig"]))
+}
+
+// splitForeignLocked keeps the peers that speak our protocol major. The
+// others never count for the election or takeover (a v2 box and a v3 box
+// must not share an event); they are listed as foreign, and one with a
+// newer major means this box needs an update.
+func (dev *Device) splitForeignLocked(peers []mdns.Peer) []mdns.Peer {
+	dev.foreign, dev.updateNeeded = nil, false
+	if dev.opts.Proto <= 0 && dev.opts.Auth == nil {
+		return peers
+	}
+	var event string
+	var key []byte
+	if dev.opts.Auth != nil {
+		event, key = dev.opts.Auth()
+	}
+	keep := peers[:0:0]
+	for _, p := range peers {
+		pr, _ := strconv.Atoi(p.TXT["proto"])
+		ok := dev.opts.Proto <= 0 || pr == dev.opts.Proto
+		if dev.opts.Auth != nil {
+			// Only boxes signed for our event count; unpaired boxes see
+			// nobody (and never lead).
+			ok = ok && len(key) > 0 && peerSignedFor(p, event, key)
+		}
+		if ok {
+			keep = append(keep, p)
+			continue
+		}
+		dev.foreign = append(dev.foreign, p)
+		if dev.opts.Proto > 0 && pr > dev.opts.Proto {
+			dev.updateNeeded = true
+		}
+	}
+	return keep
+}
+
+// Reannounce re-publishes our announcement now (after pairing changed).
+func (dev *Device) Reannounce() {
+	dev.mu.Lock()
+	defer dev.mu.Unlock()
+	dev.reannounceLocked()
 }
 
 // Status returns the current identity and the fresh (last-30-s) peer view.
@@ -707,15 +778,17 @@ func (dev *Device) Status() (Identity, []PeerView) {
 func (dev *Device) identityLocked() Identity {
 	meta := dev.announceMetaLocked()
 	id := Identity{
-		Hostname:   dev.hostname,
-		DeviceName: dev.opts.DeviceName,
-		Port:       dev.opts.Port,
-		Version:    dev.opts.Version,
-		State:      dev.state,
-		Role:       meta.Role,
-		Override:   dev.override,
-		Epoch:      dev.claimedEpoch,
-		TXT:        mdns.DecodeTXT(meta.EncodeTXT()),
+		Hostname:     dev.hostname,
+		DeviceName:   dev.opts.DeviceName,
+		Port:         dev.opts.Port,
+		Version:      dev.opts.Version,
+		State:        dev.state,
+		Role:         meta.Role,
+		Override:     dev.override,
+		Epoch:        dev.claimedEpoch,
+		TXT:          mdns.DecodeTXT(meta.EncodeTXT()),
+		Proto:        dev.opts.Proto,
+		UpdateNeeded: dev.updateNeeded,
 	}
 	if p := dev.lastPrimary; p != nil {
 		id.PrimaryHost = p.Host
@@ -733,8 +806,9 @@ func (dev *Device) identityLocked() Identity {
 func (dev *Device) peersViewLocked() []PeerView {
 	now := dev.now()
 	cut := now.Add(-PeersFreshFor)
-	out := make([]PeerView, 0, len(dev.peers))
-	for _, p := range dev.peers {
+	out := make([]PeerView, 0, len(dev.peers)+len(dev.foreign))
+	foreign := len(dev.peers)
+	for i, p := range append(append([]mdns.Peer(nil), dev.peers...), dev.foreign...) {
 		if p.LastSeen.Before(cut) {
 			continue
 		}
@@ -751,7 +825,9 @@ func (dev *Device) peersViewLocked() []PeerView {
 			Epoch:   ep,
 			EpochOK: ok,
 			AgeS:    int64(now.Sub(p.LastSeen) / time.Second),
+			Foreign: i >= foreign,
 		})
+		out[len(out)-1].Proto, _ = strconv.Atoi(p.TXT["proto"])
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Host < out[j].Host })
 	return out
@@ -891,6 +967,9 @@ func ValidHostname(name string) bool {
 	if len(name) < 2 || len(name) > 63 {
 		return false
 	}
+	if strings.EqualFold(name, mdns.AliasName) {
+		return false // the venue's primary answers timerpi.local (VENUE-CLOUD §5)
+	}
 	for i, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -903,25 +982,6 @@ func ValidHostname(name string) bool {
 		}
 	}
 	return true
-}
-
-// SetHostSetter swaps the host-apply mechanism (tests inject a fake; never
-// touch a real system hostname from a test).
-func (dev *Device) SetHostSetter(s HostSetter) {
-	dev.mu.Lock()
-	dev.opts.Setter = s
-	dev.mu.Unlock()
-}
-
-// SetVersion updates the TXT ver (re-announces verbatim; role unchanged).
-// Available for binary-integration builds that learn their version late.
-func (dev *Device) SetVersion(v string) {
-	dev.mu.Lock()
-	defer dev.mu.Unlock()
-	dev.opts.Version = strings.TrimSpace(v)
-	if dev.effectiveRole != "" {
-		dev.reannounceLocked()
-	}
 }
 
 // Rename validates + applies a hostname rename and re-announces under the

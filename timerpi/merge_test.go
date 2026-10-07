@@ -302,3 +302,18 @@ func tombIDEqual(a, b []CueTombstone) bool {
 	}
 	return true
 }
+
+// A newer server-side change to only an alert flash still counts as remote
+// (cuesEqualContent used to skip AlertFlash1/2).
+func TestMergeAlertFlashOnlyChangeIsRemote(t *testing.T) {
+	s := mergeCue(1, 1, "A", 300)
+	s.AlertFlash2 = true
+	in := mergeCue(1, 1, "A", 200)
+	in.ShowID = 0 // identity/bookkeeping differences never count
+	if m, r := MergeCues([]Cue{s}, []Cue{in}, nil); !m[0].AlertFlash2 || r != 1 {
+		t.Fatalf("flash-only change: %+v remote=%d, want server row + remote=1", m[0], r)
+	}
+	if _, r := MergeCues([]Cue{mergeCue(1, 1, "A", 300)}, []Cue{in}, nil); r != 0 {
+		t.Fatalf("identical content counted as remote=%d", r)
+	}
+}

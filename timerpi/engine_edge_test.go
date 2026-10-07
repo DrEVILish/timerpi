@@ -50,13 +50,13 @@ func mustEdgeEngine3(t *testing.T, t0 int64) (*Engine, *fakeClock) {
 	return mustEdgeEngine2(t, t0, testCues())
 }
 
-func mustTimer(t *testing.T, e *Engine) TimerFrame {
+func mustTimer(t *testing.T, e *Engine) RuntimeView {
 	t.Helper()
-	tf, err := e.Timer()
+	snap, err := e.Snapshot()
 	if err != nil {
-		t.Fatalf("Timer: %v", err)
+		t.Fatalf("Snapshot: %v", err)
 	}
-	return tf
+	return snap.Runtime
 }
 
 // Empty and single-cue shows flow through every transport op without panic

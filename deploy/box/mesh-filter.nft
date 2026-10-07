@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# Keep the venue LAN's broadcast and multicast off the slow Wi-Fi mesh
+# (VENUE-CLOUD §11.3): from eth0 into bat0 only unicast, ARP, DHCP, mDNS
+# and IPv6 neighbour discovery pass.
+add table bridge timerpi_mesh
+flush table bridge timerpi_mesh
+table bridge timerpi_mesh {
+	chain forward {
+		type filter hook forward priority 0; policy accept;
+		iifname "eth0" oifname "bat0" jump lan_to_mesh
+	}
+	chain lan_to_mesh {
+		meta pkttype unicast accept
+		ether type arp accept
+		udp dport { 67, 68 } accept
+		ip daddr 224.0.0.251 udp dport 5353 accept
+		ip6 daddr ff02::fb udp dport 5353 accept
+		icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } accept
+		meta pkttype { broadcast, multicast } drop
+	}
+}

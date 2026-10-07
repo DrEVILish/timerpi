@@ -9,8 +9,6 @@ import (
 	_ "github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/skip2/go-qrcode"
-	_ "github.com/tealeg/xlsx/v3"
 	_ "github.com/xuri/excelize/v2"
-	_ "golang.org/x/net/bpf"
 	_ "golang.org/x/sys/unix"
 )

@@ -16,12 +16,13 @@
 <main class="panel tp-aud-card" id="tp-aud-card">
   <header class="tp-aud-head"><img src="/img/timerpi.svg" alt=""><h1>{{.Show.Title}}</h1></header>
   <section id="tp-aud-main" aria-live="polite">
-    <div class="empty-state tp-aud-wait">
+    <div class="empty-state is-loading tp-aud-wait" aria-busy="true">
+      <svg class="icon empty-state-icon" aria-hidden="true"><use href="/ftl/assets/icons/icons.svg#icon-hourglass"/></svg>
       <span class="empty-state-title">Waiting for the room</span>
       <span class="empty-state-hint">Keep this page open — questions and polls appear here when the presenter starts them.</span>
     </div>
   </section>
-  <footer class="tp-aud-foot"><span class="lamp" id="tp-aud-lamp"></span> <span id="tp-aud-note" class="text-muted">connecting…</span></footer>
+  <footer class="tp-aud-foot"><span class="connection" id="tp-aud-note" data-state="reconnecting" role="status">connecting…</span></footer>
 </main>
 <script type="module" src="{{asset "/src/audience.js"}}"></script>
 </body>

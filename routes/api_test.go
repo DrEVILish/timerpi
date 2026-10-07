@@ -28,6 +28,7 @@ type apiTest struct {
 	srv       *httptest.Server
 	db        *timerpi.DB
 	engines   *timerpi.Engines // the registry routes.Deps carries (CuTePi hook tests wire OnStart on it)
+	deps      *routes.Deps     // the server's deps (release, venue tests call its methods)
 	showID    int64            // internal; JSON bookkeeping only (Agent L contract)
 	showCode  string           // share code: the ONLY public address
 	eventCode string           // parent event (the client is its SuperOperator)
@@ -63,13 +64,14 @@ func newAPITest(t *testing.T) *apiTest {
 	hub.SetLogger(func(string, ...any) {})
 
 	gin.SetMode(gin.TestMode)
-	r := routes.New(&routes.Deps{Engines: engines, Store: db, Hub: hub, Tmpl: tmpl})
+	deps := &routes.Deps{Engines: engines, Store: db, Hub: hub, Tmpl: tmpl}
+	r := routes.New(deps)
 	srv := httptest.NewServer(r)
 	t.Cleanup(func() {
 		srv.Close()
 		hub.Stop()
 	})
-	ts := &apiTest{t: t, srv: srv, db: db, engines: engines, showID: show.ID, showCode: show.Code, eventCode: ev.Code}
+	ts := &apiTest{t: t, srv: srv, db: db, engines: engines, deps: deps, showID: show.ID, showCode: show.Code, eventCode: ev.Code}
 	ts.signInSuper()
 	ts.signInBox()
 	return ts

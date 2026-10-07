@@ -7,10 +7,14 @@
  * comes from the item the moderator has shown to the audience — nothing
  * else exists here. Motion honours prefers-reduced-motion (phones only).
  */
+import { api, el as h, setText } from './ui.js';
+
+// el(tag, cls, text): this page's terse shorthand over ui.js el().
+const el = (tag, cls, text) => h(tag, { class: cls || undefined, text });
+
 const code = document.body.dataset.showCode;
 const main = document.getElementById('tp-aud-main');
-const note = document.getElementById('tp-aud-note');
-const lamp = document.getElementById('tp-aud-lamp');
+const note = document.getElementById('tp-aud-note'); // ftl .connection
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -25,30 +29,15 @@ if (!peer) {
 let item = null; // the on-air item (or null)
 let shownSig = '';
 
-function el(tag, cls, text) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text !== undefined) n.textContent = text;
-  return n;
-}
-function setNote(text, ok = true) {
+// setNote writes the footer line; state (live|reconnecting|offline) moves
+// the .connection lamp, and action feedback leaves it as it is.
+function setNote(text, state) {
   note.textContent = text;
-  lamp.classList.toggle('is-on', ok);
+  if (state) note.dataset.state = state;
 }
 
-async function post(path, body) {
-  const res = await fetch(`/api/audience/${code}${path}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), // the device id is the server's tp_aud cookie
-  });
-  let data = {};
-  try { data = await res.json(); } catch { /* */ }
-  if (!res.ok) {
-    const err = new Error(data.error || 'Something went wrong');
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
+// The device id is the server's tp_aud cookie.
+const post = (path, body) => api('POST', `/api/audience/${code}${path}`, body);
 
 // Rate-limited taps (429) retry once after a short jittered wait.
 async function postRetry(path, body) {
@@ -70,12 +59,22 @@ async function postRetry(path, body) {
 // composition, and a send that lands during an update clears the real box
 // (BUGLOG RW23).
 let liveSlot = null;
+// paused: the room runs at a venue whose link to the cloud is down
+// (VENUE-CLOUD §6) — phones wait instead of voting into nothing.
+let paused = false;
+function setPaused(on) {
+  if (on) setNote('Audience paused', 'reconnecting');
+  if (!!on === paused) return;
+  paused = !!on;
+  shownSig = null;
+  render();
+}
 function render() {
-  const sig = item ? `${item.id}:${item.kind}:${item.state}` : '';
+  const sig = paused ? 'paused' : (item ? `${item.id}:${item.kind}:${item.state}` : '');
   const fresh = sig !== shownSig;
   shownSig = sig;
   if (!fresh && item && liveSlot && main.contains(liveSlot)) {
-    setTextOf(main.querySelector('.tp-aud-q'), item.question);
+    setText(main.querySelector('.tp-aud-q'), item.question);
     const live = el('div', 'tp-aud-live');
     renderLive(live, null);
     liveSlot.replaceWith(live);
@@ -84,12 +83,10 @@ function render() {
   }
   const box = el('div', 'tp-aud-item');
   liveSlot = null;
-  if (!item) {
-    // ftl .empty-state (STATUS U17), same as the server's first paint.
-    const wait = el('div', 'empty-state tp-aud-wait');
-    wait.append(el('span', 'empty-state-title', 'Waiting for the room'),
-      el('span', 'empty-state-hint', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
-    box.append(wait);
+  if (paused) {
+    box.append(stateBox('offline', 'Audience paused', 'The room is reconnecting. Keep this page open — it carries on by itself.'));
+  } else if (!item) {
+    box.append(stateBox('loading', 'Waiting for the room', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
   } else {
     box.append(el('h2', 'tp-aud-q', item.question));
     const formSlot = el('div', 'tp-aud-formslot');
@@ -101,7 +98,21 @@ function render() {
   main.replaceChildren(box);
   if (fresh) box.classList.add('tp-aud-in');
 }
-function setTextOf(node, text) { if (node && node.textContent !== text) node.textContent = text; }
+// stateBox: ftl .empty-state.is-offline / .is-loading (STATUS U17), the
+// loading one matching the server's first paint.
+function stateBox(kind, title, hint) {
+  const box = el('div', `empty-state is-${kind} tp-aud-wait`);
+  if (kind === 'loading') box.setAttribute('aria-busy', 'true');
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'icon empty-state-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(ns, 'use');
+  use.setAttribute('href', `/ftl/assets/icons/icons.svg#icon-${kind === 'loading' ? 'hourglass' : 'cloud-off'}`);
+  svg.appendChild(use);
+  box.append(svg, el('span', 'empty-state-title', title), el('span', 'empty-state-hint', hint));
+  return box;
+}
 // renderLive fills the live slot; formSlot is given only on a full build.
 function renderLive(live, formSlot) {
   if (item.kind === 'poll' || item.kind === 'quiz') renderVote(live);
@@ -132,7 +143,7 @@ function renderVote(box) {
           // Not counted: don't show it as this phone's vote (BUGLOG RS11).
           store.set(key, before);
           render();
-          setNote(e.message, false);
+          setNote(e.message);
         }
       });
       list.appendChild(b);
@@ -184,14 +195,16 @@ function askForm(box, { placeholder, max, multiline, sentText }) {
     send.disabled = true;
     try {
       const out = await post('/ask', { item: item.id, text });
-      const sent = store.get(`tp.aud.sent.${item.id}`, []);
-      sent.push({ id: out.id, text });
-      store.set(`tp.aud.sent.${item.id}`, sent.slice(-10));
+      if (!out.approved) {
+        const sent = store.get(`tp.aud.sent.${item.id}`, []);
+        sent.push({ id: out.id, text, at: Date.now() });
+        store.set(`tp.aud.sent.${item.id}`, sent.slice(-10));
+      }
       input.value = '';
       setNote(out.approved ? 'Sent!' : sentText);
       render();
     } catch (err) {
-      setNote(err.message, false);
+      setNote(err.message);
     } finally {
       send.disabled = false;
     }
@@ -206,13 +219,16 @@ function renderWall(box, formSlot) {
     sentText: 'Sent — the moderator will review it shortly.',
   });
   const kids = item.children || [];
-  const onWall = new Set(kids.map((k) => k.id));
-  const sent = store.get(`tp.aud.sent.${item.id}`, []).filter((s) => !onWall.has(s.id));
+  // Only entries still waiting for review stay in "your questions": once
+  // approved they are on the wall; dismissed or cleared ones are gone.
+  const waiting = new Set(item.waiting || []);
+  const all = store.get(`tp.aud.sent.${item.id}`, []);
+  // A just-sent entry may not be in the frame yet: keep it a little while.
+  const sent = all.filter((s) => waiting.has(s.id) || Date.now() - (s.at || 0) < 15000);
+  if (sent.length !== all.length) store.set(`tp.aud.sent.${item.id}`, sent);
   if (sent.length) {
     const mineBox = el('div', 'tp-aud-mine');
-    // A long wall is trimmed to its top entries (BUGLOG RW53), so a sent
-    // question missing from it may be approved but further down.
-    mineBox.append(el('p', 'label', item.more ? 'Your questions' : 'Waiting for review'));
+    mineBox.append(el('p', 'label', 'Waiting for review'));
     for (const s of sent.slice(-3)) mineBox.append(el('p', 'text-muted', s.text));
     box.appendChild(mineBox);
   }
@@ -226,7 +242,7 @@ function renderWall(box, formSlot) {
   for (const k of kids) {
     if (item.spotlight && k.id === item.spotlight.id) continue;
     const li = el('li', 'list-item tp-aud-entry' + (k.state === 'answered' ? ' is-answered' : ''));
-    const up = el('button', 'btn btn-sm tp-aud-up', `▲ ${k.upvotes || 0}`);
+    const up = el('button', 'badge badge-button tp-aud-up', `▲ ${k.upvotes || 0}`);
     up.type = 'button';
     up.setAttribute('aria-pressed', String(ups.has(k.id)));
     up.setAttribute('aria-label', `Upvote: ${k.question}`);
@@ -242,7 +258,7 @@ function renderWall(box, formSlot) {
         ups.delete(k.id);
         store.set('tp.aud.up', [...ups].slice(-200));
         up.disabled = false;
-        setNote(e.message, false);
+        setNote(e.message);
       }
     });
     li.append(up, el('span', '', k.question));
@@ -283,6 +299,7 @@ function startRest() {
     try {
       const res = await fetch(`/api/audience/${code}`);
       const j = await res.json();
+      setPaused(j.paused);
       adopt(j.data?.poll);
     } catch { /* keep trying */ }
   };
@@ -315,17 +332,18 @@ function connect() {
     if (m.t === 'poll') {
       backoff = 1000;
       stopRest();
-      setNote('Connected');
+      setNote('Connected', 'live');
+      setPaused(m.paused);
       adopt(m.poll);
     } else if (m.t === 'err') {
-      setNote(m.message || 'Connection problem', false);
+      setNote(m.message || 'Connection problem', 'offline');
     }
   };
   sock.onclose = () => { if (sock === ws) retry(); };
   sock.onerror = () => { try { sock.close(); } catch { /* */ } };
 }
 function retry() {
-  setNote('Reconnecting…', false);
+  setNote('Reconnecting…', 'reconnecting');
   startRest();
   if (retryTimer) return;
   const wait = backoff + Math.random() * backoff;

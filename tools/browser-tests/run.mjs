@@ -24,7 +24,7 @@ const server = spawn(bin, [], {
   // Run from the checkout so ftl-themes (on disk by design) are found; the
   // pages and scripts still come from the binary's embedded copy.
   cwd: repo,
-  env: { ...process.env, TIMERPI_DATA_DIR: join(work, 'data'), TIMERPI_HTTP_PORT: String(port), TIMERPI_DISPLAY: 'off', TIMERPI_MESH: 'off' },
+  env: { ...process.env, TIMERPI_DATA_DIR: join(work, 'data'), TIMERPI_HTTP_PORT: String(port), TIMERPI_DISPLAY: 'off', TIMERPI_MESH: 'off', TIMERPI_ROLE: 'cloud' },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 let serverErr = '';

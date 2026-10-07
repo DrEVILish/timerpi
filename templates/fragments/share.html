@@ -6,19 +6,19 @@
   <div class="panel-header">Audience join</div>
   <div class="stack is-gap-s">
     <img id="share-qr" alt="Audience join QR code" width="160" height="160"
-         {{if .Share.Code}}data-show="{{.Share.Code}}" data-path="/a/"
+         {{if .Share.Code}}data-show="{{.Share.Code}}" data-path="/a/" data-base="{{.Share.AudienceBase}}"
          data-src-tpl="/api/shows/{{.Share.Code}}/qr?size=320&data=__DATA__"
          src="/api/shows/{{.Share.Code}}/qr?size=320&data=%2Fa%2F{{.Share.Code}}"
          {{end}}>
     <span class="field-hint">Phones scan this to vote and ask questions. Put the join QR tile on a screen so the room can see it.</span>
-    <div class="cluster is-gap-s">
+    <div class="input-group">
       <input class="input is-mirror" id="share-url-mirror" readonly tabindex="-1"
              value="{{if .Share.Code}}/a/{{.Share.Code}}{{end}}" aria-label="Audience link">
-      <button class="btn btn-sm" id="share-copy" type="button">
+      <button class="btn" id="share-copy" type="button">
         <svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-copy"/></svg> Copy
       </button>
-      <a class="btn btn-sm" href="{{if .Share.Code}}/a/{{.Share.Code}}{{end}}" target="_blank" rel="noopener">Preview phone view</a>
     </div>
+    <a class="btn btn-sm" href="{{if .Share.Code}}{{.Share.AudienceBase}}/a/{{.Share.Code}}{{end}}" target="_blank" rel="noopener">Preview phone view</a>
   </div>
 </section>
 {{end}}

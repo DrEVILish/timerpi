@@ -30,8 +30,16 @@
 @media (max-width: 1200px) {
   .tp-dash { grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr); }
 }
-@media (max-width: 760px) {
-  .tp-dash { grid-template-columns: 1fr; height: auto; }
+/* Tablet and below (2026-10-07): one column — Current cue full width,
+   transport under it, then the running order, Messages, Import. */
+@media (max-width: 1100px) {
+  .tp-dash { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .tp-dash > .tp-dash-left, .tp-dash > .tp-dash-main { display: contents; }
+  .tp-dash .tp-now { order: 1; }
+  .tp-dash .tp-transport-bar { order: 2; }
+  .tp-dash .tp-runorder { order: 3; }
+  .tp-dash #messages-panel { order: 4; }
+  .tp-dash .tp-import { order: 5; }
 }
 
 .tp-dash-main { display: flex; flex-direction: column; min-height: 0; height: 100%; }
@@ -57,7 +65,7 @@
 /* U34: the time of day sits at the top centre of the header bar. */
 .app-bar { position: relative; }
 .tp-bar-clock { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; }
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .tp-bar-clock { position: static; transform: none; }
 }
 
@@ -83,7 +91,6 @@
 .tp-clock[data-state="alert1"] { color: var(--clock-alert1, var(--warning-text, var(--warning))); }
 
 .tp-clock-xl { font-size: clamp(4rem, 13vw, 13rem); font-weight: 700; }
-.tp-clock-lg { font-size: clamp(2.4rem, 4.4vw, 4.2rem); font-weight: 700; }
 
 /* The current-cue rail (dashboard, frag-current) is a NARROW column: the
    XL stage scale shatters "00:00" into wrapped lines and pushes the state
@@ -186,8 +193,6 @@ tr.tp-row-past .tp-cue-label { text-decoration: line-through solid color-mix(in 
 tr.tp-row-next td { border-block-start-style: solid; }
 
 /* Row drag affordance (v1 reorder is button-driven; drag is a placeholder) */
-.tp-cue-drag { cursor: grab; touch-action: none; }
-.tp-cue-drag:active { cursor: grabbing; }
 
 /* --------------------------------------------------------------------------
    Day bar (bottom of dashboard). Segments are server-rendered; the needle is
@@ -306,15 +311,16 @@ body.tp-hide-cursor * { cursor: none !important; }
 .tp-display-stage[data-state="alert2"] { box-shadow: inset 0 0 0 .7vmin var(--clock-alert2, var(--danger)); }
 .tp-display-stage[data-state="overtime"] { box-shadow: inset 0 0 0 .7vmin var(--danger); }
 
-/* Offline overlay (server link lost and not mesh-master) */
+/* Offline overlay shell (frag-offline): ftl has no full-screen wrapper for
+   .empty-state, so the scrim + centring is ours; the content is
+   .empty-state.is-offline. */
 .tp-offline {
   position: fixed; inset: 0; z-index: 40;
   display: none; place-items: center;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
-  text-align: center;
 }
 .tp-offline.is-visible { display: grid; }
-.tp-offline h2 { color: var(--danger-text, var(--danger)); font-size: clamp(2rem, 6vh, 4rem); }
+.tp-offline .empty-state-title { font-size: clamp(2rem, 6vh, 4rem); }
 
 /* F3: identical output at 720p/1080p/4K — on display pages the ROOT rem
    rides the viewport height (1.5vh ≈ 16px at 1080p), so every rem-based
@@ -340,24 +346,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 /* E3: blackout toggle pressed = displays are dark right now. */
 #tp-blank[aria-pressed="true"] { outline: 3px solid var(--danger, #ff4444); outline-offset: 3px; }
 
-/* F1: screens panel rows (operator dashboard — rem sizing is intentional;
-   this is not a display surface, the 44px touch floors apply). */
-.tp-screen-row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
-.tp-screen-name { background: none; border: none; padding: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
-.tp-screen-name:hover { color: var(--accent, #7C3AED); }
-.tp-screen-row .select { max-width: 9.5rem; min-height: 34px; }
-.tp-screen-row [data-act], .tp-screen-row [data-pact] { min-height: 34px; }
-
-/* --------------------------------------------------------------------------
-   Homepage
-   -------------------------------------------------------------------------- */
-.tp-home-hero { padding-block: var(--space-l, 2rem); }
-.tp-home-grid {
-  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  gap: var(--space-l, 2rem);
-  align-items: start;
-}
-@media (max-width: 900px) { .tp-home-grid { grid-template-columns: 1fr; } }
 
 /* --------------------------------------------------------------------------
    Misc glue
@@ -377,7 +365,7 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 
 /* Print: the dashboard is not paper material, but keep the cue list useful */
 @media print {
-  .tp-dash-right, .app-rail, .tp-daybar, .tp-cue-rowbtns { display: none !important; }
+  .app-rail, .tp-daybar, .tp-cue-rowbtns { display: none !important; }
   .tp-dash { display: block; }
 }
 
@@ -393,13 +381,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
        selector INTO that block rather than making a new one.
    ========================================================================== */
 
-/* --------------------------------------------------------------------------
-   Fix-3[P5/R5]: size glue for the two brand triggers. Core has no .btn-lg
-   (verified: zero hits in dist/xbmc.css; buttons scale only via .btn-sm), so
-   the app sizes its own loudest buttons. Layout glue may size — it does not
-   recolor; both buttons keep their core paint (.btn-primary/.btn-go accent).
-   -------------------------------------------------------------------------- */
-.tp-btn-lg { font-size: 1.15em; padding-inline: 2em; }
 
 /* --------------------------------------------------------------------------
    Fix-3[O4]: HELD vs IDLE distinction. Engine already emits all eight states
@@ -518,7 +499,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 /* E2: static free-text tile — wraps (unlike the single-line title), so
    welcome/sponsor/Wi-Fi lines read on lobby boards at any tile size. */
 .b-notice { font-size: clamp(1rem, 2.6vh, 1.8rem); font-weight: 600; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
-.b-share-code { color: var(--muted); }
 .b-rate { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* Countdown state semantics (state colors only — alert1/alert2/overtime). */
@@ -530,16 +510,10 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .b-w-countdown[data-state="idle"] .b-clock,
 .b-w-countdown[data-state="armed"] .b-clock { color: var(--muted, inherit); }
 
-/* Progress bars */
-.b-bar {
-  height: 1rem; border-radius: 999px;
-  background: var(--surface-2, transparent);
-  border: 1px solid var(--border, transparent);
-  overflow: hidden;
-}
-.b-bar-fill { height: 100%; width: 0%; background: #7C3AED; }
+/* Progress bars: cue = ftl .progress, day = ftl .gauge-linear > .meter
+   (one accent fill, not the level meter's traffic-light bands). */
 .b-bar-label { color: var(--muted); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-bar-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: .75rem; }
+.b-w-dayprogress { --meter-low: var(--accent); --meter-mid: var(--accent); --meter-high: var(--accent); }
 
 /* Message tiles (message semantics may carry warning/danger tones). */
 .b-msgs { display: flex; flex-direction: column; gap: .4rem; overflow: auto; min-height: 0; }
@@ -550,14 +524,9 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 }
 .b-msg-empty { color: var(--muted); font-style: italic; }
 
-/* Schedule mini-list */
-.b-sched { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; font-variant-numeric: tabular-nums; }
-.b-sched li {
-  display: flex; gap: .6em; align-items: baseline;
-  padding: .15em 0; border-bottom: 1px solid var(--hairline, transparent);
-}
-.b-sched li.is-active { font-weight: 700; }
-.b-sched li.is-past { opacity: .55; }
+/* Schedules are ftl .schedule-list; rows on a TV are not tap targets. */
+.b-board .schedule-list { --tap-min: 0px; min-height: 0; overflow: hidden; }
+.b-board .schedule-item > .schedule { --schedule-font-size: 1em; }
 
 /* Screen-side join card (d-chrome pattern, b- namespace). */
 .b-join-card {
@@ -575,16 +544,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .b-join-card img { width: 4.5rem; height: auto; image-rendering: pixelated; }
 .b-join-card .mono { color: var(--text); }
 
-/* Offline strip (CONTRACT #tp-offline pattern, own id `b-offline`). */
-.b-offline {
-  position: fixed; inset: 0; z-index: 40;
-  display: none; place-items: center;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  text-align: center;
-}
-.b-offline.is-visible { display: grid; }
-.b-offline h2 { color: var(--danger-text, var(--danger)); font-size: clamp(2rem, 6vh, 4rem); }
-
 /* ---- Compose chrome (visible ONLY while editing) ---- */
 .b-toolbar {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
@@ -601,11 +560,6 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 }
 .b-palette .b-palette-title { font-weight: 700; }
 .b-palette-list { display: flex; gap: .35rem; flex-wrap: wrap; }
-.b-palette-list button {
-  border: 1px solid var(--border); border-radius: var(--radius, .5rem);
-  background: var(--surface-2, transparent); color: var(--text);
-  padding: .25em .7em; cursor: pointer;
-}
 .b-settings {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
   padding: .4rem 1rem;
@@ -623,46 +577,31 @@ body[data-editing] .b-w-chrome {
 }
 body[data-editing] .b-w-chrome:active { cursor: grabbing; }
 body[data-editing] .b-w-chrome .b-w-title { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-body[data-editing] .b-w-chrome button {
-  margin-inline-start: auto;
-  border: 1px solid var(--border); border-radius: .4rem;
-  background: transparent; color: inherit; cursor: pointer;
-  line-height: 1; padding: .1em .4em;
-}
-body[data-editing] .b-w-chrome .b-w-gear { margin-inline-start: 0; }
-/* Buttons cluster at the right of the tile's bar; the title takes the rest
-   (they were spread across the bar, one per auto margin). */
-body[data-editing] .b-w-chrome button { margin-inline-start: 0 !important; }
+/* Buttons (ftl .btn-icon.is-clear / .btn-close) cluster at the right of
+   the tile's bar; the title takes the rest. */
 body[data-editing] .b-w-chrome .b-w-title { margin-inline-end: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body[data-editing] .b-widget { border-color: #7C3AED; }
-/* Handles (STATUS U8): grip = move, corner = resize; hover shows which
-   tile you are about to touch. */
-body[data-editing] .b-widget:hover { outline: 2px solid color-mix(in srgb, #7C3AED 60%, transparent); outline-offset: -2px; }
-body[data-editing] .b-w-grip { font-size: 1.1em; color: #7C3AED; letter-spacing: -.1em; }
-body[data-editing] .b-w-chrome .b-w-del { color: var(--danger, #e5484d); }
+/* Edit-mode visuals are ftl's .dashboard.is-editing (board.js toggles the
+   classes while editing); the grid keeps our fixed 12-column template and
+   each tile its inline grid-column/grid-row. */
+body[data-editing] .b-grid { --dashboard-cols: 12; --dashboard-row-min: 0px; }
+body[data-editing] .b-w-grip { font-size: 1.1em; color: var(--accent); letter-spacing: -.1em; }
 body[data-editing] .b-w-chrome .icon { width: 1em; height: 1em; }
 /* In the Screens page editor the modal owns Done and the layout choice. */
 body[data-compose] #b-edit-toggle, body[data-compose] #b-boards,
 body[data-compose] .b-boards-label, body[data-compose] #b-new { display: none !important; }
-body[data-editing] .b-widget.b-dragging { opacity: .75; outline: 2px solid #7C3AED; z-index: 6; }
+/* The resize hit area sits over ftl's drawn corner (.widget::after). */
 body[data-editing] .b-w-resize {
   display: block;
-  position: absolute; inset-block-end: 0; inset-inline-end: 0;
+  position: absolute; inset-block-end: 0; inset-inline-end: 0; z-index: 2;
   inline-size: 1.6rem; block-size: 1.6rem;
   cursor: nwse-resize; touch-action: none;
-  background: linear-gradient(135deg, transparent 50%, #7C3AED 50%);
-  border-end-end-radius: var(--radius, .5rem);
 }
 body[data-editing] .b-grid { padding-block-end: 10rem; }
 
 /* Compose chrome never prints; boards print as pure display. */
 @media print {
   .b-toolbar, .b-palette, .b-settings, .b-w-chrome, .b-w-resize,
-  .b-join-card, .b-offline { display: none !important; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .b-bar-fill { transition: none; }
+  .b-join-card, .tp-offline { display: none !important; }
 }
 
 /* ==========================================================================
@@ -741,24 +680,12 @@ body[data-editing] .b-grid { padding-block-end: 10rem; }
 }
 
 /* --------------------------------------------------------------------------
-   Supervisor[C3]: custom-board link chip — same language as .tp-dv-link on
-   the variant boards (LINK LIVE lit / LINK DOWN danger). Sits at the end of
-   the board topbar; board.js updateLink() owns data-online + text.
+   Supervisor[C3]: one link language on screens — ftl .connection
+   (data-state live|offline) on .tp-dv-link (variants) and #b-link (board
+   topbar). Sized for TV distance; the lamp follows the text size.
    -------------------------------------------------------------------------- */
-.b-link {
-  margin-inline-start: auto;
-  font-size: .8rem;
-  letter-spacing: .18em;
-  font-weight: 700;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: .2em .8em;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.b-link[data-online="0"] { color: var(--danger-text, var(--danger)); border-color: var(--danger); }
-.b-link[data-online="1"] { color: var(--success-text, var(--success, currentColor)); border-color: var(--success, currentColor); }
+:is(.b-link, .tp-dv-link) { --connection-size: clamp(.9rem, 2.2vh, 1.6rem); --lamp-size: .8em; letter-spacing: .18em; font-weight: 700; }
+.b-link { margin-inline-start: auto; }
 
 /* --------------------------------------------------------------------------
    Supervisor[C4]: custom-board join card aligns to the .tp-join-card pattern
@@ -788,6 +715,7 @@ body[data-editable="1"] .b-topbar-board::after {
 }
 @media (max-width: 760px) {
   .b-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  body[data-editing] .b-grid { --dashboard-cols: 6; }
   .b-widget { grid-column: span 6 !important; }
   .b-toolbar { font-size: .95rem; }
 }
@@ -830,37 +758,24 @@ body[data-editable="1"] .b-topbar-board::after {
    ========================================================================== */
 
 /* --- U2-1: stage urgency chip (top row, right-shouldered) ------------------ */
+/* An ftl .badge; timerpi.js sets data-state, which picks the badge tokens
+   (ftl has no filled badge variant, so the urgent fills are tokens here). */
 .tp-display-top .tp-state-chip {
   margin-inline-start: auto;
   font-size: clamp(1rem, 2.6vh, 2rem);
   font-weight: 800;
   letter-spacing: .08em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  padding: .12em .7em;
-  border-radius: 2px;
   white-space: nowrap;
 }
-.tp-state-chip[data-state="overtime"],
-.tp-state-chip[data-state="alert2"] {
-  background: var(--clock-alert2, var(--danger, #ff4444));
-  color: var(--on-danger, #140607);
+.tp-state-chip:is([data-state="overtime"], [data-state="alert2"]) {
+  --badge-bg: var(--clock-alert2, var(--danger)); --badge-fg: var(--on-danger, #140607);
 }
-.tp-state-chip[data-state="alert1"] {
-  background: var(--clock-alert1, var(--warning, #ffaa00));
-  color: var(--on-warning, #1A1200);
+.tp-state-chip[data-state="alert1"] { --badge-bg: var(--clock-alert1, var(--warning)); --badge-fg: var(--on-warning, #1A1200); }
+.tp-state-chip:is([data-state="held"], [data-state="paused"]) {
+  --badge-bg: transparent; --badge-border: var(--warning); --badge-fg: var(--warning-text, var(--warning));
 }
-.tp-state-chip[data-state="held"],
-.tp-state-chip[data-state="paused"] {
-  background: transparent;
-  border: 1px solid var(--warning, #ffaa00);
-  color: var(--warning-text, var(--warning, currentColor));
-}
-.tp-state-chip[data-state="blank"] {
-  background: transparent;
-  border: 1px solid var(--border, currentColor);
-  color: var(--muted, currentColor);
-}
+.tp-state-chip[data-state="blank"] { --badge-bg: transparent; --badge-border: var(--border); }
 
 /* --- U2-2: alarm clock scale — urgent counts read bigger, never squeezed --- */
 .tp-display-center .tp-clock[data-state="overtime"],
@@ -884,24 +799,9 @@ body[data-editable="1"] .b-topbar-board::after {
 .b-cd-label { font-size: clamp(.9rem, 2vh, 1.7rem); }
 .b-next-meta { font-size: clamp(.8rem, 1.9vh, 1.5rem); }
 .b-bar-label { font-size: clamp(.8rem, 1.7vh, 1.4rem); }
-.b-bar-scale { font-size: clamp(.8rem, 1.7vh, 1.4rem); }
-.b-share-code { font-size: clamp(.8rem, 1.7vh, 1.4rem); }
-.b-sched { font-size: clamp(.9rem, 2vh, 1.7rem); }
 .b-msg { font-size: clamp(1rem, 2.4vh, 2rem); }
 .b-msg-empty { font-size: clamp(.85rem, 1.8vh, 1.4rem); }
 
-/* Day/cue progress: crisp track (radius, not 999px capsule smear), matching
-   fill corner; board.js rounds the fill fraction so subpixel antialiasing
-   stops smearing the edge. */
-.b-bar { height: .8rem; border-radius: .25rem; }
-.b-bar-fill {
-  background: var(--tp-accent, #7C3AED);
-  border-start-end-radius: .18rem;
-  border-end-end-radius: .18rem;
-  /* No transition on the fill: board.js ticks ~10 Hz and a lagging animated
-     edge is what read as the "blurry" day bar — discrete stepped updates keep
-     the edge pinned to the true fraction. */
-}
 /* Countdown urgency on the wallboard widget: same pulse language as the
    stage readout (color/shape carry it; pulse is enhancement only). */
 .b-clock[data-state="overtime"],
@@ -936,11 +836,9 @@ body[data-editing] .b-overlap {
   .tp-state-chip { display: none !important; }
 }
 
-/* Reduced-motion partners for every animation added in this block. */
+/* Reduced motion: the operator's editor calms down; the display pulse does
+   not (displays always animate — AGENTS.md). */
 @media (prefers-reduced-motion: reduce) {
-  .b-clock[data-state="overtime"],
-  .b-clock[data-state="alert2"] { animation: none !important; }
-  .b-bar-fill { transition: none; }
   body[data-editing] .b-overlap { animation: none; }
 }
 
@@ -1011,11 +909,6 @@ tr.tp-row-active .tp-cue-pos { color: var(--accent-text, var(--accent-2, var(--a
 /* --- current-cue rail: rate row must not wrap in the narrow column ------- */
 .tp-now .tp-rate { align-items: center; }
 .tp-now .tp-rate > .label, .tp-now .tp-rate .readout { white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* --- B1: cue inspector modal (single dialog, one-col grid on phones) ---- */
-.tp-inspector { border: 1px solid var(--border, currentColor); padding: 1rem; max-width: 30rem; }
-.tp-inspector::backdrop { background: rgba(0,0,0,.55); }
-.tp-inspector h2.panel-header { margin: -1rem -1rem .75rem; padding: .6rem 1rem; }
-@media (max-width: 640px) { .tp-inspector { max-width: 92vw; } }
 
 /* --- B2: drag-to-reorder ------------------------------------------------ */
 .tp-cue-pos { touch-action: none; cursor: grab; }
@@ -1037,49 +930,24 @@ body.tp-drag-body, body.tp-drag-body * { cursor: grabbing !important; }
 }
 .tp-cuelist-wrap { position: relative; }
 
-/* ---------------------------------------------------------------------------
-   Screens gallery (GET /screens/:ident) + waiting room + editor modal
-   (ftl-themes component vocabulary; previews map the 12-col board grid).
-   -------------------------------------------------------------------------- */
-.tp-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--space-m, 1rem); }
-.tp-gal-card { padding: .6rem .8rem; display: flex; flex-direction: column; gap: .4rem; background: var(--surface, transparent); border: 1px solid var(--border, transparent); border-radius: var(--radius, .5rem); }
-.tp-gal-head { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-.tp-gal-prev { position: relative; aspect-ratio: 16 / 9; background: #0a0a12; border: 1px solid var(--border, #26263a); border-radius: var(--radius, .4rem); overflow: hidden; }
-.tp-gal-w { position: absolute; display: grid; place-items: center; font-size: .52rem; line-height: 1; color: rgba(255,255,255,.85); background: rgba(124,58,237,.24); border: 1px solid rgba(124,58,237,.65); border-radius: .2rem; overflow: hidden; }
-.tp-gal-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #666; font-size: .62rem; }
-.tp-gal-info { display: flex; align-items: baseline; gap: .5rem; min-width: 0; }
-.tp-gal-info .mono { font-size: .95rem; }
-.tp-gal-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, inherit); font-size: .8rem; }
-.tp-gal-pct { height: 4px; border-radius: 2px; background: var(--hairline, #26263a); overflow: hidden; }
-.tp-gal-pct i { display: block; height: 100%; background: var(--accent, #7C3AED); }
-.tp-gal-ctr { flex-wrap: wrap; }
-.tp-gal-ctr .select { max-width: 8.5rem; }
-.tp-wait-row { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-
-/* Maximised layout-editor modal (iframe of /d/?view=board&edit=1&preview=1) */
-.tp-screen-edit { width: min(96vw, 1600px); padding: 0; border-radius: var(--radius, .5rem); }
-/* The editor previews what the DISPLAY shows: a 16:9 surface, letterboxed —
-   not an arbitrary tall panel that looks nothing like the room. */
-.tp-screen-edit iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; display: block; background: #000; }
-.tp-screen-edit .tp-modal-bar { display: flex; align-items: center; gap: .7rem; padding: .45rem .8rem; border-block-end: 1px solid var(--border, transparent); }
-.tp-screen-edit .tp-modal-bar .field-hint { flex: 1 1 auto; }
 
 
-/* Tile align affordances in compose mode (board editor) */
-.b-w-align { background: none; border: none; color: inherit; cursor: pointer; font-size: .8rem; padding: 0 .15rem; }
 
-/* Orphaned-display waiting overlay (display.html + variants + board):
-   full-screen logo + "waiting for connection…", body[data-waiting] driven
-   exactly like the blackout pattern. */
-.tp-waiting {
-  position: fixed; inset: 0; z-index: 70;
-  display: none; place-items: center; align-content: center; gap: 2.5vh;
-  background: #000; text-align: center;
+/* Display splashes (waiting room, READY, box pairing) are ftl .splash on a
+   black stage with our logo as the art. The stage is black on every theme,
+   so the ink is fixed light too (a light theme's --text would vanish). */
+.tp-display .splash {
+  --splash-bg: #000; --splash-fg: #f2f2f2; --splash-message-fg: #a0a0ac; --splash-title-fg: #a0a0ac;
+  --readout-fg: #f2f2f2;
+  --splash-art: url("/img/timerpi.svg") center / contain no-repeat;
+  --splash-art-mask: none; --splash-art-radius: 0; --splash-art-motion: none;
+  --splash-art-size: clamp(6rem, 18vh, 12rem); --splash-gap: 2.5vh;
+  --splash-title-size: clamp(1.2rem, 4.2vh, 2.6rem); --splash-title-tracking: .28em;
 }
-body[data-waiting] .tp-waiting { display: grid; }
-.tp-waiting img { width: clamp(6rem, 18vh, 12rem); height: auto; }
-.tp-waiting h2 { font-size: clamp(1.2rem, 4.2vh, 2.6rem); letter-spacing: .28em; color: var(--muted, #99a); }
-.tp-waiting p { max-width: 46ch; }
+.tp-display .splash-message { max-width: 46ch; font-size: clamp(1rem, 2.6vh, 2rem); }
+/* The waiting room shows purely by body[data-waiting] (waiting.js). */
+.tp-waiting { display: none; }
+body[data-waiting] .tp-waiting { display: flex; }
 
 /* --------------------------------------------------------------------------
    THEME AUDIT FIXES (2026-10-05, 13-theme browser critic pass). No theme
@@ -1118,21 +986,46 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
    ftl tokens only; displays ALWAYS animate (owner: prefers-reduced-motion
    is honored on audience phones only, never on display pages). */
 
+/* Audience tiles are painted in place by audtiles.js: the title sits at
+   the top, the body fills the rest. Positions move by transform, so every
+   change animates (2026-10-07 audience notes). */
+.b-js-poll, .b-js-qa, .b-js-cloud { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.b-aud-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+[data-aud-mode="bars"] > .b-aud-body { justify-content: center; }
 .b-poll-q { font-size: clamp(1rem, 2.2vw, 1.7rem); font-weight: 600; overflow-wrap: anywhere; }
 .b-poll-meta { color: var(--muted, #9a9aa8); font-size: .9em; margin: .2rem 0 .6rem; }
 .b-poll-opt { margin-bottom: .55rem; }
 .b-poll-opt-head { display: flex; justify-content: space-between; gap: .8rem; font-size: .95em; }
 .b-poll-opt.is-correct .b-poll-opt-head { color: var(--success, #22C55E); font-weight: 600; }
-/* U17: tallies are ftl <progress class="progress">, the spotlight ftl
-   .alert, the wall ftl .list, cloud words ftl .badge — sizing only here. */
 .b-poll-bar { margin-top: .25rem; --progress-height: .55rem; }
 .b-poll-opt.is-correct .b-poll-bar { --progress-fill: var(--success); }
+.b-poll-num { font-variant-numeric: tabular-nums; }
+.b-poll-reveal { animation: b-poll-reveal .6s ease-out both; }
+@keyframes b-poll-reveal { from { opacity: .35; transform: translateX(-.6rem); } to { opacity: 1; transform: none; } }
 
-.b-qa .b-poll-q { font-size: clamp(1.1rem, 2.6vw, 2rem); }
+/* Word cloud: absolute words around the centre, no badges. */
+.b-cloud { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.b-cloud-word { position: absolute; left: 50%; top: 50%; white-space: nowrap; line-height: 1; font-weight: 700;
+  font-size: 100px; transform-origin: 0 0; opacity: 0; color: var(--text); will-change: transform;
+  transition: opacity .9s ease-out, color .6s; }
+.b-cloud-word[data-tone="1"] { color: var(--accent); }
+.b-cloud-word[data-tone="2"] { color: var(--muted, var(--text)); }
+.b-cloud-word.is-top { color: var(--accent); }
 
-.b-cloud { display: flex; flex-wrap: wrap; gap: .5rem; align-content: flex-start; }
-.b-cloud-tile { padding: .25rem .7rem; overflow-wrap: anywhere; white-space: normal; }
-.b-cloud-tile.is-top { --badge-fg: var(--accent-text, var(--accent)); outline: 1px solid var(--accent); }
+/* Q&A / ideas wall: cards stacked by transform; the spotlight is a
+   thicker border; an answered card goes green, then fades. */
+.b-qa-wall { position: relative; flex: 1; min-height: 0; margin: 0; padding: 0; list-style: none; overflow: hidden; row-gap: .6rem;
+  --list-border-width: 0; --list-bg: transparent; } /* the cards carry the borders */
+.b-qa-item { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: .8rem; align-items: baseline;
+  font-size: clamp(.95rem, 1.8vw, 1.4rem); padding: .5em .8em; border: 2px solid var(--border);
+  border-radius: var(--radius, .5rem); background: var(--surface-2, var(--surface));
+  transition: transform .8s cubic-bezier(.2, .8, .2, 1), opacity 1s ease, border-color .4s, background-color .4s; }
+.b-qa-item.is-spot { border-width: 6px; border-color: var(--accent); }
+.b-qa-item.is-answered { border-color: var(--success); background: color-mix(in srgb, var(--success) 18%, var(--surface-2, var(--surface))); }
+.b-qa-item.is-leaving { opacity: 0 !important; }
+.b-qa-votes { min-width: 3.2em; color: var(--muted, #9a9aa8); font-size: .85em; font-variant-numeric: tabular-nums; }
+.b-qa-text { overflow-wrap: anywhere; }
+.b-aud-empty { margin: auto; text-align: center; }
 
 .b-w-map .b-w-body, .b-w-joinqr .b-w-body { display: flex; flex-direction: column;
   align-items: center; justify-content: center; height: 100%; }
@@ -1143,16 +1036,6 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
   text-align: center; overflow-wrap: anywhere; }
 
 /* Tile entrance/exit — the operator picks the mode per tile (anim/animMS). */
-/* Q&A / ideas wall + spotlight (PRODUCT A7). */
-.b-qa-spot { margin: .4rem 0 .8rem; }
-.b-qa-spot-text { font-size: clamp(1.2rem, 3vw, 2.4rem); font-weight: 600; overflow-wrap: anywhere; }
-.b-qa-wall { margin: 0; }
-.b-qa-item { display: flex; gap: .8rem; align-items: baseline; font-size: clamp(.95rem, 1.8vw, 1.4rem); }
-.b-qa-item.is-answered { opacity: .55; }
-.b-qa-item.is-answered .b-qa-text { text-decoration: line-through; text-decoration-thickness: 1px; }
-.b-qa-votes { min-width: 3.2em; color: var(--muted, #9a9aa8); font-size: .85em; }
-.b-qa-text { overflow-wrap: anywhere; }
-.b-poll-bar i { transition: width .6s ease-out; }
 .b-js-poll, .b-js-qa, .b-js-cloud { --b-anim-ms: 400ms; }
 .b-anim-in-fade { animation: b-anim-fade var(--b-anim-ms) ease-out; }
 .b-anim-out-fade { animation: b-anim-fade var(--b-anim-ms) ease-in reverse forwards; }
@@ -1167,47 +1050,25 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 @keyframes b-anim-pop-out { from { opacity: 1; } to { opacity: 0; transform: scale(.86); } }
 
 /* ---------------------------------------------------------------------------
-   PLAN nav pass — Change Theme dropdown + brand link + appbar cluster. */
+   PLAN nav pass — brand link + appbar cluster. */
 a.nav-brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
 /* Logo sizing lives here (owner: no duplicated width/height attrs) —
-   the appbar logo matches the bar buttons' height; the home hero's is 3x. */
+   the appbar logo matches the bar buttons' height. */
 a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
-.tp-home-logo img { width: 84px; height: 84px; }
-.tp-theme-menu { position: relative; }
-.tp-theme-menu summary { list-style: none; display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
-.tp-theme-menu summary::-webkit-details-marker { display: none; }
-.tp-theme-menu[open] summary { color: var(--accent, #7C3AED); }
-.tp-theme-pop { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 60;
-  display: flex; flex-direction: column; gap: .35rem; padding: .7rem .8rem;
-  background: var(--surface, #15151d); border: 1px solid var(--border, #333);
-  border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); min-width: 13rem; }
 .app-bar .nav-item { display: inline-flex; align-items: center; gap: .35rem; }
 
 /* ---------------------------------------------------------------------------
    PLAN §11.2 capture modal + nav polish (owner feedback round). */
-.tp-home-logo { display: inline-block; text-align: center; }
-.tp-home-hero { text-align: center; }
-.tp-home-hero .tp-brand { display: inline-block; margin: 0 auto; }
 .tp-ready-id { font-size: 1.1rem; margin: .6rem 0 .2rem; }
+.tp-dlg-msg { margin: 0 0 .6rem; overflow-wrap: anywhere; }
 .tp-ready-name { background: var(--accent, #7C3AED); color: #fff;
   padding: .15rem .6rem; border-radius: 6px; letter-spacing: .06em; }
-.tp-capture { min-width: min(26rem, 92vw); }
-.tp-capture .tp-modal-bar { display: flex; align-items: baseline; gap: .8rem; margin-bottom: .6rem; }
-.tp-dlg-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
-  background: rgb(0 0 0 / .55); }
-.tp-dlg { width: min(24rem, 92vw); display: flex; flex-direction: column; gap: .6rem;
-  background: var(--surface, #15151d); color: var(--text, #eee);
-  border: 1px solid var(--border, #333); border-radius: 10px; padding: 1rem 1.1rem; }
-.tp-dlg p { margin: 0; overflow-wrap: anywhere; }
-.tp-dlg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .3rem; }
 
 /* ---------------------------------------------------------------------------
-   Layout-editor feel round (owner): drag ghost + template row. */
-.b-ghost { position: absolute; z-index: 5; border: 2px dashed var(--accent, #7C3AED);
-  background: color-mix(in srgb, var(--accent, #7C3AED) 14%, transparent);
-  border-radius: 6px; pointer-events: none; }
-.b-palette-list { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 60rem; }
-.b-palette-list button { flex: 0 0 auto; }
+   Layout-editor feel round (owner): template row. The drag ghost is ftl's
+   .widget-placeholder, placed on the target cells. */
+.b-palette-list { max-width: 60rem; }
+.widget-placeholder { pointer-events: none; }
 
 /* --- Running order table (STATUS U39–U43) -------------------------------- */
 .tp-cuetable { font-size: .82rem; }
@@ -1215,32 +1076,27 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .tp-cuetable th { font-size: .7rem; letter-spacing: .03em; }
 .tp-cuetable .tp-cue-title { min-width: 6.5rem; }
 .tp-cuetable .tp-cue-notes { color: var(--muted); font-size: inherit; }
-.tp-cuetable .tp-clip { display: block; max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tp-cuetable .tp-cue-notes .tp-clip { max-width: 4rem; }
+.tp-cuetable .text-truncate { display: block; max-width: 5.5rem; }
+.tp-cuetable .tp-cue-notes .text-truncate { max-width: 4rem; }
 .tp-cuetable .tp-cue-rowbtns .btn { padding-inline: .2rem; }
 .tp-cuetable .tp-cue-rowbtns .btn-go { padding-inline: .45rem; }
 
 .tp-cuetable :is(.tp-cue-timer, .tp-cue-atzero, .tp-cue-kind) { white-space: nowrap; }
 .tp-cuetable :is(.tp-cue-alert1, .tp-cue-alert2) { white-space: nowrap; }
-.tp-cuetable td[data-edit] { cursor: text; }
-.tp-cuetable td[data-edit]:is(.tp-cue-kind, .tp-cue-timer, .tp-cue-atzero) { cursor: pointer; }
 /* The drag handle (U40): the grip and number together. */
 .tp-cue-pos .tp-grip { margin-inline-end: .3rem; opacity: .55; }
 .tp-cue-pos:hover .tp-grip { opacity: 1; }
-/* The add row (U39): a quiet footer with the same columns. */
-.tp-cue-add td { padding-block: .4rem; border-top: 1px solid var(--hairline, var(--border)); background: var(--surface-2, transparent); }
-.tp-cue-add :is(.input, .select) { width: 100%; min-width: 0; }
-/* Compact add-row controls: they set the column widths, and the whole
-   table should fit a 1440 px screen next to the Current cue pane. */
-.tp-cue-add :is(.input, .select) { padding-inline: .3rem; font-size: .78rem; }
-.tp-cue-add .select { padding-inline: .25rem .95rem; background-position: right .2rem center; font-size: .74rem; }
-.tp-cue-add .tp-cue-kind .select { width: 6.2em; }
-.tp-cue-add .tp-cue-timer .select { width: 7.4em; }
-.tp-cue-add .tp-cue-atzero .select { width: 6.6em; }
-.tp-cue-add .tp-cue-dur .input { width: 4.2em; }
-.tp-cue-add .tp-cue-title .input { width: 100%; min-width: 6.5em; }
-.tp-cue-add .tp-cue-who .input { width: 100%; min-width: 5em; }
-.tp-cue-add .tp-cue-notes .input { width: 100%; min-width: 4em; }
+/* The add row (U39) is an ftl tr.is-editing; same height as the cue rows
+   (owner: GO-button height). */
+.tp-cuetable tfoot > tr { height: 3rem; }
+/* Compact add-row controls (beat ftl's editing-cell padding): they set the
+   column widths, and the table must fit 1440 px beside the Current cue. */
+#cuelist tfoot td > :is(.input, .select) { padding-inline: .3rem; font-size: .78rem; }
+#cuelist tfoot td > .select { padding-inline-end: .95rem; background-position: right .2rem center; font-size: .74rem; }
+#cuelist tfoot .tp-cue-kind .select { width: 6.2em; }
+#cuelist tfoot .tp-cue-timer .select { width: 7.4em; }
+#cuelist tfoot .tp-cue-atzero .select { width: 6.6em; }
+#cuelist tfoot .tp-cue-dur .input { width: 4.2em; }
 .tp-alert-field { display: flex; align-items: center; gap: .25rem; }
 .tp-alert-field .input { width: 3.6em; }
 /* Alert colour dots (U30): a swatch the operator clicks to change. */
@@ -1251,10 +1107,19 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
   padding: 0; cursor: pointer;
 }
 button.tp-alert-dot { inline-size: 1.1rem; block-size: 1.1rem; margin: 0; }
-.tp-color-pop { padding: .6rem; }
 .tp-swatches { flex-wrap: wrap; max-width: 15rem; }
 .tp-swatch-custom.is-selected { outline: 2px solid var(--text); outline-offset: 2px; }
 /* Breaks wear their own accent (U43): sessions keep the theme accent. */
 .tp-cuetable tr.tp-row-break { --tp-row-accent: var(--accent-2, var(--warning)); background: color-mix(in srgb, var(--tp-row-accent) 7%, transparent); }
 .tp-cuetable tr.tp-row-break > td:first-child { box-shadow: inset 3px 0 0 var(--tp-row-accent); }
 .tp-badge-break { --badge-bg: color-mix(in srgb, var(--accent-2, var(--warning)) 22%, var(--surface)); --badge-fg: var(--accent-2, var(--warning-text, var(--warning))); }
+
+/* Flash (2026-10-07): the operator's Flash blinks presenter timers; an
+   alert set to flash blinks the timer while it is on. */
+body.b-flash .b-js-clock, .b-js-clock.is-flash { animation: b-blink 1s steps(1) infinite; }
+@keyframes b-blink { 50% { opacity: .12; } }
+
+/* Edit modal: the row colour picker spans the dialog. */
+.tp-insp-rowcolor .swatches { justify-content: space-between; flex-wrap: nowrap; }
+.tp-insp-rowcolor .swatches > * { flex-shrink: 0; }
+.tp-insp-flash { align-self: end; }

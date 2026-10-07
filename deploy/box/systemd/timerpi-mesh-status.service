@@ -1,0 +1,7 @@
+[Unit]
+Description=TimerPi venue mesh status for the network page
+After=timerpi-mesh.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/timerpi/bin/timerpi mesh status

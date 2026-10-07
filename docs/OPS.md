@@ -196,3 +196,61 @@ Access is per event, plus one box password for the box's own settings:
 - **Lost supervisor password:** stop the service and clear it with
   `sqlite3 /var/lib/timerpi/timerpi.db "UPDATE events SET super_hash='' WHERE code='<CODE>';"`.
   The event then admits anyone holding its code until a new password is set.
+
+## 8. Cloud server (VENUE-CLOUD §10)
+
+Unprivileged LXC container, Debian Trixie, x86-64.
+
+1. Build on Trixie (or in a Trixie container): `make build-amd64 VERSION=3.0.0`.
+2. On the container: `adduser --system --group timerpi`, copy `bin/timerpi-amd64`
+   to `/opt/timerpi/bin/timerpi`, the ftl-themes tree to `/opt/timerpi/third_party/ftl-themes`,
+   `deploy/cloud/timerpi.service` to `/etc/systemd/system/`, then
+   `systemctl enable --now timerpi`. It listens on port 8080 with
+   `TIMERPI_ROLE=cloud` (no mesh, mDNS, HDMI or OSC).
+3. Install Caddy, put `deploy/cloud/Caddyfile` in `/etc/caddy/Caddyfile` with the
+   public name, `systemctl reload caddy`. Caddy gets the certificate and passes `/ws`.
+4. Set `allowed_hosts` in `/var/lib/timerpi/config.json` to the public name; restart.
+5. `curl -s https://<name>/health` → `"role":"cloud"`.
+6. Before the first show, run the load harness against it (`TP_LOAD=1 go test ./ws -run Load`).
+
+## 9. Releases and boot-time updates (VENUE-CLOUD §14)
+
+- **Release key, once:** `go run ./tools/release keygen -key ~/timerpi-release.key`.
+  Keep the private key off the repo and the boxes. Commit `update/release.pub`:
+  builds without it never update.
+- **Make a release:** `make release VERSION=3.0.1 RELEASE_KEY=~/timerpi-release.key`
+  → `bin/timerpi-arm64`, `bin/timerpi-amd64` and their `.manifest.json`.
+- **Publish to boxes:** on the cloud, copy `bin/timerpi-arm64` and
+  `bin/timerpi-arm64.manifest.json` to `/var/lib/timerpi/releases/arm64/timerpi`
+  and `…/timerpi.manifest.json`. Set `cloud_url` (e.g. `https://timer.example.com`)
+  in each box's `config.json` (or `TIMERPI_CLOUD_URL`).
+- **What a box does:** for 5 minutes after the machine boots it asks the cloud and
+  every TimerPi on the mesh for a newer signed build, installs the newest, keeps
+  the old one as `bin/timerpi.prev` and restarts. Then it doesn't look again until
+  the next reboot. It never swaps while a timer runs.
+- **Rollback:** a new build that fails to start twice is replaced by `.prev`
+  on the third start (journal: "restored the previous one"). A build that has
+  served for a minute is kept.
+- A box installed with a signed build (manifest beside the binary) serves it to
+  other boxes, so a venue without internet updates from one box.
+- **Missed the boot window?** Open the box's `/settings`: the SOFTWARE panel
+  offers **UPDATE to x.y.z** when a newer build is reachable. It installs and
+  restarts at once (not while a timer runs).
+
+## 10. Venue boxes and the cloud (VENUE-CLOUD §3–§8a)
+
+- **Install a box** with the cloud's address: `install-pi.sh --cloud https://timer.example.com`
+  (sets `cloud_url`). Without it the box works offline only (no audience).
+- **The box's screen:** the kiosk opens `http://localhost/d/box`: the box's name and a
+  6-digit code until it is paired, then its screen.
+- **Pair a box:** on the event page (cloud, or `timerpi.local` at the venue), **Pair a box**:
+  type the code, pick the room, display type, layout and mounting. The first box at a venue
+  copies the event from the cloud and becomes the main box; the others follow it.
+- **Event end:** set **Event ends** in Event settings. Four hours later (never while a timer
+  runs) screens and boxes are released; the main box sends the final copy to the cloud.
+- **Link status:** the cloud's event page says when the event is running at the venue. With
+  the link down, phones see "Audience paused" and remote changes pause; the venue carries on.
+- **Servers with many events** (the cloud, dev, tests) run with `TIMERPI_ROLE=cloud`; a box
+  belongs to one event at a time and refuses to create a second.
+- **Lost track of a box:** its pairing is the `box.pairing` setting in its database; clearing
+  it (`DELETE FROM settings WHERE key='box.pairing'`, then restart) makes it show a code again.

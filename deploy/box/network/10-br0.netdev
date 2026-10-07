@@ -1,0 +1,7 @@
+# One Layer-2 segment: the mesh plus the venue LAN on eth0 (when wired).
+[NetDev]
+Name=br0
+Kind=bridge
+
+[Bridge]
+STP=no

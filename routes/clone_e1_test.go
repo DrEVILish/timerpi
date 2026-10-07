@@ -128,7 +128,7 @@ func TestCloneFormShipsE1(t *testing.T) {
 func TestAddRowShipsU39(t *testing.T) {
 	ts := newAPITest(t)
 	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	for _, sub := range []string{`<form id="tp-add-form"`, `<tfoot class="tp-cue-add">`} {
+	for _, sub := range []string{`<form id="tp-add-form"`, `<tr class="is-editing">`} {
 		if !strings.Contains(string(body), sub) {
 			t.Errorf("dashboard missing %q", sub)
 		}

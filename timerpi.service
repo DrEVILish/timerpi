@@ -50,8 +50,10 @@ PrivateTmp=yes
 # the appliance.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 # Only the socket privilege this appliance actually uses port 80 with.
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+# CAP_SYS_TIME: a box without a set clock takes the time from its primary
+# or the Event Technician's browser (VENUE-CLOUD §5).
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_TIME
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SYS_TIME
 # The timer renderer (drm/) may later need /dev/dri and /dev/fb devices —
 # they remain reachable for root; do NOT add DevicePolicy=closed lightly.
 Restart=always

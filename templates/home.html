@@ -32,7 +32,7 @@
   <div class="tp-page stack is-gap-l">
     <section class="panel" id="recent-panel" hidden>
       <div class="panel-header">Recent on this device</div>
-      <ul class="tp-recent" id="recent-list"></ul>
+      <ul class="list" id="recent-list"></ul>
     </section>
 
     <section class="tp-hero stack is-gap-s">
@@ -40,7 +40,7 @@
       <p class="text-muted">Session timers, walk-in signage and live audience polls for every room — from one box on your network.</p>
     </section>
 
-    <div class="tp-doors">
+    <div class="grid" style="--grid-min: 18rem">
       <section class="panel tp-door" id="door-join">
         <div class="panel-header">Join event</div>
         <form id="join-form" class="stack is-gap-s" autocomplete="off">
@@ -48,7 +48,7 @@
             <label class="label" for="join-code">Event code</label>
             <input class="input input-lg mono tp-code-input" id="join-code" placeholder="XXXX-XXXX"
                    maxlength="9" spellcheck="false" autocapitalize="characters" required>
-            <span class="field-hint">Moderators and the SuperOperator start here. You'll pick your room next.</span>
+            <span class="field-hint">Moderators and the Event Technician start here. You'll pick your room next.</span>
           </div>
           <button class="btn btn-primary tp-btn-lg" type="submit">Continue</button>
           <p class="field-error" id="join-error" role="alert" hidden></p>
@@ -63,9 +63,9 @@
             <input class="input" id="ev-name" placeholder="Conf 2026" maxlength="80" required>
           </div>
           <div class="field">
-            <label class="label" for="ev-pw">Supervisor password</label>
+            <label class="label" for="ev-pw">Event Technician Password</label>
             <input class="input" id="ev-pw" type="password" minlength="6" autocomplete="new-password" required>
-            <span class="field-hint">You'll be the SuperOperator: full control of every room. Keep this password safe.</span>
+            <span class="field-hint">You'll be the Event Technician: full control of every room. Keep this password safe.</span>
           </div>
           <div class="field">
             <label class="label" for="ev-pw2">Repeat password</label>

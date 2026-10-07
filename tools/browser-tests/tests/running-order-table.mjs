@@ -57,6 +57,17 @@ export async function run(t) {
   t.check(`the add row keeps typing and focus through updates (${kept.v})`, kept.n === 'label' && kept.v === 'Half typed');
   await pg.fill(f('label'), '');
 
+  // Inline cells are ftl editable cells; a bad value on Enter keeps the
+  // editor open with aria-invalid, Escape reverts.
+  t.check('cells are td.is-editable', (await pg.$$('#cuelist tbody tr[data-pos="1"] td.is-editable')).length === 9);
+  await pg.dblclick('#cuelist tbody tr[data-pos="1"] td.tp-cue-dur');
+  await pg.keyboard.press('Control+a');
+  await pg.keyboard.type('zz');
+  await pg.keyboard.press('Enter');
+  t.check('a bad duration stays in the editor, marked invalid',
+    !!(await pg.$('#cuelist tbody tr[data-pos="1"] td.tp-cue-dur.is-editing > input[aria-invalid="true"]')));
+  await pg.keyboard.press('Escape');
+  t.check('Escape closes the editor', !(await pg.$('#cuelist tbody td.is-editing')));
   // Inline cells: a select and an alert.
   await pg.dblclick('#cuelist tbody tr[data-pos="1"] td.tp-cue-timer');
   await pg.selectOption('#cuelist tbody tr[data-pos="1"] td.tp-cue-timer select', 'CLOCK');
@@ -65,6 +76,8 @@ export async function run(t) {
   await pg.keyboard.press('Control+a');
   await pg.keyboard.type('2:00');
   await pg.keyboard.press('Enter');
+  await pg.waitForSelector('#cuelist tbody tr[data-pos="1"] td.tp-cue-alert2.is-saved', { timeout: 2000 }).catch(() => {});
+  t.check('the saved cell flashes .is-saved', !!(await pg.$('#cuelist tbody tr[data-pos="1"] td.tp-cue-alert2.is-saved')));
   await pg.waitForTimeout(700);
   // Row alert dot: pick a colour.
   await pg.click('#cuelist tbody tr[data-pos="1"] td.tp-cue-alert2 [data-color]');

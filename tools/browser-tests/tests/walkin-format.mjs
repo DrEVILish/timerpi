@@ -1,6 +1,6 @@
 // STATUS U3 + U4: the room walk-in shows the schedule as
 // "hh:mm  Title - Speaker" (24 h, no duration) and a Current/Next block
-// with Start Time, Duration and Speaker.
+// with Start Time, Duration and Speaker (an ftl dl.props of key/value).
 export const name = 'room walk-in schedule and current/next format';
 
 export async function run(t) {
@@ -27,8 +27,8 @@ export async function run(t) {
     lines[0] === '09:00 Keynote - Ada Lovelace' && lines[1] === '09:30 Coffee' && lines[2] === '09:45 Panel - Grace Hopper');
   const now = (await tv.textContent('.b-js-nn-now')).replace(/\s+/g, ' ').trim();
   const next = (await tv.textContent('.b-js-nn-next')).replace(/\s+/g, ' ').trim();
-  t.check(`current: "${now}"`, now === 'Current Session: Keynote Start Time: 09:00 Duration: 30 min Speaker: Ada Lovelace');
-  t.check(`next: "${next}"`, next === 'Next Session: Coffee Start Time: 09:30 Duration: 15 min');
+  t.check(`current: "${now}"`, now === 'Current Session: Keynote Start Time 09:00 Duration 30 min Speaker Ada Lovelace');
+  t.check(`next: "${next}"`, next === 'Next Session: Coffee Start Time 09:30 Duration 15 min');
   if (process.env.SHOTS) await tv.screenshot({ path: `${process.env.SHOTS}/walkin-room.png` });
   const title = await tv.textContent('.b-js-showtitle');
   t.check(`title "${title}"`, title.trim() === 'Room: Stark');

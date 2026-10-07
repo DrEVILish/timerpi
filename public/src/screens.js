@@ -27,6 +27,7 @@ export function initScreens() {
   setInterval(pull, 3000);
   initCapture();
   initEditor();
+  initPresets();
 }
 
 export async function pull() {
@@ -167,7 +168,7 @@ function card(s) {
       apply(() => post('/screens/forget', { name: s.name }), 'Screen forgotten');
     },
   });
-  return el('article', { class: `panel tp-scr${s.connected ? ' is-live' : ''}` }, forget, head, preview(s), now, fields, actions);
+  return el('article', { class: `panel stack is-gap-s tp-scr${s.connected ? ' is-live' : ''}` }, forget, head, preview(s), now, fields, actions);
 }
 
 function renderScreens() {
@@ -176,7 +177,9 @@ function renderScreens() {
   const live = st.screens.filter((s) => s.connected).length;
   document.getElementById('tp-gal-count').textContent = `${st.screens.length} · ${live} live`;
   if (!st.screens.length) {
-    host.replaceChildren(el('p', { class: 'text-muted', text: 'No screens in this room yet. Open /d/ on a TV, then set it up from “Waiting to be set up”.' }));
+    host.replaceChildren(el('div', { class: 'empty-state' },
+      el('span', { class: 'empty-state-title', text: 'No screens in this room yet.' }),
+      el('span', { class: 'empty-state-hint', text: 'Open /d/ on a TV, then set it up from “Waiting to be set up”.' })));
     return;
   }
   host.replaceChildren(...st.screens.map(card));
@@ -190,8 +193,8 @@ function renderWaiting() {
   if (!panel || !host) return;
   panel.hidden = !st.waiting.length;
   document.getElementById('tp-waiting-count').textContent = String(st.waiting.length);
-  host.replaceChildren(...st.waiting.map((w) => el('div', { class: 'tp-wait-card' },
-    el('div', { class: 'tp-wait-name' }, el('strong', { text: w.name }), el('span', { class: 'text-muted', text: w.host || '' })),
+  host.replaceChildren(...st.waiting.map((w) => el('div', { class: 'card stack is-gap-xs' },
+    el('div', { class: 'stack is-gap-none' }, el('strong', { text: w.name }), el('span', { class: 'text-muted', text: w.host || '' })),
     el('div', { class: 'cluster is-gap-2xs' },
       el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => openCapture(w) }, 'Set up here'),
       el('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: () => api('DELETE', `/api/waiting/${w.id}`).then(pull).catch((e) => toast(e.message, 'danger')) }, 'Dismiss')))));
@@ -221,11 +224,7 @@ function fillTemplates() {
 
 function setKind(k) {
   capKind = k;
-  for (const b of document.querySelectorAll('#tp-capture-kind [data-kind]')) {
-    const on = b.dataset.kind === k;
-    b.classList.toggle('is-active', on);
-    b.setAttribute('aria-checked', String(on));
-  }
+  for (const r of document.querySelectorAll('#tp-capture-kind input[type=radio]')) r.checked = r.value === k;
   fillTemplates();
 }
 
@@ -255,15 +254,14 @@ function openCapture(w) {
 function initCapture() {
   const dlg = document.getElementById('tp-capture');
   if (!dlg) return;
-  for (const b of dlg.querySelectorAll('#tp-capture-kind [data-kind]')) {
-    b.addEventListener('click', () => {
+  for (const r of dlg.querySelectorAll('#tp-capture-kind input[type=radio]')) {
+    r.addEventListener('change', () => {
       const nameIn = document.getElementById('tp-capture-name');
       const auto = nameIn.value === nextName();
-      setKind(b.dataset.kind);
+      setKind(r.value);
       if (auto || !nameIn.value) nameIn.value = nextName();
     });
   }
-  dlg.querySelector('[data-cancel]').addEventListener('click', () => dlg.close());
   dlg.addEventListener('close', () => { busy = false; });
   dlg.querySelector('form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -322,17 +320,16 @@ async function openCopy(s) {
     const out = await api('GET', `/api/shows/${code}/layout-targets${q}`);
     for (const r of out.rooms || []) {
       if (!r.screens.length) continue;
-      const box = el('div', { class: 'tp-copy-room' }, el('strong', { text: r.name }));
+      const box = el('fieldset', { class: 'radio-group' }, el('legend', { text: r.name }));
       for (const sc of r.screens) {
-        const id = `tp-copy-${r.room}-${sc.name}`.replace(/[^A-Za-z0-9_-]/g, '_');
-        const cb = el('input', { type: 'checkbox', id, dataset: { room: r.room, name: sc.name } });
+        const cb = el('input', { type: 'checkbox', class: 'checkbox', dataset: { room: r.room, name: sc.name } });
         cb.checked = r.here && sc.name === s.name;
-        box.appendChild(el('label', { class: 'tp-copy-screen', for: id }, cb, ' ', sc.name));
+        box.appendChild(el('label', { class: 'check' }, cb, sc.name));
       }
       list.appendChild(box);
     }
   } catch (e) { toast(e.message, 'danger'); }
-  if (!list.children.length) list.appendChild(el('p', { class: 'text-muted', text: 'No other screens of this type yet.' }));
+  if (!list.children.length) list.appendChild(el('div', { class: 'empty-state' }, el('span', { class: 'empty-state-title', text: 'No other screens of this type yet.' })));
   busy = true;
   dlg.showModal();
   nameIn.select();
@@ -341,7 +338,6 @@ async function openCopy(s) {
 function initCopy() {
   const dlg = document.getElementById('tp-layout-copy');
   if (!dlg) return;
-  dlg.querySelector('[data-cancel]').addEventListener('click', () => dlg.close());
   dlg.addEventListener('close', () => { busy = false; });
   dlg.querySelector('form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -366,7 +362,6 @@ function initEditor() {
   initCopy();
   const dlg = document.getElementById('tp-screen-edit');
   const frame = document.getElementById('tp-screen-edit-frame');
-  document.getElementById('tp-screen-edit-close')?.addEventListener('click', () => dlg.close());
   dlg?.addEventListener('close', () => { frame.src = 'about:blank'; busy = false; pull(); });
 }
 
@@ -385,4 +380,58 @@ function openEditor(b) {
   shared.textContent = `Used by ${b.usedBy} screens: changes show on all of them`;
   busy = true;
   dlg.showModal();
+}
+
+/* ------------------------------------------------------------- presets --
+ * Named bundles of this room's screen settings (moved from the retired
+ * Setup tab, STATUS U29); they move between appliances as JSON files. */
+
+const presetsPath = `/api/shows/${code}/presets`;
+
+async function presetsRefresh() {
+  const host = document.getElementById('tp-presets');
+  let list;
+  try { list = (await api('GET', presetsPath)).presets || []; } catch { return; } // keep last list
+  if (!host) return;
+  if (!list.length) { host.replaceChildren(el('div', { class: 'empty-state' }, el('span', { class: 'empty-state-title', text: 'No presets saved yet.' }))); return; }
+  host.replaceChildren(el('ul', { class: 'list' }, ...list.map((pr) => el('li', { class: 'list-item' },
+    el('span', { text: pr.name }),
+    el('button', { type: 'button', class: 'btn btn-sm btn-primary push', text: 'Apply',
+      onclick: () => api('POST', `${presetsPath}/${pr.id}/apply`)
+        .then(() => toast('Preset applied to all named screens'), (e) => toast(e.message, 'danger')) }),
+    el('button', { type: 'button', class: 'btn btn-sm', text: 'Export',
+      onclick: () => { location.href = `${presetsPath}/${pr.id}/export`; } }),
+    el('button', { type: 'button', class: 'btn btn-sm btn-icon btn-ghost', text: '✕', 'aria-label': `Delete preset ${pr.name}`,
+      onclick: async () => {
+        if (!(await tpConfirm('The preset is removed for every operator of this show.', { title: 'Delete this preset?', ok: 'Delete', danger: true }))) return;
+        try { await api('DELETE', `${presetsPath}/${pr.id}`); } catch (e) { toast(e.message, 'danger'); }
+        presetsRefresh();
+      } })))));
+}
+
+function initPresets() {
+  presetsRefresh();
+  document.getElementById('tp-preset-save')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = e.target.querySelector('input[name="name"]')?.value.trim();
+    if (!name) return;
+    try {
+      await api('POST', presetsPath, { name });
+      toast(`Preset "${name}" saved`);
+      e.target.reset();
+      presetsRefresh();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
+  document.getElementById('tp-preset-import')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    let preset;
+    try { preset = JSON.parse(await file.text()); } catch { toast('not a readable JSON preset', 'danger'); return; }
+    try {
+      const j = await api('POST', `${presetsPath}/import`, preset);
+      toast(`Preset "${j.name}" imported`);
+      presetsRefresh();
+    } catch (err) { toast(err.message, 'danger'); }
+  });
 }

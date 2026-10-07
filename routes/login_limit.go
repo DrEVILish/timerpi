@@ -21,20 +21,15 @@ const (
 	loginFailsPerTarg = 60 // per target, every IP together
 )
 
-type failWin struct {
-	start time.Time
-	n     int
-}
-
 var loginFails struct {
 	sync.Mutex
-	m map[string]failWin
+	m map[string]windowCount
 }
 
-func failCount(key string, now time.Time) failWin {
+func failCount(key string, now time.Time) windowCount {
 	w := loginFails.m[key]
 	if now.Sub(w.start) > loginWindow {
-		return failWin{start: now}
+		return windowCount{start: now}
 	}
 	return w
 }
@@ -54,10 +49,7 @@ func loginAllowed(c *gin.Context, target string) bool {
 	if tW.n >= loginFailsPerTarg {
 		start = tW.start
 	}
-	wait := int(loginWindow.Seconds() - now.Sub(start).Seconds())
-	if wait < 1 {
-		wait = 1
-	}
+	wait := max(1, int(loginWindow.Seconds()-now.Sub(start).Seconds()))
 	c.Header("Retry-After", strconv.Itoa(wait))
 	c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many wrong passwords. Wait a few minutes and try again."})
 	return false
@@ -70,7 +62,7 @@ func loginResult(c *gin.Context, target string, ok bool) {
 	loginFails.Lock()
 	defer loginFails.Unlock()
 	if loginFails.m == nil || len(loginFails.m) > 50_000 {
-		loginFails.m = map[string]failWin{}
+		loginFails.m = map[string]windowCount{}
 	}
 	if ok {
 		delete(loginFails.m, ipKey)

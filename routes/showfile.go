@@ -2,8 +2,6 @@
 //
 //	GET  /api/shows/:ident/file          export one room (moderator)
 //	POST /api/events/:code/rooms/import  import a room into an event (events.go)
-//
-// Also the LAN-address probe used for absolute share/QR URLs.
 package routes
 
 import (
@@ -12,174 +10,36 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
-	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"timerpi/boards"
+	"timerpi/buildinfo"
 	"timerpi/timerpi"
 )
 
-// ------------------------------------------------------------------ wiring --
-
-// RegisterSetup mounts the wizard + QR-sheet + show-file endpoints. The
-// consolidation agent calls this once from routes.New, right after
-// registerAPI:
-//
-//	registerAPI(r, d)
-//	RegisterSetup(r, d) // ← the one line
+// RegisterSetup mounts the whole-room show file export (moderator); import
+// lives on the event (POST /api/events/:code/rooms/import, SuperOperator).
 func RegisterSetup(r gin.IRouter, d *Deps) {
 	if d == nil {
 		return
 	}
-	// Whole-room show file export (moderator); import lives on the event
-	// (POST /api/events/:code/rooms/import, SuperOperator).
 	r.GET("/api/shows/:ident/file", d.apiShowFile)
 }
 
-// ------------------------------------------------------------------- types --
-
-// -------------------------------------------------------- wizard page root --
-
-// --------------------------------------------------------------------------
-// Step a — identity: device name + hostname note.
-//
-// The system hostname + mDNS re-announce route (Agent H's
-// POST /api/network/hostname) is attempted first so the wizard gains full
-// behavior the moment it lands; until then the call falls back to the
-// config device name (config.SetDeviceName) so the wizard always works.
-
-type identityBody struct {
-	Name string `json:"name"`
-}
-
-// --------------------------------------------------------------------------
-// Step b — content: create a new show by title, create-by-import (one
-// multipart POST does show + cue application server-side), or start empty.
-
-// warmShow builds the engine (ticker seeder picks it up) and re-broadcasts.
-func (d *Deps) warmShow(id int64) {
-	if d.Engines == nil {
-		return
-	}
-	eng, gerr := d.Engines.Get(id)
-	if gerr != nil {
-		log.Printf("setup: engine warmup for show %d: %v", id, gerr)
-		return
-	}
-	if nerr := eng.Notify(); nerr != nil {
-		log.Printf("setup: notify show %d: %v", id, nerr)
-	}
-}
-
-// ---------------------------------------------------------------- fragments --
-
-// setupDBOk guards mutation endpoints on missing wiring.
-func (d *Deps) setupDBOk() bool { return d.Store != nil && d.Engines != nil }
-
-// ------------------------------------------------------ printable sheet --
-
-// ------------------------------------------------------ LAN address probe --
-
-// localAddress finds the LAN address the appliance serves on (QR-sheet
-// targets). Default-route probe first (a UDP "Dial" connects in the kernel
-// only — no packet is sent — and picks the egress interface), then an
-// RFC1918/private interface sweep, then the OS hostname, then localhost.
-// TIMERPI_LAN_ADDR overrides (exotic routers / tests).
-func localAddress() string {
-	if a := strings.TrimSpace(os.Getenv("TIMERPI_LAN_ADDR")); a != "" {
-		return a
-	}
-	if ip, ok := defaultRouteIP(); ok {
-		return ip
-	}
-	if ip := firstLANIP(); ip != "" {
-		return ip
-	}
-	if hn, err := os.Hostname(); err == nil && hn != "" {
-		return hn // best-effort: named hosts usually also answer on .local
-	}
-	return "localhost"
-}
-
-// defaultRouteIP probes the default route without emitting traffic.
-func defaultRouteIP() (string, bool) {
-	c, err := net.Dial("udp", "9.9.9.9:53") // DNS root anycast; no packets sent
-	if err != nil {
-		return "", false
-	}
-	defer c.Close()
-	addr, ok := c.LocalAddr().(*net.UDPAddr)
-	if !ok || !usefulIP(addr.IP) {
-		return "", false
-	}
-	return addr.IP.String(), true
-}
-
-// firstLANIP sweeps interfaces: first UP non-loopback IPv4 (private first).
-func firstLANIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-	var pub string
-	for _, it := range ifaces {
-		if it.Flags&net.FlagUp == 0 || it.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, aerr := it.Addrs()
-		if aerr != nil {
-			continue
-		}
-		for _, a := range addrs {
-			var ip net.IP
-			switch v := a.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			v4 := ip.To4()
-			if v4 == nil || !usefulIP(v4) {
-				continue
-			}
-			if v4.IsPrivate() || v4.IsLinkLocalUnicast() {
-				return v4.String()
-			}
-			if pub == "" {
-				pub = v4.String()
-			}
-		}
-	}
-	return pub
-}
-
-// usefulIP filters loopback/unspec/link-local v4 addresses.
-func usefulIP(ip net.IP) bool {
-	return ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() &&
-		!ip.IsLinkLocalUnicast()
-}
-
-// NOTE on link-local: appliance LANs are DHCP here (PLAN.md), so link-local
-// addresses (169.254/16, zeroconf timerpi-named) beat routing drawers; the
-// default-route probe wins over both anyway when a route exists.
-
 // ------------------------------------------------------ whole-day show file --
 
-// showFileVersion is the .timerpi.json bundle digest version.
+// .timerpi.json bundle versions: v2 is what we export, v1 still imports.
 const (
-	showFileVersionV1 = 1                 // cues+messages+schedule (importing stays supported)
-	showFileVersionV2 = 2                 // §11.9 full fidelity (polls/votes/screens/boards/presets/zone+map)
-	showFileVersion   = showFileVersionV2 // what we EXPORT today
+	showFileVersionV1 = 1 // cues+messages+schedule
+	showFileVersionV2 = 2 // §11.9 full fidelity (polls/votes/screens/boards/presets/zone+map)
 )
 
 // appVersion is the product version string (PLAN v2 "Rooms"; §11.3 phase 7).
-func appVersion() string { return "2.0" }
+func appVersion() string { return buildinfo.Version }
 
 // showFile is the whole-day export/import bundle — portable fields ONLY.
 // Cue/message DB ids and show ids are dropped on the wire (re-created on
@@ -337,23 +197,8 @@ func (d *Deps) apiShowFile(c *gin.Context) {
 	}
 	d.fillBundleExtras(id, &sf)
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`,
-		showFileFilename(show.ID, show.Title)))
+		exportName(show.Title)+".timerpi.json"))
 	c.JSON(http.StatusOK, sf)
-}
-
-// showFileSafeRe sanitizes the download name.
-var showFileSafeRe = regexp.MustCompile(`[^A-Za-z0-9._ -]+`)
-
-func showFileFilename(id int64, title string) string {
-	base := showFileSafeRe.ReplaceAllString(strings.TrimSpace(title), "_")
-	base = strings.Trim(base, " ._")
-	if base == "" {
-		base = fmt.Sprintf("show-%d", id)
-	}
-	if len(base) > 60 {
-		base = base[:60]
-	}
-	return base + ".timerpi.json"
 }
 
 // bundleBody reads the bundle bytes (multipart "file" preferred, JSON body
@@ -404,49 +249,17 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		return timerpi.Show{}, 0, err
 	}
 
-	for i := range sf.Cues {
-		sf.Cues[i].ID = 0
-		sf.Cues[i].ShowID = 0
-	}
-	if err := d.Store.ReplaceCues(show.ID, sf.Cues); err != nil {
-		// No empty room left behind in the event (BUGLOG RW31).
-		_ = d.Store.DeleteShow(show.ID)
-		return timerpi.Show{}, 0, fmt.Errorf("cues: %w", err)
-	}
-	for _, m := range sf.Messages {
-		m.ShowID = 0
-		nm, cerr := d.Store.CreateMessage(show.ID, m.Text, m.Color)
-		if cerr != nil {
-			continue
-		}
-		if m.ShownAt > 0 {
-			if err := d.Store.ShowMessage(show.ID, nm.ID, m.ShownAt); err != nil {
-				log.Printf("routes: import message shown state: %v", err)
-			}
-		}
-	}
-	// Schedule anchor + rate restore as an ARMED day: no playhead travels.
-	rt := timerpi.Runtime{
-		ShowID:     show.ID,
-		Rate:       sf.Schedule.Rate,
-		DayStartTS: sf.Schedule.DayStartTS,
-	}
-	if rt.Rate <= 0 {
-		rt.Rate = timerpi.DefaultRate
-	}
-	if err := d.Store.SaveRuntime(rt); err != nil {
-		_ = d.Store.DeleteShow(show.ID)
-		return timerpi.Show{}, 0, fmt.Errorf("runtime: %w", err)
-	}
-	if err := d.Store.TouchShow(show.ID); err != nil {
-		log.Printf("routes: import show stamp: %v", err)
-	}
-
 	// §11.9: the event's other halves ride v2 bundles — zone + map asset,
 	// interaction items with moderation state, votes, screens (re-keyed to
 	// imported boards), presets. v1 bundles simply lack the sections.
-	if sf.ManifestVersion == showFileVersionV2 {
-		boardX := map[int64]int64{}
+	v2 := sf.ManifestVersion == showFileVersionV2
+	rc := roomContent{
+		Cues: sf.Cues, Messages: sf.Messages,
+		// Schedule anchor + rate restore as an ARMED day: no playhead travels.
+		Runtime: timerpi.Runtime{Rate: sf.Schedule.Rate, DayStartTS: sf.Schedule.DayStartTS},
+	}
+	boardX := map[int64]int64{}
+	if v2 {
 		for _, b := range sf.Boards {
 			layout := string(b.Layout)
 			if layout == "" || layout == "null" {
@@ -456,6 +269,21 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 				boardX[b.ID] = nb.ID
 			}
 		}
+		rc.Polls, rc.Votes, rc.Presets = sf.Polls, sf.Votes, sf.Presets
+		for _, r := range sf.Screens {
+			rc.Screens = append(rc.Screens, eventBundleScreen{Name: r.Name, Theme: r.Theme, Room: r.Room, BoardID: r.BoardID})
+		}
+	}
+	if err := d.restoreRoom(show.ID, rc, boardX); err != nil {
+		// No empty room left behind in the event (BUGLOG RW31).
+		_ = d.Store.DeleteShow(show.ID)
+		return timerpi.Show{}, 0, err
+	}
+	if err := d.Store.TouchShow(show.ID); err != nil {
+		log.Printf("routes: import show stamp: %v", err)
+	}
+
+	if v2 {
 		assetX := map[int64]int64{}
 		for _, a := range sf.Assets {
 			data, derr := dataURLBytes(a.Data)
@@ -468,48 +296,6 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 			}
 			if na, aerr := d.Store.CreateAsset(eventID, a.Name, mime, data); aerr == nil {
 				assetX[a.ID] = na.ID
-			}
-		}
-		// Polls: export ids are the bundle's list positions (1..N, parents
-		// before children), so each child's parent re-keys inline as it
-		// lands; votes ride the same mapping afterwards.
-		pollX := map[int64]int64{}
-		for slot, p := range sf.Polls {
-			parent := int64(0)
-			if p.Parent != 0 {
-				parent = pollX[p.Parent] // parents precede children
-			}
-			np, cerr := d.Store.CreatePollRaw(timerpi.Poll{
-				ShowID: show.ID, Kind: p.Kind, Question: p.Question,
-				Options: p.Options, Correct: p.Correct, State: p.State,
-				Parent: parent, Author: p.Author, Ts: p.Ts,
-				ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove,
-			})
-			if cerr == nil {
-				pollX[int64(slot+1)] = np.ID
-			}
-		}
-		for slot, p := range sf.Polls {
-			if p.Spot > 0 && pollX[p.Spot] > 0 {
-				if err := d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot]); err != nil {
-					log.Printf("routes: import spotlight: %v", err)
-				}
-			}
-		}
-		if d.Hub != nil {
-			d.Hub.BroadcastPoll(show.ID)
-		}
-		d.restoreBundleVotes(pollX, sf.Votes)
-		for _, r := range sf.Screens {
-			if err := d.Store.SetScreenConfig(show.ID, r.Name, r.Theme, boardX[r.BoardID], r.Room); err != nil {
-				log.Printf("routes: import screen %s: %v", r.Name, err)
-			}
-		}
-		for _, pr := range sf.Presets {
-			if len(pr.Data) > 0 && string(pr.Data) != "null" {
-				if _, err := d.Store.SavePreset(show.ID, pr.Name, string(pr.Data)); err != nil {
-					log.Printf("routes: import preset: %v", err)
-				}
 			}
 		}
 		// The venue map belongs to the event: a bundle's map (or a
@@ -527,6 +313,41 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 		}
 	}
 
-	d.warmShow(show.ID)
+	d.notifyShow(show.ID)
 	return show, len(sf.Cues), nil
+}
+
+// restoreBundlePolls recreates a room's interactions (parents before
+// children, as exported), the spotlight and the votes.
+func (d *Deps) restoreBundlePolls(showID int64, polls []showFilePoll, votes []showFileVote) {
+	// Polls: export ids are the bundle's list positions (1..N, parents
+	// before children), so each child's parent re-keys inline as it
+	// lands; votes ride the same mapping afterwards.
+	pollX := map[int64]int64{}
+	for slot, p := range polls {
+		parent := int64(0)
+		if p.Parent != 0 {
+			parent = pollX[p.Parent] // parents precede children
+		}
+		np, cerr := d.Store.CreatePollRaw(timerpi.Poll{
+			ShowID: showID, Kind: p.Kind, Question: p.Question,
+			Options: p.Options, Correct: p.Correct, State: p.State,
+			Parent: parent, Author: p.Author, Ts: p.Ts,
+			ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove,
+		})
+		if cerr == nil {
+			pollX[int64(slot+1)] = np.ID
+		}
+	}
+	for slot, p := range polls {
+		if p.Spot > 0 && pollX[p.Spot] > 0 {
+			if err := d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot]); err != nil {
+				log.Printf("routes: import spotlight: %v", err)
+			}
+		}
+	}
+	if d.Hub != nil {
+		d.Hub.BroadcastPoll(showID)
+	}
+	d.restoreBundleVotes(pollX, votes)
 }

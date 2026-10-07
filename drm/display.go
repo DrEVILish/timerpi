@@ -76,13 +76,6 @@ func OpenDisplay() (Selected, error) {
 	}
 }
 
-// ClockLayoutW/H re-exports the face frame size for callers that
-// validate backend sizes.
-const (
-	ClockLayoutW = LayoutW
-	ClockLayoutH = LayoutH
-)
-
 // OffBackend is the explicit "don't touch the display" backend.
 type OffBackend struct{}
 

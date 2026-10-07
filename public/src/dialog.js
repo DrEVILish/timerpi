@@ -1,77 +1,47 @@
 /**
  * dialog.js — ftl-styled confirm/prompt replacements (PLAN: always themed
  * popups, never browser chrome). Promise-based; textContent-only (XSS
- * rule); Escape / backdrop click = cancel.
+ * rule). The ftl-themes modal (`<dialog class="modal">` + .modal-header,
+ * .btn-close, .modal-footer) — AGENTS.md: dialogs are ftl modals, always.
+ * Escape / backdrop click = cancel.
  */
+import { el } from './ui.js';
 
 function buildDialog({ title, message, fields, ok, danger }) {
   return new Promise((resolve) => {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'tp-dlg-backdrop';
-    const dlg = document.createElement('div');
-    dlg.className = 'tp-dlg';
-    dlg.setAttribute('role', 'dialog');
-    dlg.setAttribute('aria-modal', 'true');
-    if (title) dlg.appendChild(Object.assign(document.createElement('strong'), { textContent: title }));
-    if (message) {
-      const p = document.createElement('p');
-      p.textContent = message;
-      dlg.appendChild(p);
-    }
     const inputs = {};
-    for (const f of fields || []) {
-      const wrap = document.createElement('div');
-      wrap.className = 'field';
-      const lbl = document.createElement('label');
-      lbl.className = 'label';
-      lbl.textContent = f.label;
-      lbl.htmlFor = f.id;
-      const input = document.createElement('input');
-      input.className = 'input';
-      input.id = f.id;
-      input.value = f.value || '';
-      if (f.type) input.type = f.type;
-      if (f.autocomplete) input.autocomplete = f.autocomplete;
-      if (f.placeholder) input.placeholder = f.placeholder;
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-      wrap.append(lbl, input);
-      dlg.appendChild(wrap);
-      inputs[f.id] = input;
-    }
-    const row = document.createElement('div');
-    row.className = 'tp-dlg-actions';
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'btn btn-sm';
-    cancel.textContent = 'Cancel';
-    const okBtn = document.createElement('button');
-    okBtn.type = 'button';
-    okBtn.className = 'btn btn-sm ' + (danger ? 'btn-danger' : 'btn-primary');
-    okBtn.textContent = ok || 'OK';
-    row.append(cancel, okBtn);
-    dlg.appendChild(row);
-    backdrop.appendChild(dlg);
-    document.body.appendChild(backdrop);
-
-    const close = (val) => {
-      backdrop.remove();
-      document.removeEventListener('keydown', onKey, true);
-      resolve(val);
-    };
     const submit = () => {
       const vals = {};
       for (const id of Object.keys(inputs)) vals[id] = inputs[id].value.trim();
       close(Object.keys(inputs).length ? vals : true);
     };
-    const onKey = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); close(null); }
-    };
-    document.addEventListener('keydown', onKey, true);
-    cancel.onclick = () => close(null);
-    okBtn.onclick = submit;
-    backdrop.onclick = (e) => { if (e.target === backdrop) close(null); };
-    const first = Object.values(inputs)[0];
-    (first || okBtn).focus();
+    const fieldEls = (fields || []).map((f) => {
+      inputs[f.id] = el('input', {
+        class: 'input', id: f.id, type: f.type, 'aria-label': f.label ? null : f.ariaLabel, autocomplete: f.autocomplete, placeholder: f.placeholder,
+        onkeydown: (e) => { if (e.key === 'Enter') submit(); },
+      });
+      inputs[f.id].value = f.value || '';
+      return el('div', { class: 'field' }, f.label && el('label', { class: 'label', for: f.id, text: f.label }), inputs[f.id]);
+    });
+    const okBtn = el('button', { type: 'button', class: 'btn ' + (danger ? 'btn-danger' : 'btn-primary'), text: ok || 'OK', onclick: submit });
+    const dlg = el('dialog', { class: 'modal modal-sm' },
+      title && el('div', { class: 'modal-header' }, title, el('button', { type: 'button', class: 'btn-close', 'aria-label': 'Close', 'data-close': true })),
+      message ? el('p', { class: 'tp-dlg-msg', text: message }) : null,
+      fieldEls,
+      el('div', { class: 'modal-footer' }, el('button', { type: 'button', class: 'btn btn-secondary', text: 'Cancel', 'data-close': true }), okBtn));
+    document.body.appendChild(dlg);
+
+    let result = null; // Escape, Cancel, × and the backdrop all close with null
+    const close = (val) => { result = val; dlg.close(); };
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(result); });
+    // Page-level Escape handlers (e.g. leave edit mode) must not also fire.
+    dlg.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
+    dlg.addEventListener('click', (e) => { // a click on the ::backdrop targets the dialog, outside its box
+      const r = dlg.getBoundingClientRect();
+      if (e.target === dlg && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) close(null);
+    });
+    (Object.values(inputs)[0] || okBtn).autofocus = true;
+    dlg.showModal();
   });
 }
 
@@ -85,6 +55,7 @@ export function tpPrompt(message, def = '', { title = '', ok = 'OK', fields = []
     title,
     message,
     ok,
-    fields: fields.length ? fields : [{ id: 'value', label: message, value: def }],
+    // A single field is labelled by the message above it, not a second copy.
+    fields: fields.length ? fields : [{ id: 'value', ariaLabel: message, value: def }],
   });
 }

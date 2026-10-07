@@ -41,6 +41,9 @@ func audToken(secret []byte, id string) string {
 // (and setting the cookie) when the request has no valid one. ok=false
 // means the mint budget is spent; a 429 has been written.
 func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
+	if p, ok := linkedPeer(c); ok {
+		return p, true // a phone on the cloud, vouched for over the venue link
+	}
 	secret := d.Store.SessionSecret()
 	if ck, err := c.Cookie(audCookieName); err == nil {
 		if id, _, found := strings.Cut(ck, "."); found && tokenEq(ck, audToken(secret, id)) {

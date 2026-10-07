@@ -2,9 +2,15 @@
 # TimerPi — Pi installer (root, idempotent).
 #
 # Deploys built binaries, systemd units and the splash asset onto a
-# Raspberry Pi 4/5 (64-bit Raspberry Pi OS bookworm), prepares the data
-# directory, pins the HDMI mode to 1080p50 in the kernel command line and
-# (optionally) renames the host, which mDNS/avahi then publish.
+# Raspberry Pi 4/5 (64-bit Raspberry Pi OS Lite, Trixie), prepares the data
+# directory, pins the HDMI mode to 1080p50 in the kernel command line,
+# sets up the venue mesh (BATMAN-adv over the built-in Wi-Fi, bridged with
+# eth0, systemd-networkd; VENUE-CLOUD §11) and (optionally) renames the
+# host, which mDNS/avahi then publish.
+#
+# The mesh step replaces NetworkManager with systemd-networkd: run it from
+# the console or over a wired SSH session you can lose for a moment
+# (eth0 moves into br0 and takes a new DHCP lease).
 #
 # Usage (on the Pi, from the checkout, or anywhere with --src):
 #   sudo ./scripts/install-pi.sh
@@ -17,6 +23,10 @@
 #                    (default: try /boot/firmware, then /boot)
 #   --hostname NAME  set the OS hostname (and /etc/hosts); avahi (if
 #                    present) republishes <name>.local automatically
+#   --no-mesh        skip the venue mesh (networking left as it is)
+#   --cloud URL      the cloud's address (cloud_url): pairing, the event link,
+#                    updates and the audience QR go through it
+#   --country CC     Wi-Fi country (default GB)
 #   --dry-run        print every action, touch nothing
 #
 # Env overrides (for container/testing, implied by --dry-run too):
@@ -41,6 +51,9 @@ SRC=""
 BOOT_DIR_ARG=""
 HOSTNAME_ARG=""
 DRY_RUN=0
+MESH=1
+COUNTRY="GB"
+CLOUD_URL=""
 PREFIX="${PREFIX:-/}"
 
 log() { printf '%s\n' "$*"; }
@@ -63,6 +76,9 @@ while [[ $# -gt 0 ]]; do
     --boot-dir) BOOT_DIR_ARG="${2:?missing arg}"; shift 2 ;;
     --hostname) HOSTNAME_ARG="${2:?missing arg}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --no-mesh) MESH=0; shift ;;
+    --country) COUNTRY="${2:?missing arg}"; shift 2 ;;
+    --cloud) CLOUD_URL="${2:?missing arg}"; shift 2 ;;
     -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
@@ -125,9 +141,68 @@ run "ensure $UNIT_DIR"           mkdir -p "$UNIT_DIR"
 run "install timerpi.service"           install -m 0644 "$SRC/timerpi.service" "$UNIT_DIR/timerpi.service"
 run "install timerpi-splash.service"    install -m 0644 "$SRC/timerpi-splash.service" "$UNIT_DIR/timerpi-splash.service"
 
+# The signed manifest beside the binary lets other boxes update from this
+# one (boot-time updates, VENUE-CLOUD §14).
+if [[ -f "$TIMERPI_BIN.manifest.json" ]]; then
+  run "install timerpi.manifest.json" install -m 0644 "$TIMERPI_BIN.manifest.json" "$OPT_DIR/bin/timerpi.manifest.json"
+else
+  log "NOTE: no $TIMERPI_BIN.manifest.json — this box won't serve its build to others (unsigned build)"
+fi
+
 # /run/timerpi exists from boot (splash polls it before the app runs).
 run "ensure $TMPFILES_DIR"        mkdir -p "$TMPFILES_DIR"
 run "install tmpfiles.d/timerpi.conf" bash -c "printf 'D /run/timerpi 0755 root root -\n' > '$TMPFILES_DIR/timerpi.conf'"
+
+# ---- 2b. Venue mesh (BATMAN-adv, systemd-networkd) ----------------------
+MESH_SRC="$SRC/deploy/box"
+if (( MESH )); then
+  [[ -d "$MESH_SRC" ]] || die "missing $MESH_SRC (mesh config files)"
+  [[ "$COUNTRY" =~ ^[A-Za-z]{2}$ ]] || die "--country: '$COUNTRY' is not a two-letter code"
+  COUNTRY="${COUNTRY^^}"
+  if [[ "$PREFIX" == "/" ]] && command -v apt-get >/dev/null 2>&1; then
+    run "apt-get install batctl iw nftables rfkill systemd-resolved" \
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y batctl iw nftables rfkill systemd-resolved
+  fi
+  NET_DIR="$PREFIX/etc/systemd/network"
+  run "ensure $NET_DIR"                 mkdir -p "$NET_DIR"
+  for f in "$MESH_SRC"/network/*; do
+    run "install network/$(basename "$f")" install -m 0644 "$f" "$NET_DIR/$(basename "$f")"
+  done
+  for f in "$MESH_SRC"/systemd/*; do
+    run "install $(basename "$f")"      install -m 0644 "$f" "$UNIT_DIR/$(basename "$f")"
+  done
+  run "ensure udev rules dir"           mkdir -p "$PREFIX/etc/udev/rules.d"
+  run "install 90-timerpi-mesh.rules"   install -m 0644 "$MESH_SRC/90-timerpi-mesh.rules" "$PREFIX/etc/udev/rules.d/90-timerpi-mesh.rules"
+  run "ensure modules-load.d"           mkdir -p "$PREFIX/etc/modules-load.d"
+  run "install modules-load.d/batman-adv.conf" install -m 0644 "$MESH_SRC/batman-adv.conf" "$PREFIX/etc/modules-load.d/batman-adv.conf"
+  run "ensure NetworkManager conf.d"    mkdir -p "$PREFIX/etc/NetworkManager/conf.d"
+  run "install NetworkManager unmanaged list" install -m 0644 "$MESH_SRC/90-timerpi-mesh.nm.conf" "$PREFIX/etc/NetworkManager/conf.d/90-timerpi-mesh.conf"
+  run "ensure $OPT_DIR/deploy/box"      mkdir -p "$OPT_DIR/deploy/box"
+  run "install mesh-filter.nft"         install -m 0644 "$MESH_SRC/mesh-filter.nft" "$OPT_DIR/deploy/box/mesh-filter.nft"
+  # Wi-Fi stays blocked (rfkill) until a country is set.
+  if [[ "$PREFIX" == "/" ]]; then
+    if command -v raspi-config >/dev/null 2>&1; then
+      run "Wi-Fi country $COUNTRY" raspi-config nonint do_wifi_country "$COUNTRY" || true
+    elif command -v iw >/dev/null 2>&1; then
+      run "Wi-Fi country $COUNTRY (iw)" iw reg set "$COUNTRY" || true
+    fi
+  fi
+  # The app reads the country from config.json for the mesh radios.
+  CONF="$VAR_DIR/config.json"
+  if [[ -f "$CONF" ]] && command -v python3 >/dev/null 2>&1; then
+    run "config.json wifi_country=$COUNTRY" python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["wifi_country"]=sys.argv[2]; json.dump(c,open(p,"w"),indent=2)' "$CONF" "$COUNTRY"
+  elif [[ ! -f "$CONF" ]]; then
+    run "config.json wifi_country=$COUNTRY" bash -c "printf '{\n  \"wifi_country\": \"%s\"\n}\n' '$COUNTRY' > '$CONF'"
+  fi
+fi
+
+# ---- 2c. Cloud address --------------------------------------------------
+if [[ -n "$CLOUD_URL" ]]; then
+  [[ "$CLOUD_URL" =~ ^https?://[^[:space:]/]+ ]] || die "--cloud: '$CLOUD_URL' is not an http(s) URL"
+  CONF="$VAR_DIR/config.json"
+  [[ -f "$CONF" ]] || run "create config.json" bash -c "printf '{}\n' > '$CONF'"
+  run "config.json cloud_url=$CLOUD_URL" python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["cloud_url"]=sys.argv[2].rstrip("/"); json.dump(c,open(p,"w"),indent=2)' "$CONF" "$CLOUD_URL"
+fi
 
 # ---- 3. Kernel command line: pin the HDMI mode to 1080p50 --------------
 DESIRED_VIDEO="video=HDMI-A-1:1920x1080@50e"
@@ -168,6 +243,9 @@ if [[ -n "$HOSTNAME_ARG" ]]; then
   if ! [[ "$HOSTNAME_ARG" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]]; then
     die "--hostname: '$HOSTNAME_ARG' is not a valid DNS label (letters/digits/hyphen)"
   fi
+  if [[ "${HOSTNAME_ARG,,}" == "timerpi" ]]; then
+    die "--hostname: 'timerpi' is reserved (the venue's main box answers timerpi.local); pick another name"
+  fi
   if [[ "$PREFIX" == "/" ]]; then
     if command -v hostnamectl >/dev/null 2>&1; then
       run "hostnamectl set-hostname $HOSTNAME_ARG" hostnamectl set-hostname "$HOSTNAME_ARG"
@@ -199,6 +277,16 @@ if command -v systemctl >/dev/null 2>&1 && [[ "$PREFIX" == "/" && -d /run/system
   run "systemctl daemon-reload" systemctl daemon-reload || true
   run "enable timerpi-splash (boot splash)" systemctl enable timerpi-splash 2>/dev/null || true
   run "enable timerpi"                      systemctl enable timerpi 2>/dev/null || true
+  if (( MESH )); then
+    log "Switching the network to systemd-networkd (eth0 joins br0 and takes a new lease)…"
+    run "disable NetworkManager"            systemctl disable --now NetworkManager 2>/dev/null || true
+    run "enable systemd-networkd"           systemctl enable --now systemd-networkd
+    run "enable systemd-resolved"           systemctl enable --now systemd-resolved 2>/dev/null || true
+    run "reload udev rules"                 udevadm control --reload 2>/dev/null || true
+    run "enable timerpi-mesh"               systemctl enable timerpi-mesh
+    run "enable timerpi-mesh-status.timer"  systemctl enable --now timerpi-mesh-status.timer
+    run "start timerpi-mesh"                systemctl restart timerpi-mesh || log "WARNING: timerpi-mesh failed — journalctl -u timerpi-mesh"
+  fi
   run "restart timerpi"                     systemctl restart timerpi
 elif (( ! DRY_RUN )); then
   log "NOTE: systemd not active here — units installed but not enabled"
@@ -211,5 +299,6 @@ log "  1. systemctl status timerpi            # expect active; journalctl -u tim
 log "  2. curl -s http://localhost/health     # {\"ok\":true,...} means it serves on :80"
 log "  3. edit $VAR_DIR/config.json (title, auth_password, allowed_hosts) then restart timerpi"
 log "  4. from another host: avahi-browse -rt _timerpi._tcp"
-log "  5. splash: /opt/timerpi/bin/splash-draw -clear wipes the fbdev manually"
+log "  5. mesh: journalctl -u timerpi-mesh; batctl o (other boxes); the box's /settings page"
+log "  6. splash: /opt/timerpi/bin/splash-draw -clear wipes the fbdev manually"
 log "Verify checklist: docs/PI-DEPLOY.md"

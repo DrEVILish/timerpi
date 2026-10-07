@@ -3,10 +3,9 @@
 // excelize), CSV (header row required), JSON (array of cue objects, with or
 // without show/cues wrapping) and legacy .xls (refused with a "re-save as .xlsx" message).
 //
-// The package is deliberately self-contained: it parses into a small mirror
-// Cue struct whose JSON keys match the PROTOCOL wire cue object, so routes/
-// code can convert via ToTimerpiCue (adapter.go) without importing timerpi
-// from every caller.
+// Parsers return raw timerpi.Cue values in document order (ID/Pos left 0 —
+// order is positional); ToTimerpiCues (adapter.go) normalizes and validates
+// them for the db layer.
 //
 // Parsing is forgiving by design: headers are matched case/whitespace/
 // punctuation-insensitively against a synonym table, BOMs are stripped,
@@ -25,46 +24,15 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+
+	"timerpi/timerpi"
 )
-
-// Cue is the mirror of the PROTOCOL wire cue object (camelCase JSON keys, all
-// fields present; zero values mean "unset"). ID/ShowID/Pos are transport
-// bookkeeping owned by the caller, so they are not part of a cue document —
-// order in the document is positional: top row / first element = Pos 1.
-type Cue struct {
-	Label        string `json:"label"`
-	DurationMS   int64  `json:"durationMS"`
-	Kind         string `json:"kind"`
-	Tags         string `json:"tags"`
-	Speaker      string `json:"speaker"`
-	HoldMS       int64  `json:"holdMS"`
-	TimerKind    string `json:"timerKind"`
-	Alert1MS     int64  `json:"alert1MS"`
-	Alert2MS     int64  `json:"alert2MS"`
-	AlertColor1  string `json:"alertColor1"`
-	AlertColor2  string `json:"alertColor2"`
-	EndAction    string `json:"endAction"`
-	AutoContinue bool   `json:"autoContinue"`
-	Notes        string `json:"notes"`
-	Color        string `json:"color"`
-	// StartAt ("HH:MM" wall-clock auto-start) and Location (where a break
-	// happens) ride JSON exports and re-imports; spreadsheets don't map
-	// them yet (header matching is STATUS U26).
-	StartAt  string `json:"startAt,omitempty"`
-	Location string `json:"location,omitempty"`
-}
-
-// IsEmpty reports whether the parsed row carried neither label nor duration —
-// Parse never emits such rows, but callers re-check easily.
-func (c Cue) IsEmpty() bool {
-	return c.Label == "" && c.DurationMS == 0
-}
 
 // Parse dispatches on kind ("auto" | "xlsx" | "xls" | "csv" | "json",
 // case-insensitive; empty or "auto" sniffs the bytes, which is what the REST
 // import route's kind field sends). It returns parsed cues in document order
 // and never empty rows.
-func Parse(data []byte, kind string) ([]Cue, error) {
+func Parse(data []byte, kind string) ([]timerpi.Cue, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "auto":
 		return parseAuto(data)
@@ -83,7 +51,7 @@ func Parse(data []byte, kind string) ([]Cue, error) {
 
 // ParseFilename is Parse with the guess taken from a file extension
 // (.xlsx/.xlsm/.xls/.csv/.tsv/.json), falling back to byte sniffing.
-func ParseFilename(data []byte, filename string) ([]Cue, error) {
+func ParseFilename(data []byte, filename string) ([]timerpi.Cue, error) {
 	if kind, ok := map[string]string{
 		".xlsx": "xlsx", ".xlsm": "xlsx", ".xls": "xls",
 		".csv": "csv", ".tsv": "tsv", ".json": "json",
@@ -95,7 +63,7 @@ func ParseFilename(data []byte, filename string) ([]Cue, error) {
 
 // parseAuto sniffs by magic bytes / first non-space byte: ZIP → XLSX, OLE2
 // compound file → XLS, [ or { → JSON, otherwise CSV (most forgiving).
-func parseAuto(data []byte) ([]Cue, error) {
+func parseAuto(data []byte) ([]timerpi.Cue, error) {
 	head := stripBOM(data)
 	switch {
 	case len(head) >= 2 && head[0] == 'P' && head[1] == 'K':
@@ -123,7 +91,7 @@ func parseAuto(data []byte) ([]Cue, error) {
 // trims, lowercases and drops everything that is not a letter or digit, so
 // "End Action (hh:mm:ss)", "end_action" and "END-ACTION" all hit one key.
 func normCell(s string) string {
-	s = strings.ToLower(stripBOMString(s))
+	s = strings.ToLower(strings.TrimPrefix(s, "\ufeff"))
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
@@ -142,8 +110,8 @@ var headerSynonyms = map[string]string{
 	// Duration — accepts mm:ss(.d), hh:mm:ss(.d), "1m5s", "45" (seconds), "45ms".
 	"duration": "duration", "durations": "duration", "time": "duration",
 	"minutes": "duration", "mins": "duration", "min": "duration",
-	// Start is informational (TimerPi computes starts from durations+holds)
-	// but recognized so real-world sheets do not confuse the picker.
+	// Start is informational (TimerPi computes starts from durations) but
+	// recognized so real-world sheets do not confuse the picker.
 	"start": "start", "starttime": "start", "from": "start",
 	"tags": "tags", "tag": "tags",
 	"speaker": "speaker", "presenter": "speaker", "speakername": "speaker",
@@ -155,11 +123,8 @@ var headerSynonyms = map[string]string{
 	"alert2": "alert2", "threshold2": "alert2",
 	"alert2ms": "alert2", "threshold2ms": "alert2",
 	"endaction": "endaction", "end": "endaction", "onend": "endaction",
-	"onzero":       "endaction",
-	"autocontinue": "continue", "continue": "continue",
-	"hold": "hold", "buffer": "hold", "changeover": "hold",
-	"holdms": "hold", "bufferms": "hold",
-	"kind": "kind", "type": "kind",
+	"onzero": "endaction",
+	"kind":   "kind", "type": "kind",
 }
 
 // headerMap picks the canonical column ids out of one candidate row. A row
@@ -185,7 +150,7 @@ func headerMap(row []string) map[string]int {
 	// Default every as-yet-unfound column id to "absent" (-1 sentinel).
 	for _, id := range []string{
 		"label", "duration", "start", "tags", "speaker", "notes",
-		"color", "alert1", "alert2", "endaction", "continue", "hold", "kind",
+		"color", "alert1", "alert2", "endaction", "kind",
 	} {
 		if _, ok := m[id]; !ok {
 			m[id] = -1
@@ -198,7 +163,7 @@ func cell(record []string, i int) string {
 	if i < 0 || i >= len(record) {
 		return ""
 	}
-	return strings.TrimSpace(stripBOMString(record[i]))
+	return strings.TrimSpace(strings.TrimPrefix(record[i], "\ufeff"))
 }
 
 // errNoTable marks a grid/sheet that has no recognized header row — callers
@@ -211,7 +176,7 @@ var errNoTable = errors.New("importdocs: no cue table found")
 // column), then convert the rows below it into cues. errNoTable is returned
 // when the header row is missing; errors from data rows are returned
 // alongside the salvageable cues.
-func parseGrid(rows [][]string) ([]Cue, error) {
+func parseGrid(rows [][]string) ([]timerpi.Cue, error) {
 	var (
 		cols  map[string]int
 		start = -1
@@ -226,7 +191,7 @@ func parseGrid(rows [][]string) ([]Cue, error) {
 		return nil, errNoTable
 	}
 	var (
-		cues   []Cue
+		cues   []timerpi.Cue
 		merged error
 	)
 	for i := start; i < len(rows); i++ {
@@ -240,7 +205,7 @@ func parseGrid(rows [][]string) ([]Cue, error) {
 			}
 			continue // keep collecting the rest of the document
 		}
-		if !c.IsEmpty() {
+		if c.Label != "" || c.DurationMS != 0 {
 			cues = append(cues, c)
 		}
 	}
@@ -249,7 +214,7 @@ func parseGrid(rows [][]string) ([]Cue, error) {
 
 func isBlankRow(row []string) bool {
 	for _, c := range row {
-		if strings.TrimSpace(stripBOMString(c)) != "" {
+		if strings.TrimSpace(strings.TrimPrefix(c, "\ufeff")) != "" {
 			return false
 		}
 	}
@@ -258,23 +223,23 @@ func isBlankRow(row []string) bool {
 
 // cueFromRecord builds one cue from a data row using the header map. Errors
 // quote the 1-based row index for humans. A row with neither label nor
-// duration yields a zero Cue, which callers drop via IsEmpty. Absent columns
+// duration yields a zero Cue, which parseGrid drops. Absent columns
 // carry the -1 sentinel and read as "".
-func cueFromRecord(row []string, cols map[string]int, rowIdx int) (Cue, error) {
+func cueFromRecord(row []string, cols map[string]int, rowIdx int) (timerpi.Cue, error) {
 	rowNo := rowIdx + 1
-	var c Cue
+	var c timerpi.Cue
 	label := cell(row, cols["label"])
 	durRaw := cell(row, cols["duration"])
 
 	if label == "" && durRaw == "" {
-		return Cue{}, nil
+		return timerpi.Cue{}, nil
 	}
 	c.Label = label
 
 	if durRaw != "" {
 		ms, err := ParseDurationMS(durRaw)
 		if err != nil {
-			return Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
+			return timerpi.Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
 		}
 		c.DurationMS = ms
 	}
@@ -287,24 +252,17 @@ func cueFromRecord(row []string, cols map[string]int, rowIdx int) (Cue, error) {
 	if v := cell(row, cols["color"]); v != "" {
 		colHex, err := parseColor(v)
 		if err != nil {
-			return Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
+			return timerpi.Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
 		}
 		c.Color = colHex
 	}
-	if v := cell(row, cols["hold"]); v != "" {
-		ms, err := ParseDurationMS(v)
-		if err != nil {
-			return Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
-		}
-		c.HoldMS = ms
-	}
 	if ms, err := parseOptionalDuration(cell(row, cols["alert1"]), rowNo); err != nil {
-		return Cue{}, err
+		return timerpi.Cue{}, err
 	} else {
 		c.Alert1MS = ms
 	}
 	if ms, err := parseOptionalDuration(cell(row, cols["alert2"]), rowNo); err != nil {
-		return Cue{}, err
+		return timerpi.Cue{}, err
 	} else {
 		c.Alert2MS = ms
 	}
@@ -314,16 +272,9 @@ func cueFromRecord(row []string, cols map[string]int, rowIdx int) (Cue, error) {
 	if v := cell(row, cols["endaction"]); v != "" {
 		action, err := parseEndAction(v)
 		if err != nil {
-			return Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
+			return timerpi.Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
 		}
 		c.EndAction = action
-	}
-	if v := cell(row, cols["continue"]); v != "" {
-		truthy, err := parseTruth(v)
-		if err != nil {
-			return Cue{}, fmt.Errorf("importdocs: row %d: %w", rowNo, err)
-		}
-		c.AutoContinue = truthy
 	}
 	return c, nil
 }
@@ -353,13 +304,6 @@ func parseKind(v string) string {
 	}
 }
 
-// End action vocabulary (domain: cues.end_action).
-const (
-	endHold     = "HOLD"
-	endOvertime = "OVERTIME"
-	endBlank    = "BLANK"
-)
-
 // parseEndAction recognizes HOLD / OVERTIME / BLANK case-insensitively.
 // Empty stays empty: the domain layer's Normalize defaults it to HOLD.
 func parseEndAction(v string) (string, error) {
@@ -367,61 +311,27 @@ func parseEndAction(v string) (string, error) {
 	case "":
 		return "", nil
 	case "hold", "h":
-		return endHold, nil
+		return timerpi.EndHold, nil
 	case "overtime", "over", "o":
-		return endOvertime, nil
+		return timerpi.EndOvertime, nil
 	case "blank", "b":
-		return endBlank, nil
+		return timerpi.EndBlank, nil
 	default:
 		return "", fmt.Errorf("end action %q invalid (want hold, overtime or blank)", v)
 	}
 }
 
-var truthy = map[string]bool{
-	"true": true, "yes": true, "y": true, "on": true, "1": true,
-	"false": false, "no": false, "n": false, "off": false, "0": false,
-}
-
-// parseTruth accepts true/false, yes/no, 1/0, on/off — case-insensitively.
-func parseTruth(v string) (bool, error) {
-	if v == "" {
-		return false, nil
-	}
-	b, ok := truthy[strings.ToLower(strings.TrimSpace(v))]
-	if !ok {
-		return false, fmt.Errorf("value %q is not a yes/no boolean", v)
-	}
-	return b, nil
-}
-
-// parseColor accepts #rgb/#rgba/#rrggbb/#rrgbbaa and a bare 3/6-hex run
-// (which gets a leading '#'). Empty stays empty.
+// parseColor accepts #rgb/#rgba/#rrggbb/#rrggbbaa, with or without the
+// leading '#'. Empty stays empty.
 func parseColor(v string) (string, error) {
 	v = strings.TrimSpace(v)
-	if v == "" {
-		return "", nil
+	if v != "" && !strings.HasPrefix(v, "#") {
+		v = "#" + v
 	}
-	if !strings.HasPrefix(v, "#") {
-		switch len(v) {
-		case 3, 4, 6, 8:
-			v = "#" + v
-		}
-	}
-	switch len(v) - 1 {
-	case 3, 4, 6, 8:
-		for _, r := range v[1:] {
-			if !isHex(r) {
-				return "", fmt.Errorf("colour %q invalid (want #rgb or #rrggbb)", v)
-			}
-		}
-		return v, nil
-	default:
+	if !timerpi.ValidColor(v) {
 		return "", fmt.Errorf("colour %q invalid (want #rgb or #rrggbb)", v)
 	}
-}
-
-func isHex(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+	return v, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +350,7 @@ func isHex(r rune) bool {
 // The ambiguity rule ("90" is seconds, never minutes or an Excel day serial)
 // is documented in NOTES-importdocs.md.
 func ParseDurationMS(s string) (int64, error) {
-	s = strings.TrimSpace(stripBOMString(s))
+	s = strings.TrimSpace(strings.TrimPrefix(s, "\ufeff"))
 	if s == "" {
 		return 0, nil
 	}
@@ -483,16 +393,12 @@ func parseClockTimeMS(s string) (int64, error) {
 	return capMS(total*1000, s)
 }
 
-// maxDurationMS mirrors timerpi.MaxDurationMS; parse.go stays free of the
-// domain package (adapter.go is the only bridge).
-const maxDurationMS = 7 * 24 * 3600 * 1000
-
 // capMS converts a parsed millisecond count, refusing anything longer than
-// maxDurationMS (7 days), NaN or infinite. A bigger float would
+// timerpi.MaxDurationMS (7 days), NaN or infinite. A bigger float would
 // overflow the int64 conversion: MinInt64 on amd64, MaxInt64 on the Pi's
 // arm64, and the schedule maths would go negative (BUGLOG RW30).
 func capMS(ms float64, src string) (int64, error) {
-	if !(ms <= maxDurationMS) { // also catches NaN
+	if !(ms <= float64(timerpi.MaxDurationMS)) { // also catches NaN
 		return 0, fmt.Errorf("duration %q is longer than 7 days", src)
 	}
 	if ms < 0 {
@@ -553,7 +459,7 @@ func parseUnitChunksMS(s string) (int64, error) {
 // ParseXLSX parses an .xlsx workbook. Sheets are tried in order and the first
 // sheet that yields at least one cue wins, so a README/intro sheet in front
 // of the cue table is fine.
-func ParseXLSX(data []byte) ([]Cue, error) {
+func ParseXLSX(data []byte) ([]timerpi.Cue, error) {
 	// A small file can unzip to gigabytes (BUGLOG RW29): cap what excelize
 	// may inflate, and read rows through the streaming iterator with a row
 	// and column cap, so one cell at XFD1048576 can't build a 1.7e10-cell
@@ -624,7 +530,7 @@ func sheetGrid(f *excelize.File, sheet string) ([][]string, error) {
 // .xlsx or .csv (BUGLOG RW29: the old reader only understood XLSX anyway,
 // so they always failed with "not a valid zip file"). An XLSX that merely
 // carries an .xls name is read as XLSX.
-func ParseXLS(data []byte) ([]Cue, error) {
+func ParseXLS(data []byte) ([]timerpi.Cue, error) {
 	if len(data) >= 2 && data[0] == 'P' && data[1] == 'K' {
 		return ParseXLSX(data)
 	}
@@ -644,7 +550,7 @@ var errLegacyXLS = errors.New("importdocs: this is an old Excel .xls file, which
 // header). The delimiter is sniffed from the first content line, so Excel's
 // semicolon locales and tab exports just work. Input must be UTF-8, with or
 // without BOM.
-func ParseCSV(data []byte) ([]Cue, error) {
+func ParseCSV(data []byte) ([]timerpi.Cue, error) {
 	data = stripBOM(data)
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("importdocs: csv document is empty (a header row is required)")
@@ -705,9 +611,9 @@ func sniffDelimiter(b []byte) rune {
 // friendly snake_case ("duration_ms").
 //
 // Value semantics: NUMBERS are milliseconds (the wired PROTOCOL format);
-// STRINGS are always human durations ("1m5s", "90", "00:05:00"). Columns that
-// hold durations elsewhere (hold/alerts) follow the same rule.
-func ParseJSON(data []byte) ([]Cue, error) {
+// STRINGS are always human durations ("1m5s", "90", "00:05:00"). The alert
+// thresholds follow the same rule.
+func ParseJSON(data []byte) ([]timerpi.Cue, error) {
 	data = stripBOM(data)
 	var raw any
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -729,15 +635,15 @@ func ParseJSON(data []byte) ([]Cue, error) {
 		if err != nil {
 			return nil, fmt.Errorf(`importdocs: JSON document must be an array of cues or an object with a "cues" array: %w`, err)
 		}
-		return []Cue{c}, nil
+		return []timerpi.Cue{c}, nil
 	default:
 		return nil, fmt.Errorf("importdocs: JSON document must be an array of cues or an object with a \"cues\" array")
 	}
 }
 
-func cuesFromJSONList(list []any) ([]Cue, error) {
+func cuesFromJSONList(list []any) ([]timerpi.Cue, error) {
 	var (
-		cues   []Cue
+		cues   []timerpi.Cue
 		merged error
 	)
 	for i, elem := range list {
@@ -772,14 +678,14 @@ func rekey(m map[string]any) map[string]any {
 	return nm
 }
 
-func cueFromJSONMap(nm map[string]any, rowNo int) (Cue, error) {
-	var c Cue
+func cueFromJSONMap(nm map[string]any, rowNo int) (timerpi.Cue, error) {
+	var c timerpi.Cue
 	if err := pickJSONStr(nm, &c.Label, "label", "title", "name"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	ms, err := pickJSONDur(nm, "durationms", "duration", "time")
 	if err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	c.DurationMS = ms
 	// tags: string, or an array of strings joined with spaces.
@@ -796,40 +702,35 @@ func cueFromJSONMap(nm map[string]any, rowNo int) (Cue, error) {
 			}
 			c.Tags = strings.TrimSpace(strings.Join(words, " "))
 		default:
-			return Cue{}, wrapJSON(rowNo, fmt.Errorf(`field "tags" must be a string or an array of strings`))
+			return timerpi.Cue{}, wrapJSON(rowNo, fmt.Errorf(`field "tags" must be a string or an array of strings`))
 		}
 	} else if err := pickJSONStr(nm, &c.Tags, "tag"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	if err := pickJSONStr(nm, &c.Speaker, "speaker", "presenter"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	if err := pickJSONStr(nm, &c.Notes, "notes", "note", "comment", "comments"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
-	ms, err = pickJSONDur(nm, "holdms", "hold", "buffer", "changeover")
-	if err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
-	}
-	c.HoldMS = ms
 	ms, err = pickJSONDur(nm, "alert1ms", "alert1", "threshold1")
 	if err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	c.Alert1MS = ms
 	ms, err = pickJSONDur(nm, "alert2ms", "alert2", "threshold2")
 	if err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	c.Alert2MS = ms
 	if err := pickJSONStr(nm, &c.TimerKind, "timerkind"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	c.TimerKind = strings.ToUpper(strings.TrimSpace(c.TimerKind))
 	switch c.TimerKind {
 	case "", "COUNTDOWN", "COUNTSTOP", "CLOCK":
 	default:
-		return Cue{}, fmt.Errorf("importdocs: cue %d: timerKind %q invalid", rowNo, c.TimerKind)
+		return timerpi.Cue{}, fmt.Errorf("importdocs: cue %d: timerKind %q invalid", rowNo, c.TimerKind)
 	}
 	for canon, dst := range map[string]*string{
 		"alertcolor1": &c.AlertColor1,
@@ -837,34 +738,26 @@ func cueFromJSONMap(nm map[string]any, rowNo int) (Cue, error) {
 		"color":       &c.Color,
 	} {
 		if err := pickJSONColor(nm, dst, canon); err != nil {
-			return Cue{}, wrapJSON(rowNo, err)
+			return timerpi.Cue{}, wrapJSON(rowNo, err)
 		}
 	}
 	if err := pickJSONStr(nm, &c.EndAction, "endaction", "end", "onend", "onzero"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	action, aerr := parseEndAction(c.EndAction)
 	if aerr != nil {
-		return Cue{}, fmt.Errorf("importdocs: cue %d: %w", rowNo, aerr)
+		return timerpi.Cue{}, fmt.Errorf("importdocs: cue %d: %w", rowNo, aerr)
 	}
 	c.EndAction = action
 	if err := pickJSONStr(nm, &c.Kind, "kind", "type"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
 	if c.Kind != "" {
 		c.Kind = parseKind(c.Kind)
 	}
-	if err := pickJSONStr(nm, &c.StartAt, "startat"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
-	}
 	if err := pickJSONStr(nm, &c.Location, "location"); err != nil {
-		return Cue{}, wrapJSON(rowNo, err)
+		return timerpi.Cue{}, wrapJSON(rowNo, err)
 	}
-	truthy, berr := pickJSONBool(nm, "autocontinue", "contin", "continue")
-	if berr != nil {
-		return Cue{}, wrapJSON(rowNo, berr)
-	}
-	c.AutoContinue = truthy
 	return c, nil
 }
 
@@ -928,29 +821,6 @@ func jsonToMS(v any) (int64, error) {
 	}
 }
 
-// pickJSONBool: bool / number(≠0) / "yes|no|true|false|1|0|on|off".
-func pickJSONBool(nm map[string]any, keys ...string) (bool, error) {
-	for _, k := range keys {
-		v, ok := nm[k]
-		if !ok || v == nil {
-			continue
-		}
-		switch b := v.(type) {
-		case bool:
-			return b, nil
-		case float64:
-			return b != 0, nil
-		case int:
-			return b != 0, nil
-		case string:
-			return parseTruth(b)
-		default:
-			return false, fmt.Errorf("field %q must be a boolean", k)
-		}
-	}
-	return false, nil
-}
-
 // pickJSONColor validates and copies a colour field (CSS hex colour).
 func pickJSONColor(nm map[string]any, dst *string, key string) error {
 	v, ok := nm[key]
@@ -983,8 +853,4 @@ func stripBOM(b []byte) []byte {
 		return b[len(bomUTF8):]
 	}
 	return b
-}
-
-func stripBOMString(s string) string {
-	return string(stripBOM([]byte(s)))
 }

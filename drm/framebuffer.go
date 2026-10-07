@@ -9,7 +9,11 @@
 // in-container tests exercise exactly the shipping math.
 package drm
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"strconv"
+	"strings"
+)
 
 // Image is a 32bpp little-endian ARGB9001-style pixel buffer: every
 // pixel is four byte lanes stored as B, G, R, A (little-endian order of
@@ -240,42 +244,15 @@ func pixelsEqual(a, b *Image, r Rect) bool {
 // 0xAARRGGBB pixel form this package stores (alpha forced opaque).
 // Unparsable input returns def.
 func a2b(s string, def uint32) uint32 {
-	s = trimHexPrefix(s)
+	s = strings.TrimPrefix(s, "#")
 	if len(s) != 6 {
 		return def
 	}
-	v, ok := parseHex24(s)
-	if !ok {
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
 		return def
 	}
-	return 0xff000000 | v
-}
-
-func trimHexPrefix(s string) string {
-	if len(s) >= 1 && s[0] == '#' {
-		return s[1:]
-	}
-	return s
-}
-
-func parseHex24(s string) (uint32, bool) {
-	var v uint32
-	for i := 0; i < 6; i++ {
-		c := s[i]
-		var d uint32
-		switch {
-		case c >= '0' && c <= '9':
-			d = uint32(c - '0')
-		case c >= 'a' && c <= 'f':
-			d = uint32(c-'a') + 10
-		case c >= 'A' && c <= 'F':
-			d = uint32(c-'A') + 10
-		default:
-			return 0, false
-		}
-		v = v<<4 | d
-	}
-	return v, true
+	return 0xff000000 | uint32(v)
 }
 
 // luminance01 of a packed 0xrrggbb color — used to pick a readable
@@ -285,18 +262,4 @@ func luminance01(c uint32) float64 {
 	g := float64((c >> 8) & 0xff)
 	b := float64(c & 0xff)
 	return (0.2126*r + 0.7152*g + 0.0722*b) / 255
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

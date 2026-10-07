@@ -29,8 +29,6 @@ import (
 	"time"
 )
 
-const bundleAddr = "#bundle"
-
 // Message is one parsed OSC address pattern + typed args.
 type Message struct {
 	Address string
@@ -44,13 +42,6 @@ func allZeros(b []byte) bool {
 		}
 	}
 	return true
-}
-
-func pad4(n int) []byte {
-	if r := n % 4; r != 0 {
-		return make([]byte, 4-r)
-	}
-	return nil
 }
 
 // oscStringLen is the padded wire length of an OSC string: chars + NUL +

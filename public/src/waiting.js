@@ -28,6 +28,7 @@ export function applyWaiting(status) {
   if (on === active) return;
   active = on;
   const body = document.body;
+  document.getElementById('tp-waiting').setAttribute('aria-hidden', String(!on));
   if (on) {
     body.setAttribute('data-waiting', '1');
     const nameEl = document.getElementById('tp-waiting-name');
