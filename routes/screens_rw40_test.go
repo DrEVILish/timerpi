@@ -81,9 +81,10 @@ func TestScreenRenameMatchPresetAndValidateFirst(t *testing.T) {
 	}
 }
 
-// BUGLOG RS19: picking a portrait layout turns an unrotated screen to 90°;
-// a landscape one turns it back.
-func TestPortraitLayoutTurnsTheScreen(t *testing.T) {
+// BUGLOG RS19, superseded 2026-10-07: a layout no longer turns the
+// screen. Every layout has both versions and the screen's mounting picks
+// one, so picking a layout leaves the rotation as the operator set it.
+func TestPickingALayoutKeepsTheMounting(t *testing.T) {
 	ts := newAPITest(t)
 	base := "/api/shows/" + ts.showCode
 	post := func(path, body string) {
@@ -92,13 +93,11 @@ func TestPortraitLayoutTurnsTheScreen(t *testing.T) {
 			t.Fatalf("%s: %d %s", path, code, b)
 		}
 	}
-	post("/screens/config", `{"name":"Poster","theme":""}`)
-	post("/screens/template", `{"name":"Poster","template":"room-portrait"}`)
-	if s, _ := ts.db.GetScreenByName(ts.showID, "Poster"); s.Rotation != 90 {
-		t.Errorf("portrait template left rotation %d, want 90", s.Rotation)
-	}
-	post("/screens/template", `{"name":"Poster","template":"room"}`)
-	if s, _ := ts.db.GetScreenByName(ts.showID, "Poster"); s.Rotation != 0 {
-		t.Errorf("landscape template left rotation %d, want 0", s.Rotation)
+	post("/screens/config", `{"name":"Poster","theme":"","rotation":270}`)
+	for _, tpl := range []string{"room", "room-portrait", "event"} {
+		post("/screens/template", `{"name":"Poster","template":"`+tpl+`"}`)
+		if s, _ := ts.db.GetScreenByName(ts.showID, "Poster"); s.Rotation != 270 {
+			t.Errorf("template %s changed the rotation to %d", tpl, s.Rotation)
+		}
 	}
 }

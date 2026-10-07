@@ -38,7 +38,7 @@ func TestScreenLookAndTemplate(t *testing.T) {
 		t.Fatalf("template: %d %s", code, b)
 	}
 	scr, _ = ts.db.GetScreenByName(ts.showID, "Foyer")
-	if scr.Template != "room-portrait" || scr.BoardID != 0 {
+	if scr.Template != "room" || scr.BoardID != 0 {
 		t.Fatalf("screen should show the built-in directly: %+v", scr)
 	}
 	// The screen's page renders the built-in rotated, on its portrait canvas.
@@ -108,7 +108,7 @@ func TestCaptureLookAndAccess(t *testing.T) {
 		t.Fatalf("capture: %d %s", code, b)
 	}
 	scr, err := ts.db.GetScreenByName(ts.showID, "Poster")
-	if err != nil || scr.Kind != "walkin" || scr.Rotation != 270 || scr.Template != "event-portrait" {
+	if err != nil || scr.Kind != "walkin" || scr.Rotation != 270 || scr.Template != "event" {
 		t.Fatalf("captured look: %+v %v", scr, err)
 	}
 }

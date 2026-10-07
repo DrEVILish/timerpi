@@ -48,6 +48,8 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		Host  string `json:"host"`
 		Token string `json:"token"`
 		Code  string `json:"code"` // a box's pairing code (VENUE-CLOUD §4)
+		// Handheld: a phone/tablet (follows its own orientation).
+		Handheld bool `json:"handheld"`
 	}
 	_ = c.ShouldBindJSON(&body) // form fallback below keeps curl honest
 	if body.Name == "" {
@@ -78,6 +80,7 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
+	_ = d.Store.SetWaitingHandheld(body.Name, body.Host, body.Handheld)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

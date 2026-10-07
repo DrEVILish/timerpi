@@ -38,6 +38,7 @@ type HubMount interface {
 	// session count). Implemented by ws.Hub.
 	SendToScreen(showID int64, screen string, frames ...[]byte) int
 	ScreenSessions(showID int64) map[string]int
+	ScreenHandheld(showID int64) map[string]bool
 	SendToRole(showID int64, role string, frame []byte) int
 	KickSession(showID int64, peerID string) int
 	ScreenPeers(showID int64) map[string][][2]string

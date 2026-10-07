@@ -61,6 +61,7 @@ type screenView struct {
 	LastSeen  int64  `json:"lastSeen"`
 	Sessions  int    `json:"sessions"` // live tabs under this name
 	Connected bool   `json:"connected"`
+	Handheld  bool   `json:"handheld"` // a live phone/tablet: follows itself, Mounted does not apply
 
 	BoardName    string              `json:"boardName,omitempty"`
 	Widgets      []screenBoxView     `json:"widgets,omitempty"`
@@ -98,17 +99,24 @@ func registerScreens(g *gin.RouterGroup, d *Deps) {
 // live session presence, enriched with the assigned board's layout boxes and
 // current-snapshot preview values (the gallery shows what each screen IS
 // showing; the JS re-polls to keep it live).
-func (d *Deps) screensPayload(id int64) ([]screenView, error) {
+func (d *Deps) screensPayload(id int64) (out []screenView, err error) {
 	rows, err := d.Store.ListScreens(id)
 	if err != nil {
 		return nil, err
 	}
 	live := map[string]int{}
 	peers := map[string][][2]string{}
+	handheld := map[string]bool{}
 	if d.Hub != nil {
 		live = d.Hub.ScreenSessions(id)
 		peers = d.Hub.ScreenPeers(id)
+		handheld = d.Hub.ScreenHandheld(id)
 	}
+	defer func() { // every card, however it was built
+		for i := range out {
+			out[i].Handheld = handheld[out[i].Name]
+		}
+	}()
 	// Every layout the cards need, loaded once (BUGLOG RS32: each card
 	// used to read its board again — an N+1 on every 3 s poll).
 	byID := map[int64]boards.Board{}
@@ -150,7 +158,7 @@ func (d *Deps) screensPayload(id int64) ([]screenView, error) {
 		}
 	}
 
-	out := make([]screenView, 0, len(rows)+len(live))
+	out = make([]screenView, 0, len(rows)+len(live))
 	seen := map[string]bool{}
 	for _, r := range rows {
 		seen[r.Name] = true
@@ -187,10 +195,13 @@ func (d *Deps) screenCard(r timerpi.Screen,
 		v.BoardName = b.Name
 	}
 	v.Template = r.Template
+	// The preview shows the version this screen gets: portrait when it is
+	// mounted 90°/270° (a phone or tablet follows itself; RS: Mounted).
+	portrait := r.Rotation == 90 || r.Rotation == 270
 	if bid == 0 && r.Template != "" {
 		if tl, ok := boards.TemplateLayouts()[r.Template]; ok {
 			v.BoardName = templateName(r.Template)
-			l := boards.NormalizeLayout(tl)
+			l := boards.NormalizeLayout(tl).For(portrait)
 			v.Rows, v.Orientation = l.Rows, l.Orientation
 			for _, w := range l.Widgets {
 				v.Widgets = append(v.Widgets, screenBoxView{X: w.X, Y: w.Y, W: w.W, H: w.H, Type: w.Type})
@@ -199,7 +210,7 @@ func (d *Deps) screenCard(r timerpi.Screen,
 	}
 	if bid != 0 {
 		if b, ok := byID[bid]; ok {
-			l := b.Parsed()
+			l := b.Parsed().For(portrait)
 			v.Rows, v.Orientation = l.Rows, l.Orientation
 			for _, w := range l.Widgets {
 				v.Widgets = append(v.Widgets, screenBoxView{X: w.X, Y: w.Y, W: w.W, H: w.H, Type: w.Type})
@@ -207,29 +218,6 @@ func (d *Deps) screenCard(r timerpi.Screen,
 		}
 	}
 	return v
-}
-
-// matchRotation turns a screen to suit its new layout, as the capture
-// dialog does: a portrait layout on an unrotated screen gets 90°, a
-// landscape one on a screen turned 90°/270° goes back to 0° (BUGLOG RS19:
-// a portrait template used to stretch across a landscape TV). The
-// operator's own rotation choice stays: this runs only when a layout is
-// picked. Phones and tablets ignore it anyway (they report their own).
-func (d *Deps) matchRotation(id int64, name, orientation string) {
-	cur, err := d.Store.GetScreenByName(id, name)
-	if err != nil {
-		return
-	}
-	rot := cur.Rotation
-	switch {
-	case orientation == "portrait" && rot == 0:
-		rot = 90
-	case orientation != "portrait" && (rot == 90 || rot == 270):
-		rot = 0
-	default:
-		return
-	}
-	_ = d.Store.SetScreenLook(id, name, cur.Kind, rot)
 }
 
 // pushScreen applies one screen's stored config to its live tabs (theme +
@@ -386,18 +374,12 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
 			return
 		}
-		// A built-in layout follows the type and the mounting: a walk-in
-		// layout never stays on a presenter screen, nor a landscape one on
-		// a portrait-mounted panel.
+		// A built-in layout follows the type: a walk-in layout never stays
+		// on a presenter screen. (Mounting only picks its version.)
 		if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.BoardID == 0 && cur.Template != "" {
-			if fit := boards.FitTemplate(cur.Template, kind, rot == 90 || rot == 270); fit != cur.Template {
+			if fit := boards.FitTemplate(cur.Template, kind); fit != cur.Template {
 				_ = d.Store.SetScreenTemplate(id, name, fit)
 			}
-		}
-	}
-	if body.Rotation == nil && body.BoardID > 0 {
-		if b, err := boards.GetBoard(d.Store.DB, id, body.BoardID); err == nil {
-			d.matchRotation(id, name, b.Parsed().Orientation)
 		}
 	}
 	d.pushScreen(id, name)
@@ -797,6 +779,9 @@ func (d *Deps) apiPresetImport(c *gin.Context) {
 // templateKey normalises a built-in key; ok=false when unknown.
 func templateKey(raw string) (string, bool) {
 	k := strings.ToLower(strings.TrimSpace(raw))
+	if cur, old := boards.LegacyTemplateKeys()[k]; old {
+		k = cur // "room-portrait" and friends: one key holds both versions now
+	}
 	_, ok := boards.TemplateLayouts()[k]
 	return k, ok
 }
@@ -853,9 +838,6 @@ func (d *Deps) apiScreenTemplate(c *gin.Context) {
 				_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
 			}
 		}
-	}
-	if tl, ok := boards.TemplateLayouts()[key]; ok {
-		d.matchRotation(id, name, boards.NormalizeLayout(tl).Orientation)
 	}
 	d.pushScreen(id, name)
 	d.notifyControls(id)

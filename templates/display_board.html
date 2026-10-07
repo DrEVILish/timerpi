@@ -13,9 +13,27 @@
 */ -}}
 {{define "display_board"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}}>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}} data-layout-orient="{{.Board.Orientation}}">
 <head>
 {{template "head" .}}
+{{if not .Editable}}<script>
+/* A phone or tablet shows the layout version for the way it is held
+   (owner 2026-10-07): before first paint, and again whenever it turns. */
+(function () {
+  var h = document.documentElement;
+  if (!h.dataset.deviceOrient || !window.matchMedia) return;
+  var mq = matchMedia('(orientation: portrait)');
+  function follow() {
+    var want = mq.matches ? 'portrait' : 'landscape';
+    if (want === h.dataset.layoutOrient) return;
+    var u = new URL(location.href);
+    u.searchParams.set('orient', want);
+    location.replace(u.toString());
+  }
+  follow();
+  if (mq.addEventListener) mq.addEventListener('change', follow); else mq.addListener(follow);
+})();
+</script>{{end}}
 </head>
 <body class="tp-display b-board" data-page="display" data-view="board" data-role="display"
       data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-room-prefix="{{.RoomPrefix}}" data-blanked="{{.Show.Blanked}}" data-orientation="{{.Board.Orientation}}"{{if .ScreenKind}} data-kind="{{.ScreenKind}}"{{end}} style="--b-rows: {{.Board.Rows}}">

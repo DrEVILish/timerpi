@@ -65,6 +65,64 @@ type Layout struct {
 	Anim    string   `json:"anim,omitempty"`
 	AnimMS  int      `json:"animMS,omitempty"`
 	Widgets []Widget `json:"widgets"`
+	// Alt is the same layout for the other orientation (owner 2026-10-07:
+	// you pick a layout, the screen's orientation picks its version). The
+	// primary is the landscape version when both exist.
+	Alt *Layout `json:"alt,omitempty"`
+}
+
+// For returns the version of the layout for a portrait or landscape
+// screen (without its Alt). A layout made before versions existed gets an
+// automatic one (AutoAlt) until its other version is edited and saved.
+func (l Layout) For(portrait bool) Layout {
+	out := l
+	out.Alt = nil
+	if (l.Orientation == "portrait") == portrait {
+		return out
+	}
+	if l.Alt != nil {
+		v := *l.Alt
+		v.Alt, v.Anim, v.AnimMS = nil, l.Anim, l.AnimMS
+		return v
+	}
+	return AutoAlt(out)
+}
+
+// AutoAlt lays a single-version layout out for the other orientation:
+// landscape → portrait stacks every tile full width (twice as tall);
+// portrait → landscape packs the tiles into two columns (half as tall).
+func AutoAlt(l Layout) Layout {
+	src := NormalizeLayout(Layout{V: 1, Rows: l.Rows, Orientation: l.Orientation, Widgets: l.Widgets})
+	out := Layout{V: 1, Anim: l.Anim, AnimMS: l.AnimMS, Widgets: []Widget{}}
+	if src.Orientation != "portrait" {
+		out.Orientation = "portrait"
+		y := 0
+		for _, w := range src.Widgets {
+			h := min(MaxH, max(1, w.H*2))
+			if y+h > MaxRows {
+				break
+			}
+			w.X, w.Y, w.W, w.H = 0, y, GridCols, h
+			out.Widgets = append(out.Widgets, w)
+			y += h
+		}
+		out.Rows = max(DefaultRowsPortrait, y)
+	} else {
+		out.Orientation = "landscape"
+		col := [2]int{}
+		for i, w := range src.Widgets {
+			c := i % 2
+			h := max(1, (w.H+1)/2)
+			if col[c]+h > MaxRows {
+				continue
+			}
+			w.X, w.Y, w.W, w.H = c*6, col[c], 6, h
+			out.Widgets = append(out.Widgets, w)
+			col[c] += h
+		}
+		out.Rows = max(DefaultRowsLandscape, col[0], col[1])
+	}
+	return NormalizeLayout(out)
 }
 
 // Canvas defaults and limits.
@@ -120,9 +178,12 @@ var WidgetTypes = []WidgetDef{
 	{Type: "joinqr", Title: "Join QR", Desc: "Audience join QR for this room", DefaultW: 3, DefaultH: 4},
 }
 
-// TemplateInfo is one built-in starting layout, grouped by display type
-// (PRODUCT §3.2): audience | walkin | presenter. Go is the single source of
-// truth (served at GET /api/board-templates; boards_test checks overlap).
+// TemplateInfo is one built-in layout, grouped by display type
+// (PRODUCT §3.2): audience | walkin | presenter — four of each, every one
+// with a landscape and a portrait version (Layout + Layout.Alt; owner
+// 2026-10-07: you pick a layout, the screen's orientation picks the
+// version). Go is the single source of truth (served at GET
+// /api/board-templates; boards_test checks overlap).
 type TemplateInfo struct {
 	Key    string `json:"key"`
 	Name   string `json:"name"`
@@ -139,179 +200,183 @@ func Templates() []TemplateInfo {
 	land := func(rows int, ws ...Widget) Layout {
 		return Layout{V: 1, Rows: rows, Orientation: "landscape", Widgets: ws}
 	}
-	port := func(rows int, ws ...Widget) Layout {
-		return Layout{V: 1, Rows: rows, Orientation: "portrait", Widgets: ws}
+	port := func(rows int, ws ...Widget) *Layout {
+		return &Layout{V: 1, Rows: rows, Orientation: "portrait", Widgets: ws}
 	}
+	both := func(l Layout, p *Layout) Layout { l.Alt = p; return l }
 	clock := map[string]string{"tenths": "0"}
+	tenths := map[string]string{"tenths": "1"}
+	label := map[string]string{"source": "label"}
+	aud := map[string]string{"target": "audience"}
+	pres := map[string]string{"target": "presenter"}
+	ask := map[string]string{"label": "Questions? Scan and ask."}
+	brk := map[string]string{"text": "Back shortly — enjoy the break"}
 	return []TemplateInfo{
 		// --- Audience displays (what the room looks at) ---
 		{Key: "main", Name: "Audience main", Kind: "audience", Desc: "Polls, results, Q&A and word clouds when shown to the audience; join QR alongside",
-			Layout: land(8,
+			Layout: both(land(8,
 				w("title", "showtitle", 0, 0, 12, 1, nil),
-				w("item", "poll", 0, 1, 9, 7, map[string]string{"target": "audience"}),
+				w("item", "poll", 0, 1, 9, 7, aud),
 				// The QR's own label is the one "Scan to take part" on screen.
-				w("join", "joinqr", 9, 1, 3, 7, nil))},
-		{Key: "main-portrait", Name: "Audience main (portrait)", Kind: "audience", Desc: "Poster version of the audience main: the shown item above, join QR below",
-			Layout: port(16,
-				w("title", "showtitle", 0, 0, 12, 2, nil),
-				w("item", "poll", 0, 2, 12, 9, map[string]string{"target": "audience"}),
-				w("join", "joinqr", 3, 11, 6, 5, nil))},
-		{Key: "countdown", Name: "Audience countdown", Kind: "audience", Desc: "A timer the room can see (breaks, competitions, timed tasks): big countdown, session and what's next",
-			Layout: land(8,
-				w("countdown", "countdown", 0, 0, 12, 4, map[string]string{"tenths": "0"}),
-				w("label", "cuelabel", 0, 4, 12, 1, map[string]string{"source": "label"}),
-				w("progress", "progress", 0, 5, 12, 1, nil),
-				w("next", "nextup", 0, 6, 12, 2, nil))},
-		{Key: "countdown-portrait", Name: "Audience countdown (portrait)", Kind: "audience", Desc: "Poster version of the audience countdown",
-			Layout: port(16,
-				w("label", "cuelabel", 0, 0, 12, 2, map[string]string{"source": "label"}),
-				w("countdown", "countdown", 0, 2, 12, 7, map[string]string{"tenths": "0"}),
-				w("progress", "progress", 0, 9, 12, 1, nil),
-				w("next", "nextup", 0, 10, 12, 3, nil),
-				w("clock", "wallclock", 0, 13, 12, 3, clock))},
+				w("join", "joinqr", 9, 1, 3, 7, nil)),
+				port(16,
+					w("title", "showtitle", 0, 0, 12, 2, nil),
+					w("item", "poll", 0, 2, 12, 9, aud),
+					w("join", "joinqr", 3, 11, 6, 5, nil)))},
 		{Key: "qawall", Name: "Q&A wall", Kind: "audience", Desc: "The approved questions and the spotlight, full screen",
-			Layout: land(8,
-				w("wall", "qa", 0, 0, 9, 8, map[string]string{"target": "audience"}),
-				w("join", "joinqr", 9, 0, 3, 8, map[string]string{"label": "Questions? Scan and ask."}))},
+			Layout: both(land(8,
+				w("wall", "qa", 0, 0, 9, 8, aud),
+				w("join", "joinqr", 9, 0, 3, 8, ask)),
+				port(16,
+					w("wall", "qa", 0, 0, 12, 12, aud),
+					w("join", "joinqr", 3, 12, 6, 4, ask)))},
 		{Key: "holding", Name: "Holding slide", Kind: "audience", Desc: "Session title, speaker, what's next and the join QR between items",
-			Layout: land(8,
+			Layout: both(land(8,
 				w("title", "showtitle", 0, 0, 12, 1, nil),
-				w("label", "cuelabel", 0, 1, 9, 2, map[string]string{"source": "label"}),
+				w("label", "cuelabel", 0, 1, 9, 2, label),
 				w("speaker", "speaker", 0, 3, 9, 1, nil),
 				w("next", "nextup", 0, 4, 9, 2, nil),
 				w("clock", "wallclock", 0, 6, 9, 2, clock),
-				w("join", "joinqr", 9, 1, 3, 7, nil))},
+				w("join", "joinqr", 9, 1, 3, 7, nil)),
+				port(16,
+					w("title", "showtitle", 0, 0, 12, 2, nil),
+					w("label", "cuelabel", 0, 2, 12, 3, label),
+					w("speaker", "speaker", 0, 5, 12, 2, nil),
+					w("next", "nextup", 0, 7, 12, 3, nil),
+					w("clock", "wallclock", 0, 10, 12, 2, clock),
+					w("join", "joinqr", 3, 12, 6, 4, nil)))},
+		{Key: "break", Name: "Break", Kind: "audience", Desc: "Between sessions: clock, stage messages and a notice",
+			Layout: both(land(8,
+				w("wallclock", "wallclock", 0, 0, 12, 3, clock),
+				w("messages", "messages", 0, 3, 12, 3, nil),
+				w("notice", "notice", 0, 6, 12, 2, brk)),
+				port(16,
+					w("wallclock", "wallclock", 0, 0, 12, 5, clock),
+					w("messages", "messages", 0, 5, 12, 6, nil),
+					w("notice", "notice", 0, 11, 12, 5, brk)))},
 		// --- Walk-in displays (posters outside rooms, foyer) ---
 		{Key: "event", Name: "Event walk-in", Kind: "walkin", Desc: "Every room now and next, the venue map and the full-day schedule",
-			Layout: land(8,
+			Layout: both(land(8,
 				w("rooms", "rooms", 0, 0, 9, 5, nil),
 				w("clock", "wallclock", 9, 0, 3, 2, clock),
 				w("map", "map", 9, 2, 3, 6, nil),
-				w("sched", "eventschedule", 0, 5, 9, 3, nil))},
-		{Key: "event-portrait", Name: "Event walk-in (portrait)", Kind: "walkin", Desc: "Poster version of the event walk-in",
-			Layout: port(16,
-				w("clock", "wallclock", 0, 0, 12, 2, clock),
-				w("rooms", "rooms", 0, 2, 12, 7, nil),
-				w("map", "map", 0, 9, 12, 5, nil),
-				w("note", "notice", 0, 14, 12, 2, map[string]string{"text": "Welcome"}))},
+				w("sched", "eventschedule", 0, 5, 9, 3, nil)),
+				port(16,
+					w("clock", "wallclock", 0, 0, 12, 2, clock),
+					w("rooms", "rooms", 0, 2, 12, 7, nil),
+					w("map", "map", 0, 9, 12, 5, nil),
+					w("note", "notice", 0, 14, 12, 2, map[string]string{"text": "Welcome"})))},
 		{Key: "room", Name: "Room walk-in", Kind: "walkin", Desc: "This room: clock, current and next session (start, duration, speaker), full-day schedule",
-			Layout: land(8,
+			Layout: both(land(8,
 				w("title", "showtitle", 0, 0, 8, 1, nil),
 				w("clock", "wallclock", 8, 0, 4, 1, clock),
 				w("nownext", "nownext", 0, 1, 6, 7, nil),
-				w("sched", "schedule", 6, 1, 6, 7, map[string]string{"count": "all"}))},
-		{Key: "room-portrait", Name: "Room walk-in (portrait)", Kind: "walkin", Desc: "Poster version of the room walk-in",
-			Layout: port(16,
-				w("title", "showtitle", 0, 0, 12, 2, nil),
-				w("clock", "wallclock", 0, 2, 12, 2, clock),
-				w("nownext", "nownext", 0, 4, 12, 5, nil),
-				w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "all"}))},
+				w("sched", "schedule", 6, 1, 6, 7, map[string]string{"count": "all"})),
+				port(16,
+					w("title", "showtitle", 0, 0, 12, 2, nil),
+					w("clock", "wallclock", 0, 2, 12, 2, clock),
+					w("nownext", "nownext", 0, 4, 12, 5, nil),
+					w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "all"})))},
 		{Key: "lobby", Name: "Room lobby", Kind: "walkin", Desc: "Room title, clock, stage messages and the next sessions",
-			Layout: land(8,
+			Layout: both(land(8,
 				w("title", "showtitle", 0, 0, 12, 1, nil),
 				w("clock", "wallclock", 0, 1, 5, 3, clock),
 				w("msgs", "messages", 5, 1, 7, 3, nil),
-				w("sched", "schedule", 0, 4, 12, 4, map[string]string{"count": "6"}))},
+				w("sched", "schedule", 0, 4, 12, 4, map[string]string{"count": "6"})),
+				port(16,
+					w("title", "showtitle", 0, 0, 12, 2, nil),
+					w("clock", "wallclock", 0, 2, 12, 3, clock),
+					w("msgs", "messages", 0, 5, 12, 4, nil),
+					w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "6"})))},
+		{Key: "clockroom", Name: "Clock", Kind: "walkin", Desc: "Big clock with the next few sessions",
+			Layout: both(land(6,
+				w("wallclock", "wallclock", 0, 0, 12, 2, clock),
+				w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"})),
+				port(16,
+					w("wallclock", "wallclock", 0, 0, 12, 5, clock),
+					w("schedule", "schedule", 0, 5, 12, 11, map[string]string{"count": "6"})))},
 		// --- Presenter displays (face the speaker) ---
-		{Key: "lobby-portrait", Name: "Room lobby (portrait)", Kind: "walkin", Desc: "Poster version of the room lobby",
-			Layout: port(16,
-				w("title", "showtitle", 0, 0, 12, 2, nil),
-				w("clock", "wallclock", 0, 2, 12, 3, clock),
-				w("msgs", "messages", 0, 5, 12, 4, nil),
-				w("sched", "schedule", 0, 9, 12, 7, map[string]string{"count": "6"}))},
 		{Key: "dsm", Name: "Presenter (DSM)", Kind: "presenter", Desc: "Big countdown, stage messages, next session and items shown to the presenter",
-			Layout: land(8,
-				w("countdown", "countdown", 0, 0, 8, 4, map[string]string{"tenths": "1"}),
-				w("item", "poll", 8, 0, 4, 4, map[string]string{"target": "presenter"}),
-				w("label", "cuelabel", 0, 4, 8, 1, map[string]string{"source": "label"}),
+			Layout: both(land(8,
+				w("countdown", "countdown", 0, 0, 8, 4, tenths),
+				w("item", "poll", 8, 0, 4, 4, pres),
+				w("label", "cuelabel", 0, 4, 8, 1, label),
 				w("msgs", "messages", 8, 4, 4, 2, nil),
 				w("progress", "progress", 0, 5, 8, 1, nil),
 				w("next", "nextup", 0, 6, 8, 2, nil),
-				w("clock", "wallclock", 8, 6, 4, 2, clock))},
+				w("clock", "wallclock", 8, 6, 4, 2, clock)),
+				port(16,
+					w("countdown", "countdown", 0, 0, 12, 5, tenths),
+					w("label", "cuelabel", 0, 5, 12, 1, label),
+					w("progress", "progress", 0, 6, 12, 1, nil),
+					w("msgs", "messages", 0, 7, 12, 3, nil),
+					w("item", "poll", 0, 10, 12, 3, pres),
+					w("next", "nextup", 0, 13, 6, 3, nil),
+					w("clock", "wallclock", 6, 13, 6, 3, clock)))},
 		{Key: "stage", Name: "Full timer", Kind: "presenter", Desc: "The classic timer wall: giant countdown, messages, next, progress",
-			Layout: land(7,
-				w("countdown", "countdown", 0, 0, 8, 3, map[string]string{"tenths": "1"}),
+			Layout: both(land(7,
+				w("countdown", "countdown", 0, 0, 8, 3, tenths),
 				w("messages", "messages", 8, 0, 4, 3, nil),
-				w("cuelabel", "cuelabel", 0, 3, 8, 1, map[string]string{"source": "label"}),
+				w("cuelabel", "cuelabel", 0, 3, 8, 1, label),
 				w("nextup", "nextup", 8, 3, 4, 2, nil),
 				w("progress", "progress", 0, 4, 8, 1, nil),
 				w("dayprogress", "dayprogress", 0, 5, 8, 1, nil),
 				w("wallclock", "wallclock", 8, 5, 4, 2, clock),
-				w("showtitle", "showtitle", 0, 6, 8, 1, nil))},
-		{Key: "stage-portrait", Name: "Full timer (portrait)", Kind: "presenter", Desc: "Portrait confidence monitor: giant countdown, messages, session and next",
-			Layout: port(16,
-				w("cuelabel", "cuelabel", 0, 0, 12, 2, map[string]string{"source": "label"}),
-				w("countdown", "countdown", 0, 2, 12, 6, map[string]string{"tenths": "1"}),
-				w("progress", "progress", 0, 8, 12, 1, nil),
-				w("messages", "messages", 0, 9, 12, 3, nil),
-				w("nextup", "nextup", 0, 12, 12, 2, nil),
-				w("wallclock", "wallclock", 0, 14, 12, 2, clock))},
+				w("showtitle", "showtitle", 0, 6, 8, 1, nil)),
+				port(16,
+					w("cuelabel", "cuelabel", 0, 0, 12, 2, label),
+					w("countdown", "countdown", 0, 2, 12, 6, tenths),
+					w("progress", "progress", 0, 8, 12, 1, nil),
+					w("messages", "messages", 0, 9, 12, 3, nil),
+					w("nextup", "nextup", 0, 12, 12, 2, nil),
+					w("wallclock", "wallclock", 0, 14, 12, 2, clock)))},
 		{Key: "timer", Name: "Countdown only", Kind: "presenter", Desc: "Just the countdown and stage messages: the cleanest confidence monitor",
-			Layout: land(8,
-				w("countdown", "countdown", 0, 0, 12, 6, map[string]string{"tenths": "1"}),
-				w("messages", "messages", 0, 6, 12, 2, nil))},
-		{Key: "timer-portrait", Name: "Countdown only (portrait)", Kind: "presenter", Desc: "Portrait version of countdown only",
-			Layout: port(16,
-				w("countdown", "countdown", 0, 0, 12, 11, map[string]string{"tenths": "1"}),
-				w("messages", "messages", 0, 11, 12, 5, nil))},
+			Layout: both(land(8,
+				w("countdown", "countdown", 0, 0, 12, 6, tenths),
+				w("messages", "messages", 0, 6, 12, 2, nil)),
+				port(16,
+					w("countdown", "countdown", 0, 0, 12, 11, tenths),
+					w("messages", "messages", 0, 11, 12, 5, nil)))},
 		{Key: "speaker", Name: "Speaker support", Kind: "presenter", Desc: "Who is on, the session, progress and what comes next",
-			Layout: land(7,
+			Layout: both(land(7,
 				w("speaker", "speaker", 0, 0, 12, 2, nil),
-				w("cuelabel", "cuelabel", 0, 2, 12, 2, map[string]string{"source": "label"}),
+				w("cuelabel", "cuelabel", 0, 2, 12, 2, label),
 				w("progress", "progress", 0, 4, 12, 1, nil),
 				w("nextup", "nextup", 0, 5, 8, 2, nil),
-				w("wallclock", "wallclock", 8, 5, 4, 2, clock))},
-		// --- Fillers (any display) ---
-		{Key: "clockroom", Name: "Clock", Kind: "walkin", Desc: "Big clock with the next few sessions",
-			Layout: land(6,
-				w("wallclock", "wallclock", 0, 0, 12, 2, clock),
-				w("schedule", "schedule", 0, 2, 12, 4, map[string]string{"count": "4"}))},
-		{Key: "clockroom-portrait", Name: "Clock (portrait)", Kind: "walkin", Desc: "Poster version of the clock",
-			Layout: port(16,
-				w("wallclock", "wallclock", 0, 0, 12, 5, clock),
-				w("schedule", "schedule", 0, 5, 12, 11, map[string]string{"count": "6"}))},
-		{Key: "break", Name: "Break", Kind: "audience", Desc: "Between sessions: clock, stage messages and a notice",
-			Layout: land(8,
-				w("wallclock", "wallclock", 0, 0, 12, 3, clock),
-				w("messages", "messages", 0, 3, 12, 3, nil),
-				w("notice", "notice", 0, 6, 12, 2, map[string]string{"text": "Back shortly — enjoy the break"}))},
-		{Key: "break-portrait", Name: "Break (portrait)", Kind: "audience", Desc: "Poster version of the break screen",
-			Layout: port(16,
-				w("wallclock", "wallclock", 0, 0, 12, 5, clock),
-				w("messages", "messages", 0, 5, 12, 6, nil),
-				w("notice", "notice", 0, 11, 12, 5, map[string]string{"text": "Back shortly — enjoy the break"}))},
+				w("wallclock", "wallclock", 8, 5, 4, 2, clock)),
+				port(16,
+					w("speaker", "speaker", 0, 0, 12, 3, nil),
+					w("cuelabel", "cuelabel", 0, 3, 12, 3, label),
+					w("progress", "progress", 0, 6, 12, 1, nil),
+					w("nextup", "nextup", 0, 7, 12, 5, nil),
+					w("wallclock", "wallclock", 0, 12, 12, 4, clock)))},
 	}
 }
 
 // FitTemplate keeps a screen's built-in layout in step with its display
-// type and mounting: the template itself when it already fits, else its
-// portrait/landscape twin ("x" ↔ "x-portrait"), else the type's first
-// template of the right shape. kind "" keeps the template's own type.
-func FitTemplate(key, kind string, portrait bool) string {
-	ts := Templates()
-	byKey := map[string]TemplateInfo{}
-	for _, t := range ts {
-		byKey[t.Key] = t
-	}
+// type: the template itself when it is of that type, else the type's
+// first template. kind "" keeps the template. (The orientation never
+// matters: every built-in has both versions.)
+func FitTemplate(key, kind string) string {
 	if kind == "" {
-		kind = byKey[key].Kind
+		return key
 	}
-	fits := func(k string) bool {
-		t, ok := byKey[k]
-		return ok && (kind == "" || t.Kind == kind) && (t.Layout.Orientation == "portrait") == portrait
-	}
-	base := strings.TrimSuffix(key, "-portrait")
-	for _, k := range []string{key, base, base + "-portrait"} {
-		if fits(k) {
-			return k
+	first := ""
+	for _, t := range Templates() {
+		if t.Kind != kind {
+			continue
+		}
+		if t.Key == key {
+			return key
+		}
+		if first == "" {
+			first = t.Key
 		}
 	}
-	for _, t := range ts {
-		if fits(t.Key) {
-			return t.Key
-		}
+	if first == "" {
+		return key
 	}
-	return key
+	return first
 }
 
 // TemplateLayouts maps template key → layout (capture + apply paths).
@@ -449,6 +514,19 @@ func NormalizeLayout(in Layout) Layout {
 	if out.Rows > MaxRows {
 		out.Rows = MaxRows
 	}
+	// The other version: one level deep, the opposite orientation, the
+	// primary's animation. An empty version is dropped (AutoAlt fills in).
+	if in.Alt != nil && len(in.Alt.Widgets) > 0 {
+		alt := *in.Alt
+		alt.Alt = nil
+		alt.Orientation = "portrait"
+		if out.Orientation == "portrait" {
+			alt.Orientation = "landscape"
+		}
+		alt.Anim, alt.AnimMS = out.Anim, out.AnimMS
+		a := NormalizeLayout(alt)
+		out.Alt = &a
+	}
 	return out
 }
 
@@ -538,13 +616,21 @@ func ValidateLayout(raw string) (Layout, error) {
 	if len(l.Widgets) > MaxWidgets {
 		return Layout{}, fmt.Errorf("boards: %d widgets (max %d)", len(l.Widgets), MaxWidgets)
 	}
-	for _, w := range l.Widgets {
-		if !ValidType(w.Type) {
-			return Layout{}, fmt.Errorf("boards: unknown widget type %q", w.Type)
+	for _, v := range []*Layout{&l, l.Alt} {
+		if v == nil {
+			continue
 		}
-	}
-	if pairs := Overlaps(l); len(pairs) > 0 {
-		return Layout{}, fmt.Errorf("boards: overlapping widgets: %s", strings.Join(pairs, ", "))
+		if len(v.Widgets) > MaxWidgets {
+			return Layout{}, fmt.Errorf("boards: %d widgets (max %d)", len(v.Widgets), MaxWidgets)
+		}
+		for _, w := range v.Widgets {
+			if !ValidType(w.Type) {
+				return Layout{}, fmt.Errorf("boards: unknown widget type %q", w.Type)
+			}
+		}
+		if pairs := Overlaps(*v); len(pairs) > 0 {
+			return Layout{}, fmt.Errorf("boards: overlapping widgets (%s): %s", v.Orientation, strings.Join(pairs, ", "))
+		}
 	}
 	return l, nil
 }
@@ -597,7 +683,22 @@ func Migrate(db *sqlx.DB) error {
 			return fmt.Errorf("boards: migrate: %w", err)
 		}
 	}
+	// Built-ins became one key per layout with both versions (2026-10-07):
+	// screens on an old "<key>-portrait" or the dropped "countdown" move to
+	// the paired key. Best effort: the screens table may not exist yet.
+	for old, key := range LegacyTemplateKeys() {
+		_, _ = db.Exec(`UPDATE screens SET template = ? WHERE template = ?`, key, old)
+	}
 	return nil
+}
+
+// LegacyTemplateKeys maps retired built-in keys to their current key.
+func LegacyTemplateKeys() map[string]string {
+	m := map[string]string{"countdown": "main", "countdown-portrait": "main"}
+	for _, t := range Templates() {
+		m[t.Key+"-portrait"] = t.Key
+	}
+	return m
 }
 
 func nowMS() int64 { return time.Now().UnixMilli() }

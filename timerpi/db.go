@@ -294,6 +294,7 @@ func (d *DB) migrate() error {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
 			{"token", "TEXT NOT NULL DEFAULT ''"},
 			{"pair_code", "TEXT NOT NULL DEFAULT ''"}, // a box's 6-digit pairing code (VENUE-CLOUD §4)
+			{"handheld", "INTEGER NOT NULL DEFAULT 0"}, // a phone/tablet: capture hides Mounted
 		},
 		"assets": {
 			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
@@ -1582,6 +1583,7 @@ type WaitingScreen struct {
 	LastSeen int64  `db:"last_seen"  json:"lastSeen"`
 	Assigned string `db:"assigned"   json:"-"`
 	Screen   string `db:"screen"     json:"-"`
+	Handheld bool   `db:"handheld"   json:"handheld"`
 }
 
 const waitingStaleAfterMS = 10 * 60 * 1000
@@ -1589,6 +1591,13 @@ const waitingStaleAfterMS = 10 * 60 * 1000
 // maxWaitingRows caps unassigned waiting screens (BUGLOG RW16): a loop of
 // random names can't flood every operator's "Waiting" list.
 const maxWaitingRows = 200
+
+// SetWaitingHandheld records whether a waiting screen is a phone/tablet.
+func (d *DB) SetWaitingHandheld(name, host string, handheld bool) error {
+	name, host = SanitizeScreenName(name), ClipUTF8(strings.TrimSpace(host), 80)
+	_, err := d.Exec(`UPDATE waiting_screens SET handheld = ? WHERE name = ? AND host = ?`, handheld, name, host)
+	return err
+}
 
 // ErrWaitingFull: the waiting list is at maxWaitingRows.
 var ErrWaitingFull = errors.New("timerpi: too many screens waiting to be set up")
@@ -1640,7 +1649,7 @@ func (d *DB) PruneWaiting() {
 func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 	d.PruneWaiting()
 	var out []WaitingScreen
-	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens
+	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens
 		WHERE assigned = '' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list waiting: %w", err)
@@ -1703,7 +1712,7 @@ func (d *DB) WaitingByPairCode(code string) (WaitingScreen, error) {
 	if !ValidPairCode(code) {
 		return w, sql.ErrNoRows
 	}
-	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens
 		WHERE pair_code = ? AND last_seen >= ? ORDER BY last_seen DESC LIMIT 1`, code, nowMS()-pairFreshMS)
 	return w, err
 }
@@ -1750,7 +1759,7 @@ func (d *DB) ClaimWaitingBox(name, host, token string) (string, string, bool, er
 // GetWaiting fetches one waiting row (sql.ErrNoRows when missing).
 func (d *DB) GetWaiting(id int64) (WaitingScreen, error) {
 	var w WaitingScreen
-	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen FROM waiting_screens WHERE id = ?`, id)
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens WHERE id = ?`, id)
 	if err != nil {
 		return WaitingScreen{}, err
 	}

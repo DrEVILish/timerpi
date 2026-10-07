@@ -62,7 +62,7 @@ async function register() {
     await fetch('/api/waiting/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: screenName(), host: location.host, token: waitToken() }),
+      body: JSON.stringify({ name: screenName(), host: location.host, token: waitToken(), handheld: !!document.documentElement.dataset.deviceOrient }),
     });
   } catch { /* nothing to register against while fully offline */ }
 }

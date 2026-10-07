@@ -67,10 +67,10 @@
   </div>
   <span class="b-palette-title">Canvas</span>
   <div class="cluster is-gap-2xs">
-    <select class="select input-sm" id="b-orient" aria-label="Orientation">
-      <option value="landscape">Landscape 16:9</option>
-      <option value="portrait">Portrait 9:16</option>
-    </select>
+    <div class="segmented" id="b-orient" role="group" aria-label="Edit the landscape or the portrait version">
+      <button type="button" class="segmented-item" data-orient="landscape">Landscape</button>
+      <button type="button" class="segmented-item" data-orient="portrait">Portrait</button>
+    </div>
     <label class="cluster is-gap-2xs">Rows <input class="input input-sm" id="b-rows" type="number" min="1" max="48" style="width:4.5rem" aria-label="Canvas rows"></label>
     <label class="cluster is-gap-2xs">Animation
       <select class="select input-sm" id="b-anim" aria-label="Default animation for this layout">

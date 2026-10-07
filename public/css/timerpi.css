@@ -713,10 +713,9 @@ body[data-editable="1"] .b-topbar-board::after {
   .b-palette-list button, .b-toolbar .btn, .b-settings .btn,
   .b-w-chrome button { min-block-size: 44px; min-inline-size: 44px; }
 }
+/* No narrow-screen reflow: a phone gets the layout's own portrait version
+   (owner 2026-10-07), placed exactly as designed. */
 @media (max-width: 760px) {
-  .b-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  body[data-editing] .b-grid { --dashboard-cols: 6; }
-  .b-widget { grid-column: span 6 !important; }
   .b-toolbar { font-size: .95rem; }
 }
 

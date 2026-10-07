@@ -36,6 +36,7 @@ type session struct {
 	id          string            // peerId (client-supplied or generated)
 	role        string
 	screen      string // F1: stable display name (?screen=), "" = anonymous
+	handheld    bool   // a phone/tablet display: follows its own orientation
 	showID      int64
 	joinedAt    int64
 	active      int64 // unix ms of last inbound activity (atomic)
@@ -107,6 +108,7 @@ func (h *Hub) readJoin(s *session) bool {
 		JoinedAt int64           `json:"joinedAt"`
 		Screen   string          `json:"screen"`
 		Key      string          `json:"key"` // screen key (?key=), RW9
+		Handheld bool            `json:"handheld"`
 	}
 	if jerr := json.Unmarshal(raw, &j); jerr != nil || j.T != "join" {
 		s.sendErr("first frame must be a join frame")
@@ -138,6 +140,7 @@ func (h *Hub) readJoin(s *session) bool {
 	s.id = orGenID(j.PeerID)
 	s.role = j.Role
 	s.screen = timerpi.SanitizeScreenName(j.Screen)
+	s.handheld = j.Handheld
 	s.showID = showID
 	s.joinedAt = clampJoinedAt(j.Role, j.JoinedAt, h.nowFn())
 	switch {

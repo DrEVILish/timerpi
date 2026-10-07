@@ -238,6 +238,9 @@ export class Mesh {
         // it the hub sends the public snapshot. Operator access rides the
         // session cookies of the upgrade request (routes/access.go).
         ...(this.screen && screenKey() ? { key: screenKey() } : {}),
+        // A phone/tablet follows its own orientation (base.html): the
+        // Screens page then hides its Mounted setting.
+        ...(this.screen && document.documentElement.dataset.deviceOrient ? { handheld: true } : {}),
       }));
     };
     ws.onclose = fail;

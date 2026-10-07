@@ -69,15 +69,32 @@ const grid = $('#b-grid');
 /* ---------------------------------------------------------------- layout -- */
 
 // Live layout document: parsed from the server-embedded #b-layout JSON
-// (the same doc PUT autosaves). Geometry edits mutate this + tile styles.
-let layout = { v: 1, widgets: [] };
+// (the same doc PUT autosaves). It holds both versions of the layout
+// (landscape + portrait in .alt; owner 2026-10-07); `layout` is the
+// version on screen (html[data-layout-orient]). Geometry edits mutate it
+// + tile styles; a save writes both versions.
+const shownOrient = document.documentElement.dataset.layoutOrient === 'portrait' ? 'portrait' : 'landscape';
+let doc = { v: 1, widgets: [] };
 try {
   const raw = $('#b-layout');
-  if (raw) layout = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
+  if (raw) doc = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
 } catch { /* corrupt embed: render-only, editor stays inert */ }
-// lastSaved is the layout the server last accepted: a structural change
+let layout = doc;
+function pickVersion() {
+  layout = (doc.orientation || 'landscape') === shownOrient ? doc : (doc.alt || doc);
+}
+pickVersion();
+// setVersion replaces the version on screen (template, reset).
+function setVersion(v) {
+  v = { ...v, orientation: shownOrient };
+  delete v.alt;
+  if (layout === doc) doc = { ...v, alt: doc.alt };
+  else doc.alt = v;
+  pickVersion();
+}
+// lastSaved is the document the server last accepted: a structural change
 // that fails to save rolls back to it instead of reloading (BUGLOG RW43).
-let lastSaved = structuredClone(layout);
+let lastSaved = structuredClone(doc);
 
 // Palette defaults for newly added tiles (mirror of the Go registry).
 const TILE_DEFAULTS = {
@@ -699,10 +716,18 @@ async function saveNow() {
   clearTimeout(saveTimer);
   saveState('Saving…');
   try {
-    await api('PUT', `/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`,
-      { layout: { v: 1, rows: canvasRows(), orientation: layout.orientation || 'landscape', anim: layout.anim || 'fade', animMS: Number(layout.animMS) || 400, widgets: layout.widgets } });
+    // Both versions go up together; landscape is the primary.
+    const anim = layout.anim || 'fade';
+    const animMS = Number(layout.animMS) || 400;
+    const cur = { v: 1, rows: canvasRows(), orientation: shownOrient, widgets: layout.widgets };
+    const o = layout === doc ? doc.alt : doc;
+    const other = o && o.widgets?.length ? { v: 1, rows: o.rows, orientation: shownOrient === 'portrait' ? 'landscape' : 'portrait', widgets: o.widgets } : null;
+    const body = shownOrient === 'landscape' || !other
+      ? { ...cur, anim, animMS, ...(other ? { alt: other } : {}) }
+      : { ...other, anim, animMS, alt: cur };
+    await api('PUT', `/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, { layout: body });
     saveState(`Saved ${fmtTimeOfDay(Date.now())}`);
-    lastSaved = structuredClone(layout);
+    lastSaved = structuredClone(doc);
     return true;
   } catch (e) {
     saveState(`Save failed: ${e.message}`);
@@ -1193,9 +1218,8 @@ function freeSpot(w, h) {
 // layout back to what the server holds (BUGLOG RW43).
 async function reloadEditing() {
   if (!(await saveNow())) {
-    layout = structuredClone(lastSaved);
-    const orient = $('#b-orient');
-    if (orient) orient.value = layout.orientation === 'portrait' ? 'portrait' : 'landscape';
+    doc = structuredClone(lastSaved);
+    pickVersion();
     return false;
   }
   try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
@@ -1360,20 +1384,29 @@ function wireCompose() {
     const t = catalog.find((x) => x.key === btn.dataset.preset);
     if (!t) return;
     if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
-    layout = structuredClone(t.layout);
+    doc = structuredClone(t.layout); // a built-in brings both versions
+    pickVersion();
     await reloadEditing(); // server re-renders tiles, then we relock into edit
   });
 
-  // Canvas: orientation + row count.
-  const orient = $('#b-orient');
+  // Canvas: which version is being edited + row count. A layout has a
+  // landscape and a portrait version; the switch saves this one and opens
+  // the other (owner 2026-10-07).
   const rowsIn = $('#b-rows');
-  if (orient) orient.value = layout.orientation === 'portrait' ? 'portrait' : 'landscape';
   if (rowsIn) rowsIn.value = String(canvasRows());
-  orient?.addEventListener('change', async () => {
-    layout.orientation = orient.value;
-    layout.rows = Math.max(canvasRows(), orient.value === 'portrait' ? 16 : 8);
-    await reloadEditing();
-  });
+  for (const b of document.querySelectorAll('#b-orient [data-orient]')) {
+    b.classList.toggle('is-active', b.dataset.orient === shownOrient);
+    b.setAttribute('aria-pressed', String(b.dataset.orient === shownOrient));
+    b.addEventListener('click', async () => {
+      if (b.dataset.orient === shownOrient || !(await saveNow())) return;
+      const u = new URL(location.href);
+      u.searchParams.set('orient', b.dataset.orient);
+      try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
+      // The Screens page frames the editor at the layout's shape.
+      try { window.parent.document.getElementById('tp-screen-edit')?.classList.toggle('is-portrait', b.dataset.orient === 'portrait'); } catch { /* not framed */ }
+      location.replace(u.toString());
+    });
+  }
   const animSel = $('#b-anim');
   const animMs = $('#b-anim-ms');
   if (animSel) animSel.value = layout.anim || 'fade';
@@ -1401,7 +1434,7 @@ function wireCompose() {
     try {
       const j = await api('GET', '/api/board-templates');
       if (!j.default?.widgets?.length) throw new Error('no default layout');
-      layout = j.default;
+      setVersion(j.default);
     } catch (err) {
       saveState(`Reset failed: ${err.message}`);
       return;

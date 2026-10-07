@@ -29,10 +29,14 @@
 /* Phones and tablets know which way up they are (STATUS U1, owner
    2026-10-06): on a touch device with an orientation sensor the screen's
    "Mounted" rotation is ignored and the page simply follows the device.
-   Kiosk Pis and TVs (no touch) keep their Mounted setting. */
+   Kiosk Pis and TVs (touchscreen or not) keep their Mounted setting. */
 (function () {
   var h = document.documentElement;
-  var handheld = (navigator.maxTouchPoints || 0) > 0 && window.matchMedia && matchMedia('(pointer: coarse)').matches && ('orientation' in screen || 'onorientationchange' in window);
+  var ua = navigator.userAgent || '';
+  var mobile = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+    (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1); /* iPadOS reports a Mac */
+  /* A touchscreen kiosk (Pi, X11 Chromium) is not handheld: it has no orientation sensor. */
+  var handheld = mobile && (navigator.maxTouchPoints || 0) > 0 && ('orientation' in screen || 'onorientationchange' in window);
   if (handheld) { h.dataset.deviceOrient = '1'; delete h.dataset.rotate; }
 })();
 </script>

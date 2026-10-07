@@ -293,7 +293,12 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		pd.Next = views.NextCue{Pos: first.Pos, Label: first.Label, DurFmt: first.DurFmt, StartFmt: first.StartFmt}
 	}
 
-	layout := board.Parsed()
+	doc := board.Parsed()
+	if doc.Alt == nil { // a layout from before versions: show (and edit) an automatic one
+		alt := boards.AutoAlt(doc)
+		doc.Alt = &alt
+	}
+	layout := doc.For(boardPortrait(c, rotationOf(d, c, showID)))
 	widgets := make([]views.BoardWidgetVM, 0, len(layout.Widgets))
 	for _, w := range layout.Widgets {
 		widgets = append(widgets, views.BoardWidgetVM{
@@ -344,8 +349,36 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		// already behind A1's AuthGate, so this just stops shipping a toolbar
 		// that can only ever answer 401s.
 		Editable:   c.Query("edit") == "1" && d.superOfShow(c, showID), // layouts: Event Technician only (U25)
-		LayoutJSON: template.JS(board.Layout),
+		LayoutJSON: template.JS(boards.MarshalLayout(doc)),
 	}
+}
+
+// rotationOf is the named screen's Mounted rotation (?rotate= overrides,
+// for the editor preview).
+func rotationOf(d *Deps, c *gin.Context, showID int64) int {
+	rot := 0
+	if name := timerpi.SanitizeScreenName(c.Query("screen")); name != "" && d.Store != nil {
+		if scr, err := d.Store.GetScreenByName(showID, name); err == nil {
+			rot = scr.Rotation
+		}
+	}
+	if r, err := strconv.Atoi(c.Query("rotate")); err == nil && timerpi.ValidRotation(r) {
+		rot = r
+	}
+	return rot
+}
+
+// boardPortrait picks the layout version (owner 2026-10-07): ?orient= wins
+// (a phone or tablet reports which way up it is held; the editor's
+// Portrait/Landscape switch), else the screen's Mounted rotation.
+func boardPortrait(c *gin.Context, rotation int) bool {
+	switch c.Query("orient") {
+	case "portrait":
+		return true
+	case "landscape":
+		return false
+	}
+	return rotation == 90 || rotation == 270
 }
 
 // boardJoinOf is the board page's share affordance: the same values as

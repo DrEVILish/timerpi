@@ -749,6 +749,22 @@ func (h *Hub) ScreenSessions(showID int64) map[string]int {
 	return out
 }
 
+// ScreenHandheld names the screens with a live phone/tablet session (the
+// Screens page hides their Mounted setting: they follow the device).
+func (h *Hub) ScreenHandheld(showID int64) map[string]bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]bool{}
+	if sh, ok := h.byShow[showID]; ok {
+		for ses := range sh.sessions {
+			if ses.screen != "" && ses.handheld {
+				out[ses.screen] = true
+			}
+		}
+	}
+	return out
+}
+
 // SendToRole fans a frame to every live session of one role (F1: refresh
 // the operator screens panel on registry changes). Returns the count.
 func (h *Hub) SendToRole(showID int64, role string, frame []byte) int {
