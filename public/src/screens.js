@@ -30,7 +30,7 @@ export function initScreens() {
   initPresets();
 }
 
-export async function pull() {
+export async function pull(force = false) {
   if (!page) return;
   const [s, w, l] = await Promise.all([
     api('GET', `/api/shows/${code}/screens`).catch(() => null),
@@ -41,7 +41,7 @@ export async function pull() {
   if (w) st.waiting = w.waiting || [];
   if (l) st.layouts = l.boards || l || [];
   // A rename box or dropdown in use: skip this redraw (U13, BUGLOG RW37).
-  if (busy || isEditingIn(document.getElementById('tp-screens-page'))) return;
+  if (force !== true && (busy || isEditingIn(document.getElementById('tp-screens-page')))) return;
   renderWaiting();
   renderScreens();
 }
@@ -55,7 +55,7 @@ async function apply(fn, msg) {
     toast(e.message, 'danger');
   }
   busy = false;
-  pull();
+  pull(true); // the control just used still has focus: redraw anyway
 }
 
 /* ------------------------------------------------------------- screens -- */
