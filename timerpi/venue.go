@@ -114,7 +114,7 @@ func (d *DB) CreateEventWithCode(code, name, superHash string) (Event, error) {
 	}
 	now := nowMS()
 	res, err := d.Exec(`INSERT INTO events (code, name, super_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		code, ClipUTF8(name, MaxNameLen), superHash, now, now)
+		code, ClipRunes(name, MaxNameLen), superHash, now, now)
 	if err != nil {
 		return Event{}, fmt.Errorf("timerpi: create event copy: %w", err)
 	}
@@ -126,7 +126,7 @@ func (d *DB) CreateEventWithCode(code, name, superHash string) (Event, error) {
 func (d *DB) UpdateEventCopy(id int64, name, superHash, theme string, endsAt int64) error {
 	_, err := d.Exec(`UPDATE events SET name = ?, super_hash = ?, theme = ?,
 		released_at = CASE WHEN ends_at = ? THEN released_at ELSE 0 END, ends_at = ?, updated_at = ? WHERE id = ?`,
-		ClipUTF8(name, MaxNameLen), superHash, theme, endsAt, endsAt, nowMS(), id)
+		ClipRunes(name, MaxNameLen), superHash, theme, endsAt, endsAt, nowMS(), id)
 	return err
 }
 
@@ -138,7 +138,7 @@ func (d *DB) CreateRoomWithCode(eventID int64, code, title string) (Show, error)
 	}
 	now := nowMS()
 	res, err := d.Exec(`INSERT INTO shows (title, code, created_at, updated_at, event_id) VALUES (?, ?, ?, ?, ?)`,
-		ClipUTF8(title, MaxNameLen), code, now, now, eventID)
+		ClipRunes(title, MaxNameLen), code, now, now, eventID)
 	if err != nil {
 		return Show{}, fmt.Errorf("timerpi: create room copy: %w", err)
 	}
@@ -150,7 +150,7 @@ func (d *DB) CreateRoomWithCode(eventID int64, code, title string) (Show, error)
 // stored hash, copied as is).
 func (d *DB) UpdateRoomCopy(id int64, title string, pos int64, roomPWHash, notes, dayStart string) error {
 	_, err := d.Exec(`UPDATE shows SET title = ?, room_pos = ?, room_pw = ?, notes = ?, day_start = ?, updated_at = ? WHERE id = ?`,
-		ClipUTF8(title, MaxNameLen), pos, roomPWHash, notes, dayStart, nowMS(), id)
+		ClipRunes(title, MaxNameLen), pos, roomPWHash, notes, dayStart, nowMS(), id)
 	return err
 }
 

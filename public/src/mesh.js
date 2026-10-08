@@ -140,6 +140,17 @@ export class Mesh {
 
   serverOnline() { return this._ws?.readyState === 1; }
 
+  /** LINK LIVE for the page chip/strip: the server, or (offline) a mesh
+   * path that can still drive the show. An operator keeps running the
+   * show from here (it is master or reaches peers); a display is live only
+   * while it reaches an operator — a lone display (or displays with no
+   * operator) electing itself master is NOT a live link (E2E #7). */
+  linkLive() {
+    if (this.serverOnline()) return true;
+    if (this.role === 'controls') return this.isMaster() || this.openPeerIds().length > 0;
+    return this.openPeerIds().some((id) => this.trustedPeer(id));
+  }
+
   /** peers with a live data channel right now */
   openPeerIds() {
     return [...this.connections.entries()]
@@ -305,7 +316,9 @@ export class Mesh {
           if (this._pingAt) { this.rtt = Math.round(performance.now() - this._pingAt); this._pingAt = 0; this.onStatusChange(); }
           break;
         case 'err':
-          this.onLog('error', m.message || 'server error');
+          // Server errors are operator feedback; a display page never
+          // toasts them (E2E #9).
+          this.onLog(this.role === 'controls' ? 'error' : 'warn', m.message || 'server error');
           if (/session deleted/i.test(m.message || '')) {
             // Operator deleted this session (gallery/panel action): the
             // display returns to its LAUNCH state — the /d/ ready surface
@@ -437,7 +450,7 @@ export class Mesh {
 
   _connectToAllKnown() {
     for (const peerId of this.peers.keys()) {
-      if (peerId !== this.peerId) this._connect(peerId);
+      if (peerId !== this.peerId && this.vouchedPeer(peerId)) this._connect(peerId);
     }
   }
 
@@ -481,7 +494,7 @@ export class Mesh {
     if (data.description) {
       let entry = this.connections.get(fromId);
       if (!entry) {
-        if (data.description.type !== 'offer') return;
+        if (data.description.type !== 'offer' || !this.vouchedPeer(fromId)) return;
         const pc = new RTCPeerConnection({ iceServers: [], iceCandidatePoolSize: 0 });
         entry = { pc, dc: null, peerId: fromId };
         this.connections.set(fromId, entry);
@@ -503,7 +516,7 @@ export class Mesh {
           this._signal(fromId, { description: entry.pc.localDescription });
         }
       } catch (err) {
-        this.onLog('error', `webrtc: ${err}`);
+        this.onLog(this.role === 'controls' ? 'error' : 'warn', `webrtc: ${err}`);
       }
     } else if (data.candidate) {
       try { await this.connections.get(fromId)?.pc.addIceCandidate(data.candidate); }
@@ -531,7 +544,7 @@ export class Mesh {
     dc.onopen = () => {
       dc.send(JSON.stringify({
         t: 'hi', meta: { peerId: this.peerId, role: this.role, joinedAt: this.joinedAt },
-        snap: this.snap, now: this.now(),
+        snap: this._snapFor(peerId), now: this.now(),
       }));
       this._reElect();
     };
@@ -557,7 +570,7 @@ export class Mesh {
           if (m.t === 'hi' && dc.readyState === 'open') {
             dc.send(JSON.stringify({
               t: 'hi-ack', meta: { peerId: this.peerId, role: this.role, joinedAt: this.joinedAt },
-              snap: this.snap, now: this.now(),
+              snap: this._snapFor(peerId), now: this.now(),
             }));
           }
           this._reElect();
@@ -623,6 +636,23 @@ export class Mesh {
    * session). Peers first met after the server went away are untrusted. */
   trustedPeer(peerId) {
     return this.peers.get(peerId)?.hubRole === 'controls';
+  }
+
+  /** True when the hub vouched for peerId as a trusted session (operator
+   * or keyed screen): only those may receive our snapshot (E2E #1). The
+   * hub never lists or relays untrusted screens, this is the second lock. */
+  vouchedPeer(peerId) {
+    const p = this.peers.get(peerId);
+    return !!p && (p.hubTrusted === true || p.hubRole === 'controls');
+  }
+
+  /** The snapshot a peer may receive: the trusted one for vouched peers,
+   * nothing for anyone else. The poll/presenter items never ride the mesh
+   * (audience screens must not see the Presenter-only item, E2E #12). */
+  _snapFor(peerId) {
+    if (!this.snap || !this.vouchedPeer(peerId)) return null;
+    const { poll, presenter, ...rest } = this.snap;
+    return rest;
   }
 
   /** P2P state adoption (BUGLOG RC8). While the server is reachable it is
@@ -691,11 +721,14 @@ export class Mesh {
     this._meshBroadcast({ t: 'mesh-state', snap: this.snap, now: this.now() });
   }
 
+  /** Send a mesh-state to every open, hub-vouched peer (`snap` is
+   * projected per peer by _snapFor). */
   _meshBroadcast(message) {
-    for (const { dc } of this.connections.values()) {
-      if (dc?.readyState === 'open') {
-        try { dc.send(JSON.stringify(message)); } catch { /* */ }
-      }
+    for (const [peerId, { dc }] of this.connections) {
+      if (dc?.readyState !== 'open') continue;
+      const snap = this._snapFor(peerId);
+      if (!snap) continue;
+      try { dc.send(JSON.stringify({ ...message, snap })); } catch { /* */ }
     }
   }
 
@@ -735,7 +768,7 @@ export class Mesh {
     for (const p of list || []) {
       if (!p || p.peerId === this.peerId) continue;
       const known = this.peers.get(p.peerId) || {};
-      this.peers.set(p.peerId, { ...known, ...p, hubRole: p.role });
+      this.peers.set(p.peerId, { ...known, ...p, hubRole: p.role, hubTrusted: p.trusted === true });
     }
     this.onStatusChange();
   }

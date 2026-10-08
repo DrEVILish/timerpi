@@ -3,6 +3,7 @@ package ws
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // Unknown command actions answer `unknown command %q`; the HTTP-route
@@ -99,7 +100,7 @@ func TestAddMsgFormDataShapes(t *testing.T) {
 }
 
 // Signal error branches (the relay test only covers the happy path):
-// missing target and unknown peer are refused to the sender.
+// a missing target is refused; a gone peer is dropped quietly.
 func TestSignalErrorBranches(t *testing.T) {
 	ts := newTestServer(t, false)
 	a := ts.joinClient(t, "controls", "peer-a")
@@ -115,8 +116,11 @@ func TestSignalErrorBranches(t *testing.T) {
 		t.Fatalf("signal no-to err = %v", errFrame)
 	}
 
+	// A signal to a peer that already left is normal churn (late ICE
+	// candidates): dropped without an err frame (E2E #9).
 	a.send(t, map[string]any{"t": "signal", "to": "ghost", "data": map[string]any{"candidate": "x"}})
-	if errFrame := a.readUntil(t, "err"); !strings.Contains(errFrame["message"].(string), `unknown peer "ghost"`) {
-		t.Fatalf("signal ghost err = %v", errFrame)
+	a.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if _, raw, err := a.conn.ReadMessage(); err == nil {
+		t.Fatalf("signal to a gone peer answered: %s", raw)
 	}
 }

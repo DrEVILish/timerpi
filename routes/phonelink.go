@@ -9,8 +9,9 @@
 // Event Technician password hash. That hash travels with every copy of the
 // event (cloud and venue boxes), so a link minted at the venue also works
 // on the cloud copy, and changing the password voids every link. Links
-// live PhoneLinkTTL and are single-use (the redeeming server remembers
-// spent nonces until they expire).
+// live PhoneLinkTTL and are single-use (the redeeming server stores spent
+// nonces in its database until they expire, so a restart doesn't revive
+// a used code).
 package routes
 
 import (
@@ -23,7 +24,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,11 +34,6 @@ import (
 
 // PhoneLinkTTL is how long a phone sign-in code stays valid.
 var PhoneLinkTTL = 2 * time.Minute
-
-var phoneSpent = struct {
-	sync.Mutex
-	m map[string]int64 // nonce → expiry (unix)
-}{m: map[string]int64{}}
 
 func phoneMAC(ev timerpi.Event, exp, nonce string) string {
 	m := hmac.New(sha256.New, []byte("timerpi-phone/1|"+ev.SuperHash))
@@ -56,7 +51,7 @@ func phoneToken(ev timerpi.Event, now time.Time) (string, time.Time) {
 }
 
 // phoneRedeem checks a token and spends it.
-func phoneRedeem(ev timerpi.Event, tok string, now time.Time) bool {
+func phoneRedeem(store *timerpi.DB, ev timerpi.Event, tok string, now time.Time) bool {
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 || ev.SuperHash == "" {
 		return false
@@ -68,18 +63,8 @@ func phoneRedeem(ev timerpi.Event, tok string, now time.Time) bool {
 	if !hmac.Equal([]byte(parts[2]), []byte(phoneMAC(ev, parts[0], parts[1]))) {
 		return false
 	}
-	phoneSpent.Lock()
-	defer phoneSpent.Unlock()
-	for n, e := range phoneSpent.m {
-		if e < now.Unix() {
-			delete(phoneSpent.m, n)
-		}
-	}
-	if _, used := phoneSpent.m[parts[1]]; used {
-		return false
-	}
-	phoneSpent.m[parts[1]] = exp
-	return true
+	fresh, err := store.SpendNonce("phone:"+parts[1], exp, now.Unix())
+	return err == nil && fresh
 }
 
 // POST /api/events/:code/phone-link {base} — base is the address the
@@ -129,7 +114,7 @@ func (d *Deps) phoneSignIn(c *gin.Context) {
 	if !loginAllowed(c, target) {
 		return
 	}
-	good := phoneRedeem(ev, c.Query("t"), time.Now())
+	good := phoneRedeem(d.Store, ev, c.Query("t"), time.Now())
 	loginResult(c, target, good)
 	if !good {
 		d.renderAccessDenied(c, "Code expired", "This phone code has expired or was already used. Show a fresh code on the Event Technician page and scan it again.")

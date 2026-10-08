@@ -126,3 +126,23 @@ func TestReplaceCuesEmptyClears(t *testing.T) {
 		t.Fatalf("cues after empty replace: %+v", cues)
 	}
 }
+
+// E2E minor: an alert can't be longer than its cue, and a Break drops its
+// (hidden) speaker.
+func TestCueAlertWithinDurationAndBreakSpeaker(t *testing.T) {
+	c := Cue{Label: "Talk", DurationMS: 60_000, Alert1MS: 120_000}
+	c.Normalize()
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "alert is longer") {
+		t.Fatalf("alert > duration accepted: %v", err)
+	}
+	c = Cue{Label: "Talk", DurationMS: 60_000, Alert1MS: 30_000, Alert2MS: 60_000}
+	c.Normalize()
+	if err := c.Validate(); err != nil {
+		t.Fatalf("alert within duration refused: %v", err)
+	}
+	b := Cue{Label: "Lunch", Kind: KindBreak, Speaker: "Leslie"}
+	b.Normalize()
+	if b.Speaker != "" {
+		t.Fatalf("break kept speaker %q", b.Speaker)
+	}
+}

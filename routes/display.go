@@ -77,7 +77,13 @@ func (d *Deps) displayVariants(c *gin.Context) {
 		// Officially documented passthrough: ?view=stage is a normalizing
 		// redirect to the canonical URL, which serves the stage directly
 		// (no loop — the no-query case renders the stage in place).
-		c.Redirect(http.StatusFound, "/d/"+c.Param("ident"))
+		// Keep the rest of the query (key, accent, bg, screen…): a keyed
+		// stage that lost its key would drop trust and stage messages.
+		dst := "/d/" + c.Param("ident")
+		if q := stripParam(c.Request.URL.RawQuery, "view"); q != "" {
+			dst += "?" + q
+		}
+		c.Redirect(http.StatusFound, dst)
 		return
 	}
 

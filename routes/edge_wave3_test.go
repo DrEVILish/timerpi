@@ -182,7 +182,7 @@ func TestImportAppendSalvage(t *testing.T) {
 	bad := "label,duration\nGood,1:00\nBad1,banana\nBad2,5:00\n"
 	imp := ts.multipart(bad, "cue-list.csv")
 	code, body := ts.callType("POST", "/api/shows/"+ts.showCode+"/import?mode=append", imp.body, imp.ctype)
-	if code != http.StatusOK || !bytes.Contains(body, []byte("row 3")) || !bytes.Contains(body, []byte("banana")) {
+	if code != http.StatusOK || !bytes.Contains(body, []byte("Row 3")) || !bytes.Contains(body, []byte("banana")) {
 		t.Fatalf("append salvage: %d %s (want row-3/banana report)", code, body)
 	}
 	var labels []string

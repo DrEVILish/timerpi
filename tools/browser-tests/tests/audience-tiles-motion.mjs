@@ -37,20 +37,34 @@ export async function run(t) {
   t.check('words are not badges', words.every((w) => !w.badge));
   t.check('rotation within ±90°', words.every((w) => Math.abs(w.angle) <= 90));
   t.check('the first word kept its element', words.find((w) => w.text === 'alpha')?.mark === 1);
-  await tv.waitForTimeout(7000);
+  // Long words (some turned ±90° by their hash) must fit whole (E2E #22).
+  for (const w of ['extraordinarily', 'internationalisation', 'collaboration', 'interoperability']) await ask(cloud.id, w);
+  await tv.waitForFunction(() => document.querySelectorAll('.b-cloud-word').length === 8, null, { timeout: 8000 }).catch(() => {});
   const boxes = async () => tv.$$eval('.b-cloud-word', (ws) => ws.map((w) => { const r = w.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, tf: w.style.transform }; }));
-  const settled = await boxes();
+  // At rest = two looks 600 ms apart show the same transforms (up to 20 s).
+  let settled = await boxes();
+  let rested = false;
+  for (let i = 0; i < 40 && !rested; i++) {
+    await tv.waitForTimeout(600);
+    const now = await boxes();
+    rested = JSON.stringify(now.map((b) => b.tf)) === JSON.stringify(settled.map((b) => b.tf));
+    settled = now;
+  }
+  const tile = await tv.$eval('.b-cloud', (c) => { const r = c.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; });
+  const out = settled.filter((b) => b.l < tile.l - 1 || b.r > tile.r + 1 || b.t < tile.t - 1 || b.b > tile.b + 1).length;
+  t.check(`no word is clipped by the tile (${out} outside)`, out === 0);
   let overlaps = 0;
   for (let i = 0; i < settled.length; i++) for (let j = i + 1; j < settled.length; j++) {
     const a = settled[i], b = settled[j];
-    if (Math.min(a.r, b.r) - Math.max(a.l, b.l) > 1 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 1) overlaps++;
+    if (Math.min(a.r, b.r) - Math.max(a.l, b.l) > -2 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > -2) overlaps++; // touching counts
   }
   t.check(`words never overlap (${overlaps})`, overlaps === 0);
   const cx = (b) => (b.l + b.r) / 2;
   const area = await tv.$eval('.b-cloud', (c) => { const r = c.getBoundingClientRect(); return (r.left + r.right) / 2; });
   t.check('words gather round the centre', Math.abs(settled.reduce((n, b) => n + cx(b), 0) / settled.length - area) < 200);
-  await tv.waitForTimeout(800);
-  t.check('the cloud comes to rest (no endless loop)', JSON.stringify((await boxes()).map((b) => b.tf)) === JSON.stringify(settled.map((b) => b.tf)));
+  t.check('the cloud comes to rest (no endless loop)', rested);
+  const pct = await tv.evaluate(async () => (await import('/src/audtiles.js')).percents([1, 1, 1], 3));
+  t.check(`poll percentages add up to 100 (${pct})`, pct.reduce((a, b) => a + b, 0) === 100);
 
   const qa = await (await api('POST', `/api/shows/${room}/polls`, { kind: 'qa', question: 'Ask', autoApprove: true })).json();
   await api('POST', `/api/shows/${room}/polls/${qa.id}/show`, { target: 'audience', on: true });

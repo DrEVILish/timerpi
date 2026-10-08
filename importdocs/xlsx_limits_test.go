@@ -14,7 +14,7 @@ import (
 // the real table still imports.
 func TestXLSXFarCellIsCheap(t *testing.T) {
 	f := excelize.NewFile()
-	for i, row := range [][]any{{"Label", "Duration"}, {"Keynote", "30:00"}, {"Panel", "45:00"}} {
+	for i, row := range [][]any{{"Label", "Duration"}, {"Keynote", "0:30"}, {"Panel", "0:45"}} {
 		cell, _ := excelize.CoordinatesToCellName(1, i+1)
 		if err := f.SetSheetRow("Sheet1", cell, &row); err != nil {
 			t.Fatal(err)

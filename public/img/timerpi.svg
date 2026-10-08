@@ -20,7 +20,8 @@
     <circle r="5" fill="#E8E6E3"/>
   </g>
   <!-- wordmark: primary purple carries the identity -->
-  <text x="106" y="61" fill="#E8E6E3"
+  <!-- dark outline under the light ink: readable on light themes too -->
+  <text x="106" y="61" fill="#E8E6E3" stroke="#14161A" stroke-width="7" stroke-linejoin="round" paint-order="stroke"
         font-family="ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
         font-size="42" font-weight="600" letter-spacing="0.5">Timer<tspan fill="#7C3AED">Pi</tspan></text>
 </svg>

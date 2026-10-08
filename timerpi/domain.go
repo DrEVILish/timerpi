@@ -225,6 +225,9 @@ func (c *Cue) Normalize() {
 	if c.Kind == "" {
 		c.Kind = KindSession
 	}
+	if c.Kind == KindBreak {
+		c.Speaker = "" // a break has a place, not a speaker (U14)
+	}
 	c.Location = ClipUTF8(strings.TrimSpace(c.Location), 80)
 	if c.TimerKind == "" {
 		c.TimerKind = TimerCountdown
@@ -287,6 +290,11 @@ func (c Cue) Validate() error {
 	}
 	if c.DurationMS < 0 || c.HoldMS < 0 || c.Alert1MS < 0 || c.Alert2MS < 0 {
 		return fmt.Errorf("timerpi: cue %q has a negative duration/hold/alert", c.Label)
+	}
+	// An alert fires at that much time LEFT, so it can't exceed the cue
+	// (a cue with no length has nothing to count down from).
+	if c.DurationMS > 0 && (c.Alert1MS > c.DurationMS || c.Alert2MS > c.DurationMS) {
+		return fmt.Errorf("timerpi: cue %q alert is longer than the cue itself", c.Label)
 	}
 	if !ValidColor(c.AlertColor1) || !ValidColor(c.AlertColor2) || !ValidColor(c.Color) {
 		return fmt.Errorf("timerpi: cue %q has an invalid colour", c.Label)

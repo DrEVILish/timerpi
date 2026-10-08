@@ -224,9 +224,9 @@ func FmtAgo(ms int64) string {
 // ParseDuration accepts "30" (minutes), "30s" (seconds), "1:30"
 // (h:mm) or "1:00:05" (h:mm:ss) into milliseconds — dashboard quick-adds
 // and the inspector duration field (owner decision 2026-10-05: a bare
-// number is minutes, two-part is hours:minutes). File imports keep their
-// own seconds-based rule (importdocs.ParseDurationMS) — spreadsheet
-// "1:00" still means one minute there.
+// number is minutes, two-part is hours:minutes). File imports use the
+// same two-part rule (importdocs.ParseDurationMS refuses "45:00" with a
+// hint); a bare number there is seconds.
 func ParseDuration(s string) int64 {
 	s = strings.TrimSpace(s)
 	if s == "" {

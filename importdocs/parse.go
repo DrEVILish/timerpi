@@ -107,7 +107,7 @@ var headerSynonyms = map[string]string{
 	// Label/title/name — the row's headline text.
 	"cue": "label", "cuelabel": "label", "cuetitle": "label", "label": "label",
 	"title": "label", "name": "label", "item": "label",
-	// Duration — accepts mm:ss(.d), hh:mm:ss(.d), "1m5s", "45" (seconds), "45ms".
+	// Duration — accepts h:mm, h:mm:ss(.d), "1m5s", "45" (seconds), "45ms".
 	"duration": "duration", "durations": "duration", "time": "duration",
 	"minutes": "duration", "mins": "duration", "min": "duration",
 	// Start is informational (TimerPi computes starts from durations) but
@@ -115,6 +115,7 @@ var headerSynonyms = map[string]string{
 	"start": "start", "starttime": "start", "from": "start",
 	"tags": "tags", "tag": "tags",
 	"speaker": "speaker", "presenter": "speaker", "speakername": "speaker",
+	"location": "location", "venue": "location", "place": "location", "where": "location",
 	"notes": "notes", "note": "notes", "comment": "notes",
 	"comments": "notes", "remark": "notes", "remarks": "notes",
 	"color": "color", "colour": "color", "rowcolor": "color",
@@ -149,7 +150,7 @@ func headerMap(row []string) map[string]int {
 	}
 	// Default every as-yet-unfound column id to "absent" (-1 sentinel).
 	for _, id := range []string{
-		"label", "duration", "start", "tags", "speaker", "notes",
+		"label", "duration", "start", "tags", "speaker", "notes", "location",
 		"color", "alert1", "alert2", "endaction", "kind",
 	} {
 		if _, ok := m[id]; !ok {
@@ -234,6 +235,9 @@ func cueFromRecord(row []string, cols map[string]int, rowIdx int) (timerpi.Cue, 
 	if label == "" && durRaw == "" {
 		return timerpi.Cue{}, nil
 	}
+	if label == "" {
+		return timerpi.Cue{}, fmt.Errorf("importdocs: row %d: the title is empty — every row needs a title (Label column)", rowNo)
+	}
 	c.Label = label
 
 	if durRaw != "" {
@@ -248,6 +252,7 @@ func cueFromRecord(row []string, cols map[string]int, rowIdx int) (timerpi.Cue, 
 	c.Tags = cell(row, cols["tags"])
 	c.Speaker = cell(row, cols["speaker"])
 	c.Notes = cell(row, cols["notes"])
+	c.Location = cell(row, cols["location"])
 
 	if v := cell(row, cols["color"]); v != "" {
 		colHex, err := parseColor(v)
@@ -339,8 +344,9 @@ func parseColor(v string) (string, error) {
 
 // ParseDurationMS parses operator-entered durations:
 //
-//	"1:05.5"   → 1 min 5.5 s (mm:ss where the last part may be fractional)
-//	"00:05:00" → hh:mm:ss = 5 min
+//	"0:45"     → h:mm = 45 min (same rule as the operator UI; "45:00" is
+//	             refused with a hint — it would be 45 hours)
+//	"00:05:00" → h:mm:ss = 5 min (the seconds part may be fractional)
 //	"1m5s"     → mixed units; "2h", "45 min", "1.5s" also work
 //	"65"       → a bare number is SECONDS (decimals allowed: "1.5" = 1.5 s)
 //	"90000ms"  → explicit milliseconds
@@ -371,21 +377,41 @@ func ParseDurationMS(s string) (int64, error) {
 	return parseUnitChunksMS(s)
 }
 
-// parseClockTimeMS handles "mm:ss(.d)" (2 parts) and "hh:mm:ss(.d)" (3
-// parts): the LAST part is seconds, each part before it is 60× bigger.
+// parseClockTimeMS handles "h:mm" (2 parts, the operator UI's rule:
+// "0:45" is 45 minutes) and "h:mm:ss(.d)" (3 parts). A two-part value
+// with hours ≥ 24 or minutes ≥ 60 is almost always a spreadsheet "mm:ss"
+// ("45:00"), so it is refused with a hint instead of becoming 45 hours
+// (REPORT #13).
 func parseClockTimeMS(s string) (int64, error) {
 	parts := strings.Split(s, ":")
 	switch len(parts) {
-	case 2, 3:
+	case 2:
+		h, herr := strconv.Atoi(parts[0])
+		m, merr := strconv.Atoi(parts[1])
+		if herr != nil || merr != nil || h < 0 || m < 0 {
+			return 0, fmt.Errorf("duration %q invalid (want h:mm, h:mm:ss or 45m)", s)
+		}
+		if h >= 24 {
+			hint := fmt.Sprintf("use %d:%02d for %d minutes or %dm", h/60, h%60, h, h)
+			if m != 0 {
+				hint = fmt.Sprintf("use 0:%02d:%02d or %dm%ds for %d min %d s", h, m, h, m, h, m)
+			}
+			return 0, fmt.Errorf("duration %q is %d hours (two-part times are hours:minutes) — %s", s, h, hint)
+		}
+		if m >= 60 {
+			return 0, fmt.Errorf("duration %q invalid: minutes must be 0–59 (two-part times are hours:minutes, e.g. 0:45 = 45 minutes)", s)
+		}
+		return int64(h*60+m) * 60000, nil
+	case 3:
 	default:
-		return 0, fmt.Errorf("duration %q invalid (want mm:ss or hh:mm:ss)", s)
+		return 0, fmt.Errorf("duration %q invalid (want h:mm or h:mm:ss)", s)
 	}
 	var total float64
 	factor := 1.0
 	for i := len(parts) - 1; i >= 0; i-- {
 		f, err := strconv.ParseFloat(parts[i], 64)
 		if err != nil {
-			return 0, fmt.Errorf("duration %q invalid (want mm:ss or hh:mm:ss)", s)
+			return 0, fmt.Errorf("duration %q invalid (want h:mm or h:mm:ss)", s)
 		}
 		total += f * factor
 		factor *= 60

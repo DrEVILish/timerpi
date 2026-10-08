@@ -26,6 +26,15 @@ export function cueByPos(snap, pos) {
   return snap.cues.find(c => c.pos === pos) || null;
 }
 
+/** The cue a per-cue command means: by id when it carries one (a gone id
+ *  is no cue — never whatever now sits at that slot, E2E #6), else by pos
+ *  (older senders). Parity with ws cuePosOf. */
+export function cueRef(snap, args = {}) {
+  if (!snap) return null;
+  if (Number(args.id) > 0) return snap.cues.find(c => c.id === Number(args.id)) || null;
+  return cueByPos(snap, Number(args.pos));
+}
+
 export function activeCue(snap) {
   return snap ? cueByPos(snap, snap.runtime.activePos) : null;
 }
@@ -184,13 +193,13 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
 
   switch (action) {
     case 'start': {
-      const target = args.pos ? cueByPos(snap, args.pos) : (cue || findNextArmed(snap));
+      const target = (args.pos || args.id) ? cueRef(snap, args) : (cue || findNextArmed(snap));
       if (!target) return 'ignored';
       beginCue(snap, target, now);
       return 'applied';
     }
     case 'go': {
-      const target = args.pos ? cueByPos(snap, args.pos) : findNextArmed(snap);
+      const target = (args.pos || args.id) ? cueRef(snap, args) : findNextArmed(snap);
       if (!target) return 'ignored';
       beginCue(snap, target, now);
       return 'applied';
@@ -241,7 +250,7 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
       return 'applied';
     }
     case 'jump': {
-      const target = cueByPos(snap, args.pos);
+      const target = cueRef(snap, args);
       if (!target) return 'ignored';
       if (args.start === false) { // arm without starting
         r.prevPos = r.activePos; r.activePos = target.pos;
@@ -407,11 +416,15 @@ export function cueAdd(snap, args = {}, now = Date.now()) {
 
 /** cueEdit {pos, ...fields} — partial update parity with ws `cueEdit` allowlist. */
 export function cueEdit(snap, args = {}, now = Date.now()) {
-  const cue = cueByPos(snap, Number(args.pos));
+  const cue = cueRef(snap, args);
   if (!cue) return 'ignored';
   // Whole-op rejections mirror the server Validate() failure (nothing applied).
   if (args.timerKind !== undefined && !TIMER_KINDS.has(args.timerKind)) return 'ignored';
   if (args.endAction !== undefined && !END_ACTIONS.has(args.endAction)) return 'ignored';
+  // Server Validate parity: an alert can't outlast its cue.
+  const num = (k, cur) => (args[k] !== undefined && Number.isFinite(Number(args[k])) && Number(args[k]) >= 0 ? Math.floor(Number(args[k])) : (cur || 0));
+  const dur = num('durationMS', cue.durationMS);
+  if (dur > 0 && (num('alert1MS', cue.alert1MS) > dur || num('alert2MS', cue.alert2MS) > dur)) return 'ignored';
   if (args.label !== undefined) cue.label = String(args.label);
   if (args.durationMS !== undefined && Number.isFinite(Number(args.durationMS)) && Number(args.durationMS) >= 0) {
     cue.durationMS = Math.floor(Number(args.durationMS));
@@ -443,9 +456,8 @@ export function cueEdit(snap, args = {}, now = Date.now()) {
 
 /** cueDel {pos} — parity with ws `cueDel`; leaves a tombstone for the merge. */
 export function cueDel(snap, args = {}, now = Date.now()) {
-  const pos = Number(args.pos);
-  const idx = snap.cues.findIndex(c => c.pos === pos);
-  if (!(pos > 0) || idx < 0) return 'ignored';
+  const idx = snap.cues.indexOf(cueRef(snap, args));
+  if (idx < 0) return 'ignored';
   const [gone] = snap.cues.splice(idx, 1);
   pushTombstone(snap, gone.id, now);
   renumber(snap);
@@ -455,11 +467,10 @@ export function cueDel(snap, args = {}, now = Date.now()) {
 
 /** cueMove {pos, dir: up|down} — parity with ws `cueMove` (adjacent swap). Both swapped rows are content-touched (see stamp rule above). */
 export function cueMove(snap, args = {}, now = Date.now()) {
-  const pos = Number(args.pos);
   const dir = args.dir;
-  if (!(pos > 0) || (dir !== 'up' && dir !== 'down')) return 'ignored';
+  if (dir !== 'up' && dir !== 'down') return 'ignored';
   renumber(snap);
-  const idx = snap.cues.findIndex(c => c.pos === pos);
+  const idx = snap.cues.indexOf(cueRef(snap, args));
   const other = dir === 'up' ? idx - 1 : idx + 1;
   if (idx < 0 || other < 0 || other >= snap.cues.length) return 'ignored'; // edge: no-op like the DB layer
   const neighbour = snap.cues[other];
@@ -474,9 +485,8 @@ export function cueMove(snap, args = {}, now = Date.now()) {
 
 /** cueDup {pos} — parity with ws `cueDup` (copy inserted directly after). */
 export function cueDup(snap, args = {}, now = Date.now()) {
-  const pos = Number(args.pos);
-  const idx = snap.cues.findIndex(c => c.pos === pos);
-  if (!(pos > 0) || idx < 0) return 'ignored';
+  const idx = snap.cues.indexOf(cueRef(snap, args));
+  if (idx < 0) return 'ignored';
   const src = snap.cues[idx];
   const copy = { ...src, id: nextTempId(snap) };
   stampCue(copy, now);

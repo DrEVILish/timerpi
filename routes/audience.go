@@ -502,9 +502,8 @@ func (d *Deps) audiencePage(c *gin.Context) {
 		pageError(c, err)
 		return
 	}
-	if _, ok := d.audiencePeer(c); !ok { // issue the device cookie up front
-		return
-	}
+	// No device id here: it is minted on the first vote or submission, so
+	// a crowd scanning the QR never hits the mint budget just by looking.
 	d.render(c, "audience", gin.H{
 		"Page": "audience", "Show": gin.H{"Code": sh.Code, "Title": sh.Title},
 		"DefaultTheme": config.DefaultTheme(),

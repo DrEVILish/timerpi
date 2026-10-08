@@ -46,7 +46,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | Req | Status | Note |
 |---|---|---|
 | E1–E3 events, join flow, rooms admin | ✅ | Tested in `routes/events_test.go` |
-| E4 event export/import | 🟡 | Room export (`/api/shows/:c/file`) and room import into an event work. A single whole-event file is still to do |
+| E4 event export/import | ✅ | Event Technician page "Event file": Export event (`GET /api/events/:c/export`, no hashes or screen keys) and Import an event file (`POST /api/events/import`, a new event with the importer's password). Tests `TestEventFileRoundTrip`, browser `event-file-leave` |
 | T1–T5 timing | ✅ | Mature |
 | T6 import | ✅ | |
 | T7 blackout room / event | ✅ | Room, and event-wide from the SuperOperator dashboard |
@@ -177,7 +177,7 @@ Owner's list after trying the build, grouped by area. Wording kept close to the 
 | **U21** | ✅ Done 2026-10-06. |
 | **U22** | ✅ Done 2026-10-06. |
 | **U23** | ✅ Done 2026-10-06 ("Join event", "Create event", error text). Browser test `home-page` covers U19–U23. |
-| **U24** | ✅ Done 2026-10-06: event pages and the room page say **Leave event** (`GET /e/<code>/leave`: drops this browser's sessions for that event only); the code at the top is labelled **Event ID**. Test `TestLeaveEventOnlyThisEvent`. |
+| **U24** | ✅ Done 2026-10-06: event pages and the room page say **Leave event** (`POST /e/<code>/leave` form since 2026-10-08: drops this browser's sessions for that event only); the code at the top is labelled **Event ID**. Test `TestLeaveEventOnlyThisEvent`. |
 
 **Roles and the room page**
 

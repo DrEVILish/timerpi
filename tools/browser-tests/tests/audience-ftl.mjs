@@ -1,6 +1,6 @@
 // STATUS U17: the phone page and the audience screen tiles use ftl-themes
 // components: .panel card, .empty-state wait, .btn options (chosen =
-// .btn-primary), <progress class="progress"> tallies, .alert verdict and
+// aria-pressed, ftl's toggle lamp), <progress class="progress"> tallies, .alert verdict and
 // spotlight on the phone, .list wall.
 export const name = 'phone page and audience tiles use ftl components';
 
@@ -22,7 +22,10 @@ export async function run(t) {
   t.check('options are ftl buttons', await phone.$$eval('.tp-aud-opt', (bs) => bs.every((b) => b.classList.contains('btn'))));
   await phone.click('.tp-aud-opt >> nth=0');
   await phone.waitForTimeout(600);
-  t.check('the chosen answer is .btn-primary', await phone.$eval('.tp-aud-opt >> nth=0', (b) => b.classList.contains('btn-primary')));
+  t.check('the chosen answer is aria-pressed', await phone.$eval('.tp-aud-opt >> nth=0', (b) => b.getAttribute('aria-pressed') === 'true'));
+  // E2E: the ftl lamp is a round dot, not a squashed pill (needs a flex button).
+  const lamp = await phone.$eval('.tp-aud-opt >> nth=0', (b) => { const s = getComputedStyle(b, '::before'); return [parseFloat(s.width), parseFloat(s.height)]; });
+  t.check(`the option lamp is round (${lamp})`, lamp[0] > 4 && Math.abs(lamp[0] - lamp[1]) < 1);
 
   // Audience screen with the main template, results shown.
   await api('POST', `/api/shows/${room}/screens/template`, { name: 'Hall', template: 'main' });

@@ -28,6 +28,10 @@
    page-wide screen preview). Keep cards at card width. */
 :is(#room-grid, #live-grid, #tp-gal, #tp-waiting-list) > * { max-inline-size: 28rem; }
 #pair-form .otp { inline-size: 18rem; max-inline-size: 100%; }
+/* Selects size to their longest option plus the chevron (material's
+   chevron sat on "Main Hall"). */
+#pair-form .select { min-inline-size: 10rem; padding-inline-end: 2.2em; }
+.tp-nowrap { white-space: nowrap; flex: none; }
 .tp-map-thumb { max-height: 4rem; max-width: 8rem; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius, 4px); }
 
 /* Touch-first targets on tablets (moderators) — PRODUCT L6. */
@@ -50,7 +54,12 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
    <progress class="progress">, the wall an ftl .list, the spotlight and
    the quiz verdict ftl .alert, cloud words ftl .badge. Only layout here. */
 .tp-aud-opts { display: grid; gap: .55rem; }
-.tp-aud-opt { display: block; width: 100%; min-height: 3.2rem; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+/* flex (not block): ftl's .btn[aria-pressed]::before lamp is a flex item; as
+   an inline box it collapsed to a squashed pill glued to the label. */
+.tp-aud-opt { display: flex; justify-content: flex-start; width: 100%; min-height: 3.2rem; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+/* The chosen answer: the theme's own accent pair (its contrast is the
+   theme's), not the brand-purple .btn-primary that some themes ink black. */
+body.tp-aud .tp-aud-opt[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg-hover: var(--accent); --btn-fg: var(--on-accent); --btn-border: var(--accent); --btn-pressed-ring: var(--accent); font-weight: 700; }
 .tp-aud-hint { margin: .6rem 0 0; }
 .tp-aud-res { margin-bottom: .8rem; }
 .tp-aud-res-head { display: flex; justify-content: space-between; gap: .6rem; }
@@ -64,13 +73,20 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
 .tp-aud-ask .btn { min-height: 2.75rem; }
 .tp-aud-mine { margin-top: .5rem; }
 .tp-aud-mine p { margin: .15rem 0; }
-.tp-aud-spot { margin: .8rem 0 .4rem; }
+.tp-aud-spot { margin: .8rem 0 .4rem; flex-wrap: wrap; }
+.tp-aud-spot .label { white-space: nowrap; }
+.tp-aud-spot p { flex: 1 1 100%; }
 .tp-aud-spot p { margin: .2rem 0 0; font-weight: 600; }
 .tp-aud-wall { margin: .8rem 0 0; }
 .tp-aud-entry { display: flex; gap: .6rem; align-items: flex-start; overflow-wrap: anywhere; }
 .tp-aud-entry.is-answered { opacity: .55; }
 .tp-aud-cloud { display: flex; flex-wrap: wrap; gap: .4rem .5rem; margin-top: .9rem; align-items: center; }
 .tp-aud-foot { font-size: .8rem; }
+.tp-aud-foot .connection { white-space: normal; max-width: 100%; }
+/* Upvote badges: one line, one width; the upvoted one is ftl's active chip
+   and stays fully opaque although it is disabled. */
+.tp-aud-up { flex: none; white-space: nowrap; min-width: 3.4em; justify-content: center; }
+.tp-aud-up.is-active:disabled { opacity: 1; }
 /* Reduced motion is honoured on phones only (PRODUCT L4). */
 @media (prefers-reduced-motion: no-preference) {
   .tp-aud-in { animation: var(--motion-enter); }
@@ -78,7 +94,7 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
 
 /* ------------------------------------------- moderator Audience panel */
 .tp-onair { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .75rem 0; }
-.tp-onair > .badge { max-width: 100%; }
+.tp-onair > .badge { max-width: 100%; gap: .3em; } /* flex badge trims the space after "Audience:" */
 #tp-aud-items { padding: .5rem .75rem .75rem; }
 .tp-tally { display: grid; gap: .35rem; }
 .tp-tally-row { display: grid; grid-template-columns: 1fr auto; gap: .1rem .6rem; align-items: center; }
@@ -87,7 +103,7 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
 .tp-entry { flex-wrap: wrap; } /* ftl .list-item; buttons wrap under long text */
 .tp-entry-text { flex: 1 1 10rem; overflow-wrap: anywhere; }
 .tp-entry-votes { color: var(--muted); min-width: 2.6rem; }
-.tp-entry.is-answered .tp-entry-text { opacity: .55; text-decoration: line-through; }
+.tp-entry.is-answered .tp-entry-text { color: var(--muted); text-decoration: line-through 1px; } /* readable, just done */
 .tp-entry.is-spot { background: var(--surface-2); }
 .tp-aud-editor .segmented { flex-wrap: wrap; }
 .tp-opt-row { display: flex; align-items: center; gap: .4rem; }
@@ -107,6 +123,20 @@ body.b-board .b-grid {
   gap: 1.1vmin; padding: 1.1vmin;
 }
 body.b-board[data-editing] .b-grid { padding-block-end: 1.1vmin; }
+/* Layout editor (E2E #23): the canvas has the shape of the version being
+   edited (16:9 or 9:16), centred in the space left under the chrome. */
+body.b-board[data-editable] .b-grid { flex: 1 1 0; width: auto; max-width: 100%; align-self: center; aspect-ratio: 16 / 9; }
+body.b-board[data-editable][data-orientation="portrait"] .b-grid { aspect-ratio: 9 / 16; }
+.b-palette-toggle { display: none; }
+body.b-board:not([data-editing]) .b-palette-toggle { display: none; }
+@media (max-width: 760px) {
+  /* Phones: the page scrolls, the palette folds away, the canvas keeps
+     its shape at full width. */
+  body.b-board[data-editing] { height: auto; min-height: 100dvh; overflow: auto; }
+  body.b-board[data-editing] .b-grid { flex: none; width: 100%; }
+  body.b-board[data-editing] .b-palette-toggle { display: inline-flex; }
+  body.b-board[data-palette-closed] #b-palette { display: none; }
+}
 /* Real screens carry no top bar; the editor keeps it. */
 body.b-board:not([data-editable]) .b-topbar { display: none; }
 .b-widget { container-type: size; padding: 1.2vmin 1.6vmin; }
@@ -133,8 +163,9 @@ body.b-board .b-speaker { font-size: clamp(.9rem, min(26cqh, 5.5cqw), 9rem); }
 body.b-board .b-show-title { font-size: clamp(1rem, min(56cqh, 6cqw), 9rem); }
 body.b-board .b-notice { font-size: clamp(1rem, min(24cqh, 6cqw), 9rem); }
 body.b-board .b-rate { font-size: min(50cqh, 16cqw); }
-body.b-board .b-eyebrow { font-size: clamp(.7rem, min(9cqh, 2.4cqw), 2rem); }
-body.b-board .b-next-meta, body.b-board .b-cd-label { font-size: clamp(.8rem, min(12cqh, 3cqw), 3rem); }
+body.b-board .b-eyebrow { font-size: clamp(.85rem, min(9cqh, 2.4cqw), 2rem); }
+body.b-board .b-next-meta, body.b-board .b-cd-label { font-size: clamp(.9rem, min(12cqh, 3cqw), 3rem); }
+body.b-board .b-bar-label { font-size: clamp(.9rem, min(30cqh, 3cqw), 2.4rem); }
 body.b-board .b-msg { font-size: clamp(1rem, min(20cqh, 6cqw), 8rem); }
 body.b-board .b-w-schedule .schedule-list { font-size: clamp(.85rem, min(7cqh, 3.2cqw), 3rem); }
 body.b-board .b-w-progress { --progress-height: clamp(.6rem, 28cqh, 3rem); }
@@ -151,15 +182,30 @@ body.b-board .b-poll-bar { height: max(.55rem, 3cqh); }
 body.b-board .b-qa-item { font-size: clamp(1rem, min(6cqh, 3cqw), 4rem); }
 body.b-board .b-js-joinqr { width: min(100%, 78cqh); }
 body.b-board .b-join-label { font-size: clamp(.8rem, min(8cqh, 6cqw), 2.5rem); }
+/* Empty states (E2E #20): an idle tile says so, muted, sized by the tile. */
+body.b-board .b-empty { color: var(--muted); }
+/* A long session title wraps to a second line rather than ellipsising. */
+body.b-board .b-cue-label { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.15; }
+body.b-board .b-tile-empty, body.b-board .b-msg-empty { font-size: clamp(1rem, min(12cqh, 7cqw), 3.4rem); color: var(--muted); text-align: center; margin: auto; padding: .4em; }
+/* Digits sit in the middle of their tile (ftl .readout is inline-flex). */
+body.b-board .b-w-countdown .b-w-body, body.b-board .b-w-wallclock .b-w-body { align-items: center; text-align: center; }
+body.b-board .b-cd-label { max-width: 100%; }
+/* Next-up facts, labelled: "Duration 30:00 · Starts 10:30 · in 12:00". */
+.b-nm + .b-nm::before { content: " · "; }
+/* Poll: question and results read as one block, centred in the tile. */
+body.b-board [data-aud-mode="bars"] { justify-content: center; }
+body.b-board [data-aud-mode="bars"] > .b-aud-body { flex: 0 1 auto; }
 
 /* All rooms now (event walk-in). */
 .b-rooms { display: grid; gap: 1.6cqh; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-content: start; height: 100%; overflow: hidden; }
 .b-room { border-left: .35rem solid var(--border); padding: .2em .8em; display: grid; gap: .15em; min-width: 0; align-content: start;
   font-size: clamp(1rem, min(7cqh, 3cqw), 3.4rem); }
 .b-room.is-live { border-left-color: var(--accent); }
-.b-room-name { font-weight: 800; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-room-now { font-size: 1.3em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-room-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Lines wrap (up to two) instead of ellipsising while the tile has room. */
+.b-room-name, .b-room-now, .b-room-meta { overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.b-room-name { font-weight: 800; letter-spacing: .04em; }
+.b-room-now { font-size: 1.3em; font-weight: 700; }
+.b-room-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
 .b-room.is-here .b-room-name::after { content: " · you are here"; color: var(--muted); font-weight: 600; }
 /* Walk-in "Current & next" tile (STATUS U4). */
 .b-widget .b-nownext { display: grid; justify-content: stretch; gap: 1.6em; height: 100%; min-height: 0;
@@ -199,13 +245,25 @@ body.b-board .b-join-label { font-size: clamp(.8rem, min(8cqh, 6cqw), 2.5rem); }
    full width (the group itself is inline and never wraps). */
 .tp-kind-group { display: flex; }
 .tp-kind-group > .toggle-btn { flex: 1 1 0; flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: start; }
-@media (max-width: 34rem) { .tp-kind-group { flex-direction: column; } .tp-kind-group > .toggle-btn { margin-inline-start: 0; } .tp-scr-fields { grid-template-columns: 1fr; } }
+@media (max-width: 34rem) { .tp-kind-group { flex-direction: column; gap: .35rem; } .tp-kind-group > .toggle-btn { margin-inline-start: 0; flex: none; min-block-size: max-content; } .tp-scr-fields { grid-template-columns: 1fr; } }
 /* Layout editor: an almost-full-screen ftl modal (STATUS U8), edge to edge. */
 dialog.modal.tp-screen-edit:modal { width: 98vw; max-width: 98vw; height: 96vh; max-height: 96vh;
   --modal-pad: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Portrait version: a portrait-shaped frame (board.js toggles .is-portrait
+   when the editor switches versions). */
+dialog.modal.tp-screen-edit.is-portrait:modal { width: min(98vw, 64rem); }
+/* Layouts / Presets rows: name, usage, then the buttons together. */
+:is(#tp-layouts, #tp-presets) .list-item { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; }
+.tp-preset-save { flex: 1 1 20rem; flex-wrap: nowrap; }
+.tp-preset-save .input { flex: 1 1 12rem; width: auto; min-width: 0; }
 .tp-screen-edit iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: 0; display: block; background: #000; }
 .tp-screen-edit .modal-header { flex-wrap: wrap; margin-block-end: 0; }
-.tp-screen-edit .modal-header .field-hint { flex: 1 1 auto; font-weight: normal; }
+.tp-screen-edit .modal-header .field-hint { flex: 1 1 20rem; font-weight: normal; }
+.tp-screen-edit .modal-header > #tp-screen-edit-close { margin-inline-start: auto; }
+/* Secondary text in a modal title bar takes the bar's ink (windows95's
+   navy bar made --muted hints unreadable). */
+.modal-header :is(.field-hint, .text-muted) { color: inherit; opacity: .8; }
+.modal-header .tp-edit-legend b { color: inherit; }
 .tp-edit-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
 .tp-edit-legend b { color: var(--accent); }
 
@@ -213,6 +271,9 @@ dialog.modal.tp-screen-edit:modal { width: 98vw; max-width: 98vw; height: 96vh; 
 /* ------------------------------------------------- room page tabs */
 .tp-room-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .tp-room-tabs .tab { min-height: 2.6rem; display: inline-flex; align-items: center; gap: .4em; }
+/* ios-skeuomorphic sets its dark tab-bar inks (white active tab) on every
+   .tabs, so the active Run tab vanished on the light page. */
+html[data-theme="ios-skeuomorphic"] .tp-room-tabs { --tab-fg-active: var(--text); --tab-fg: var(--muted); }
 .tp-aud-layout { display: grid; gap: var(--space-m, 1rem); grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
 @media (max-width: 75rem) { .tp-aud-layout { grid-template-columns: minmax(0, 1fr); } }
 
@@ -228,8 +289,64 @@ dialog.modal.tp-screen-edit:modal { width: 98vw; max-width: 98vw; height: 96vh; 
 .tp-aud-row.is-expandable { cursor: pointer; }
 .tp-tally-row progress.progress { width: 100%; }
 
-/* Footer: sticky, always visible (2026-10-07). */
-body.app > .app-status { position: sticky; inset-block-end: 0; z-index: 5; }
+/* Footer: sticky, always visible (2026-10-07), and one line at every size
+   so it never stacks over the page (E2E #24). */
+body.app > .app-status { position: sticky; inset-block-end: 0; z-index: 5; flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+body.app > .app-status > * { min-width: 0; }
+
+/* App bar (E2E #24/#25): brand | nav | clock | actions. Themes that move
+   the brand to its own "large title" row (ios-*) are pulled back. */
+body.app > .app-bar > .nav-brand { order: 0; flex: none; font-size: inherit; }
+body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
+@media (max-width: 600px) {
+  .tp-wide-only { display: none !important; } /* utility: beats .app-bar .nav-item */
+  body.app > .app-bar { gap: .25rem .5rem; }
+  /* Phones: brand + clock + actions on line 1, the room and Event
+     Technician on line 2. */
+  body.app > .app-bar > .nav { flex: 1 0 100%; order: 10; }
+  body.app > .app-bar .breadcrumbs > .breadcrumb-item:not(.is-current) { display: none; } /* the logo links to the event */
+  body.app > .app-bar .tp-bar-clock { margin-inline: auto; }
+}
+
+/* liquid-glass (E2E #3): the theme floats a 3rem capsule bar over the
+   window and keeps a 12rem decorative sidebar; our bar is taller (and the
+   bundle inherits the iOS status-bar bezel), so it covered the page top and
+   took clicks. Here bar, window and footer keep their own rows and the
+   sidebar collapses. Theme-side part: reviews/upstream-issues/ftl-e2e-themes.md. */
+html[data-theme="liquid-glass"] { --app-columns: 0 minmax(0, 1fr); --app-gap: .6rem 0; }
+html[data-theme="liquid-glass"] body.app > .app-rail { display: none; }
+html[data-theme="liquid-glass"] body.app > .app-main { grid-row: main; padding: 1.25rem; }
+html[data-theme="liquid-glass"] body.app > .app-bar { position: relative; top: auto; margin: 0; border-top: 0; }
+html[data-theme="liquid-glass"] body.app > .app-bar::before,
+html[data-theme="liquid-glass"] body.app > .app-bar::after { content: none; }
+html[data-theme="liquid-glass"] body.app > .app-status { justify-self: stretch; max-width: none; margin: 0; justify-content: flex-start; gap: .75rem; }
+/* The bundle also inherits the iOS-6 dark-blue alert tokens (white text,
+   white labels, a "Done" pill for ×) onto its light glass modal: take the
+   page's tokens back (`inherit`) and the core close button (`initial` =
+   core fallbacks). */
+html[data-theme="liquid-glass"] .modal {
+  --on-surface: inherit; --text: inherit; --muted: inherit; --label-fg: inherit; --focus: inherit;
+  --btn-bg: inherit; --btn-bg-hover: inherit; --btn-fg: inherit; --btn-border: inherit; --btn-border-hover: inherit;
+  --btn-shadow: inherit; --ios-btn-text-shadow: none; text-shadow: none;
+}
+html[data-theme="liquid-glass"] .modal .label { text-shadow: none; }
+/* Same leak on panel headers (light state inks for a dark strip that this
+   theme doesn't draw: "IDLE", "DANGER ZONE" vanished), selected list rows
+   (white text: Messages "ON STAGE") and the bar's overlapping segmented
+   nav items. */
+html[data-theme="liquid-glass"] .panel-header { --success-text: inherit; --warning-text: inherit; --danger-text: inherit; --muted: inherit; --accent-text: inherit; text-shadow: none; }
+html[data-theme="liquid-glass"] .list-item.is-active { --list-item-fg: inherit; text-shadow: none; }
+html[data-theme="liquid-glass"] .app-bar .nav-item { margin-inline: 0; }
+/* ios-flat inherits the same skeuomorphic bits: white embossed breadcrumbs
+   on its white bar, steel-gradient panel headers under grey text. */
+html:is([data-theme="ios-flat"], [data-theme="liquid-glass"]) .app-bar .breadcrumb-item { color: var(--text); text-shadow: none; }
+html[data-theme="ios-flat"] .panel-header { background: none; text-shadow: none; }
+html[data-theme="liquid-glass"] .modal-header > .btn-close {
+  --btn-close-glyph: initial; --btn-close-width: initial; --btn-close-height: initial; --btn-close-pad: initial;
+  --btn-close-glyph-size: initial; --btn-close-bg: initial; --btn-close-bg-hover: initial; --btn-close-border: initial;
+  --btn-close-border-width: initial; --btn-close-radius: initial; --modal-header-close-fg: initial; --btn-close-fg-hover: initial;
+  text-shadow: none;
+}
 /* Phone sign-in QR (Event Technician page). */
 .tp-phone-qr { display: block; width: min(320px, 100%); height: auto; margin: .8rem auto; padding: .5rem; background: #fff; border-radius: var(--radius, 6px); image-rendering: pixelated; }
 html[data-device-orient] #phone-link-btn { display: none; } /* already on the phone */

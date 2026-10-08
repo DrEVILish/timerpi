@@ -159,16 +159,17 @@ func (d *Deps) canModerate(c *gin.Context, showID int64) bool {
 	return ModerateFromCookies(d.Store, cookieMap(c.Request), showID)
 }
 
-// hasAnySession: the request holds at least one valid moderator or
-// supervisor session (shared operator tools: waiting room, asset list).
-func (d *Deps) hasAnySession(c *gin.Context) bool {
+// hasSuperSession: the request holds at least one valid Event Technician
+// (supervisor) session. The waiting room is theirs: setting up screens is
+// never a room moderator's job (STATUS U25).
+func (d *Deps) hasSuperSession(c *gin.Context) bool {
 	if d.Store == nil {
 		return false
 	}
 	cookies := cookieMap(c.Request)
 	seen := 0
 	for name, val := range cookies {
-		if !strings.HasPrefix(name, "tp_ev_") && !strings.HasPrefix(name, "tp_rm_") {
+		if !strings.HasPrefix(name, "tp_ev_") {
 			continue
 		}
 		if !tokenLooksLive(val) {
@@ -177,15 +178,8 @@ func (d *Deps) hasAnySession(c *gin.Context) bool {
 		if seen++; seen > maxSessionCookies {
 			break
 		}
-		switch {
-		case strings.HasPrefix(name, "tp_ev_"):
-			if ev, ok := d.Store.ResolveEvent(strings.TrimPrefix(name, "tp_ev_")); ok && SuperFromCookies(d.Store, cookies, ev) {
-				return true
-			}
-		case strings.HasPrefix(name, "tp_rm_"):
-			if id, ok := timerpi.ResolveShowID(d.Store, strings.TrimPrefix(name, "tp_rm_")); ok && ModerateFromCookies(d.Store, cookies, id) {
-				return true
-			}
+		if ev, ok := d.Store.ResolveEvent(strings.TrimPrefix(name, "tp_ev_")); ok && SuperFromCookies(d.Store, cookies, ev) {
+			return true
 		}
 	}
 	return false
@@ -227,12 +221,12 @@ func (d *Deps) requireBoxAdmin(c *gin.Context) bool {
 	return false
 }
 
-// requireAnySession guards shared operator tools.
-func (d *Deps) requireAnySession(c *gin.Context) bool {
-	if d.hasAnySession(c) {
+// requireSuperSession guards the waiting room.
+func (d *Deps) requireSuperSession(c *gin.Context) bool {
+	if d.hasSuperSession(c) {
 		return true
 	}
-	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "operator sign-in required"})
+	c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Event Technician sign-in required"})
 	c.Abort()
 	return false
 }
@@ -302,7 +296,7 @@ func (d *Deps) accessGate() gin.HandlerFunc {
 			// Screens register themselves without signing in.
 		case strings.HasPrefix(p, "/api/waiting"):
 			// /api/assets checks its event scope in the handlers (assets.go).
-			if !d.requireAnySession(c) {
+			if !d.requireSuperSession(c) {
 				return
 			}
 		}

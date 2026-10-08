@@ -32,11 +32,13 @@ export function initScreens() {
 
 export async function pull(force = false) {
   if (!page) return;
+  const t0 = performance.now();
   const [s, w, l] = await Promise.all([
     api('GET', `/api/shows/${code}/screens`).catch(() => null),
     api('GET', '/api/waiting').catch(() => null),
     api('GET', `/api/shows/${code}/boards`).catch(() => null),
   ]);
+  paintLink(!!s, Math.round(performance.now() - t0));
   if (s) st.screens = s.screens || [];
   if (w) st.waiting = w.waiting || [];
   if (l) st.layouts = l.boards || l || [];
@@ -45,6 +47,18 @@ export async function pull(force = false) {
   renderWaiting();
   renderScreens();
   renderLayouts();
+}
+
+// The footer's link status: this page has no WS session (timerpi.js drives
+// #conn-label on the Run tab), so the 3 s poll is the link check.
+function paintLink(ok, ms) {
+  const label = document.getElementById('conn-label');
+  if (label) {
+    label.dataset.state = ok ? 'live' : 'offline';
+    label.textContent = ok ? 'Server link up' : 'Server unreachable — retrying';
+  }
+  const ping = document.getElementById('conn-ping');
+  if (ping) ping.textContent = ok ? `${ms} ms` : '—';
 }
 
 // The event's own layouts: edit or delete (owner 2026-10-07: there was no
@@ -62,18 +76,19 @@ function renderLayouts() {
   host.replaceChildren(el('ul', { class: 'list' }, ...st.layouts.map((b) => el('li', { class: 'list-item' },
     el('span', { class: 'list-item-title', text: b.name || `Layout ${b.id}` }),
     el('span', { class: 'text-muted', text: b.usedBy ? `${b.usedBy} screen${b.usedBy === 1 ? '' : 's'}` : 'not used' }),
-    el('button', { type: 'button', class: 'btn btn-sm push', text: 'Edit',
+    el('span', { class: 'cluster is-gap-2xs push' },
+    el('button', { type: 'button', class: 'btn btn-sm', text: 'Edit',
       onclick: () => openEditor({ id: b.id, name: b.name, usedBy: b.usedBy || 0, orientation: b.layout?.orientation }) }),
     el('button', { type: 'button', class: 'btn btn-sm btn-danger', text: 'Delete', 'aria-label': `Delete layout ${b.name}`,
       onclick: async () => {
-        const msg = b.usedBy ? `${b.usedBy} screen${b.usedBy === 1 ? '' : 's'} using it go back to the plain timer.` : 'No screen uses it.';
+        const msg = b.usedBy ? `${b.usedBy === 1 ? '1 screen using it goes' : `${b.usedBy} screens using it go`} back to the plain timer.` : 'No screen uses it.';
         if (!(await tpConfirm(msg, { title: `Delete the layout "${b.name}"?`, ok: 'Delete', danger: true }))) return;
         try {
           await api('DELETE', `/api/shows/${code}/boards/${b.id}`);
           toast('Layout deleted', 'success');
         } catch (e) { toast(e.message, 'danger'); }
         pull(true);
-      } })))));
+      } }))))));
 }
 
 const post = (path, body) => api('POST', `/api/shows/${code}${path}`, body);
@@ -120,7 +135,7 @@ function card(s) {
   const name = el('span', { class: 'tp-inline-edit tp-scr-name', tabindex: '0', title: 'Double-click to rename', text: s.name });
   inlineEdit(name, (to) => post('/screens/rename', { from: s.name, to }).then(() => pull()));
   const head = el('div', { class: 'tp-scr-head' }, name,
-    el('span', { class: `status ${s.connected ? 'status-ok' : 'status-idle'}`, text: s.connected ? 'Live' : 'Offline' }),
+    el('span', { class: `status ${s.connected ? 'status-ok' : 'text-muted'}`, text: s.connected ? 'Live' : 'Offline' }),
     s.kind ? el('span', { class: 'badge', text: KIND_LABEL[s.kind] || s.kind }) : null,
     s.rotation ? el('span', { class: 'badge', text: ROT_LABEL[s.rotation] }) : null);
 
@@ -413,7 +428,7 @@ function openEditor(b) {
   q.set('orient', b.orientation === 'portrait' ? 'portrait' : 'landscape');
   frame.src = `/d/${code}?${q}`;
   dlg.classList.toggle('is-portrait', b.orientation === 'portrait');
-  document.getElementById('tp-screen-edit-title').textContent = `Editing: ${b.name}`;
+  document.getElementById('tp-screen-edit-title').textContent = 'Layout editor'; // the frame's own bar names the layout
   const shared = document.getElementById('tp-screen-edit-shared');
   shared.hidden = !(b.usedBy > 1);
   shared.textContent = `Used by ${b.usedBy} screens: changes show on all of them`;
@@ -435,7 +450,8 @@ async function presetsRefresh() {
   if (!list.length) { host.replaceChildren(el('div', { class: 'empty-state' }, el('span', { class: 'empty-state-title', text: 'No presets saved yet.' }))); return; }
   host.replaceChildren(el('ul', { class: 'list' }, ...list.map((pr) => el('li', { class: 'list-item' },
     el('span', { text: pr.name }),
-    el('button', { type: 'button', class: 'btn btn-sm btn-primary push', text: 'Apply',
+    el('span', { class: 'cluster is-gap-2xs push' },
+    el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Apply',
       onclick: () => api('POST', `${presetsPath}/${pr.id}/apply`)
         .then(() => toast('Preset applied to all named screens'), (e) => toast(e.message, 'danger')) }),
     el('button', { type: 'button', class: 'btn btn-sm', text: 'Export',
@@ -445,7 +461,7 @@ async function presetsRefresh() {
         if (!(await tpConfirm('The preset is removed for every operator of this show.', { title: 'Delete this preset?', ok: 'Delete', danger: true }))) return;
         try { await api('DELETE', `${presetsPath}/${pr.id}`); } catch (e) { toast(e.message, 'danger'); }
         presetsRefresh();
-      } })))));
+      } }))))));
 }
 
 function initPresets() {

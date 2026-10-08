@@ -43,13 +43,15 @@
     <div class="panel-header">Presets</div>
     <div class="stack is-gap-2xs">
       <div id="tp-presets" class="stack is-gap-2xs"></div>
-      <form id="tp-preset-save" class="cluster is-gap-2xs">
-        <input class="input input-sm" name="name" placeholder="Preset name" aria-label="Preset name" required style="min-width:0">
-        <button class="btn btn-sm" type="submit">Save current</button>
-      </form>
-      <label class="btn btn-sm btn-ghost" style="cursor:pointer">Import preset
-        <input type="file" id="tp-preset-import" accept="application/json,.json" hidden>
-      </label>
+      <div class="cluster is-gap-s">
+        <form id="tp-preset-save" class="cluster is-gap-2xs tp-preset-save">
+          <input class="input input-sm" name="name" placeholder="Preset name" aria-label="Preset name" required>
+          <button class="btn btn-sm tp-nowrap" type="submit">Save current</button>
+        </form>
+        <label class="btn btn-sm tp-nowrap" style="cursor:pointer">Import preset…
+          <input type="file" id="tp-preset-import" accept="application/json,.json" hidden>
+        </label>
+      </div>
     </div>
   </section>
 </div>

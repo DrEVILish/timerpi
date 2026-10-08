@@ -13,7 +13,7 @@
 <div id="d-stage" class="tp-display-stage" data-state="idle">
   <div class="tp-display-top">
     <span class="tp-brand">
-      <img src="/img/timerpi.svg" alt="" width="26" height="26">
+      <img src="/img/timerpi.svg" alt="TimerPi" width="87" height="26">
     </span>
     <span class="tp-display-label" id="d-label">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
     <span class="badge tp-state-chip" id="d-chip" hidden></span>
@@ -33,7 +33,6 @@
 
   <div class="tp-display-status">
     <span id="d-status">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
-    {{if .Hostname}}<span class="mono">{{.Hostname}}</span>{{end}}
   </div>
 
   <div class="tp-stage-message" id="d-message" hidden><div></div></div>

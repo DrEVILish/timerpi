@@ -52,6 +52,7 @@ body.tp-dv {
   inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.6vh;
   /* Supervisor[C5]: 4vh/4vw safe-area floor per docs/TIMERPI-THEME-SPEC.md
      (was 2.6vh/3.4vw — content sat inside the overscan zone). */
@@ -102,6 +103,7 @@ body.tp-dv .tp-brand { --accent: var(--tp-accent, #7C3AED); }
 .tp-dv-speaker { font-size: clamp(1.4rem, 4.2vh, 4.2rem); color: var(--muted); }
 .tp-dv-until {
   display: flex;
+  flex-wrap: wrap; /* a phone puts the time-until on its own line (fit.js sizes it) */
   align-items: baseline;
   gap: 2.4vw;
   border-block: 2px solid var(--tp-accent, var(--accent));
@@ -110,7 +112,8 @@ body.tp-dv .tp-brand { --accent: var(--tp-accent, #7C3AED); }
 }
 .tp-dv-until-at { font-size: clamp(1.6rem, 5.2vh, 5.4rem); font-weight: 700; }
 .tp-dv-until-cue { font-size: clamp(.9rem, 1.9vh, 1.9rem); color: var(--muted); }
-.tp-dv-until-in { margin-inline-start: auto; font-size: clamp(2.2rem, 8vh, 8.6rem); font-weight: 800; }
+.tp-dv-until-in { margin-inline-start: auto; font-size: calc(clamp(2.2rem, 8vh, 8.6rem) * var(--tp-fit, 1)); font-weight: 800; white-space: nowrap; }
+.tp-dv-until[hidden] { display: none; }
 .tp-dv-until[data-past="1"] .tp-dv-until-in { color: var(--warning-text, var(--warning, currentColor)); }
 .tp-dv-cur {
   display: flex;
@@ -171,13 +174,26 @@ body.tp-dv .tp-brand { --accent: var(--tp-accent, #7C3AED); }
 /* ------------------------------- CLOCK board ------------------------------ */
 .tp-dv-center { display: flex; min-height: 0; flex-direction: column; justify-content: center; }
 .tp-vclock {
-  font-size: clamp(9rem, 36vh, 28rem);
+  /* height-bound here; fit.js shrinks by width (E2E #21) */
+  font-size: calc(clamp(3rem, 36vh, 28rem) * var(--tp-fit, 1));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-align: center;
 }
 .tp-vclock-note { text-align: center; font-size: clamp(1.3rem, 3.8vh, 3.8rem); color: var(--muted); }
+/* The logo keeps its shape (it was squashed into 26×26). */
+.tp-dv-top .tp-brand { flex: none; display: flex; }
+.tp-dv-top .tp-brand img { height: clamp(1.6rem, 4vh, 3.6rem); width: auto; }
+/* Phones: the daysheet keeps Start / Cue / Run; long titles wrap; the
+   top row leaves room for the LINK chip (E2E #21). */
+@media (max-width: 640px) {
+  .tp-daysheet th:nth-child(3), .tp-daysheet th:nth-child(5),
+  .tp-daysheet .tp-daysheet-speaker, .tp-daysheet .tp-daysheet-end { display: none; }
+  .tp-daysheet .tp-cue-label { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .tp-dv-top { flex-wrap: wrap; padding-block-start: 2.2rem; }
+  .tp-daysheet-meta { flex-basis: 100%; }
+}
 
 /* --------------------------------- shared -------------------------------- */
 /* Supervisor[C5]: foot carries the session join credential — 2.2vh floor
@@ -275,6 +291,7 @@ body.tp-dv[data-print="true"] .tp-daysheet { font-size: 12pt; }
    their targets live on the dashboard + stage.
    -------------------------------------------------------------------------- */
 import { computeSchedule, fmtDuration, fmtTimeOfDay } from '{{asset "/src/engine.js"}}';
+import { fitWidth } from '{{asset "/src/fit.js"}}';
 
 const $ = (s) => document.querySelector(s);
 const setText = (s, t) => { const n = typeof s === 'string' ? $(s) : s; if (n && n.textContent !== t) n.textContent = t; };
@@ -310,6 +327,22 @@ function renderStatic() {
   if (!snap) return;
   if (view === 'daysheet') renderSheet();
   if (view === 'next') renderNextStatic();
+  if (view === 'clock') renderClockNote();
+}
+
+/* Clock board note follows the room (E2E #21; was always "Doors open"). */
+function renderClockNote() {
+  const r = snap.runtime;
+  const cur = (r.running || r.paused) && snap.cues.find(c => c.pos === r.activePos);
+  const plan = nextPlan();
+  const at = r.dayStartTS && plan.row ? startAt(plan.row) : 0;
+  let note = 'Doors open — show starts soon';
+  if (cur) note = 'Now: ' + cur.label;
+  else if (!snap.cues.length) note = 'Welcome';
+  else if (r.activePos && !r.nextPos) note = 'Finished for today';
+  else if (plan.cue && at > now()) note = 'Next: ' + plan.cue.label + ' at ' + fmtTimeOfDay(at).slice(0, 5);
+  else if (plan.cue && r.dayStartTS) note = 'Next: ' + plan.cue.label;
+  setText('#d-vclock-note', note);
 }
 
 /* Next board: #d-next-label/-dur are timerpi.js's (auto-painted); ours are
@@ -328,8 +361,11 @@ function nextPlan() {
 function renderNextStatic() {
   const plan = nextPlan();
   setText('#d-next-speaker', plan.cue?.speaker || '');
-  const at = startAt(plan.row);
-  setText('#d-next-start', at ? fmtTimeOfDay(at) : '--:--:--');
+  // No planned start until the day has started (idle read "in 0:00").
+  const at = snap.runtime.dayStartTS ? startAt(plan.row) : null;
+  setText('#d-next-start', at ? fmtTimeOfDay(at).slice(0, 5) : '--:--');
+  const card = $('#d-next-until');
+  if (card) card.hidden = !at;
 }
 
 /* Daysheet: full row rebuild on structural frames; the per-second tick only
@@ -401,11 +437,11 @@ function tick() {
   if (view === 'clock') setText('#d-vclock-time', fmtTimeOfDay(now()));
   if (view === 'daysheet') moveNeedle();
   if (view === 'next' && snap) {
-    const at = startAt(nextPlan().row);
+    const at = snap.runtime.dayStartTS ? startAt(nextPlan().row) : null;
     const el = $('#d-next-until');
     if (el && at) {
       const left = at - now();
-      setText($('#d-next-until-in'), (left >= 0 ? 'in ' : '+') + fmtDuration(left));
+      setText($('#d-next-until-in'), left >= 0 ? 'in ' + fmtDuration(left) : fmtDuration(-left) + ' late');
       el.dataset.past = left < 0 ? '1' : '0';
     }
   }
@@ -469,6 +505,7 @@ function wsJoin() {
 wsJoin();
 setInterval(tick, 1000);
 tick();
+fitWidth('.tp-vclock, .tp-dv-until-in');
 </script>
 </head>
 <body class="tp-display tp-dv" data-page="display" data-role="display" data-view="{{.View}}"

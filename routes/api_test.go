@@ -328,7 +328,7 @@ func TestReplaceCuesAndImport(t *testing.T) {
 	bad := "label,duration\nGood,1:00\nBad1,banana\nBad2,5:00\n"
 	imp = ts.multipart(bad, "cue-list.csv")
 	code, body = ts.callType("POST", "/api/shows/"+ts.showCode+"/import", imp.body, imp.ctype)
-	if code != 200 || !bytes.Contains(body, []byte("row 3")) || !bytes.Contains(body, []byte("banana")) {
+	if code != 200 || !bytes.Contains(body, []byte("Row 3")) || !bytes.Contains(body, []byte("banana")) {
 		t.Errorf("bad-row import: %d %s (want verbatim row error)", code, body)
 	}
 	snap = ts.snapshot()

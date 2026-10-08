@@ -109,8 +109,8 @@ function render() {
   const air = document.getElementById('tp-aud-onair');
   if (air) {
     air.replaceChildren(
-      el('span', { class: `badge text-truncate${onAud ? ' badge-accent' : ''}` }, '📱 Audience: ', el('strong', { text: onAud ? onAud.question : 'nothing' })),
-      el('span', { class: `badge text-truncate${onPre ? ' badge-accent' : ''}` }, '🎤 Presenter: ', el('strong', { text: onPre ? onPre.question : 'nothing' })),
+      el('span', { class: `badge text-truncate${onAud ? ' badge-accent' : ''}` }, '📱 Audience:', el('strong', { text: onAud ? onAud.question : 'nothing' })),
+      el('span', { class: `badge text-truncate${onPre ? ' badge-accent' : ''}` }, '🎤 Presenter:', el('strong', { text: onPre ? onPre.question : 'nothing' })),
     );
   }
   if (!items.length) {

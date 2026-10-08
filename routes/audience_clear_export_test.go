@@ -31,9 +31,17 @@ func TestAudienceClearKeepsItem(t *testing.T) {
 		t.Fatalf("vote: %d %s", code, b)
 	}
 	modPost(t, ts, fmt.Sprintf("/%d/results", poll), `{"on":true}`)
+	if strings.Contains(audienceRead(t, ts), `"round"`) {
+		t.Errorf("a never-cleared item carries a round: %s", audienceRead(t, ts))
+	}
 
 	modPost(t, ts, fmt.Sprintf("/%d/reset", qa), `{}`)
 	modPost(t, ts, fmt.Sprintf("/%d/reset", poll), `{}`)
+	// E2E #11: phones key their remembered vote/upvotes by id + round, so
+	// the clear must move the round in the public frame.
+	if got := audienceRead(t, ts); !strings.Contains(got, `"round":1`) {
+		t.Errorf("cleared item's public view has no round 1: %s", got)
+	}
 	for _, it := range modList(t, ts) {
 		if len(it.Children) != 0 {
 			t.Errorf("%q kept its entries after clear: %+v", it.Question, it.Children)
@@ -62,7 +70,7 @@ func TestAudienceExportCSV(t *testing.T) {
 	modPost(t, ts, fmt.Sprintf("/%d/show", poll), `{"target":"audience","on":true}`)
 	ts.anon("POST", "/api/audience/"+ts.showCode+"/vote", []byte(fmt.Sprintf(`{"pollId":%d,"choice":"0"}`, poll)), "application/json")
 	modPost(t, ts, fmt.Sprintf("/%d/show", cloud), `{"target":"audience","on":true}`)
-	for _, w := range []string{"fun", "=HYPERLINK(1)"} {
+	for _, w := range []string{"fun", "=HYPERLINK(1)", "Fun ", "fun"} {
 		ts.anon("POST", "/api/audience/"+ts.showCode+"/ask", []byte(fmt.Sprintf(`{"item":%d,"text":%q}`, cloud, w)), "application/json")
 	}
 
@@ -75,8 +83,12 @@ func TestAudienceExportCSV(t *testing.T) {
 		t.Fatalf("export is not CSV: %v\n%s", err, b)
 	}
 	got := map[string][]string{}
+	funRows := 0
 	for _, r := range rows[1:] {
 		got[r[3]] = r
+		if strings.EqualFold(strings.TrimSpace(r[3]), "fun") {
+			funRows++
+		}
 	}
 	if r := got["Paris"]; r == nil || r[4] != "1" || r[5] != "correct" || r[2] != "Capital of France?" {
 		t.Errorf("quiz option row = %v", r)
@@ -84,8 +96,9 @@ func TestAudienceExportCSV(t *testing.T) {
 	if r := got["Lyon"]; r == nil || r[4] != "0" {
 		t.Errorf("unvoted option row = %v", r)
 	}
-	if r := got["fun"]; r == nil || r[1] != "wordcloud" || r[5] != "approved" {
-		t.Errorf("word row = %v", r)
+	// E2E: a word cloud exports one row per word with how many sent it.
+	if r := got["fun"]; r == nil || r[1] != "wordcloud" || r[5] != "approved" || r[4] != "3" || funRows != 1 {
+		t.Errorf("word row = %v (%d rows for the word), want one row, Count 3", r, funRows)
 	}
 	if got["'=HYPERLINK(1)"] == nil {
 		t.Errorf("a formula-like submission is not neutralised: %v", got)

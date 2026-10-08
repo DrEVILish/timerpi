@@ -63,7 +63,9 @@ export function applyTheme(slug) {
 
 /** Point every <use> sprite reference at the chosen theme's icon bundle. */
 export function applyIconTheme(slug) {
-  const s = safeSlug(slug);
+  let s = safeSlug(slug);
+  // core and tokens are base layers with no icon sprite (404): use the generic set.
+  if (s === 'core' || s === 'tokens') s = 'generic';
   for (const use of document.querySelectorAll('use')) {
     const href = use.getAttribute('href') || '';
     const m = href.match(/^(.*)\/ftl\/(?:dist\/)?icons\/[^/#]+\.svg(#.*)?$/);

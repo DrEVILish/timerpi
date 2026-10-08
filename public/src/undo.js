@@ -30,7 +30,7 @@ export function createUndo(bus) {
       const cue = snap.cues.find((c) => c.pos === args.pos);
       if (!cue) return;
       stack.push({
-        kind: 'cueEdit', pos: cue.pos,
+        kind: 'cueEdit', pos: cue.pos, id: cue.id,
         before: {
           label: cue.label, speaker: cue.speaker, durationMS: cue.durationMS,
           holdMS: cue.holdMS || 0, tags: cue.tags, kind: cue.kind,
@@ -95,7 +95,7 @@ export function createUndo(bus) {
       return `Undone — row back to slot ${op.to}`;
     }
     if (op.kind === 'cueEdit') {
-      bus.send('cueEdit', { pos: op.pos, ...op.before });
+      bus.send('cueEdit', { pos: op.pos, id: op.id, ...op.before });
       return `Undone — cue ${String(op.pos).padStart(2, '0')} restored`;
     }
     if (op.kind === 'cueDup') {

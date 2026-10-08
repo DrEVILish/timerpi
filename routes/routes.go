@@ -85,6 +85,10 @@ type Deps struct {
 	// links: the cloud's venue links by event (link.go).
 	links     *linkRegistry
 	linksOnce sync.Once
+
+	// boxSetup: the cloud's one-time box setup code (box.go).
+	boxSetup     string
+	boxSetupOnce sync.Once
 }
 
 // bodyCeiling bounds every request body: 8 MiB for plain JSON/form posts,
@@ -151,6 +155,7 @@ func New(d *Deps) *gin.Engine {
 	}
 	registerEvents(r, d) // /e/:code lobby + admin, /api/events/*
 	registerBox(r, d)    // /box + /api/box/* — the box password (settings)
+	d.BoxSetupCode()     // cloud: log the one-time box setup code at startup
 	if d.Store != nil {
 		if oserr := d.oscSync(); oserr != nil {
 			log.Printf("routes: osc listener boot: %v", oserr)

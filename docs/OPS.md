@@ -179,11 +179,20 @@ Access is per event, plus one box password for the box's own settings:
 - **Box password** guards box settings (`/settings`: hostname, network,
   OSC, default theme). It is set the first time someone opens `/box` (or is
   sent there from `/settings`), and changed or signed out on the same page.
+  **On the cloud** the first-time setup also asks for a one-time **setup
+  code**: the server logs `routes: box setup code <code> …` at startup
+  (`journalctl -u timerpi | grep "box setup code"`), so only whoever runs
+  the server can claim it. A box on the venue LAN needs no code.
   Changing it signs every other box session out. Event passwords never
   unlock box settings.
 - **Lost box password:** stop the service and clear it with
   `sqlite3 /var/lib/timerpi/timerpi.db "DELETE FROM settings WHERE key='box.pw_hash';"`.
-  The next visitor to `/box` then sets a new one, so do this on a closed network.
+  The next visitor to `/box` then sets a new one, so do this on a closed network
+  (on the cloud: restart, and use the new setup code from the log).
+- **Sign-in limits:** 8 wrong passwords per address per target in 5 minutes,
+  then 429 for that address. Past 300 failures on one target from all
+  addresses together, addresses that already failed get only 2 tries; a
+  clean address (the real technician) is never locked out by someone else.
 - Screens (`/d/`), audience phones (`/a/`) and `/health` never sign in. A
   screen set up through capture carries a **screen key** in its address;
   only keyed screens (or a browser a moderator opened) get stage messages,

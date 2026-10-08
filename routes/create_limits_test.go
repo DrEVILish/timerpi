@@ -3,6 +3,7 @@ package routes_test
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"timerpi/routes"
 	"timerpi/timerpi"
@@ -19,8 +20,8 @@ func TestCreationLimits(t *testing.T) {
 	}
 	evs, _ := ts.db.ListEvents()
 	for _, e := range evs {
-		if len(e.Name) > 120 {
-			t.Errorf("event name stored with %d bytes", len(e.Name))
+		if n := utf8.RuneCountInString(e.Name); n > timerpi.MaxNameLen {
+			t.Errorf("event name stored with %d characters", n)
 		}
 	}
 

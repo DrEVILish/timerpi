@@ -45,6 +45,16 @@ type session struct {
 	// holding their key, and browsers a moderator opened. Everything else
 	// gets the public snapshot (BUGLOG RW9).
 	trusted bool
+	// kind is the registry display type of a named screen (audience |
+	// walkin | presenter | ""); guarded by h.mu (SendToScreen updates it).
+	kind string
+}
+
+// seesPresenter: the Presenter-only item goes to operators and trusted
+// screens that are not audience-facing (audience/walk-in screens never get
+// it, not even hidden). Callers hold h.mu.
+func (s *session) seesPresenter() bool {
+	return s.trusted && (s.role == "controls" || (s.kind != timerpi.ScreenAudience && s.kind != timerpi.ScreenWalkin))
 }
 
 // Session pipeline:
@@ -230,11 +240,22 @@ func (h *Hub) register(s *session) bool {
 	}
 	// F1 registry write BEFORE h.mu: the DB is single-connection, and a
 	// write inside the hub lock lets one join stall fanout for every show.
+	// Only keyed/operator screens or names already in the registry write
+	// it: an anonymous join with a made-up ?screen= must not add rows to
+	// the Screens page.
+	var scr timerpi.Screen
+	known := false
 	if s.screen != "" && h.store != nil {
-		if uerr := h.store.UpsertScreen(s.showID, s.screen); uerr != nil {
-			h.logf("ws: upsert screen %q: %v", s.screen, uerr)
+		var gerr error
+		scr, gerr = h.store.GetScreenByName(s.showID, s.screen)
+		known = gerr == nil
+		if known || s.trusted {
+			if uerr := h.store.UpsertScreen(s.showID, s.screen); uerr != nil {
+				h.logf("ws: upsert screen %q: %v", s.screen, uerr)
+			}
 		}
 	}
+	s.kind = scr.Kind // before the session is visible to fanout
 	// PLAN §11.5: the audience lane — phones join their own bucket with
 	// their own cap, skip the full snapshot entirely, and receive the
 	// visible-interaction state only (never cue state).
@@ -277,12 +298,15 @@ func (h *Hub) register(s *session) bool {
 	// role is a reconnect: the stale session is replaced. The same id in
 	// another role is an impersonation attempt (a display taking an
 	// operator's id to receive its signals): refused.
+	// A trusted session is only replaced by one proving the same identity
+	// (operator session, or the same screen's key): an anonymous display
+	// reusing a keyed screen's id must not knock it offline.
 	var stale []*session
 	for other := range sh.sessions {
 		if other.id != s.id {
 			continue
 		}
-		if other.role != s.role {
+		if other.role != s.role || (other.trusted && (!s.trusted || other.screen != s.screen)) {
 			h.mu.Unlock()
 			s.sendErr("peer id already in use in this room")
 			return false
@@ -295,37 +319,41 @@ func (h *Hub) register(s *session) bool {
 	sh.sessions[s] = struct{}{}
 	others := peersFromLocked(sh, s)
 	everyone := peersFromLocked(sh, nil)
+	seesPresenter := s.seesPresenter()
 	h.mu.Unlock()
 	for _, o := range stale {
 		o.kill()
 	}
 
 	// Join reply first (client builds its peer table from it).
+	// Untrusted screens never learn other peers' ids (they could replay
+	// them) and stay out of the browser mesh.
 	joinSnap := snap
 	if !s.trusted {
 		joinSnap = snap.Public()
+		others = nil
+	} else if !seesPresenter {
+		joinSnap.Presenter = nil
 	}
 	s.sendFrame("t", "joined",
 		"you", map[string]any{"peerId": s.id, "role": s.role, "joinedAt": s.joinedAt, "trusted": s.trusted},
 		"snapshot", joinSnap,
 		"peers", others.wire(),
 	)
-	if len(others) > 0 {
-		h.fanout(s.showID, marshalFrame("t", "peers", "peers", everyone.wire()))
+	if everyone.len() > 1 {
+		h.fanoutSplit(s.showID, marshalFrame("t", "peers", "peers", everyone.wire()), nil)
 	}
 	// F1: a named display adopts its operator-assigned config right on
 	// join — theme + board assignment reach the reload without any extra
 	// fetch, and a locked board navigates to its assigned layout.
-	if s.screen != "" && h.store != nil {
-		if scr, serr := h.store.GetScreenByName(s.showID, s.screen); serr == nil {
-			if scr.Theme != "" {
-				s.sendFrame("t", "display", "theme", scr.Theme)
-			}
-			if scr.BoardID > 0 {
-				s.sendFrame("t", "screen-board", "boardId", scr.BoardID)
-			}
-			s.sendFrame("t", "screen-look", "kind", scr.Kind, "rotation", scr.Rotation)
+	if known {
+		if scr.Theme != "" {
+			s.sendFrame("t", "display", "theme", scr.Theme)
 		}
+		if scr.BoardID > 0 {
+			s.sendFrame("t", "screen-board", "boardId", scr.BoardID)
+		}
+		s.sendFrame("t", "screen-look", "kind", scr.Kind, "rotation", scr.Rotation)
 	}
 	// PLAN §11.5 owner round: EVERY joining session (boards + operators too,
 	// not just the audience lane) learns the on-air interaction immediately —
@@ -334,7 +362,7 @@ func (h *Hub) register(s *session) bool {
 	// never fire; owner-visible bug: reload ≠ bars).
 	if fn := h.pollsFnFor(); fn != nil {
 		if on, perr := fn(s.showID); perr == nil {
-			s.offer(pollFrame(on, s.trusted, h.nowFn()))
+			s.offer(pollFrame(on, seesPresenter, h.nowFn()))
 		}
 	}
 	h.logf("ws: %s joined show %d as %s (%d connected)", s.id, s.showID, s.role, everyone.len())
@@ -369,7 +397,7 @@ func (h *Hub) unregister(s *session) {
 	h.logf("ws: %s left show %d (%d connected after)", s.id, s.showID, h.Sessions())
 	if wasPresent {
 		if peers := h.peersOf(s.showID, nil); peers.len() > 0 {
-			h.fanout(s.showID, marshalFrame("t", "peers", "peers", peers.wire()))
+			h.fanoutSplit(s.showID, marshalFrame("t", "peers", "peers", peers.wire()), nil)
 		}
 	}
 }
@@ -382,7 +410,7 @@ func peersFromLocked(sh *showHub, except *session) peerViews {
 		if except != nil && ses == except {
 			continue
 		}
-		peers = append(peers, peerView{PeerID: ses.id, Role: ses.role, JoinedAt: ses.joinedAt, Screen: ses.screen})
+		peers = append(peers, peerView{PeerID: ses.id, Role: ses.role, JoinedAt: ses.joinedAt, Screen: ses.screen, Trusted: ses.trusted})
 	}
 	sortPeers(peers)
 	return peers
@@ -398,10 +426,14 @@ func (h *Hub) SendToScreen(showID int64, screen string, frames ...[]byte) int {
 	if !ok {
 		return 0
 	}
+	kind, setKind := screenLookKind(frames)
 	n := 0
 	for ses := range sh.sessions {
 		if ses.screen != screen {
 			continue
+		}
+		if setKind {
+			ses.kind = kind // later poll/state fanouts follow the new type
 		}
 		for _, b := range frames {
 			ses.offer(b)
@@ -409,6 +441,21 @@ func (h *Hub) SendToScreen(showID int64, screen string, frames ...[]byte) int {
 		n++
 	}
 	return n
+}
+
+// screenLookKind finds a screen-look frame among pushed frames: its kind
+// is the screen's new display type.
+func screenLookKind(frames [][]byte) (string, bool) {
+	for _, b := range frames {
+		var f struct {
+			T    string `json:"t"`
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal(b, &f) == nil && f.T == "screen-look" {
+			return f.Kind, true
+		}
+	}
+	return "", false
 }
 
 // ---------------------------------------------------------------------------

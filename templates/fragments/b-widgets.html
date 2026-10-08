@@ -47,7 +47,7 @@
   <div class="b-w-body">
     <span class="b-eyebrow">NEXT</span>
     <span class="b-next-label b-js-nextlabel">{{.P.Next.Label}}</span>
-    <span class="b-next-meta mono"><span class="b-js-nextdur">{{.P.Next.DurFmt}}</span> · <span class="b-js-nextstart">{{.P.Next.StartFmt}}</span> · <span class="b-js-nextin">--:--</span></span>
+    <span class="b-next-meta mono"><span class="b-nm">Duration <span class="b-js-nextdur">{{.P.Next.DurFmt}}</span></span><span class="b-nm b-js-nextstart-wrap" hidden>Starts <span class="b-js-nextstart">{{.P.Next.StartFmt}}</span></span><span class="b-nm b-js-nextin" hidden></span></span>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>

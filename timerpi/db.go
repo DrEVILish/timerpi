@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jmoiron/sqlx"
@@ -176,6 +177,10 @@ func (d *DB) migrate() error {
 			detail     TEXT NOT NULL DEFAULT ''
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_actions_show ON actions (show_id, id);`,
+		`CREATE TABLE IF NOT EXISTS spent_nonces (
+			nonce   TEXT PRIMARY KEY,
+			expires INTEGER NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS waiting_screens (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			name        TEXT NOT NULL,
@@ -293,8 +298,9 @@ func (d *DB) migrate() error {
 		"waiting_screens": {
 			{"screen", "TEXT NOT NULL DEFAULT ''"},
 			{"token", "TEXT NOT NULL DEFAULT ''"},
-			{"pair_code", "TEXT NOT NULL DEFAULT ''"}, // a box's 6-digit pairing code (VENUE-CLOUD §4)
+			{"pair_code", "TEXT NOT NULL DEFAULT ''"},  // a box's 6-digit pairing code (VENUE-CLOUD §4)
 			{"handheld", "INTEGER NOT NULL DEFAULT 0"}, // a phone/tablet: capture hides Mounted
+			{"ip", "TEXT NOT NULL DEFAULT ''"},         // registering client IP (cloud scoping)
 		},
 		"assets": {
 			{"event_id", "INTEGER NOT NULL DEFAULT 0"},
@@ -319,6 +325,14 @@ func (d *DB) migrate() error {
 	}
 	if err := d.adoptOrphanShows(); err != nil {
 		return err
+	}
+	// ftl's core/tokens bundles were once offered as themes; screens and
+	// events on them fall back to the default (REPORT #18).
+	for _, q := range []string{`UPDATE screens SET theme = '' WHERE theme IN ('tokens', 'core')`,
+		`UPDATE events SET theme = '' WHERE theme IN ('tokens', 'core')`} {
+		if _, err := d.Exec(q); err != nil {
+			return fmt.Errorf("timerpi: theme fallback: %w", err)
+		}
 	}
 	return d.migrateAssetOwners()
 }
@@ -370,7 +384,7 @@ func (d *DB) CreateShow(title string) (Show, error) {
 // its rooms, in ONE statement: a crash can never leave a room created but
 // not attached (BUGLOG RW31).
 func (d *DB) createShow(title string, eventID int64) (Show, error) {
-	s := Show{Title: ClipUTF8(strings.TrimSpace(title), MaxNameLen)}
+	s := Show{Title: ClipRunes(strings.TrimSpace(title), MaxNameLen)}
 	if err := s.Validate(); err != nil {
 		return Show{}, err
 	}
@@ -606,7 +620,7 @@ func (d *DB) SetShowDayStart(id int64, hhmm string) error {
 
 // RenameShow updates the title and bumps updated_at.
 func (d *DB) RenameShow(id int64, title string) error {
-	title = ClipUTF8(strings.TrimSpace(title), MaxNameLen)
+	title = ClipRunes(strings.TrimSpace(title), MaxNameLen)
 	if err := (Show{Title: title}).Validate(); err != nil {
 		return err
 	}
@@ -721,6 +735,7 @@ func (d *DB) UpdateCue(showID int64, c Cue) (Cue, error) {
 	if err != nil {
 		return Cue{}, err
 	}
+	c = capCueText(c)
 	_, err = d.Exec(`UPDATE cues SET
 		label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 		timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,
@@ -745,6 +760,7 @@ func insertCue(tx *sqlx.Tx, showID, pos int64, c Cue, stamp int64) (sql.Result, 
 	if day < 1 {
 		day = 1
 	}
+	c = capCueText(c)
 	return tx.Exec(`INSERT INTO cues
 		(show_id, pos, label, duration_ms, kind, tags, speaker, hold_ms,
 		 timer_kind, alert1_ms, alert2_ms, alert_color1, alert_color2,
@@ -1077,7 +1093,7 @@ func (d *DB) ListMessages(showID int64) ([]Message, error) {
 
 // CreateMessage adds a hidden overlay line (ShownAt = 0).
 func (d *DB) CreateMessage(showID int64, text, color string) (Message, error) {
-	m := Message{ShowID: showID, Text: text, Color: color}
+	m := Message{ShowID: showID, Text: ClipRunes(text, MaxMessageLen), Color: color}
 	m.Normalize()
 	if err := m.Validate(); err != nil {
 		return Message{}, err
@@ -1129,7 +1145,7 @@ func (d *DB) ReplaceMessages(showID int64, msgs []Message) error {
 			shown = 0
 		}
 		if _, err := tx.Exec(`INSERT INTO messages (show_id, text, color, shown_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-			showID, m.Text, m.Color, shown, now); err != nil {
+			showID, ClipRunes(m.Text, MaxMessageLen), m.Color, shown, now); err != nil {
 			return err
 		}
 	}
@@ -1169,10 +1185,39 @@ func (d *DB) DeleteMessage(showID, id int64) error {
 
 // ClipUTF8 truncates s to at most n BYTES without splitting a multi-byte
 // rune (byte-slicing stored text produced invalid UTF-8 / U+FFFD tails).
-// MaxNameLen caps event and room names (bytes, cut on a character
-// boundary by ClipUTF8): they used to be
-// only trimmed, so an 8 MiB name was stored (BUGLOG RS7).
-const MaxNameLen = 120
+// MaxNameLen caps event and room names in characters: they used to be
+// only trimmed, so an 8 MiB name was stored (BUGLOG RS7); 80 keeps them
+// on one header line.
+const MaxNameLen = 80
+
+// Operator text caps (characters), applied where cues and messages are
+// stored, whichever path wrote them (HTTP, WS, sync, import).
+const (
+	MaxCueLabelLen   = 200
+	MaxCueSpeakerLen = 120
+	MaxCueNotesLen   = 2000
+	MaxMessageLen    = 280
+)
+
+// ClipRunes truncates s to at most n characters (runes).
+func ClipRunes(s string, n int) string {
+	i := 0
+	for p := range s {
+		if i == n {
+			return s[:p]
+		}
+		i++
+	}
+	return s
+}
+
+// capCueText clips a cue's free text to the operator caps.
+func capCueText(c Cue) Cue {
+	c.Label = ClipRunes(c.Label, MaxCueLabelLen)
+	c.Speaker = ClipRunes(c.Speaker, MaxCueSpeakerLen)
+	c.Notes = ClipRunes(c.Notes, MaxCueNotesLen)
+	return c
+}
 
 func ClipUTF8(s string, n int) string {
 	if len(s) <= n {
@@ -1368,18 +1413,20 @@ func (d *DB) SetScreenLook(showID int64, name, kind string, rotation int) error 
 	return err
 }
 
-// SanitizeScreenName trims and bounds a screen name ("Stage Left" style:
-// letters, digits, space, hyphen, underscore).
+// SanitizeScreenName trims and bounds a screen name ("Stage Left",
+// "Bühne 1", "舞台"): letters and digits of any script (with their
+// combining marks), space, hyphen, underscore; at most MaxScreenNameLen
+// runes. Everything else (controls, punctuation, symbols) is dropped.
 func SanitizeScreenName(name string) string {
-	name = strings.TrimSpace(name)
-	if len(name) > MaxScreenNameLen {
-		name = name[:MaxScreenNameLen]
-	}
 	var b strings.Builder
-	for _, r := range name {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
-			r == ' ' || r == '-' || r == '_' {
+	n := 0
+	for _, r := range strings.TrimSpace(name) {
+		if n >= MaxScreenNameLen {
+			break
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == ' ' || r == '-' || r == '_' {
 			b.WriteRune(r)
+			n++
 		}
 	}
 	return strings.TrimSpace(b.String())
@@ -1461,8 +1508,11 @@ var ErrScreenNameTaken = errors.New("timerpi: another screen already has that na
 // RenameScreen moves a registry row (operator rename from the panel).
 func (d *DB) RenameScreen(showID int64, from, to string) error {
 	from, to = SanitizeScreenName(from), SanitizeScreenName(to)
-	if from == "" || to == "" {
+	if to == "" {
 		return fmt.Errorf("timerpi: screen rename needs both names")
+	}
+	if from == "" {
+		return sql.ErrNoRows
 	}
 	if from == to {
 		return nil // identity rename must NOT delete the row it renames onto
@@ -1481,9 +1531,13 @@ func (d *DB) RenameScreen(showID int64, from, to string) error {
 	if taken > 0 {
 		return ErrScreenNameTaken
 	}
-	if _, err := tx.Exec(`UPDATE screens SET name = ?, last_seen = ? WHERE show_id = ? AND name = ?`,
-		to, nowMS(), showID, from); err != nil {
+	res, err := tx.Exec(`UPDATE screens SET name = ?, last_seen = ? WHERE show_id = ? AND name = ?`,
+		to, nowMS(), showID, from)
+	if err != nil {
 		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows // no such screen
 	}
 	return tx.Commit()
 }
@@ -1584,6 +1638,9 @@ type WaitingScreen struct {
 	Assigned string `db:"assigned"   json:"-"`
 	Screen   string `db:"screen"     json:"-"`
 	Handheld bool   `db:"handheld"   json:"handheld"`
+	// IP is the client address the screen registered from: on the cloud
+	// an Event Technician only sees screens behind their own address.
+	IP string `db:"ip" json:"-"`
 }
 
 const waitingStaleAfterMS = 10 * 60 * 1000
@@ -1596,6 +1653,28 @@ const maxWaitingRows = 200
 func (d *DB) SetWaitingHandheld(name, host string, handheld bool) error {
 	name, host = SanitizeScreenName(name), ClipUTF8(strings.TrimSpace(host), 80)
 	_, err := d.Exec(`UPDATE waiting_screens SET handheld = ? WHERE name = ? AND host = ?`, handheld, name, host)
+	return err
+}
+
+// SpendNonce marks a single-use nonce spent until expires (unix seconds);
+// fresh=false when it was already spent. Expired nonces are dropped first.
+// Persisted so a restart doesn't make a used sign-in code work again.
+func (d *DB) SpendNonce(nonce string, expires, now int64) (bool, error) {
+	if _, err := d.Exec(`DELETE FROM spent_nonces WHERE expires < ?`, now); err != nil {
+		return false, err
+	}
+	res, err := d.Exec(`INSERT OR IGNORE INTO spent_nonces (nonce, expires) VALUES (?, ?)`, nonce, expires)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// SetWaitingIP records the client address a waiting screen polls from.
+func (d *DB) SetWaitingIP(name, host, ip string) error {
+	name, host = SanitizeScreenName(name), ClipUTF8(strings.TrimSpace(host), 80)
+	_, err := d.Exec(`UPDATE waiting_screens SET ip = ? WHERE name = ? AND host = ?`, ClipUTF8(ip, 64), name, host)
 	return err
 }
 
@@ -1649,7 +1728,7 @@ func (d *DB) PruneWaiting() {
 func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 	d.PruneWaiting()
 	var out []WaitingScreen
-	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens
+	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen, handheld, ip FROM waiting_screens
 		WHERE assigned = '' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list waiting: %w", err)
@@ -1712,7 +1791,7 @@ func (d *DB) WaitingByPairCode(code string) (WaitingScreen, error) {
 	if !ValidPairCode(code) {
 		return w, sql.ErrNoRows
 	}
-	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld, ip FROM waiting_screens
 		WHERE pair_code = ? AND last_seen >= ? ORDER BY last_seen DESC LIMIT 1`, code, nowMS()-pairFreshMS)
 	return w, err
 }
@@ -1759,7 +1838,7 @@ func (d *DB) ClaimWaitingBox(name, host, token string) (string, string, bool, er
 // GetWaiting fetches one waiting row (sql.ErrNoRows when missing).
 func (d *DB) GetWaiting(id int64) (WaitingScreen, error) {
 	var w WaitingScreen
-	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld FROM waiting_screens WHERE id = ?`, id)
+	err := d.Get(&w, `SELECT id, name, host, last_seen, assigned, screen, handheld, ip FROM waiting_screens WHERE id = ?`, id)
 	if err != nil {
 		return WaitingScreen{}, err
 	}

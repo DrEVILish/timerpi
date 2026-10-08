@@ -2,6 +2,7 @@ package ws
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -13,12 +14,16 @@ import (
 func (ts *testServer) joinScreenClient(t *testing.T, peerID, screen string) *wsClient {
 	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(ts.srv.URL, "http") + "/ws"
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	var hdr http.Header
+	if ts.screenCookie {
+		hdr = http.Header{"Cookie": []string{ts.cookie}}
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, hdr)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	join := fmt.Sprintf(`{"v":1,"t":"join","role":"display","show":%q,"peerId":%q,"joinedAt":%d,"screen":%q}`,
-		ts.showCode, peerID, 1000, screen)
+	join := fmt.Sprintf(`{"v":1,"t":"join","role":"display","show":%q,"peerId":%q,"joinedAt":%d,"screen":%q,"key":%q}`,
+		ts.showCode, peerID, 1000, screen, ts.screenKeys[screen])
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(join)); err != nil {
 		t.Fatalf("join write: %v", err)
 	}
@@ -101,6 +106,9 @@ func TestScreenJoinAndPushF1(t *testing.T) {
 // key on that name.
 func TestSeparateWindowsSeparateRows(t *testing.T) {
 	ts := newTestServer(t, false)
+	// Operator-opened windows (session cookie): anonymous ones with a
+	// made-up name never write the registry (TestAnonScreenNoRegistryRow).
+	ts.screenCookie = true
 	a := ts.joinScreenClient(t, "tv-1", "Screen-AAAA")
 	defer a.close()
 	a.readUntil(t, "joined")

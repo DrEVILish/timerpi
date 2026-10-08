@@ -163,6 +163,15 @@ func TestDisplayVariantViews(t *testing.T) {
 	if loc := res.Header.Get("Location"); loc != "/d/"+ts.showCode {
 		t.Errorf("view=stage Location = %q", loc)
 	}
+	// The rest of the query rides along (a keyed stage keeps its key).
+	res, err = hc.Get(ts.srv.URL + "/d/" + ts.showCode + "?key=abc&view=stage&accent=%23ff0000")
+	if err != nil {
+		t.Fatalf("view=stage+query: %v", err)
+	}
+	res.Body.Close()
+	if loc := res.Header.Get("Location"); loc != "/d/"+ts.showCode+"?key=abc&accent=%23ff0000" {
+		t.Errorf("view=stage+query Location = %q", loc)
+	}
 
 	// Unknown view / show id → 404 (Agent L code-only contract: digits are
 	// the legacy numeric world and resolve to nothing, same as any miss).

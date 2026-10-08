@@ -178,6 +178,9 @@ func (d *Deps) apiBoardsUpdate(c *gin.Context) {
 		}
 	}
 	d.notifyShow(id) // fan out: editors + open boards re-adopt
+	// Tiles are server-rendered: every live screen showing this layout
+	// (assigned, or as the event default) reloads to pick up the edit.
+	d.pushBoardChanged(id, bid)
 	c.JSON(http.StatusOK, boardJSON(b))
 }
 
@@ -207,14 +210,63 @@ func (d *Deps) apiBoardsDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// Screens using it (layouts are event-wide: any room) go back to the
+	// plain timer, live: collect them before the assignment is cleared.
+	type used struct {
+		room int64
+		name string
+	}
+	var hit []used
+	rooms := d.layoutRooms(id)
+	for _, rid := range rooms {
+		list, _ := d.Store.ListScreens(rid)
+		for _, s := range list {
+			if s.BoardID == bid {
+				hit = append(hit, used{rid, s.Name})
+			}
+		}
+	}
 	// Screens still pointing at the dead board would navigate locked TVs
 	// to a 404 on every join push — fall them back to the show board.
 	if err := d.Store.ClearScreenBoard(id, bid); err != nil {
 		log.Printf("routes: clear screen board %d: %v", bid, err)
 	}
-	d.notifyControls(id)
+	for _, u := range hit {
+		d.pushScreen(u.room, u.name)
+	}
+	// Unnamed board pages showing it (?board= or as the default) reload
+	// onto the event's next layout.
+	d.pushBoardChanged(id, bid)
+	for _, rid := range rooms {
+		d.notifyControls(rid)
+	}
 	d.notifyShow(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// layoutRooms lists every room of showID's event (layouts are event-wide).
+func (d *Deps) layoutRooms(showID int64) []int64 {
+	if here, err := d.Store.GetShow(showID); err == nil && here.EventID != 0 {
+		if ids := d.eventRoomIDs(here.EventID); len(ids) > 0 {
+			return ids
+		}
+	}
+	return []int64{showID}
+}
+
+// pushBoardChanged sends {"t":"board-changed","boardId"} to every display
+// of the event; a locked board page showing that layout reloads (board.js).
+func (d *Deps) pushBoardChanged(showID, bid int64) {
+	if d.Hub == nil {
+		return
+	}
+	frame, err := json.Marshal(map[string]any{"t": "board-changed", "boardId": bid})
+	if err != nil {
+		return
+	}
+	for _, rid := range d.layoutRooms(showID) {
+		d.Hub.SendToRole(rid, "display", frame)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -366,9 +418,15 @@ func rotationOf(d *Deps, c *gin.Context, showID int64) int {
 
 // boardPortrait picks the layout version (owner 2026-10-07): ?orient= wins
 // (a phone or tablet reports which way up it is held; the editor's
-// Portrait/Landscape switch), else the screen's Mounted rotation.
+// Portrait/Landscape switch), then the tp_orient cookie (set only by a
+// handheld's board page: its last known way up, so it loads once), else
+// the screen's Mounted rotation.
 func boardPortrait(c *gin.Context, rotation int) bool {
-	switch c.Query("orient") {
+	o := c.Query("orient")
+	if o == "" && c.Query("edit") != "1" {
+		o, _ = c.Cookie("tp_orient")
+	}
+	switch o {
 	case "portrait":
 		return true
 	case "landscape":

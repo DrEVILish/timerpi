@@ -80,7 +80,7 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 - **E1** A SuperOperator creates an event from the home page: event name, supervisor password, and the first room(s). The result is an **event code**.
 - **E2** Home page join flow: type the event code → see the list of rooms → pick one → enter the moderator password if that room has one → land on the room's moderator view. The SuperOperator path is: event code → "SuperOperator" → supervisor password.
 - **E3** The SuperOperator can add, rename, reorder and delete rooms, and can set or clear each room's moderator password. A "same password for all rooms" option is available.
-- **E4** An event exports and imports as one file containing everything: rooms, sessions, interactions with their moderation state, screens, layouts, map and theme.
+- **E4** An event exports and imports as one file containing everything: rooms, sessions, interactions with their moderation state, screens, layouts, map and theme. The file carries no passwords and no screen keys; importing it makes a new event (new codes) whose password the importer sets.
 
 ### 4.2 Rooms and timing (the cue timer)
 

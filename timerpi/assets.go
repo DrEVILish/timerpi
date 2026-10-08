@@ -1,8 +1,11 @@
 package timerpi
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
+	"strings"
 )
 
 // PLAN §11.2 phase 2: venue images (the `map` slot) ride a tiny blob
@@ -31,16 +34,28 @@ type AssetInfo struct {
 }
 
 // CreateAsset stores one image owned by eventID; the id is its public URL
-// key.
+// key. Ids are random (below 2^53, so they survive JSON in a browser), so
+// /assets/<id> can't be walked to find other events' images; images
+// stored before this keep their small ids and URLs.
 func (d *DB) CreateAsset(eventID int64, name, mime string, data []byte) (Asset, error) {
 	now := nowMS()
-	res, err := d.Exec(`INSERT INTO assets (event_id, name, mime, bytes, ts) VALUES (?, ?, ?, ?, ?)`,
-		eventID, ClipUTF8(name, 120), mime, data, now)
-	if err != nil {
-		return Asset{}, fmt.Errorf("timerpi: create asset: %w", err)
+	for attempt := 0; attempt < 8; attempt++ {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return Asset{}, err
+		}
+		id := int64(binary.BigEndian.Uint64(b[:])>>11) | 1<<40 // 2^40 ≤ id < 2^53
+		_, err := d.Exec(`INSERT INTO assets (id, event_id, name, mime, bytes, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+			id, eventID, ClipUTF8(name, 120), mime, data, now)
+		if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+			continue
+		}
+		if err != nil {
+			return Asset{}, fmt.Errorf("timerpi: create asset: %w", err)
+		}
+		return Asset{ID: id, EventID: eventID, Name: ClipUTF8(name, 120), Mime: mime, Bytes: data, Ts: now}, nil
 	}
-	id, _ := res.LastInsertId()
-	return Asset{ID: id, EventID: eventID, Name: ClipUTF8(name, 120), Mime: mime, Bytes: data, Ts: now}, nil
+	return Asset{}, fmt.Errorf("timerpi: create asset: no free id")
 }
 
 // ListAssets returns the event's images plus legacy unowned ones, newest

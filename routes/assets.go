@@ -86,6 +86,10 @@ func (d *Deps) apiAssetUpload(c *gin.Context) {
 		return
 	}
 	fh, err := c.FormFile("file")
+	if err != nil && uploadTooBig(err) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"ok": false, "error": "image too large (4 MiB max)"})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "multipart file required"})
 		return

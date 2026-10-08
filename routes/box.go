@@ -10,12 +10,21 @@ package routes
 // hash, so changing it signs every holder out).
 //
 //	GET  /box                  sign-in, first-time setup, or change/sign out
-//	POST /api/box/setup        {password}            only while none is set
+//	POST /api/box/setup        {password, setupCode} only while none is set
+//
+// On the cloud anyone on the internet can open /box, so the first-time
+// setup also needs the one-time setup code the server prints to its log at
+// startup (REPORT #8): only whoever runs the server can claim it. A box is
+// on the venue LAN and keeps the plain first-run setup.
 //	POST /api/box/login        {password}
 //	POST /api/box/password     {current, password}   change (signed in)
 //	POST /api/box/logout
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"log"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -64,6 +73,24 @@ func registerBox(r *gin.Engine, d *Deps) {
 	})
 }
 
+// BoxSetupCode is the cloud's one-time box setup code ("" on a box or
+// once a box password is set). The first call makes it and logs it.
+func (d *Deps) BoxSetupCode() string {
+	if !d.isCloud() || d.Store == nil {
+		return ""
+	}
+	if hash, err := d.Store.BoxPasswordHash(); err != nil || hash != "" {
+		return ""
+	}
+	d.boxSetupOnce.Do(func() {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		d.boxSetup = hex.EncodeToString(b[:])
+		log.Printf("routes: box setup code %s — open /box on this server and enter it to set the box password", d.boxSetup)
+	})
+	return d.boxSetup
+}
+
 func (d *Deps) boxPage(c *gin.Context) {
 	if d.Store == nil {
 		c.String(http.StatusServiceUnavailable, "store missing")
@@ -80,6 +107,7 @@ func (d *Deps) boxPage(c *gin.Context) {
 	}
 	d.render(c, "box", gin.H{
 		"Setup":        hash == "",
+		"NeedCode":     hash == "" && d.BoxSetupCode() != "",
 		"SignedIn":     d.boxSigned(c),
 		"Next":         next,
 		"MinLen":       minBoxPasswordLen,
@@ -90,6 +118,8 @@ func (d *Deps) boxPage(c *gin.Context) {
 type boxBody struct {
 	Password string `json:"password"`
 	Current  string `json:"current"`
+	// SetupCode is the cloud's one-time setup code (BoxSetupCode).
+	SetupCode string `json:"setupCode"`
 }
 
 func readBoxBody(c *gin.Context) (boxBody, bool) {
@@ -122,6 +152,18 @@ func (d *Deps) apiBoxSetup(c *gin.Context) {
 	if hash != "" {
 		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box already has a password. Sign in instead."})
 		return
+	}
+	if want := d.BoxSetupCode(); want != "" {
+		if !loginAllowed(c, "boxsetup") {
+			return
+		}
+		got := strings.ToLower(strings.TrimSpace(b.SetupCode))
+		ok := subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+		loginResult(c, "boxsetup", ok)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"ok": false, "error": "Enter the setup code from the server log (it is printed when the server starts)."})
+			return
+		}
 	}
 	if err := d.Store.SetBoxPassword(b.Password); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})

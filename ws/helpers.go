@@ -10,7 +10,7 @@ import "sort"
 func (p peerViews) wire() any {
 	out := make([]map[string]any, len(p))
 	for i, pv := range p {
-		m := map[string]any{"peerId": pv.PeerID, "role": pv.Role, "joinedAt": pv.JoinedAt}
+		m := map[string]any{"peerId": pv.PeerID, "role": pv.Role, "joinedAt": pv.JoinedAt, "trusted": pv.Trusted}
 		if pv.Screen != "" {
 			m["screen"] = pv.Screen
 		}

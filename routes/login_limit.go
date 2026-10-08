@@ -2,9 +2,15 @@ package routes
 
 // login_limit.go — brute-force brake on every password check (BUGLOG RW12):
 // supervisor, room and box sign-ins. Failures are counted per client IP
-// and target (event/room/box) and per target across all IPs; past the
-// limit the check is refused with 429 before any hashing, so a flood of
-// guesses costs the Pi nothing. A success clears that IP's count.
+// and target (event/room/box); past the limit that IP is refused with 429
+// before any hashing, so a flood of guesses costs the Pi nothing. A
+// success clears that IP's count.
+//
+// Per target across all IPs there is a second, much higher budget: once
+// it is used up only addresses that have already failed on that target
+// themselves are refused. A clean address (the real technician) always
+// gets its tries, so an attacker spread over many IPs can't lock the real
+// password out; each of the attacker's addresses just gets fewer guesses.
 
 import (
 	"net/http"
@@ -16,9 +22,10 @@ import (
 )
 
 const (
-	loginWindow       = 5 * time.Minute
-	loginFailsPerIP   = 8  // per IP and target
-	loginFailsPerTarg = 60 // per target, every IP together
+	loginWindow           = 5 * time.Minute
+	loginFailsPerIP       = 8   // per IP and target
+	loginFailsPerTarg     = 300 // per target, every IP together (then: failed IPs only)
+	loginFailsUnderAttack = 2   // an IP's failures allowed once the target budget is spent
 )
 
 var loginFails struct {
@@ -42,13 +49,10 @@ func loginAllowed(c *gin.Context, target string) bool {
 	loginFails.Lock()
 	ipW, tW := failCount(ipKey, now), failCount("*|"+target, now)
 	loginFails.Unlock()
-	if ipW.n < loginFailsPerIP && tW.n < loginFailsPerTarg {
+	if ipW.n < loginFailsPerIP && (tW.n < loginFailsPerTarg || ipW.n < loginFailsUnderAttack) {
 		return true
 	}
 	start := ipW.start
-	if tW.n >= loginFailsPerTarg {
-		start = tW.start
-	}
 	wait := max(1, int(loginWindow.Seconds()-now.Sub(start).Seconds()))
 	c.Header("Retry-After", strconv.Itoa(wait))
 	c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many wrong passwords. Wait a few minutes and try again."})

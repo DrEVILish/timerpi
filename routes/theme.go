@@ -28,7 +28,9 @@ func installedThemes() []string {
 	out := []string{}
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".css") && name != "core.css" { // core is the base layer, not a theme
+		// core is the base layer and tokens the token bundle: neither is a
+		// theme (a screen on tokens rendered unstyled, REPORT #18).
+		if strings.HasSuffix(name, ".css") && name != "core.css" && name != "tokens.css" {
 			out = append(out, strings.TrimSuffix(name, ".css"))
 		}
 	}

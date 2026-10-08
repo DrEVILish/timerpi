@@ -16,6 +16,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -48,8 +51,12 @@ func (d *Deps) apiImport(c *gin.Context) {
 	}
 	fh, ferr := c.FormFile("file")
 	if ferr != nil {
+		msg := `No file in the upload (field "file").`
+		if uploadTooBig(ferr) {
+			msg = uploadTooBigMsg + "."
+		}
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8",
-			[]byte(`<div class="alert alert-error">No file in the upload (field "file").</div>`))
+			[]byte(`<div class="alert alert-error">`+html.EscapeString(msg)+`</div>`))
 		return
 	}
 	kind := c.PostForm("kind") // "" = auto = sniff
@@ -69,6 +76,14 @@ func (d *Deps) apiImport(c *gin.Context) {
 	if rerr != nil {
 		c.Data(http.StatusBadRequest, "text/html; charset=utf-8",
 			[]byte(`<div class="alert alert-error">Upload unreadable.</div>`))
+		return
+	}
+
+	// An image, PDF or archive is not a running order: say so instead of
+	// "no cue table found in the csv".
+	if mt := http.DetectContentType(data); strings.HasPrefix(mt, "image/") || strings.HasPrefix(mt, "audio/") ||
+		strings.HasPrefix(mt, "video/") || mt == "application/pdf" || mt == "application/x-gzip" {
+		d.importFragmentErr(c, errors.New("that file is not a running order — import a .csv, .xlsx or .json file (download an example to start from)"))
 		return
 	}
 
@@ -98,7 +113,7 @@ func (d *Deps) apiImport(c *gin.Context) {
 		// operator believes were imported. So: errors + rows together are
 		// refused under replace, applied under append (additives are safe).
 		if perr != nil && mode == "replace" {
-			d.importFragmentErr(c, perr)
+			d.importFragmentErr(c, fmt.Errorf("%w. Nothing was imported: fix that row and import again", perr))
 			return
 		}
 		if aerr := d.importCues(id, tcs, mode); aerr != nil {
@@ -126,7 +141,18 @@ func (d *Deps) apiImport(c *gin.Context) {
 // into the feedback box (status 200 so htmx swaps it in; no panel replaced).
 func (d *Deps) importFragmentErr(c *gin.Context, err error) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8",
-		[]byte(`<div class="alert alert-error">`+html.EscapeString(err.Error())+`</div>`))
+		[]byte(`<div class="alert alert-error">`+html.EscapeString(friendlyImportErr(err))+`</div>`))
+}
+
+// friendlyImportErr drops the package prefix operators shouldn't see
+// ("importdocs: row 3: …" → "Row 3: …").
+func friendlyImportErr(err error) string {
+	msg := strings.ReplaceAll(err.Error(), "importdocs: ", "")
+	msg = strings.ReplaceAll(msg, "timerpi: ", "")
+	if r, size := utf8.DecodeRuneInString(msg); size > 0 {
+		msg = string(unicode.ToUpper(r)) + msg[size:]
+	}
+	return msg
 }
 
 // GET /api/import-example?fmt=xlsx|csv|json AND

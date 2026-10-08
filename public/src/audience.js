@@ -30,25 +30,43 @@ let item = null; // the on-air item (or null)
 let shownSig = '';
 
 // setNote writes the footer line; state (live|reconnecting|offline) moves
-// the .connection lamp, and action feedback leaves it as it is.
+// the .connection lamp. Action feedback (no state) stays readable for a
+// few seconds: the "Connected" of the next live frame waits for it.
+let holdUntil = 0;
 function setNote(text, state) {
+  if (state === 'live' && Date.now() < holdUntil) {
+    note.dataset.state = state;
+    return;
+  }
   note.textContent = text;
   if (state) note.dataset.state = state;
+  else holdUntil = Date.now() + 4000;
 }
 
-// The device id is the server's tp_aud cookie.
+// The device id is the server's tp_aud cookie, issued on the first vote or
+// submission (not on page view, E2E #2).
 const post = (path, body) => api('POST', `/api/audience/${code}${path}`, body);
 
-// Rate-limited taps (429) retry once after a short jittered wait.
+// Busy answers (429: room busy, or a crowded network minting device ids)
+// retry with growing jittered waits, honouring Retry-After, while the
+// footer says so — never a dead end.
 async function postRetry(path, body) {
-  try {
-    return await post(path, body);
-  } catch (e) {
-    if (e.status !== 429) throw e;
-    await new Promise((r) => setTimeout(r, 400 + Math.random() * 900));
-    return post(path, body);
+  for (let i = 0; ; i++) {
+    try {
+      return await post(path, body);
+    } catch (e) {
+      if (e.status !== 429 || i >= 5) throw e;
+      const why = e.message.replace(/ — .*/, '');
+      setNote(`${why.charAt(0).toUpperCase()}${why.slice(1)} — retrying…`);
+      const wait = Math.max((e.retryAfter || 0) * 1000, 500 * 2 ** i) * (0.6 + Math.random() * 0.8);
+      await new Promise((r) => setTimeout(r, wait));
+    }
   }
 }
+
+// Per-item memory (vote, upvotes, sent entries) is keyed by item id and
+// round: "Clear responses" bumps the round, so phones start fresh (E2E #11).
+const key = (what) => `tp.aud.${what}.${item.id}.${item.round || 0}`;
 
 /* ---------------------------------------------------------------- render -- */
 
@@ -121,27 +139,28 @@ function renderLive(live, formSlot) {
 }
 
 function renderVote(box) {
-  const mine = store.get(`tp.aud.vote.${item.id}`, null);
+  const mine = store.get(key('vote'), null);
   const results = item.state === 'results';
   const opts = item.options || [];
   if (!results) {
     const list = el('div', 'tp-aud-opts');
     opts.forEach((label, i) => {
-      // ftl buttons (U17): the chosen answer is the primary one.
-      const b = el('button', `btn tp-aud-opt${mine === i ? ' btn-primary' : ''}`, label);
+      // ftl toggle buttons (U17): aria-pressed marks the chosen answer
+      // (lamp + ring; app.css paints it in the theme's accent pair).
+      const b = el('button', 'btn tp-aud-opt', label);
       b.type = 'button';
       b.setAttribute('aria-pressed', String(mine === i));
       b.addEventListener('click', async () => {
-        const key = `tp.aud.vote.${item.id}`;
-        const before = store.get(key, null);
-        store.set(key, i);
+        const k = key('vote');
+        const before = store.get(k, null);
+        store.set(k, i);
         render();
         try {
           await postRetry('/vote', { pollId: item.id, choice: String(i) });
           setNote('Vote received — you can change it until the results are shown.');
         } catch (e) {
           // Not counted: don't show it as this phone's vote (BUGLOG RS11).
-          store.set(key, before);
+          store.set(k, before);
           render();
           setNote(e.message);
         }
@@ -194,11 +213,11 @@ function askForm(box, { placeholder, max, multiline, sentText }) {
     if (!text) return;
     send.disabled = true;
     try {
-      const out = await post('/ask', { item: item.id, text });
+      const out = await postRetry('/ask', { item: item.id, text });
       if (!out.approved) {
-        const sent = store.get(`tp.aud.sent.${item.id}`, []);
+        const sent = store.get(key('sent'), []);
         sent.push({ id: out.id, text, at: Date.now() });
-        store.set(`tp.aud.sent.${item.id}`, sent.slice(-10));
+        store.set(key('sent'), sent.slice(-10));
       }
       input.value = '';
       setNote(out.approved ? 'Sent!' : sentText);
@@ -219,45 +238,38 @@ function renderWall(box, formSlot) {
     sentText: 'Sent — the moderator will review it shortly.',
   });
   const kids = item.children || [];
-  // Only entries still waiting for review stay in "your questions": once
-  // approved they are on the wall; dismissed or cleared ones are gone.
-  const waiting = new Set(item.waiting || []);
-  const all = store.get(`tp.aud.sent.${item.id}`, []);
-  // A just-sent entry may not be in the frame yet: keep it a little while.
-  const sent = all.filter((s) => waiting.has(s.id) || Date.now() - (s.at || 0) < 15000);
-  if (sent.length !== all.length) store.set(`tp.aud.sent.${item.id}`, sent);
-  if (sent.length) {
-    const mineBox = el('div', 'tp-aud-mine');
-    mineBox.append(el('p', 'label', 'Waiting for review'));
-    for (const s of sent.slice(-3)) mineBox.append(el('p', 'text-muted', s.text));
-    box.appendChild(mineBox);
-  }
+  pendingList(box);
   if (item.spotlight) {
     const spot = el('div', 'alert alert-info tp-aud-spot');
     spot.append(el('span', 'label', 'Now answering'), el('p', '', item.spotlight.question));
     box.appendChild(spot);
   }
-  const ups = new Set(store.get('tp.aud.up', []));
+  const ups = new Set(store.get(key('up'), []));
   const list = el('ul', 'list tp-aud-wall');
   for (const k of kids) {
     if (item.spotlight && k.id === item.spotlight.id) continue;
     const li = el('li', 'list-item tp-aud-entry' + (k.state === 'answered' ? ' is-answered' : ''));
-    const up = el('button', 'badge badge-button tp-aud-up', `▲ ${k.upvotes || 0}`);
+    // ftl filter chip; the one this phone upvoted is its active chip.
+    const up = el('button', `badge badge-button tp-aud-up${ups.has(k.id) ? ' is-active' : ''}`, `▲ ${k.upvotes || 0}`);
     up.type = 'button';
     up.setAttribute('aria-pressed', String(ups.has(k.id)));
     up.setAttribute('aria-label', `Upvote: ${k.question}`);
     up.disabled = ups.has(k.id) || k.state !== 'open' || item.state !== 'open';
     up.addEventListener('click', async () => {
       ups.add(k.id);
-      store.set('tp.aud.up', [...ups].slice(-200));
+      store.set(key('up'), [...ups].slice(-200));
       up.disabled = true;
+      up.classList.add('is-active');
+      up.setAttribute('aria-pressed', 'true');
       try {
         await postRetry('/vote', { pollId: k.id, choice: '1' });
       } catch (e) {
         // Not counted: the phone may try again (RS11).
         ups.delete(k.id);
-        store.set('tp.aud.up', [...ups].slice(-200));
+        store.set(key('up'), [...ups].slice(-200));
         up.disabled = false;
+        up.classList.remove('is-active');
+        up.setAttribute('aria-pressed', 'false');
         setNote(e.message);
       }
     });
@@ -267,8 +279,30 @@ function renderWall(box, formSlot) {
   if (kids.length) box.appendChild(list);
 }
 
+// pendingList shows this phone's own entries the server still lists as
+// waiting for review (item.waiting). An entry the server has not listed
+// yet stays for 15 s (the frame may predate it); once the server has
+// listed it, only the server state decides — it leaves when approved
+// (it is on the wall), dismissed or cleared.
+function pendingList(box) {
+  const waiting = new Set(item.waiting || []);
+  const shown = new Set((item.children || []).map((k) => k.id));
+  const all = store.get(key('sent'), []);
+  const sent = all.filter((s) => {
+    if (waiting.has(s.id)) return (s.seen = true);
+    return !s.seen && !shown.has(s.id) && Date.now() - (s.at || 0) < 15000;
+  });
+  store.set(key('sent'), sent);
+  if (!sent.length) return;
+  const mineBox = el('div', 'tp-aud-mine');
+  mineBox.append(el('p', 'label', 'Waiting for review'));
+  for (const s of sent) mineBox.append(el('p', 'text-muted', s.text));
+  box.appendChild(mineBox);
+}
+
 function renderCloud(box, formSlot) {
   if (formSlot) askForm(formSlot, { placeholder: 'One word…', max: 32, multiline: false, sentText: 'Sent — it appears once approved.' });
+  pendingList(box);
   const words = item.children || [];
   if (!words.length) return;
   const max = Math.max(1, ...words.map((w) => w.upvotes || 0));

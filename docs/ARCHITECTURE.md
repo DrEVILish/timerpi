@@ -117,6 +117,7 @@ go to the home page.
 - The fanout is serialised per show.
 - Votes do **not** trigger a snapshot fanout. `Hub.BroadcastPoll` sends a small poll-only frame (~150 B) to the audience bucket and the boards.
 - Votes and asks go over REST with rate limits: 300 ms per peer per vote, 3 s per peer per ask, and a 600 votes/s per-show soak limit that answers 429 with Retry-After.
+- A phone's device id (`tp_aud` cookie) is minted lazily on its first vote or ask, budgeted at 2,000 per room per client IP per 10 min (`routes/audience_device.go`): a whole venue behind one NAT IP fits PRODUCT A10's 1,000 phones (`TestAudienceThousandPhonesOneIP`), while a cookie-dropping script stays bounded.
 - Load harness `ws/load_test.go` (run with `TP_LOAD=1`): 1,000 phones, 1,000/1,000 join storm, p95 broadcast 24 ms in the dev container. **Not yet measured on a Pi.**
 
 ## 6. Screens, layouts and templates
@@ -134,11 +135,11 @@ go to the home page.
 | Walk-in | `event`, `room`, `lobby`, `clockroom` (Clock) |
 | Presenter | `dsm`, `stage` (Full timer), `timer` (Countdown only), `speaker` |
 
-  **Versions.** A layout document is its landscape version plus `alt`, the portrait version (`boards.Layout.For(portrait)` picks one; a layout saved before versions existed gets `boards.AutoAlt` until its other version is saved). The board page renders one version: `?orient=portrait|landscape` wins, else the screen's Mounted rotation (90/270 → portrait). A handheld display (`html[data-device-orient]`, set in `base.html` for a mobile UA with touch and an orientation sensor) ignores Mounted and reloads itself with the `orient` that matches how it is held, on load and on every turn; it joins with `handheld:true`, and the Screens page hides its Mounted setting. Changing a screen's type refits a built-in with `boards.FitTemplate` (that type's first layout); a layout pick never changes the rotation. Retired keys (`<key>-portrait`, `countdown`) are migrated in `boards.Migrate` and accepted by `templateKey`.
+  **Versions.** A layout document is its landscape version plus `alt`, the portrait version (`boards.Layout.For(portrait)` picks one; a layout saved before versions existed gets `boards.AutoAlt` until its other version is saved). The board page renders one version: `?orient=portrait|landscape` wins, then the `tp_orient` cookie a handheld's board page sets (its last way up, so a phone usually loads once), else the screen's Mounted rotation (90/270 → portrait). A handheld display (`html[data-device-orient]`, set in `base.html` for a mobile UA with touch and an orientation sensor) ignores Mounted and reloads itself with the `orient` that matches how it is held, on load and on every turn; it joins with `handheld:true`, and the Screens page hides its Mounted setting. Changing a screen's type refits a built-in with `boards.FitTemplate` (that type's first layout); a layout pick never changes the rotation. Retired keys (`<key>-portrait`, `countdown`) are migrated in `boards.Migrate` and accepted by `templateKey`.
 
   Applying a template to a screen (capture or `POST /screens/template`) builds that screen's own board, so edits never leak to other screens.
 - **Event walk-in data.** `rooms`, `eventschedule` and the default `map` tile poll `GET /api/shows/:room/walkin` (every room of the event from the live engines; open).
-- **Steering.** A named screen with an assigned board that loads the bare stage URL is redirected (302) to its board. Live reassignment arrives as a `screen-board` frame.
+- **Steering.** A named screen with an assigned board that loads the bare stage URL is redirected (302) to its board. Live reassignment arrives as a `screen-board` frame; a layout edit or delete as `board-changed` (the locked page showing it reloads: tiles are server-rendered).
 - **Editing.** The layout editor runs only inside the moderator's Screens page (`?edit=1&preview=1`), framed at the layout's aspect. Real screens never render chrome.
 - **Display page variants.** `/d/<code>?view=stage|next|daysheet|clock|board`.
 
@@ -167,11 +168,14 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 | Moderator | Cookie `tp_rm_<ROOM>`, issued by `POST /api/events/:code/rooms/:room/login` (room password, or none). Getting it needs the **event code** | One room: `/c/`, `/screens/`, show-scoped REST (`requireShowGated`), WS `controls` joins |
 | Screen | A **screen key** (`?key=`, from capture or the Screens page "Screen link"; `screens.key`), or a moderator session on that browser | Trusted screen: stage messages, notes, the Presenter item. Released when the screen is forgotten or its room/event is deleted |
 | Screen (no key) / audience | Nothing | `/d/*`, `/a/*`, WS `display`/`screen`/`audience` joins (read-only, **public snapshot**), waiting-room register/mine, QR images, error reports |
-| Box admin | Cookie `tp_box`, issued by `POST /api/box/setup` (first time, while no box password exists) or `POST /api/box/login` (box password). Event sessions never count (`routes/box.go`) | `/settings`, `/api/network/*`, `/api/osc*`, `POST /api/theme` |
+| Box admin | Cookie `tp_box`, issued by `POST /api/box/setup` (first time, while no box password exists; on the cloud only with the one-time setup code the server logs at startup, `Deps.BoxSetupCode`) or `POST /api/box/login` (box password). Event sessions never count (`routes/box.go`) | `/settings`, `/api/network/*`, `/api/osc*`, `POST /api/theme` |
 
 - Session cookies are `HMAC(secret, scope | codes | stored password hash)`. The secret is random per box (settings `auth.secret`). Changing a password therefore signs every holder of the old one out.
 - Passwords are stored as PBKDF2-SHA256 hashes (`timerpi.HashPassword`).
 - A room code alone, for example from an audience QR, never grants operator access.
+- The waiting room (`/api/waiting`) is the Event Technician's. Each waiting row stores the client IP it registered from; on the cloud a technician sees and captures only rows from their own address (the venue's NAT), on a box every row (`routes/waiting.go` `waitingVisible`).
+- Single-use phone sign-in nonces live in `spent_nonces` until they expire, so a restart doesn't revive a used code. Uploaded image ids are random (2^40–2^53), so `/assets/<id>` can't be walked; older images keep their small ids.
+- Sign-out and Leave event are same-origin `POST` forms (OriginGuard); a cross-site link can't sign anyone out.
 - OriginGuard is open by default (any Host). A non-empty `allowed_hosts` setting switches to strict mode (HTTP 421 for unknown public hosts). The WS upgrader calls `routes.SameOriginRequest`.
 
 ## 9. Themes (ftl-themes)
@@ -183,7 +187,7 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 
 ## 10. Resilience
 
-- **Browser P2P mesh** (`public/src/mesh.js`): WebRTC data channels between the browsers of one show. If the server dies, the earliest-joined browser becomes master, keeps the timer running, and can even edit the running order (tombstoned deletes). On reconnect it pushes `POST /api/shows/:code/sync`, which merges per cue with last-writer-wins. Spec: [OFFLINE-EDIT.md](OFFLINE-EDIT.md).
+- **Browser P2P mesh** (`public/src/mesh.js`): WebRTC data channels between the browsers of one show. If the server dies, the earliest-joined browser becomes master, keeps the timer running, and can even edit the running order (tombstoned deletes). On reconnect it pushes `POST /api/shows/:code/sync`, which merges per cue with last-writer-wins. Only trusted sessions (operators, keyed screens) are in the mesh: the hub gives untrusted screens no peer ids and relays no signals for them, and a tab sends its snapshot only to hub-vouched peers. A display counts as LINK LIVE offline only while it reaches an operator over the mesh; a display alone (or with other displays) shows LINK DOWN though it keeps its own timer running. Spec: [OFFLINE-EDIT.md](OFFLINE-EDIT.md).
 - **Device mesh** (`mesh/`, `mdns/`): TimerPi boxes discover each other. The first one up is primary; after 8 s of silence another takes over.
 - **Reconnect:** 6 s handshake watchdog and instant rejoin on `online`/`visibilitychange`.
 

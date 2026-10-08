@@ -14,13 +14,13 @@
 <header class="app-bar">
   <a class="nav-brand tp-brand" href="/" title="Home"><img src="/img/timerpi.svg" alt="TimerPi"></a>
   <nav class="nav">
-    <span class="nav-item tp-bar-title">{{.Event.Name}}</span>
+    <span class="nav-item tp-bar-title tp-wide-only">{{.Event.Name}}</span>
     <a class="nav-item{{if eq .Page "event"}} is-active{{end}}" href="/e/{{.Event.Code}}">Rooms</a>
     {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">Event Technician</a>{{end}}
   </nav>
   <div class="cluster push">
-    <span class="tp-event-id"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
-    <a class="nav-item" href="/e/{{.Event.Code}}/leave" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave event</a>
+    <span class="tp-event-id tp-wide-only"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
+    <form class="tp-nav-form" method="post" action="/e/{{.Event.Code}}/leave"><button class="nav-item btn btn-ghost" type="submit" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave<span class="tp-wide-only"> event</span></button></form>
   </div>
 </header>
 {{end}}
@@ -138,7 +138,7 @@
               <button class="btn btn-sm btn-ghost" data-room-move="1" title="Move down" aria-label="Move down">▼</button>
               <button class="btn btn-sm btn-ghost" data-room-dup title="Copy this room's running order into a new room">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/api/shows/{{.Code}}/file" title="Download this room as a file">Export</a>
-              <button class="btn btn-sm btn-ghost btn-danger" data-room-delete>Delete</button>
+              <button class="btn btn-sm btn-danger" data-room-delete>Delete</button>
             </div></td>
           </tr>
           {{end}}
@@ -147,7 +147,7 @@
       <div class="row is-gap-s is-wrap mt-m">
         <form id="room-add" class="row is-gap-xs">
           <input class="input input-sm" name="name" placeholder="New room name" maxlength="60" required aria-label="New room name">
-          <button class="btn btn-sm btn-primary" type="submit">Add room</button>
+          <button class="btn btn-sm btn-primary tp-nowrap" type="submit">Add room</button>
         </form>
         <button class="btn btn-sm" id="room-pw-all">Same password for every room…</button>
         <label class="btn btn-sm btn-ghost">Import a room file
@@ -159,7 +159,7 @@
     <section class="panel" id="pair" aria-labelledby="pair-h">
       <div class="panel-header" id="pair-h">Pair a box</div>
       <p class="field-hint">A TimerPi box that isn't paired shows a 6-digit code on its screen. Type it here to make that box one of this event's screens.</p>
-      <form id="pair-form" class="row is-gap-s is-items-end is-wrap">
+      <form id="pair-form" class="row is-gap-s is-items-end is-wrap mt-s">
         <div class="field"><label class="label" for="pair-code">Code on the box</label>
           <div class="otp">
             <input class="otp-input" id="pair-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="······" required>
@@ -216,6 +216,17 @@
           <div class="row is-gap-xs"><input class="input" id="ev-pw-new" type="password" minlength="6" autocomplete="new-password" required><button class="btn" type="submit">Save</button></div>
           <span class="field-hint">Signs every other Event Technician session out.</span>
         </form>
+      </div>
+    </section>
+
+    <section class="panel" id="ev-file" aria-labelledby="ev-file-h">
+      <div class="panel-header" id="ev-file-h">Event file</div>
+      <p class="field-hint">Download the whole event (rooms, running orders, messages, polls, screens, layouts and map) as one file. Importing a file makes a new event with new codes; you choose its password. Passwords and screen keys are never in the file.</p>
+      <div class="row is-gap-s is-wrap">
+        <a class="btn btn-sm" id="ev-export" href="/api/events/{{.Event.Code}}/export" download>Export event</a>
+        <label class="btn btn-sm btn-ghost">Import an event file…
+          <input type="file" id="ev-import" accept="application/json,.json" hidden>
+        </label>
       </div>
     </section>
 
@@ -298,6 +309,13 @@
     {{if .Setup}}
     <p>This box has no password yet. Choose one to protect the box settings: hostname, network, OSC and the default theme. Event passwords don't open these settings.</p>
     <form class="panel stack is-gap-s" id="box-setup">
+      {{if .NeedCode}}
+      <div class="field">
+        <label class="label" for="box-code">Setup code</label>
+        <input class="input" type="text" id="box-code" autocomplete="off" required>
+        <span class="field-hint">This is a cloud server: the setup code is printed in the server log when it starts.</span>
+      </div>
+      {{end}}
       <div class="field">
         <label class="label" for="box-new">New box password</label>
         <input class="input" type="password" id="box-new" autocomplete="new-password" minlength="{{.MinLen}}" required>

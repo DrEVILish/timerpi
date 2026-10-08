@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -897,6 +898,15 @@ func (d *Deps) apiDeleteMessage(c *gin.Context) {
 	mid, merr := strconv.ParseInt(c.Param("mid"), 10, 64)
 	if merr != nil || mid <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad message id"})
+		return
+	}
+	msgs, err := d.Store.ListMessages(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !slices.ContainsFunc(msgs, func(m timerpi.Message) bool { return m.ID == mid }) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such message"})
 		return
 	}
 	if err := d.Store.DeleteMessage(id, mid); err != nil {

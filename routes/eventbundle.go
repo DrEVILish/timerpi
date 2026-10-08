@@ -1,6 +1,7 @@
 // eventbundle.go — the whole event as one copy (VENUE-CLOUD §4, §6). Used
-// box-to-box and box-to-cloud, never offered as a download: it carries the
-// password hashes and the screens' keys so a copy works like the original.
+// box-to-box and box-to-cloud with the password hashes and the screens'
+// keys, so a copy works like the original. The Event Technician's download
+// (apiEventExport, PRODUCT E4) is the same copy with those secrets removed.
 //
 //   - A box paired from the cloud pulls its event and becomes its home.
 //   - Member boxes mirror the primary, so a takeover has the event.
@@ -13,7 +14,12 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"timerpi/boards"
 	"timerpi/buildinfo"
@@ -23,6 +29,7 @@ import (
 const eventBundleVersion = 1
 
 type eventBundle struct {
+	Kind       string             `json:"kind,omitempty"` // eventFileKind on a download
 	Version    int                `json:"version"`
 	ExportedAt int64              `json:"exportedAt"`
 	Generator  string             `json:"generator"`
@@ -234,4 +241,137 @@ func (d *Deps) fillRoomCopy(id int64, r eventBundleRoom, boardX map[int64]int64)
 		d.Hub.BroadcastPoll(id)
 	}
 	return nil
+}
+
+// eventFileKind marks a downloaded event file (PRODUCT E4). The download
+// is the event copy WITHOUT secrets: no password hashes and no screen keys
+// (a file passed around must not open the original event or its keyed
+// screens). Importing it makes a NEW event with new codes; the importer
+// sets its password, rooms come in without passwords, screens get fresh
+// keys when they are next set up.
+const eventFileKind = "timerpi-event"
+
+// GET /api/events/:code/export — the Event Technician's download.
+func (d *Deps) apiEventExport(c *gin.Context) {
+	ev, ok := d.requireSuper(c)
+	if !ok {
+		return
+	}
+	raw, err := d.ExportEvent(ev.ID)
+	var b eventBundle
+	if err == nil {
+		err = json.Unmarshal(raw, &b)
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	b.Kind = eventFileKind
+	b.Event.Code, b.Event.SuperHash = "", ""
+	for i := range b.Rooms {
+		b.Rooms[i].RoomPW = ""
+		for j := range b.Rooms[i].Screens {
+			b.Rooms[i].Screens[j].Key = ""
+		}
+	}
+	c.Header("Content-Disposition", `attachment; filename="timerpi-event-`+exportName(ev.Name)+`.json"`)
+	c.JSON(http.StatusOK, b)
+}
+
+// POST /api/events/import — multipart {file, password} (or JSON
+// {file: <the event file>, password}): the file becomes a NEW event with
+// new codes, and this browser is its Event Technician. Bounded like
+// creating an event (anyone may create one).
+func (d *Deps) apiEventImportNew(c *gin.Context) {
+	if d.Store == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
+		return
+	}
+	if d.BoxEvent != nil && d.BoxEvent() != "" {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box belongs to an event. Import events on the cloud."})
+		return
+	}
+	var raw []byte
+	pw := c.PostForm("password")
+	if fh, ferr := c.FormFile("file"); ferr == nil {
+		f, oerr := fh.Open()
+		if oerr == nil {
+			raw, _ = io.ReadAll(f)
+			f.Close()
+		}
+	} else if uploadTooBig(ferr) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"ok": false, "error": uploadTooBigMsg})
+		return
+	} else {
+		var body struct {
+			File     json.RawMessage `json:"file"`
+			Password string          `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Choose a TimerPi event file (.json) to import"})
+			return
+		}
+		raw, pw = body.File, body.Password
+	}
+	if !validSuperPassword(pw) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": superPasswordRule})
+		return
+	}
+	var b eventBundle
+	if err := json.Unmarshal(raw, &b); err != nil || b.Kind != eventFileKind || b.Version != eventBundleVersion {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "That is not a TimerPi event file (download one from Event Technician → Export event)"})
+		return
+	}
+	if len(b.Rooms) == 0 || len(b.Rooms) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "The event file needs 1 to 50 rooms"})
+		return
+	}
+	if !eventCreateLimit.allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many new events from this device — try again in a few minutes"})
+		return
+	}
+	if n, cerr := d.Store.CountEvents(); cerr == nil && n >= maxEventsPerBox {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "This box is full of events — delete old ones first"})
+		return
+	}
+	titles := make([]string, len(b.Rooms))
+	for i, r := range b.Rooms {
+		titles[i] = r.Title
+		if strings.TrimSpace(r.Title) == "" {
+			titles[i] = fmt.Sprintf("Room %d", i+1)
+		}
+	}
+	name := strings.TrimSpace(b.Event.Name)
+	if name == "" {
+		name = "Imported event"
+	}
+	ev, rooms, err := d.Store.CreateEvent(name, pw, titles)
+	if err != nil || len(rooms) != len(b.Rooms) {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": fmt.Sprint("could not create the event: ", err)})
+		return
+	}
+	// Point the copy at the new event and rooms, then fill them with the
+	// same code path a box uses (ImportEvent matches rooms by code).
+	newCode := map[string]string{}
+	for i := range b.Rooms {
+		newCode[timerpi.NormalizeCode(b.Rooms[i].Code)] = rooms[i].Code
+		b.Rooms[i].Code, b.Rooms[i].RoomPW = rooms[i].Code, ""
+		for j := range b.Rooms[i].Screens {
+			b.Rooms[i].Screens[j].Key = ""
+		}
+	}
+	for i := range b.Boards {
+		b.Boards[i].Room = newCode[timerpi.NormalizeCode(b.Boards[i].Room)]
+	}
+	b.Event.Code, b.Event.SuperHash, b.Event.Name = ev.Code, ev.SuperHash, name
+	fixed, _ := json.Marshal(b)
+	imported, err := d.ImportEvent(fixed)
+	if err != nil {
+		_ = d.Store.DeleteEvent(ev.ID)
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "could not import the event: " + err.Error()})
+		return
+	}
+	ev = imported
+	d.setSuperSession(c, ev)
+	c.JSON(http.StatusCreated, gin.H{"ok": true, "code": ev.Code, "codeFmt": timerpi.FmtCode(ev.Code), "admin": "/e/" + ev.Code + "/admin"})
 }

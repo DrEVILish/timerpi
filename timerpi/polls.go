@@ -75,6 +75,7 @@ func (d *DB) migratePolls() error {
 		{"to_presenter", "INTEGER NOT NULL DEFAULT 0"},
 		{"spot", "INTEGER NOT NULL DEFAULT 0"},
 		{"auto_approve", "INTEGER NOT NULL DEFAULT 0"},
+		{"round", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, nc := range cols {
 		_, err := d.Exec(fmt.Sprintf(`ALTER TABLE polls ADD COLUMN %s %s;`, nc.name, nc.ddl))
@@ -118,10 +119,11 @@ type Poll struct {
 	ToPresenter bool   `db:"to_presenter" json:"toPresenter"`
 	Spot        int64  `db:"spot"         json:"-"`
 	AutoApprove bool   `db:"auto_approve" json:"autoApprove"`
+	Round       int64  `db:"round"        json:"-"` // bumped by ResetPoll
 }
 
 const pollCols = `id, show_id, kind, question, options, correct, state, parent, author, ts, updated,
-	to_audience, to_presenter, spot, auto_approve`
+	to_audience, to_presenter, spot, auto_approve, round`
 
 // PollOptions decodes the options array (never nil).
 func (p Poll) PollOptions() []string {
@@ -153,6 +155,10 @@ type PollView struct {
 	Pending     int        `json:"pending,omitempty"`   // moderator view: submissions waiting
 	More        int        `json:"more,omitempty"`      // entries left out of a trimmed public view
 	Waiting     []int64    `json:"waiting,omitempty"`   // public view: ids still pending review (phones keep only these of their own sent list)
+	// Round counts "Clear responses": phones key their remembered vote,
+	// upvotes and sent entries by item id + round, so a cleared item
+	// starts fresh on every phone.
+	Round int64 `json:"round,omitempty"`
 }
 
 // MaxPublicEntries caps the entries a phone or screen frame carries.
@@ -205,6 +211,9 @@ func (d *DB) normalizePoll(p *Poll) error {
 		return fmt.Errorf("timerpi: interaction kind %q invalid", p.Kind)
 	}
 	p.Question = strings.TrimSpace(p.Question)
+	if p.Parent == 0 { // operator items; audience submissions have their own caps
+		p.Question = ClipRunes(p.Question, MaxPollQuestionLen)
+	}
 	if p.Question == "" {
 		if p.Parent > 0 {
 			return fmt.Errorf("timerpi: submission text required")
@@ -228,6 +237,9 @@ func (d *DB) normalizePoll(p *Poll) error {
 	}
 	return nil
 }
+
+// MaxPollQuestionLen caps an operator's poll/quiz question (characters).
+const MaxPollQuestionLen = 200
 
 // CreatePoll inserts a top-level item (always created hidden, off air).
 func (d *DB) CreatePoll(p Poll) (Poll, error) {
@@ -680,7 +692,7 @@ func (d *DB) decidedWordState(itemID int64, word string) (string, bool) {
 // pending entries and keeps the quiz answer visible.
 func (d *DB) itemView(p Poll, moderator bool) PollView {
 	v := PollView{ID: p.ID, Kind: p.Kind, Question: p.Question, Options: p.PollOptions(),
-		State: p.State, ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove, Correct: -1}
+		State: p.State, ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove, Correct: -1, Round: p.Round}
 	if p.Kind == KindQuiz && (moderator || p.State == StateResults) {
 		v.Correct = p.Correct
 	}
@@ -937,7 +949,7 @@ func (d *DB) ResetPoll(showID, id int64) error {
 	if _, err := tx.Exec(`DELETE FROM polls WHERE show_id = ? AND parent = ?`, showID, id); err != nil {
 		return fmt.Errorf("timerpi: clear entries: %w", err)
 	}
-	if _, err := tx.Exec(`UPDATE polls SET spot = 0, updated = ?,
+	if _, err := tx.Exec(`UPDATE polls SET spot = 0, updated = ?, round = round + 1,
 		state = CASE WHEN state = ? THEN ? ELSE state END WHERE id = ?`,
 		nowMS(), StateResults, StateOpen, id); err != nil {
 		return fmt.Errorf("timerpi: clear item: %w", err)
@@ -998,6 +1010,23 @@ func (d *DB) ExportRows(showID int64) ([]ExportRow, error) {
 		}
 		if len(rows) == 0 {
 			out = append(out, ExportRow{ItemID: p.ID, Kind: p.Kind, Question: p.Question, Ts: p.Ts})
+		}
+		if p.Kind == KindWordCloud {
+			// One row per word and state, Count = how many people sent it
+			// (as the screens weigh it), Time = first sent.
+			at := map[string]int{}
+			kept := rows[:0]
+			for _, r := range rows {
+				k := wordKey(r.Question) + "|" + r.State
+				if i, ok := at[k]; ok {
+					kept[i].N++
+					continue
+				}
+				at[k] = len(kept)
+				r.N = 1
+				kept = append(kept, r)
+			}
+			rows = kept
 		}
 		for _, r := range rows {
 			st := map[string]string{StateHidden: "pending", StateOpen: "approved", StateAnswered: "answered", StateDismissed: "dismissed"}[r.State]

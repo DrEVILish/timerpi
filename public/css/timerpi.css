@@ -12,6 +12,9 @@
 /* Brand accent, scoped: wordmark/hero only (.btn-primary/.btn-go get their
    own scoped brand rule in the supervisor block at file end). */
 .tp-brand { --accent: #7C3AED; }
+/* Leave event / Sign out are POST forms (no cross-site logout): the form
+   box takes no room in the header row. */
+.tp-nav-form { display: contents; }
 
 /* --------------------------------------------------------------------------
    Dashboard grid: left rail (now) | centre (cue list) | right (panels)
@@ -19,7 +22,7 @@
 .tp-dash {
   display: grid;
   /* U37: left = Current cue, Messages, Import; right = transport + running order. */
-  grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr);
+  grid-template-columns: minmax(16rem, 18rem) minmax(0, 1fr);
   gap: var(--space-m, 1rem);
   align-items: start;
   height: 100%;
@@ -56,6 +59,13 @@
   font-size: 1.35rem;
   min-inline-size: 6.5rem;
 }
+/* Phones (E2E #24): FLASH and BLANK take a second row instead of being
+   clipped off the right edge. */
+@media (max-width: 600px) {
+  .tp-transport-bar { flex-wrap: wrap; }
+  .tp-transport-bar .btn-go { flex: 1 1 auto; }
+  .tp-transport-bar > :is([data-cmd="flash"], #tp-blank) { flex: 1 1 8rem; justify-content: center; }
+}
 
 /* Now panel (left rail). A size container so the readout scales with the
    rail's width, not the window's (U33: "0:09.4" lost its tenths off the
@@ -63,11 +73,17 @@
 .tp-now { display: flex; flex-direction: column; gap: var(--space-s, .75rem); container-type: inline-size; }
 
 /* U34: the time of day sits at the top centre of the header bar. */
+/* When the bar is crowded (a long nav: weyland-yutani's tracked caps,
+   narrow windows) timerpi.js sets .tp-bar-crowded and the clock joins the
+   flow, centred in the free space, instead of covering the nav. */
 .app-bar { position: relative; }
 .tp-bar-clock { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; }
+.tp-bar-crowded .tp-bar-clock { position: static; transform: none; margin-inline: auto; }
 @media (max-width: 1200px) {
-  .tp-bar-clock { position: static; transform: none; }
+  .tp-bar-clock { position: static; transform: none; margin-inline: auto; }
 }
+/* Its own plate: bar art (hot-wheels' flame) sits behind it. */
+.app-bar .tp-bar-clock { background: var(--readout-bg, var(--surface)); padding-inline: .45em; border-radius: var(--radius, 4px); }
 
 /* --------------------------------------------------------------------------
    Clocks. Base look is .readout from the theme; this only sizes and states.
@@ -276,6 +292,7 @@ body.tp-hide-cursor * { cursor: none !important; }
   position: fixed; inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr); /* content never widens the page (fit.js measures this) */
   padding: max(2.2vh, env(safe-area-inset-top, 0px)) max(3vw, env(safe-area-inset-right, 0px))
            max(2.2vh, env(safe-area-inset-bottom, 0px)) max(3vw, env(safe-area-inset-left, 0px));
   gap: 1.2vh;
@@ -291,7 +308,11 @@ body.tp-hide-cursor * { cursor: none !important; }
   display: flex; align-items: center; justify-content: center;
   min-height: 0;
 }
-.tp-display-center .tp-clock { font-size: clamp(8rem, 34vh, 26rem); }
+/* Height-bound here; fit.js shrinks it by width so a phone or a long
+   H:MM:SS never overflows (E2E #21). */
+.tp-display-center .tp-clock { font-size: calc(clamp(3rem, 34vh, 26rem) * var(--tp-fit, 1)); white-space: nowrap; }
+.tp-display-top .tp-brand { flex: none; display: flex; }
+.tp-display-top .tp-brand img { height: clamp(1.6rem, 4.2vh, 4rem); width: auto; }
 .tp-display-next {
   display: flex; align-items: baseline; gap: 2vw;
   font-size: clamp(1.2rem, 3.4vh, 2.6rem);
@@ -329,7 +350,7 @@ body.tp-hide-cursor * { cursor: none !important; }
    root size (readability + 44px touch floors). Without :has support the
    rule simply doesn't apply (previous fixed-root behavior). Hairline
    1–3px strokes stay device pixels everywhere by design. */
-html:has(body.tp-display) { font-size: 1.5vh; }
+html:has(body.tp-display) { font-size: max(1.5vh, 11px); } /* floor: a phone held landscape kept 5–7 px text (E2E) */
 
 /* E3 blackout overlay: shown purely by the body flag (server-rendered AND
    JS-repainted on every snapshot adopt, so it survives oob swaps and works
@@ -491,7 +512,7 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .b-cd-label { color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-cue-label { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-speaker { font-size: clamp(1rem, 2.6vh, 1.8rem); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-eyebrow { font-size: .8rem; letter-spacing: .22em; font-weight: 800; color: #7C3AED; }
+.b-eyebrow { font-size: .8rem; letter-spacing: .22em; font-weight: 800; color: var(--accent); }
 .b-next-label { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-next-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
 .b-wall { font-size: clamp(1.6rem, 4.5vh, 3.2rem); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -526,6 +547,8 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 
 /* Schedules are ftl .schedule-list; rows on a TV are not tap targets. */
 .b-board .schedule-list { --tap-min: 0px; min-height: 0; overflow: hidden; }
+.b-board .schedule-item { flex-shrink: 0; } /* a row never squashes: it shows whole or hides */
+.b-board .schedule-item[hidden] { display: none; } /* rows that don't fit whole (board.js fitRows) */
 .b-board .schedule-item > .schedule { --schedule-font-size: 1em; }
 
 /* Screen-side join card (d-chrome pattern, b- namespace). */
@@ -638,6 +661,10 @@ body[data-editing] .b-grid { padding-block-end: 10rem; }
    #7C3AED clears 5.7:1 (spec --on-accent).
    -------------------------------------------------------------------------- */
 .btn-primary, .btn-go { --accent: #7C3AED; --on-accent: #ffffff; }
+/* Themes whose primary button is a dark tint with ACCENT-coloured text:
+   brand purple text on near-black measured 1–3.5:1 ("Set up here", GO).
+   There the label takes --on-accent; the purple stays on the edge (E2E). */
+html:is([data-theme="alienware"], [data-theme="matrix"], [data-theme="pipboy"], [data-theme="tokie"], [data-theme="tron"], [data-theme="winamp-classic"]) :is(.btn-primary, .btn-go) { --btn-fg: var(--on-accent); }
 
 /* --------------------------------------------------------------------------
    Supervisor[C5]: TV legibility minimums per docs/TIMERPI-THEME-SPEC.md.
@@ -807,6 +834,9 @@ body[data-editable="1"] .b-topbar-board::after {
 .b-clock[data-state="alert2"] { animation: tp-overtime-pulse 1s steps(2, jump-none) infinite; }
 
 /* --- U2-6: compositor feel + overlap nudge (edit mode) --------------------- */
+/* Compose chrome sits on a SURFACE: --muted is only certified there, and on
+   windows95's teal/navy page --bg the labels and hints vanished (E2E #25). */
+.b-chrome, body[data-editable] .b-topbar { background: var(--surface); color: var(--text); }
 .b-palette .b-palette-title {
   color: var(--muted);
   font-size: .78rem;
@@ -974,7 +1004,10 @@ body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-to
 
 /* Inspector paired fields collapsed to 61px fragments ("Lesli") under the
    uppercase mono labels; give each field a real floor. */
+.tp-inspector .row { flex-wrap: wrap; }
 .tp-inspector .row > .field { flex: 1 1 7rem; min-width: 7rem; }
+.tp-inspector .row > .tp-insp-wide { flex: 3 1 12rem; }
+.tp-inspector .row > .tp-insp-narrow { flex: 0 1 7rem; }
 
 /* Audit hardening RETIRED 2026-10-05: upstream 19c1e02 gave lcars/
    death-star a visible --border and windows95 added .badge to its
@@ -1070,13 +1103,13 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .widget-placeholder { pointer-events: none; }
 
 /* --- Running order table (STATUS U39–U43) -------------------------------- */
-.tp-cuetable { font-size: .82rem; }
+.tp-cuetable { font-size: min(.82rem, 13.2px); } /* iOS themes root at 17px: keep every column in view at 1440 (E2E #3) */
 .tp-cuetable :is(th, td) { padding-inline: .25rem; vertical-align: middle; }
 .tp-cuetable th { font-size: .7rem; letter-spacing: .03em; }
-.tp-cuetable .tp-cue-title { min-width: 6.5rem; }
+.tp-cuetable .tp-cue-title { min-width: 8em; }
 .tp-cuetable .tp-cue-notes { color: var(--muted); font-size: inherit; }
-.tp-cuetable .text-truncate { display: block; max-width: 5.5rem; }
-.tp-cuetable .tp-cue-notes .text-truncate { max-width: 4rem; }
+.tp-cuetable .text-truncate { display: block; max-width: 6.7em; }
+.tp-cuetable .tp-cue-notes .text-truncate { max-width: 4.9em; }
 .tp-cuetable .tp-cue-rowbtns .btn { padding-inline: .2rem; }
 .tp-cuetable .tp-cue-rowbtns .btn-go { padding-inline: .45rem; }
 
@@ -1090,11 +1123,11 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .tp-cuetable tfoot > tr { height: 3rem; }
 /* Compact add-row controls (beat ftl's editing-cell padding): they set the
    column widths, and the table must fit 1440 px beside the Current cue. */
-#cuelist tfoot td > :is(.input, .select) { padding-inline: .3rem; font-size: .78rem; }
-#cuelist tfoot td > .select { padding-inline-end: .95rem; background-position: right .2rem center; font-size: .74rem; }
+#cuelist tfoot td > :is(.input, .select) { padding-inline: .3rem; font-size: min(.78rem, 12.5px); }
+#cuelist tfoot td > .select { padding-inline-end: .95rem; background-position: right .2rem center; font-size: min(.74rem, 11.8px); }
 #cuelist tfoot .tp-cue-kind .select { width: 6.2em; }
 #cuelist tfoot .tp-cue-timer .select { width: 7.4em; }
-#cuelist tfoot .tp-cue-atzero .select { width: 6.6em; }
+#cuelist tfoot .tp-cue-atzero .select { width: 5.6em; }
 #cuelist tfoot .tp-cue-dur .input { width: 4.2em; }
 .tp-alert-field { display: flex; align-items: center; gap: .25rem; }
 .tp-alert-field .input { width: 3.6em; }
@@ -1111,6 +1144,9 @@ button.tp-alert-dot { inline-size: 1.1rem; block-size: 1.1rem; margin: 0; }
 /* Breaks wear their own accent (U43): sessions keep the theme accent. */
 .tp-cuetable tr.tp-row-break { --tp-row-accent: var(--accent-2, var(--warning)); background: color-mix(in srgb, var(--tp-row-accent) 7%, transparent); }
 .tp-cuetable tr.tp-row-break > td:first-child { box-shadow: inset 3px 0 0 var(--tp-row-accent); }
+/* Row colour from the cue editor: the same edge + tint, in the cue's colour. */
+.tp-cuetable tr.tp-row-color { background: color-mix(in srgb, var(--tp-row-accent) 10%, transparent); }
+.tp-cuetable tr.tp-row-color > td:first-child { box-shadow: inset 4px 0 0 var(--tp-row-accent); }
 .tp-badge-break { --badge-bg: color-mix(in srgb, var(--accent-2, var(--warning)) 22%, var(--surface)); --badge-fg: var(--accent-2, var(--warning-text, var(--warning))); }
 
 /* Flash (2026-10-07): the operator's Flash blinks presenter timers; an
@@ -1119,6 +1155,6 @@ body.b-flash .b-js-clock, .b-js-clock.is-flash { animation: b-blink 1s steps(1) 
 @keyframes b-blink { 50% { opacity: .12; } }
 
 /* Edit modal: the row colour picker spans the dialog. */
-.tp-insp-rowcolor .swatches { justify-content: space-between; flex-wrap: nowrap; }
+.tp-insp-rowcolor .swatches { flex-wrap: wrap; } /* tablet/phone: wrap, never clip */
 .tp-insp-rowcolor .swatches > * { flex-shrink: 0; }
 .tp-insp-flash { align-self: end; }

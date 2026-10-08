@@ -55,11 +55,11 @@ func TestParseXLSX_BasicSynonymsAndRows(t *testing.T) {
 			{"Day timer plan"}, // title above the header: ignored
 			{"", ""},           // blank: ignored
 			{"CUE TITLE", "TIME", "SPEAKER", "NOTES", "THRESHOLD 1", "THRESHOLD 2", "BUFFER", "END ACTION", "CONTINUE", "TYPE"},
-			{"Keynote", "1:05.5", "Amy", "mics", "0:30", "0:10", "5", "OVERTIME", "YES", "Session"},
+			{"Keynote", "0:01:05.5", "Amy", "mics", "30s", "10s", "5", "OVERTIME", "YES", "Session"},
 			{"", "", "", "", "", "", "", "", "", ""}, // full blank row: skipped
 			{"Technical talk", "00:05:00", "Bob", "", "", "", "", "hold", "n", "Break"},
 			{"Only label"}, // label without duration → cue with 0 ms
-			{"Changeover strip", "02:00", "Ops", "", "", "", "00:30", "BLANK", "1", "changeover"},
+			{"Changeover strip", "0:02", "Ops", "", "", "", "00:30", "BLANK", "1", "changeover"},
 		}})
 	cues, err := ParseXLSX(data)
 	if err != nil {
@@ -112,8 +112,8 @@ func TestParseXLSX_READMEFirstSheetIsSkipped(t *testing.T) {
 		}},
 		sheetDef{name: "Cues", rows: [][]string{
 			{"Label", "Duration"},
-			{"Opening", "45:00"},
-			{"Break", "10:00"},
+			{"Opening", "0:45"},
+			{"Break", "0:10"},
 		}})
 	cues, err := ParseXLSX(data)
 	if err != nil {

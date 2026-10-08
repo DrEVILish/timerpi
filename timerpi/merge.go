@@ -241,6 +241,7 @@ func (d *DB) ReplaceCuesStamped(showID int64, cues []Cue) error {
 			stamp = now
 		}
 		if keep[c.ID] {
+			c = capCueText(c)
 			if _, err := tx.Exec(`UPDATE cues SET
 				label = ?, duration_ms = ?, kind = ?, tags = ?, speaker = ?, hold_ms = ?,
 				timer_kind = ?, alert1_ms = ?, alert2_ms = ?, alert_color1 = ?, alert_color2 = ?,

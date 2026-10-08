@@ -19,6 +19,7 @@
 package routes
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,12 @@ import (
 )
 
 var screenThemeRe = regexp.MustCompile(`^[a-z0-9_-]{0,40}$`)
+
+// screenThemeOK: "" (event default) or a theme slug — never ftl's
+// core/tokens layers, which are not themes (REPORT #18).
+func screenThemeOK(t string) bool {
+	return screenThemeRe.MatchString(t) && t != "core" && t != "tokens"
+}
 
 // screenSessionView is one live tab (the gallery/panel disconnect button).
 type screenSessionView struct {
@@ -334,7 +341,7 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
 		return
 	}
-	if !screenThemeRe.MatchString(body.Theme) {
+	if !screenThemeOK(body.Theme) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
 		return
 	}
@@ -464,6 +471,10 @@ func (d *Deps) apiScreenRename(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "Another screen is already called " + to})
 			return
 		}
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "No such screen"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
@@ -548,16 +559,25 @@ func (d *Deps) apiScreenForget(c *gin.Context) {
 
 // ---------------------------------------------------------------------------
 // Presets (F2). A preset bundles the whole screen configuration:
-// {"screens":[{"name":…,"theme":…,"boardId":…}]}. It lives in SQLite (so
+// {"screens":[{"name":…,"theme":…,"boardId":…,"template":…,"kind":…,
+// "rotation":…}]}. Files saved before template/kind/rotation existed apply
+// theme and layout only (missing fields leave the screen as it is). It lives in SQLite (so
 // it survives server restarts and any browser sees it after a refresh),
 // and every preset exports as a plain JSON file that imports back.
 
+type presetScreen struct {
+	Name    string `json:"name"`
+	Theme   string `json:"theme"`
+	BoardID int64  `json:"boardId"`
+	// Built-in layout, display type and Mounted (REPORT #15); nil = an
+	// older preset that never recorded them.
+	Template *string `json:"template,omitempty"`
+	Kind     *string `json:"kind,omitempty"`
+	Rotation *int    `json:"rotation,omitempty"`
+}
+
 type presetData struct {
-	Screens []struct {
-		Name    string `json:"name"`
-		Theme   string `json:"theme"`
-		BoardID int64  `json:"boardId"`
-	} `json:"screens"`
+	Screens []presetScreen `json:"screens"`
 }
 
 const presetFileKind = "timerpi-display-preset"
@@ -570,12 +590,8 @@ func (d *Deps) presetSnapshotData(id int64) (string, error) {
 	}
 	var pd presetData
 	for _, r := range rows {
-		el := struct {
-			Name    string `json:"name"`
-			Theme   string `json:"theme"`
-			BoardID int64  `json:"boardId"`
-		}{Name: r.Name, Theme: r.Theme, BoardID: r.BoardID}
-		pd.Screens = append(pd.Screens, el)
+		pd.Screens = append(pd.Screens, presetScreen{Name: r.Name, Theme: r.Theme, BoardID: r.BoardID,
+			Template: &r.Template, Kind: &r.Kind, Rotation: &r.Rotation})
 	}
 	b, jerr := json.Marshal(pd)
 	return string(b), jerr
@@ -660,7 +676,7 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 	applied := 0
 	for _, sc := range pd.Screens {
 		name := timerpi.SanitizeScreenName(sc.Name)
-		if name == "" || !screenThemeRe.MatchString(sc.Theme) ||
+		if name == "" || !screenThemeOK(sc.Theme) ||
 			sc.BoardID < 0 || !d.boardKnown(id, sc.BoardID) {
 			continue // entries from another show's file never land here
 		}
@@ -672,6 +688,16 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 		}
 		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID, room); err != nil {
 			continue
+		}
+		if sc.Template != nil && sc.BoardID == 0 {
+			if *sc.Template == "" {
+				_ = d.Store.SetScreenTemplate(id, name, "")
+			} else if k, known := templateKey(*sc.Template); known {
+				_ = d.Store.SetScreenTemplate(id, name, k)
+			}
+		}
+		if sc.Kind != nil && sc.Rotation != nil && timerpi.ValidScreenKind(*sc.Kind) && timerpi.ValidRotation(*sc.Rotation) {
+			_ = d.Store.SetScreenLook(id, name, *sc.Kind, *sc.Rotation)
 		}
 		d.pushScreen(id, name)
 		applied++

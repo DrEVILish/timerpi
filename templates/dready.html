@@ -3,7 +3,7 @@
   §11.3 phase 1). Standalone document like display.html. The page IS the
   waiting-room overlay: body[data-waiting] is set server-side, waiting.js's
   runWaiting() registers this screen and polls for a capture — when an
-  operator claims it from the Screens gallery, the display hops to
+  operator claims it from the Screens page, the display hops to
   /d/<code>?screen=<name> keeping its identity. Identity rules are the
   mesh's own (?screen= > sessionStorage > generated Screen-XXXX), so
   several /d/ tabs on one host stay separate rows.
@@ -23,7 +23,7 @@
   <p class="splash-title">READY FOR SHOW OPERATOR</p>
   <p class="tp-ready-id">This screen is <strong id="tp-ready-name" class="tp-ready-name">…</strong></p>
   <p class="splash-message">This screen is unassigned. Any operator on this
-    network can capture it into a show from the Screens gallery.</p>
+    network can capture it into a show from the Screens page.</p>
 </div>
 <!-- Unversioned on purpose: the appliance serves everything no-cache, and
      the reference must survive rev bumps without touching this template. -->

@@ -80,6 +80,12 @@ type Hub struct {
 
 	upgr websocket.Upgrader
 
+	// cueMu serialises WS cue commands so resolving a cue id to its
+	// position and acting on it can't interleave with another operator's
+	// delete or move. ponytail: one lock for all shows; per-show if a box
+	// ever runs many busy rooms.
+	cueMu sync.Mutex
+
 	mu     sync.Mutex
 	byShow map[int64]*showHub
 	stop   chan struct{}
@@ -427,8 +433,7 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 		for _, b := range leads {
 			h.fanout(showID, b)
 		}
-		h.fanoutSplit(showID, marshalFrame("t", "state", "snapshot", snap),
-			marshalFrame("t", "state", "snapshot", snap.Public()))
+		h.fanoutState(showID, snap)
 		return
 	}
 	data := views.ShowData(snap, h.nowFn(), "")
@@ -470,14 +475,27 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 		sh.sigs.current = sig
 	}
 
-	state := marshalFrame("t", "state", "snapshot", snap)
 	for _, b := range leads {
 		h.fanout(showID, b)
 	}
 	for _, b := range oobs {
 		h.fanoutSplit(showID, b, nil) // operator fragments: trusted only
 	}
-	h.fanoutSplit(showID, state, marshalFrame("t", "state", "snapshot", snap.Public()))
+	h.fanoutState(showID, snap)
+}
+
+// fanoutState sends each session the snapshot it may see: operators and
+// presenter screens the full one, audience/walk-in screens the same minus
+// the Presenter-only item, untrusted screens the public one (RW9).
+func (h *Hub) fanoutState(showID int64, snap timerpi.Snapshot) {
+	full := marshalFrame("t", "state", "snapshot", snap)
+	noPres := full
+	if snap.Presenter != nil {
+		np := snap
+		np.Presenter = nil
+		noPres = marshalFrame("t", "state", "snapshot", np)
+	}
+	h.fanoutTiered(showID, full, noPres, marshalFrame("t", "state", "snapshot", snap.Public()))
 }
 
 // scheduleRowFrame is the lean schedule row for the `schedule` frame; the
@@ -566,24 +584,36 @@ func (h *Hub) fanout(showID int64, frame []byte) {
 // fanoutSplit offers trusted sessions one frame and the rest another
 // (BUGLOG RW9); a nil public frame skips untrusted sessions.
 func (h *Hub) fanoutSplit(showID int64, trusted, public []byte) {
+	h.fanoutTiered(showID, trusted, trusted, public)
+}
+
+// fanoutTiered is fanoutSplit with a third frame for trusted sessions that
+// must not see the Presenter-only item (audience-facing screens).
+func (h *Hub) fanoutTiered(showID int64, full, noPresenter, public []byte) {
 	h.mu.Lock()
 	sh, ok := h.byShow[showID]
 	if !ok {
 		h.mu.Unlock()
 		return
 	}
-	targets := make([]*session, 0, len(sh.sessions))
+	type target struct {
+		s     *session
+		frame []byte
+	}
+	targets := make([]target, 0, len(sh.sessions))
 	for s := range sh.sessions {
-		targets = append(targets, s)
+		switch {
+		case s.seesPresenter():
+			targets = append(targets, target{s, full})
+		case s.trusted:
+			targets = append(targets, target{s, noPresenter})
+		case public != nil:
+			targets = append(targets, target{s, public})
+		}
 	}
 	h.mu.Unlock()
-	for _, s := range targets {
-		switch {
-		case s.trusted:
-			s.offer(trusted)
-		case public != nil:
-			s.offer(public)
-		}
+	for _, t := range targets {
+		t.s.offer(t.frame)
 	}
 }
 
@@ -611,6 +641,7 @@ type peerView struct {
 	Role     string `json:"role"`
 	JoinedAt int64  `json:"joinedAt"`
 	Screen   string `json:"screen,omitempty"`
+	Trusted  bool   `json:"trusted"`
 }
 
 // peerViews is the peers list; wire shape = [{peerId,role,joinedAt}] (+
@@ -864,22 +895,22 @@ func (h *Hub) broadcastPollNow(showID int64) {
 		return
 	}
 	full := make([]*session, 0, len(sh.sessions))
+	public := make([]*session, 0, len(sh.sessions)+len(sh.aud))
 	for s2 := range sh.sessions {
-		full = append(full, s2)
+		if s2.seesPresenter() {
+			full = append(full, s2)
+		} else {
+			public = append(public, s2) // audience-facing/untrusted screens: audience target only (RW9)
+		}
 	}
-	aud := make([]*session, 0, len(sh.aud))
 	for s2 := range sh.aud {
-		aud = append(aud, s2)
+		public = append(public, s2)
 	}
 	h.mu.Unlock()
 	for _, s2 := range full {
-		if s2.trusted {
-			s2.offer(fullFrame)
-		} else {
-			s2.offer(audFrame) // untrusted screens: audience target only (RW9)
-		}
+		s2.offer(fullFrame)
 	}
-	for _, s2 := range aud {
+	for _, s2 := range public {
 		s2.offer(audFrame)
 	}
 }

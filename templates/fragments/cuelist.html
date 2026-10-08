@@ -29,7 +29,7 @@
     </thead>
     <tbody>
       {{range .Cues}}
-      <tr data-pos="{{.Pos}}" class="{{if .IsBreak}}tp-row-break{{else}}tp-row-session{{end}}">
+      <tr data-pos="{{.Pos}}" data-cue-id="{{.ID}}" class="{{if .IsBreak}}tp-row-break{{else}}tp-row-session{{end}}{{if .Color}} tp-row-color{{end}}"{{if .Color}} style="--tp-row-accent: {{.Color}}"{{end}}>
         <td class="tp-cue-pos" title="Drag to reorder · right-click for more"><span class="tp-grip" aria-hidden="true">⠿</span><span class="mono">{{printf "%02d" .Pos}}</span></td>
         <td class="tp-cue-kind is-editable" data-edit="kind">{{if .IsBreak}}<span class="badge tp-badge-break">Break</span>{{else}}<span class="badge badge-accent">Session</span>{{end}}</td>
         <td class="tp-cue-title is-editable" data-edit="label"><span class="tp-cue-label">{{.Label}}</span><span class="badge tp-alert-badge" hidden></span>{{range .Tags}} <span class="badge">{{.}}</span>{{end}}</td>

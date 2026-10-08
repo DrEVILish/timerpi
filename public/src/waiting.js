@@ -8,7 +8,7 @@
  * connection…" — visibility purely body[data-waiting], like the blackout
  * pattern), registers the display with POST /api/waiting/register
  * (screen name + host), and polls /api/waiting/mine every 4 s. Any operator
- * Screens gallery can then CAPTURE the waiting display into a live show;
+ * Screens page can then CAPTURE the waiting display into a live show;
  * the claim carries the new code and this display navigates to
  * /d/<code>?screen=<name> — keeping its identity so theme/board
  * assignments follow the screen.

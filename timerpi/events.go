@@ -161,7 +161,7 @@ func (d *DB) insertEvent(name, superHash string) (Event, error) {
 
 // insertEventQ inserts an event through any runner (a transaction, too).
 func insertEventQ(x sqlx.Ext, name, superHash string) (Event, error) {
-	name = ClipUTF8(strings.TrimSpace(name), MaxNameLen)
+	name = ClipRunes(strings.TrimSpace(name), MaxNameLen)
 	if name == "" {
 		return Event{}, fmt.Errorf("timerpi: event name must not be empty")
 	}
@@ -290,7 +290,7 @@ func (d *DB) ListRooms(eventID int64) ([]Show, error) {
 
 // RenameEvent sets the event name.
 func (d *DB) RenameEvent(id int64, name string) error {
-	name = ClipUTF8(strings.TrimSpace(name), MaxNameLen)
+	name = ClipRunes(strings.TrimSpace(name), MaxNameLen)
 	if name == "" {
 		return fmt.Errorf("timerpi: event name must not be empty")
 	}

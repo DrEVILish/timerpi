@@ -55,14 +55,17 @@ func registerEvents(r *gin.Engine, d *Deps) {
 	// Retired surfaces land somewhere useful.
 	r.GET("/super", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
 	r.GET("/setup", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
-	r.GET("/logout", func(c *gin.Context) {
+	// Sign-out and "Leave event" (STATUS U24) are POSTs from a same-origin
+	// form (OriginGuard refuses cross-site posts): a plain link on another
+	// site must not sign anyone out. A GET (old bookmark) just goes home.
+	r.POST("/logout", func(c *gin.Context) {
 		clearSessions(c)
-		c.Redirect(http.StatusFound, "/")
+		c.Redirect(http.StatusSeeOther, "/")
 	})
-	// "Leave event" (STATUS U24): drop this browser's sessions for one
-	// event (SuperOperator and every room's moderator session); sessions
-	// for other events on the same browser stay.
-	r.GET("/e/:code/leave", func(c *gin.Context) {
+	r.GET("/logout", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
+	// Leave drops this browser's sessions for one event (SuperOperator and
+	// every room's moderator session); other events' sessions stay.
+	r.POST("/e/:code/leave", func(c *gin.Context) {
 		if ev, ok := d.Store.ResolveEvent(c.Param("code")); ok {
 			c.SetCookie(superCookieName(ev.Code), "", -1, "/", "", secureCookie(c), true)
 			if rooms, err := d.Store.ListRooms(ev.ID); err == nil {
@@ -71,11 +74,14 @@ func registerEvents(r *gin.Engine, d *Deps) {
 				}
 			}
 		}
-		c.Redirect(http.StatusFound, "/")
+		c.Redirect(http.StatusSeeOther, "/")
 	})
+	r.GET("/e/:code/leave", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
 
 	g := r.Group("/api/events")
 	g.POST("", d.apiCreateEvent)
+	g.POST("/import", d.apiEventImportNew)   // a downloaded event file → a NEW event (PRODUCT E4)
+	g.GET("/:code/export", d.apiEventExport) // download the whole event (no hashes, no screen keys)
 	g.GET("/:code", d.apiEventLobby)
 	g.POST("/:code/login", d.apiEventLogin)
 	g.POST("/:code/rooms/:room/login", d.apiRoomLogin)
@@ -435,6 +441,16 @@ func (d *Deps) apiEventPatch(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		// Screens on the event default follow live (PRODUCT S4, REPORT #10).
+		for _, rid := range d.eventRoomIDs(ev.ID) {
+			if scr, err := d.Store.ListScreens(rid); err == nil {
+				for _, s := range scr {
+					if s.Theme == "" {
+						d.pushScreen(rid, s.Name)
+					}
+				}
+			}
+		}
 	}
 	if body.EndsAt != nil {
 		if err := d.Store.SetEventEnd(ev.ID, *body.EndsAt); err != nil {
@@ -772,11 +788,12 @@ func (d *Deps) apiEventImportRoom(c *gin.Context) {
 	if !d.roomRoomLeft(c, ev) {
 		return
 	}
-	raw, name := bundleBody(c)
+	raw, msg := bundleBody(c)
 	if raw == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": msg})
 		return
 	}
-	show, n, err := d.importShowFile(raw, name, ev.ID)
+	show, n, err := d.importShowFile(raw, "", ev.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 		return

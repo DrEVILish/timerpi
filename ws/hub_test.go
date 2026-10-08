@@ -35,6 +35,9 @@ type testServer struct {
 	showID   int64
 	showCode string // share code (Agent L): joins address shows BY CODE
 	cookie   string // SuperOperator session (controls joins need it)
+	// joinScreenClient: present the operator cookie / a screen's key.
+	screenCookie bool
+	screenKeys   map[string]string
 }
 
 // oobRecorder captures rendered oob frames (fragment name → count).
@@ -534,7 +537,7 @@ func TestCueMoveDirections(t *testing.T) {
 
 	// Contract error: dir missing.
 	a.send(t, map[string]any{"t": "cmd", "action": "cueMove", "args": map[string]any{"pos": 1}})
-	if err := a.readUntil(t, "err"); !strings.Contains(err["message"].(string), "cueMove needs pos and dir") {
+	if err := a.readUntil(t, "err"); !strings.Contains(err["message"].(string), "dir up|down") {
 		t.Fatalf("err frame = %v", err)
 	}
 }

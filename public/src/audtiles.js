@@ -99,7 +99,7 @@ function updateBars(st, p) {
   setText(st.meta, results ? `${totalN} vote${totalN === 1 ? '' : 's'}` : `${totalN} voted so far`);
   const reveal = results && !st.results;
   st.results = results;
-  const total = Math.max(1, totalN);
+  const pcts = percents(p.counts || [], opts.length);
   st.rows.forEach((r, i) => {
     const correct = results && p.kind === 'quiz' && i === p.correct;
     r.row.classList.toggle('is-correct', correct);
@@ -117,7 +117,7 @@ function updateBars(st, p) {
     }
     r.bar.hidden = false;
     const n = p.counts?.[i] || 0;
-    const pct = Math.round((n / total) * 100);
+    const pct = pcts[i];
     if (reveal) {
       r.row.style.animationDelay = `${i * 110}ms`;
       r.row.classList.remove('b-poll-reveal');
@@ -127,6 +127,20 @@ function updateBars(st, p) {
     if (r.toPct === pct && r.toN === n && !reveal) return;
     countTo(r, pct, n, reveal ? 300 + i * 110 : 0);
   });
+}
+
+// percents rounds the vote shares so they always add up to 100 (largest
+// remainder); no votes → all 0.
+export function percents(counts, len) {
+  const n = Array.from({ length: len }, (_, i) => counts[i] || 0);
+  const total = n.reduce((a, b) => a + b, 0);
+  if (!total) return n.map(() => 0);
+  const raw = n.map((c) => (c * 100) / total);
+  const out = raw.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => [v - out[i], i]).sort((a, b) => b[0] - a[0]);
+  for (const [, i] of order) { if (left-- <= 0) break; out[i]++; }
+  return out;
 }
 
 // countTo tweens a row's bar and numbers from what it shows to (pct, n).
@@ -283,6 +297,7 @@ function updateCloud(st, p) {
     st.words = new Map(); // lower-case word → word state
     st.ro = new ResizeObserver(() => { sizeCloud(st); wake(st); });
     st.ro.observe(st.area);
+    document.fonts?.ready.then(() => { if (st.area.isConnected) { sizeCloud(st); wake(st); } });
   }
   const seen = new Set();
   for (const c of p.children || []) {
@@ -308,6 +323,8 @@ function updateCloud(st, p) {
     it.el.style.opacity = '0';
     later(st, 900, () => { if (it.gone) { it.el.remove(); st.words.delete(key); } });
   }
+  const sig = [...seen].sort().join('\u0001');
+  if (st.sig !== sig) { st.sig = sig; st.squeeze = 1; } // new words: fresh start at full size
   setText(st.empty, seen.size ? '' : 'Waiting for the first word…');
   st.empty.hidden = seen.size > 0;
   sizeCloud(st);
@@ -325,15 +342,19 @@ function sizeCloud(st) {
   const max = Math.max(...list.map((it) => it.n));
   let area = 0;
   for (const it of list) {
-    if (!it.w0) {
-      const w = it.el.offsetWidth, h = it.el.offsetHeight;
-      const r = (it.angle * Math.PI) / 180, c = Math.abs(Math.cos(r)), sn = Math.abs(Math.sin(r));
-      it.w0 = w * c + h * sn; it.h0 = w * sn + h * c;
-    }
+    // Measured every time: a theme font that loads late changes the box.
+    const w = it.el.offsetWidth, h = it.el.offsetHeight;
+    const r = (it.angle * Math.PI) / 180, c = Math.abs(Math.cos(r)), sn = Math.abs(Math.sin(r));
+    it.w0 = w * c + h * sn; it.h0 = w * sn + h * c;
     it.rel = 0.34 + 0.66 * Math.sqrt(it.n / max);
     area += it.w0 * it.h0 * it.rel * it.rel;
   }
-  const k = Math.min(Math.sqrt((FILL * st.W * st.H) / area), (st.H * 0.3) / 100, (st.W * 0.16) / 100);
+  // No word may be wider or taller than the tile, measured on its own
+  // rotated box (a long word turned 90° must fit the height, E2E #22);
+  // squeeze shrinks the lot while words still can't find room.
+  let k = Math.min(Math.sqrt((FILL * st.W * st.H) / area), (st.H * 0.3) / 100);
+  for (const it of list) k = Math.min(k, (0.92 * st.W) / (it.rel * it.w0), (0.92 * st.H) / (it.rel * it.h0));
+  k *= st.squeeze || 1;
   for (const it of list) it.target = it.rel * k;
 }
 
@@ -369,25 +390,32 @@ function stepCloud(st) {
     it.w = it.w0 * it.s; it.h = it.h0 * it.s;
   }
   // Push overlapping boxes apart along the shallower axis; the bigger word
-  // moves less. A few passes settle chains of contacts.
-  const pad = 4;
-  for (let pass = 0; pass < 4; pass++) {
+  // moves less. A few passes settle chains of contacts. The gap between
+  // words grows with their size, so they never touch.
+  // Passes repeat until a pass finds no overlap (long chains of words
+  // need several), capped per frame.
+  for (let pass = 0, hit = true; pass < 12 && hit; pass++) {
+    hit = false;
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
+        const pad = Math.max(6, 12 * Math.min(a.s, b.s));
         const ox = (a.w + b.w) / 2 + pad - Math.abs(a.x - b.x);
         const oy = (a.h + b.h) / 2 + pad - Math.abs(a.y - b.y);
         if (ox <= 0 || oy <= 0) continue;
+        hit = true;
         const wa = b.w * b.h / (a.w * a.h + b.w * b.h), wb = 1 - wa;
-        if (ox < oy) {
+        // Shallower axis relative to the tile's shape, so a wide tile
+        // spreads words sideways instead of stacking them (E2E #22).
+        if (ox / W < oy / H) {
           const d = (a.x < b.x || (a.x === b.x && i < j) ? -1 : 1) * ox;
           a.x += d * wa; b.x -= d * wb;
-          a.vx *= 0.5; b.vx *= 0.5;
+          a.vx = 0; b.vx = 0;
         } else {
           const d = (a.y < b.y || (a.y === b.y && i < j) ? -1 : 1) * oy;
           a.y += d * wa; b.y -= d * wb;
-          a.vy *= 0.5; b.vy *= 0.5;
+          a.vy = 0; b.vy = 0;
         }
       }
     }
@@ -395,6 +423,22 @@ function stepCloud(st) {
       it.x = Math.max(-W / 2 + it.w / 2, Math.min(W / 2 - it.w / 2, it.x));
       it.y = Math.max(-H / 2 + it.h / 2, Math.min(H / 2 - it.h / 2, it.y));
     }
+  }
+  // Still touching after the passes (a crowded tile): count the frames,
+  // and after a short while make every word a little smaller.
+  let touching = false;
+  for (let i = 0; i < list.length && !touching; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 2 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + 2) { touching = true; break; }
+    }
+  }
+  st.crowded = touching ? (st.crowded || 0) + 1 : 0;
+  if (st.crowded > 40) {
+    st.crowded = 0;
+    st.squeeze = (st.squeeze || 1) * 0.94;
+    sizeCloud(st);
+    moving = true;
   }
   const top = list.reduce((m, it) => (it.n > m.n ? it : m), list[0]);
   for (const it of list) {

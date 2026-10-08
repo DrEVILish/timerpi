@@ -15,16 +15,23 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}} data-layout-orient="{{.Board.Orientation}}">
 <head>
-{{template "head" .}}
 {{if not .Editable}}<script>
 /* A phone or tablet shows the layout version for the way it is held
-   (owner 2026-10-07): before first paint, and again whenever it turns. */
+   (owner 2026-10-07): before first paint, and again whenever it turns.
+   First thing in <head>, before any stylesheet or script, so a redirect
+   costs no aborted loads; the tp_orient cookie lets the server pick the
+   right version next time, so a phone usually loads once (E2E). The
+   handheld test is the head template's. */
 (function () {
-  var h = document.documentElement;
-  if (!h.dataset.deviceOrient || !window.matchMedia) return;
+  var h = document.documentElement, ua = navigator.userAgent || '';
+  var mobile = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+    (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  var handheld = mobile && (navigator.maxTouchPoints || 0) > 0 && ('orientation' in screen || 'onorientationchange' in window);
+  if (!handheld || !window.matchMedia) return;
   var mq = matchMedia('(orientation: portrait)');
   function follow() {
     var want = mq.matches ? 'portrait' : 'landscape';
+    document.cookie = 'tp_orient=' + want + '; path=/; max-age=31536000; SameSite=Lax';
     if (want === h.dataset.layoutOrient) return;
     var u = new URL(location.href);
     u.searchParams.set('orient', want);
@@ -34,11 +41,12 @@
   if (mq.addEventListener) mq.addEventListener('change', follow); else mq.addListener(follow);
 })();
 </script>{{end}}
+{{template "head" .}}
 </head>
 <body class="tp-display b-board" data-page="display" data-view="board" data-role="display"
       data-show="{{if .Show.Code}}{{.Show.Code}}{{end}}" data-board="{{.BoardID}}"{{if .Editable}} data-editable="1"{{end}} data-room-prefix="{{.RoomPrefix}}" data-blanked="{{.Show.Blanked}}" data-orientation="{{.Board.Orientation}}"{{if .ScreenKind}} data-kind="{{.ScreenKind}}"{{end}} style="--b-rows: {{.Board.Rows}}">
 <div class="b-topbar">
-  <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
+  <span class="tp-brand"><img src="/img/timerpi.svg" alt="TimerPi" width="87" height="26"></span>
   <span class="b-topbar-show">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
   <span class="b-topbar-board">{{.Board.Name}}</span>
   <span class="connection b-link" id="b-link" data-state="live">LINK LIVE</span>

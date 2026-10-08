@@ -45,6 +45,7 @@
             {{else}}
             <button class="btn btn-sm btn-go" data-cmd="showMsg" data-id="{{.ID}}">Show</button>
             {{end}}
+            <button class="btn btn-sm btn-icon btn-ghost" type="button" data-msg-del="{{.ID}}" title="Delete this message" aria-label="Delete message"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
           </span>
         </span>
       </li>

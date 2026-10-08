@@ -9,18 +9,16 @@
 {{define "frag-d-clock"}}
 <section id="d-vclock" class="tp-dv-screen" data-view="clock">
   <div class="tp-dv-top">
-    <span class="tp-brand"><img src="/img/timerpi.svg" alt="" width="26" height="26"></span>
+    <span class="tp-brand"><img src="/img/timerpi.svg" alt="TimerPi" width="87" height="26"></span>
     <span class="tp-display-label">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
   </div>
 
   <div class="tp-dv-center">
     <span class="readout tp-clock tp-vclock" id="d-vclock-time" aria-live="off">--:--:--</span>
-    <span class="tp-vclock-note">Doors open — show starts soon</span>
+    <span class="tp-vclock-note" id="d-vclock-note">{{if .Current.Label}}Now: {{.Current.Label}}{{else}}Doors open — show starts soon{{end}}</span>
   </div>
 
-  <div class="tp-dv-foot">
-    {{if .Hostname}}<span class="mono">{{.Hostname}}</span>{{end}}
-  </div>
+  <div class="tp-dv-foot"></div>
 
   {{template "frag-dv-chrome" .Join}}
 </section>

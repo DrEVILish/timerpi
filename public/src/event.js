@@ -179,7 +179,7 @@ function initAdmin() {
     if (r.running && r.paused) return ['Paused', 'status-warn'];
     if (r.running && r.overtime) return ['Overtime', 'status-error'];
     if (r.running) return ['Running', 'status-ok'];
-    return ['Idle', 'status-idle'];
+    return ['Idle', 'text-muted']; // themes paint status-idle as "ready" (green)
   }
 
   // Cards are built once per room and patched in place on every poll
@@ -359,6 +359,24 @@ function initAdmin() {
     fd.append('file', f);
     run(() => api('POST', `/api/events/${EV}/rooms/import`, fd), 'Room imported').then((ok) => ok && reload());
   });
+  // Event file (PRODUCT E4): the import becomes a new event.
+  document.getElementById('ev-import')?.addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const res = await tpPrompt('The file becomes a new event with new codes. Choose its Event Technician password.', '', {
+      title: 'Import event', ok: 'Import',
+      fields: [{ id: 'pw', label: 'Event Technician password', type: 'password', autocomplete: 'new-password' }],
+    });
+    if (!res) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('password', res.pw);
+    try {
+      const out = await api('POST', '/api/events/import', fd);
+      location.href = out.admin;
+    } catch (ex) { toast(ex.message, 'danger'); }
+  });
 
   // Settings
   document.getElementById('ev-rename')?.addEventListener('submit', (e) => {
@@ -439,9 +457,11 @@ function initAdmin() {
       const p = (n) => String(n).padStart(2, '0');
       endInput.value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
     }
-    endForm.addEventListener('submit', (e) => {
+    endForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const v = endInput.value ? new Date(endInput.value).getTime() : 0;
+      // A past end releases the screens and boxes within hours — ask first.
+      if (v && v < Date.now() && !(await tpConfirm('That time has already passed: screens and boxes are released 4 hours after the end (never while a timer runs). Save it anyway?', { title: 'Event end in the past?', ok: 'Save anyway', danger: true }))) return;
       run(() => api('PATCH', `/api/events/${EV}`, { endsAt: v }), v ? 'Event end saved' : 'Event end cleared');
     });
   }
@@ -501,7 +521,7 @@ function initBox() {
       }
     });
   };
-  wire('box-setup', () => api('POST', '/api/box/setup', { password: val('box-new') }));
+  wire('box-setup', () => api('POST', '/api/box/setup', { password: val('box-new'), setupCode: val('box-code') }));
   wire('box-login', () => api('POST', '/api/box/login', { password: val('box-pw') }));
   wire('box-change', () => api('POST', '/api/box/password', { current: val('box-cur'), password: val('box-new') }));
   document.getElementById('box-logout')?.addEventListener('click', async () => {

@@ -3,7 +3,8 @@
 // A display whose show vanished (deleted / never existed) lands in the
 // mesh's badshow state; it registers itself here, shows its logo
 // full-screen with "waiting for connection…", and polls. Any operator
-// browser can then LIST the waiting displays and CAPTURE one into a live
+// Event Technician can then LIST the waiting displays (on the cloud only
+// those from their own network, waitingVisible) and CAPTURE one into a live
 // show — the claim makes the display navigate to /d/<code>?screen=<name>,
 // keeping its identity (so theme/board assignments follow it).
 package routes
@@ -81,6 +82,7 @@ func (d *Deps) apiWaitingRegister(c *gin.Context) {
 		return
 	}
 	_ = d.Store.SetWaitingHandheld(body.Name, body.Host, body.Handheld)
+	_ = d.Store.SetWaitingIP(body.Name, body.Host, c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -100,6 +102,7 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
+	_ = d.Store.SetWaitingIP(c.Query("name"), c.Query("host"), c.ClientIP())
 	// The captured screen's key travels with the hop (BUGLOG RW9): only
 	// keyed screens receive operator content.
 	key := ""
@@ -135,12 +138,43 @@ func (d *Deps) apiWaitingList(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
 		return
 	}
-	ws, err := d.Store.ListWaiting()
+	all, err := d.Store.ListWaiting()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
+	ws := all[:0]
+	for _, w := range all {
+		if d.waitingVisible(c, w) {
+			ws = append(ws, w)
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "waiting": waitingJSON(ws)})
+}
+
+// waitingVisible: on a box every waiting screen is on the venue LAN, so
+// every Event Technician sees them all. On the cloud (events are created
+// anonymously) a technician only sees screens registered from the same
+// client address as theirs, i.e. the same venue network (REPORT #4);
+// other screens pair by the code they show (pairing.go).
+func (d *Deps) waitingVisible(c *gin.Context, w timerpi.WaitingScreen) bool {
+	return !d.isCloud() || w.IP == c.ClientIP()
+}
+
+// waitingRow loads waiting row :id for an operator action; a row the
+// caller may not see answers 404 like a missing one.
+func (d *Deps) waitingRow(c *gin.Context) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad waiting id"})
+		return 0, false
+	}
+	w, err := d.Store.GetWaiting(id)
+	if err != nil || !d.waitingVisible(c, w) {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "waiting display gone"})
+		return 0, false
+	}
+	return id, true
 }
 
 // POST /api/waiting/:id/capture {code} — assign a waiting display to a show.
@@ -149,9 +183,8 @@ func (d *Deps) apiWaitingCapture(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
 		return
 	}
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad waiting id"})
+	id, ok := d.waitingRow(c)
+	if !ok {
 		return
 	}
 	var body captureBody
@@ -214,7 +247,7 @@ func (d *Deps) captureWaiting(c *gin.Context, id int64, body captureBody) (strin
 	if name == "" {
 		name = w.Name
 	}
-	if !screenThemeRe.MatchString(body.Theme) {
+	if !screenThemeOK(body.Theme) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
 		return "", "", false
 	}
@@ -268,9 +301,8 @@ func (d *Deps) apiWaitingDelete(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false})
 		return
 	}
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad waiting id"})
+	id, ok := d.waitingRow(c)
+	if !ok {
 		return
 	}
 	if err := d.Store.DeleteWaiting(id); err != nil {

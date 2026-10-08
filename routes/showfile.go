@@ -7,6 +7,7 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -201,6 +202,15 @@ func (d *Deps) apiShowFile(c *gin.Context) {
 	c.JSON(http.StatusOK, sf)
 }
 
+// uploadTooBigMsg: the body ceiling (routes.go bodyCeiling) cut the upload.
+const uploadTooBigMsg = "The file is too large (32 MiB at most)"
+
+// uploadTooBig: err is the body ceiling's, not a malformed upload.
+func uploadTooBig(err error) bool {
+	var mbe *http.MaxBytesError
+	return err != nil && (errors.As(err, &mbe) || strings.Contains(err.Error(), "request body too large"))
+}
+
 // bundleBody reads the bundle bytes (multipart "file" preferred, JSON body
 // fallback for scripts).
 func bundleBody(c *gin.Context) ([]byte, string) {
@@ -215,8 +225,13 @@ func bundleBody(c *gin.Context) ([]byte, string) {
 			return nil, "file unreadable"
 		}
 		return raw, ""
+	} else if uploadTooBig(ferr) {
+		return nil, uploadTooBigMsg
 	}
 	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil && uploadTooBig(err) {
+		return nil, uploadTooBigMsg
+	}
 	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil, `send the bundle as multipart field "file" (or an application/json body)`
 	}
@@ -243,6 +258,17 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 	}
 	if title == "" {
 		title = "Imported show"
+	}
+	// Re-importing a room the event already has gets "Room B (2)".
+	if rooms, lerr := d.Store.ListRooms(eventID); lerr == nil {
+		taken := map[string]bool{}
+		for _, r := range rooms {
+			taken[strings.ToLower(r.Title)] = true
+		}
+		base := timerpi.ClipRunes(title, timerpi.MaxNameLen-5)
+		for n := 2; taken[strings.ToLower(title)]; n++ {
+			title = fmt.Sprintf("%s (%d)", base, n)
+		}
 	}
 	show, err := d.Store.CreateRoom(eventID, title)
 	if err != nil {

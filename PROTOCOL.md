@@ -24,11 +24,11 @@
 | `GET /screens/:ident` | mod | Screens gallery: capture, preview, theme/layout, layout editor |
 | `GET /settings` | box | Box settings: device identity, default theme, OSC. No box session → 303 to `/box?next=/settings` |
 | `GET /box` | anyone | Box password: first-time setup, sign-in, or (signed in) change password / sign out |
-| `GET /logout` | — | Drops every TimerPi session cookie on this browser |
-| `GET /e/:code/leave` | — | "Leave event": drops this browser's sessions for that event (SuperOperator + its rooms), then home |
+| `POST /logout` | — | Drops every TimerPi session cookie on this browser (a same-origin form; `GET` just redirects home, so a cross-site link can't sign anyone out) |
+| `POST /e/:code/leave` | — | "Leave event": drops this browser's sessions for that event (SuperOperator + its rooms), then 303 home. `GET` just redirects home |
 | `GET /super`, `GET /setup` | — | Retired; 302 to `/` |
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
-| `GET /d/:ident` | screen | `?view=stage` (default) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (mod) |
+| `GET /d/:ident` | screen | `?view=stage` (default; redirects to the bare URL, keeping the rest of the query) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (mod) |
 | `GET /a/:code` | audience | Phone page (open) |
 | `GET /zone/:name` | — | Retired (STATUS C10); 302 to `/`. The event walk-in replaces it |
 | `GET /favicon.ico` | browser | 301 to `/img/timerpi.svg` |
@@ -42,7 +42,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 ### Box password (`routes/box.go`)
 | Method & path | Notes |
 |---|---|
-| `POST /api/box/setup` | `{password}` (≥ 8 chars). Only while no box password exists (409 after); signs this browser in (`tp_box`) |
+| `POST /api/box/setup` | `{password, setupCode?}` (≥ 8 chars). Only while no box password exists (409 after); signs this browser in (`tp_box`). On the cloud `setupCode` must be the one-time code the server logs at startup (403 otherwise; sign-in limiter) |
 | `POST /api/box/login` | `{password}` → `tp_box` session. 401 wrong password, 409 none set |
 | `POST /api/box/password` | `{current, password}`; needs a box session. Signs every other box session out |
 | `POST /api/box/logout` | Drops `tp_box` |
@@ -63,7 +63,9 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST /api/events/:code/pair {pairCode, code, kind, template, rotation, name?, theme?, room?}` | super. Pair the box showing `pairCode` (6 digits, registered in the last minute) as a screen of room `code`; 10 tries/min per event |
 | `POST /api/events/:code/phone-link {base}` | super (needs an Event Technician Password). `{url, qr, expiresAt}`: a QR (PNG data URL) for `<base>/e/<code>/phone?t=<token>`. The token is `<expiry>.<nonce>.<HMAC>` keyed with the event's password hash (valid on every copy of the event), single-use, 2 minutes; a password change voids it |
 | `GET /e/:code/phone?t=` | open (sign-in limiter). A good token sets this browser's Event Technician session and 303s to `/e/<code>/admin`; otherwise the "code expired" page. Never tunnelled: it signs in on the server the phone reached |
-| `POST /api/events/:code/rooms/import` (multipart `file`) | super. Room from a `.timerpi.json` bundle |
+| `POST /api/events/:code/rooms/import` (multipart `file`) | super. Room from a `.timerpi.json` bundle; a name the event already has becomes "Name (2)" |
+| `GET /api/events/:code/export` | super. The whole event as one file (`kind:"timerpi-event"`: rooms, cues, messages, polls + votes, screens, presets, layouts, map, theme). No event code, password hashes or screen keys |
+| `POST /api/events/import` (multipart `file`, `password`; or JSON `{file, password}`) | open, budgeted like `POST /api/events`. The event file becomes a NEW event with new codes and this password; rooms come without passwords. Sets the supervisor session → `{code, codeFmt, admin}` |
 
 ### Rooms (shows)
 | Method & path | Notes |
@@ -91,12 +93,12 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET …/layout-targets?kind=` | mod. Screens of that type in the event's rooms you moderate (SuperOperator: all), by room |
 | `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | mod. New event layout from a built-in (or a layout); the listed screens switch to it → `{boardId}` |
 | `POST …/screens/link {name}` | mod. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
-| `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles |
+| `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles `{screens:[{name, theme, boardId, template?, kind?, rotation?}]}`; apply restores the built-in layout, display type and Mounted when the preset has them |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}`. Every layout carries both versions: the landscape one, and the portrait one in `layout.alt` (event layouts too; saving a layout saves both) |
 | `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
-| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | The event's own layouts `{v, rows, orientation, widgets[], alt}`. `PUT {name?, layout?}` is validated (types, overlap, limits). Nothing is seeded: an event has only the layouts someone made, and a board page with none shows the factory layout without saving it. `DELETE` sends its screens back to the plain timer |
+| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | The event's own layouts `{v, rows, orientation, widgets[], alt}`. `PUT {name?, layout?}` is validated (types, overlap, limits). Nothing is seeded: an event has only the layouts someone made, and a board page with none shows the factory layout without saving it. `PUT` reaches live screens at once (`board-changed`); `DELETE` sends its screens back to the plain timer live (`screen-board` 0) |
 | `POST /api/waiting/register {name,host,token,code?,handheld?}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>`. A box registers with its pairing `code`; once paired, its `mine` also carries `pairing:{event, eventName, meshKey, endsAt, room}` (boxes only) |
-| `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Any operator session; capture needs moderator access to the room. A screen already captured into another room → 409 |
+| `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Event Technician session (moderators 401); capture needs the room's Event Technician. On a box every waiting screen is listed; on the cloud only screens that registered from the caller's own client IP (others answer 404; they pair by code). A screen already captured into another room → 409 |
 
 ### Audience interactions (`routes/audience.go`, model in `timerpi/polls.go`)
 Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets: **audience** (phones + audience screens) and **presenter** (DSM). One item per target per room. Submissions (questions, words, ideas) are entries under their item.
@@ -119,11 +121,11 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `GET /api/pairing/status?event=CODE` | open. `{exists, released, endsAt, now}` — boxes poll it to learn their event ended or was deleted |
 | `GET /api/pairing/self` · `GET /d/box` | box only, loopback only. The box's own screen: `{name, code?, paired, eventName, target}`; `/d/box` shows the code or frames the target |
 | `GET /api/link?event=CODE` (WebSocket) · `POST /api/link/register {meshKey, bundle}` · `GET /api/link/bundle?event=CODE` | Signed `X-TimerPi-Auth: <unix s>.<hex HMAC-SHA256(mesh key, "timerpi-link/1\|purpose\|event\|s")>`. Link and register on the cloud only; the bundle (the whole event copy) from the cloud or a primary. Link frames: venue→cloud `bundle`, `air {room, poll}`, `res`, `ws`, `ws-close`, `final`; cloud→venue `req {method, path, header, body, as, peer}`, `ws-open {as, text: join}`, `ws`, `ws-close`, `final-ok`, see `routes/link.go` |
-| `POST /api/audience/:code/vote {pollId, choice, peer}` | open. Poll/quiz choice, or upvote (`pollId` = entry). 1 per 300 ms per peer; 600/s per room → 429 + Retry-After |
+| `POST /api/audience/:code/vote {pollId, choice, peer}` | open. Poll/quiz choice, or upvote (`pollId` = entry). The device is the signed `tp_aud` cookie (body `peer` ignored), minted on a phone's first vote/ask — never on `GET /a/<code>` — at most 2,000 new devices per room per client IP per 10 min (venues share one NAT IP) → else 429 + `Retry-After: 30`. 1 per 300 ms per device; 600/s per room → 429 + Retry-After. The phone retries 429s with backoff |
 | `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
 | `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
 
-**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[]}`. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
+**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[], round}`. `round` (omitted while 0) counts "Clear responses" on the item; phones key their remembered vote, upvotes and sent entries by item id + round, so a cleared item starts fresh. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
 
 ### Box, assets, OSC
 | Method & path | Notes |
@@ -144,10 +146,10 @@ mDNS (`_timerpi._tcp`) TXT: `host role ver epoch boot proto event sig`. A paired
 {"v":1,"t":"join","role":"controls|display|screen|audience","show":"<room code>",
  "peerId":"<uuid>","joinedAt":<ms>,"screen":"<name>","key":"<screen key>","handheld":true}
 ```
-- **Trusted vs public** (BUGLOG RW9): operators, a screen whose `key` matches its `screen` name, and a display opened by a browser with moderator access are *trusted*. Everyone else gets the **public snapshot**: no show or cue notes, no cue tags, no stage messages, no `presenter` item, and no `oob` operator fragments. `joined.you.trusted` says which. The same rule applies to the first paint of `/d/` pages.
-- `peerId` must be ≤ 64 plain characters (else one is generated). The same id in another role is refused; in the same role it replaces the stale session. `joinedAt` is clamped: never in the future; only operators keep it (up to a day back), screens and phones join "now".
+- **Trusted vs public** (BUGLOG RW9): operators, a screen whose `key` matches its `screen` name, and a display opened by a browser with moderator access are *trusted*. Everyone else gets the **public snapshot**: no show or cue notes, no cue tags, no stage messages, no `presenter` item, and no `oob` operator fragments. `joined.you.trusted` says which. The same rule applies to the first paint of `/d/` pages. Trusted screens of type `audience`/`walkin` also never get the `presenter` item (state or `poll`). Untrusted sessions get an empty `peers` list, no `peers` frames, and no WebRTC signalling: they are outside the browser mesh.
+- `peerId` must be ≤ 64 plain characters (else one is generated). The same id in another role is refused; in the same role it replaces the stale session, except that a trusted session is only replaced by one proving the same identity (operator session, or the same screen's key). `joinedAt` is clamped: never in the future; only operators keep it (up to a day back), screens and phones join "now".
 - `controls` needs a moderator (or supervisor) session cookie on the upgrade request; otherwise `err` "moderator access required".
-- `screen` is for screens only; it upserts the screens registry. `handheld` (optional) marks a phone/tablet display: it follows its own orientation, and the screens list reports `handheld:true` while it is live (the Screens page hides Mounted).
+- `screen` is for screens only; it upserts the screens registry when the name is already registered or the join is trusted (an anonymous made-up name adds no row). `handheld` (optional) marks a phone/tablet display: it follows its own orientation, and the screens list reports `handheld:true` while it is live (the Screens page hides Mounted).
 - `audience` joins a separate bucket (cap 4000/room). Others share the room bucket (cap 512).
 
 ### Server → client
@@ -159,13 +161,14 @@ mDNS (`_timerpi._tcp`) TXT: `host role ver epoch boot proto event sig`. A paired
 | `oob` | `html`, `target` (`#cuelist #tp-daybar #messages-panel #tp-now #d-stage #share-panel`) | room bucket |
 | `poll` | `{v:1, poll: PollView\|null, presenter: PollView\|null, paused?, ts}`. Phones get `poll` (audience target) only; `paused` on the cloud while a venue event's link is down | audience + room buckets |
 | `polls` | (refresh hint after any interaction change) | controls |
-| `peers` | `[{peerId, role, joinedAt, screen}]` | room bucket |
+| `peers` | `[{peerId, role, joinedAt, screen, trusted}]` | trusted sessions of the room bucket |
 | `display` | `{theme}` | targeted screen |
 | `screen-board` | `{boardId}` (0 = back to stage) | targeted screen |
+| `board-changed` | `{boardId}` — a layout was edited or deleted; a locked board page showing it (assigned or as the default) reloads | every display of the event |
 | `screen-rename` | `{name}` | targeted screen |
 | `screen-look` | `{kind, rotation}` | targeted screen (also on join) |
 | `screens` | (refresh hint) | controls |
-| `signal` | `{from, data}` (WebRTC relay) | target peer |
+| `signal` | `{from, data}` (WebRTC relay, trusted → trusted only; a signal to a peer that left is dropped without an `err`) | target peer |
 | `flash` | `{ms}` — presenter screens blink the timer for `ms` | room bucket |
 | `pong` | `{serverTime}` | sender (the footer's ping is this round trip) |
 | `err` | `{message}`. "session deleted …" is terminal | sender |
@@ -179,17 +182,19 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
 
 | action | args |
 |---|---|
-| `go` | `{pos?}` (re-runs a held cue at 0) |
-| `start` · `jump` | `{pos}` · `{pos, start?}` |
+| `go` | `{id?, pos?}` (re-runs a held cue at 0) |
+| `start` · `jump` | `{id, pos}` · `{id, pos, start?}` |
 | `pause` (toggle) · `reset` · `next` · `prev` | — |
 | `rate` | `{rate}` ×0.5–×2.0 (clamped) |
 | `blank` · `unblank` | — |
 | `flash` | — (transient: fans out a `flash` frame, nothing stored) |
-| `settings` | `{title?}` · `{ts}` (day starts now) · `{dayStart:"HH:MM"}` |
+| `settings` | `{title?}` (Event Technician only) · `{ts}` (day starts now) · `{dayStart:"HH:MM"}` |
 | `cueAdd` | `{label, durationMS, …}` |
-| `cueEdit` | `{pos, …any cue field…, startAt:"HH:MM"\|""}` |
-| `cueDel` · `cueDup` | `{pos}` |
-| `cueMove` | `{pos, dir:"up"\|"down"}` or `{pos, to}` |
+| `cueEdit` | `{id, pos, …any cue field…, startAt:"HH:MM"\|""}` |
+| `cueDel` · `cueDup` | `{id, pos}` |
+| `cueMove` | `{id, pos, dir:"up"\|"down"}` or `{id, pos, to}` |
+
+Per-cue commands address the cue by `id` (the row the operator acted on); a gone id answers `err` "that cue no longer exists …" and changes nothing. `pos` alone (older clients) still works. Alerts may not exceed the cue's duration; a Break has no speaker.
 | `addMsg` | `{text, color?, show?}` |
 | `showMsg` · `hideMsg` | `{id}` |
 | `clearMsgs` | — |

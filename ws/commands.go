@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"timerpi/oscbridge"
+	"timerpi/routes"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -133,6 +134,22 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		s.sendErr("show engine unavailable")
 		return
 	}
+	// Per-cue commands carry the cue id (the row the operator saw); pos is
+	// only the fallback for older clients. A gone id is refused, never
+	// mapped onto whatever cue now sits at that position.
+	switch action {
+	case "go", "start", "jump", "cueEdit", "cueDel", "cueMove", "cueDup":
+		h.cueMu.Lock()
+		defer h.cueMu.Unlock()
+		if id := argInt(args, "id"); id > 0 {
+			pos, err := h.cuePosOf(s.showID, id)
+			if err != nil {
+				s.sendErr(err.Error())
+				return
+			}
+			args["pos"] = float64(pos)
+		}
+	}
 	switch action {
 	// --- transport (engine-owned) ---
 	case "go":
@@ -221,6 +238,11 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 				errOf(eng.Notify()) // structural change (setting) → re-fanout
 			}
 		} else if title, ok := stringArg(args, "title"); ok && strings.TrimSpace(title) != "" {
+			// Renaming a room is the Event Technician's (PRODUCT E3).
+			if !h.superOf(s) {
+				s.sendErr("only the Event Technician can rename the room")
+				return
+			}
 			if rerr := h.store.RenameShow(s.showID, strings.TrimSpace(title)); rerr != nil {
 				errOf(rerr)
 				return
@@ -269,7 +291,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 	case "cueDel":
 		pos := argInt(args, "pos")
 		if pos <= 0 {
-			s.sendErr("cueDel needs pos")
+			s.sendErr("cueDel needs id or pos")
 			return
 		}
 		if derr := h.store.DeleteCue(s.showID, pos); derr != nil {
@@ -285,7 +307,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		// legacy path; a present `to` goes straight to the full-slot move.
 		if to, ok := int64Arg(args, "to"); ok {
 			if pos <= 0 {
-				s.sendErr("cueMove needs pos")
+				s.sendErr("cueMove needs id or pos")
 				return
 			}
 			h.mutDone(s, eng, "cueMove", fmt.Sprintf("pos %d to %d", pos, to), errOf,
@@ -294,7 +316,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 		}
 		dir := str(args, "dir")
 		if pos <= 0 || (dir != "up" && dir != "down") {
-			s.sendErr("cueMove needs pos and dir up|down")
+			s.sendErr("cueMove needs id or pos, and dir up|down")
 			return
 		}
 		target := pos - 1
@@ -307,7 +329,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 	case "cueDup":
 		pos := argInt(args, "pos")
 		if pos <= 0 {
-			s.sendErr("cueDup needs pos")
+			s.sendErr("cueDup needs id or pos")
 			return
 		}
 		if _, err := h.store.DuplicateCue(s.showID, pos); err != nil {
@@ -392,7 +414,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 func (h *Hub) commandCueEdit(s *session, eng *timerpi.Engine, args map[string]any, errOf func(error)) {
 	pos := argInt(args, "pos")
 	if pos <= 0 {
-		s.sendErr("cueEdit needs pos")
+		s.sendErr("cueEdit needs id or pos")
 		return
 	}
 	cue, err := h.store.GetCue(s.showID, pos)
@@ -476,6 +498,37 @@ func (h *Hub) commandCueEdit(s *session, eng *timerpi.Engine, args map[string]an
 	errOf(eng.Notify())
 }
 
+// cuePosOf maps a cue id to its current position in the show.
+func (h *Hub) cuePosOf(showID, id int64) (int64, error) {
+	cues, err := h.store.ListCues(showID)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range cues {
+		if c.ID == id {
+			return c.Pos, nil
+		}
+	}
+	return 0, fmt.Errorf("that cue no longer exists (another operator deleted it)")
+}
+
+// superOf reports whether the session holds the room's Event Technician
+// (event supervisor) session.
+func (h *Hub) superOf(s *session) bool {
+	if h.store == nil {
+		return false
+	}
+	room, err := h.store.GetShow(s.showID)
+	if err != nil {
+		return false
+	}
+	ev, err := h.store.GetEvent(room.EventID)
+	if err != nil {
+		return false
+	}
+	return routes.SuperFromCookies(h.store, s.httpCookies, ev)
+}
+
 // engFor resolves the session show's registry-cached engine.
 func (h *Hub) engFor(s *session) *timerpi.Engine {
 	if s.showID <= 0 {
@@ -496,11 +549,17 @@ func (h *Hub) signal(s *session, to string, data json.RawMessage) {
 		s.sendErr("signal needs to + data")
 		return
 	}
+	// The browser mesh carries operator state, so only trusted sessions
+	// (operators, keyed screens) may signal each other; untrusted screens
+	// stay out of it (security #1).
+	if !s.trusted {
+		return
+	}
 	h.mu.Lock()
 	var target *session
 	if sh, ok := h.byShow[s.showID]; ok {
 		for ses := range sh.sessions {
-			if ses.id == to {
+			if ses.id == to && ses.trusted {
 				target = ses
 				break
 			}
@@ -508,7 +567,9 @@ func (h *Hub) signal(s *session, to string, data json.RawMessage) {
 	}
 	h.mu.Unlock()
 	if target == nil {
-		s.sendErr(fmt.Sprintf("unknown peer %q", to))
+		// The peer left (or is untrusted): its late ICE candidates are
+		// normal churn, not an error worth a frame.
+		h.logf("ws: signal from %s to gone peer %q dropped", s.id, to)
 		return
 	}
 	var payload any

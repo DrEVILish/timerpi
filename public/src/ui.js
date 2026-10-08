@@ -23,7 +23,7 @@ export async function api(method, path, body) {
   let data = {};
   try { data = await res.json(); } catch { /* non-JSON */ }
   if (!res.ok || data.ok === false) {
-    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status, retryAfter: Number(res.headers.get('retry-after')) || 0 });
   }
   return data;
 }

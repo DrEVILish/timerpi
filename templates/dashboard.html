@@ -84,8 +84,8 @@
         <div class="panel-header tp-cuelist-head">
           <div class="row is-items-center is-gap-s" style="gap:1rem">
             <span class="tp-cuelist-title">Running order</span>
-            <span class="badge">{{len .Cues}} cues</span>
-            <span class="badge">Total {{.Schedule.TotalFmt}}</span>
+            <span class="badge" id="tp-cue-count">{{len .Cues}} cue{{if ne (len .Cues) 1}}s{{end}}</span>
+            <span class="badge" id="tp-cue-total">Total {{.Schedule.TotalFmt}}</span>
           </div>
         </div>
         {{- /* U39: the add row's fields (in the table's footer) belong to
@@ -197,7 +197,7 @@
       <input class="input" id="tp-insp-label" type="text" autocomplete="off">
     </div>
     <div class="row is-gap-s">
-      <div class="field" style="flex:1">
+      <div class="field tp-insp-wide">
         <label class="label" for="tp-insp-speaker">Speaker</label>
         <input class="input" id="tp-insp-speaker" type="text" autocomplete="off">
       </div>
@@ -205,7 +205,7 @@
         <label class="label" for="tp-insp-location">Location</label>
         <input class="input" id="tp-insp-location" type="text" maxlength="80" autocomplete="off" placeholder="Great Hall" title="For breaks: where it's served">
       </div>
-      <div class="field">
+      <div class="field tp-insp-narrow">
         <label class="label" for="tp-insp-duration">Duration</label>
         <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off" placeholder="H:MM" title="H:MM — 30 = 30 min, 30s = seconds">
       </div>

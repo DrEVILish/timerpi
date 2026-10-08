@@ -296,7 +296,7 @@ func SetDefaultTheme(name string) error {
 
 func sanitizeTheme(name string) string {
 	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" || name == "xbmc" {
+	if name == "" || name == "xbmc" || name == "tokens" || name == "core" { // not themes
 		return ""
 	}
 	if len(name) > 32 {

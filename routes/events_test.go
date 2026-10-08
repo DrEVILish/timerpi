@@ -239,7 +239,12 @@ func TestLogoutClearsSessions(t *testing.T) {
 	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != 200 {
 		t.Fatal("pre-logout access")
 	}
+	// A plain link (GET) no longer signs out (cross-site logout).
 	p.do("GET", "/logout", "")
+	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != 200 {
+		t.Fatal("GET /logout signed the browser out")
+	}
+	p.do("POST", "/logout", "")
 	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != 401 {
 		t.Errorf("after logout: %d, want 401", code)
 	}
@@ -259,10 +264,14 @@ func TestLeaveEventOnlyThisEvent(t *testing.T) {
 	var other struct{ Code string }
 	_ = json.Unmarshal([]byte(body), &other)
 	_, page := p.do("GET", "/e/"+ts.eventCode, "", "text/html")
-	if !strings.Contains(page, "Event ID") || !strings.Contains(page, "Leave event") || strings.Contains(page, ">Sign out<") {
+	if !strings.Contains(page, "Event ID") || !strings.Contains(page, `method="post" action="/e/`+ts.eventCode+`/leave"`) || strings.Contains(page, ">Sign out<") {
 		t.Error("event page: want the Event ID label and Leave event")
 	}
-	p.do("GET", "/e/"+ts.eventCode+"/leave", "")
+	p.do("GET", "/e/"+ts.eventCode+"/leave", "") // a plain link: no effect
+	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != 200 {
+		t.Fatal("GET leave signed the browser out")
+	}
+	p.do("POST", "/e/"+ts.eventCode+"/leave", "")
 	if code, _ := p.do("POST", "/api/shows/"+ts.showCode+"/blank", `{"on":false}`); code != http.StatusUnauthorized {
 		t.Errorf("left event still controllable: %d", code)
 	}

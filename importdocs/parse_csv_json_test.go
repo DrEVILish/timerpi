@@ -22,10 +22,18 @@ func TestParseDurationMS(t *testing.T) {
 		{"90", 90000, false},
 		{"1.5", 1500, false},
 		{" 1,200 ", 1200000, false}, // thousands separators ignored
-		// Clock forms (last part is seconds, each part before is 60×).
-		{"1:05.5", 65500, false},
-		{"1:05", 65000, false},
-		{"0:30", 30000, false},
+		// Two-part clock = h:mm (the operator UI's rule, REPORT #13).
+		{"0:45", 2700000, false},
+		{"1:30", 5400000, false},
+		{"0:30", 1800000, false},
+		{"23:59", 86340000, false},
+		{"45:00", 0, true}, // 45 hours: refused with a hint
+		{"99:99", 0, true},
+		{"1:75", 0, true},
+		{"1:05.5", 0, true}, // no fractions in h:mm
+		// Three-part clock = h:mm:ss (seconds may be fractional).
+		{"0:01:05.5", 65500, false},
+		{"0:45:00", 2700000, false},
 		{"00:05:00", 300000, false},
 		{"01:00:00.25", 3600250, false},
 		// Written units / mixed chunks.
@@ -71,7 +79,7 @@ func TestParseDurationMS(t *testing.T) {
 
 func TestParseCSV_Basic(t *testing.T) {
 	csvData := "\xEF\xBB\xBF" + "Label,Duration,Speaker,Notes,Alert1,Alert2,Hold,EndAction,AutoContinue,Kind\n" +
-		"\"Opening, keynote\",\"1:05.5\",\"Amy\",\"says, hi\",\"0:30\",\"0:10\",\"5\",OVERTIME,YES,session\n" +
+		"\"Opening, keynote\",\"0:01:05.5\",\"Amy\",\"says, hi\",\"30s\",\"10s\",\"5\",OVERTIME,YES,session\n" +
 		"Break,\"65\",,,,,,,yes,\n" +
 		"VT,\"1m5s\",,,,,,blank,n,changeover\n"
 	cues, err := ParseCSV([]byte(csvData))
@@ -151,7 +159,7 @@ func TestParseJSON_ArrayAndWrapping(t *testing.T) {
 	arr := `[
 	  {"label": "Keynote", "durationMS": 600000, "tags": ["VT", "GFX"],
 	   "speaker": "Amy", "timerKind": "countdown", "endAction": "hold",
-	   "autoContinue": true, "alert1MS": "01:30"},
+	   "autoContinue": true, "alert1MS": "0:01:30"},
 	  {"label": "VT", "duration_ms": "1m5s", "kind": "changeover",
 	   "holdMS": "0:10", "alert_2_ms": 90}
 	]`
@@ -248,7 +256,7 @@ func TestParseJSON_ExampleRoundTrip(t *testing.T) {
 func TestParseJSON_NumberVsStringDurations(t *testing.T) {
 	cues, err := ParseJSON([]byte(`[
 		{"label": "Wire style", "duration": 60000},
-		{"label": "Human style", "duration": "1:05"}
+		{"label": "Human style", "duration": "0:01:05"}
 	]`))
 	if err != nil {
 		t.Fatalf("ParseJSON: %v", err)

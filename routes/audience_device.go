@@ -5,10 +5,11 @@ package routes
 // A phone's identity for votes, upvotes and submissions is a device id the
 // SERVER issues in a signed HttpOnly cookie (tp_aud = id.hmac), never a
 // value the phone sends: a script that invents a fresh "peer" per request
-// used to get unlimited votes. Minting is budgeted per client IP, so a
-// script that drops its cookie every time gets a handful of identities,
-// not thousands. Behind a reverse proxy on the same box the real client
-// IP comes from X-Forwarded-For (only loopback proxies are trusted).
+// used to get unlimited votes. The id is minted lazily, on a phone's first
+// vote or submission (viewing the page costs nothing), and minting is
+// budgeted per room and client IP. Behind a reverse proxy on the same box
+// the real client IP comes from X-Forwarded-For (only loopback proxies are
+// trusted).
 
 import (
 	"crypto/rand"
@@ -29,9 +30,13 @@ const (
 	audMintWindow = 10 * time.Minute
 )
 
-// audMint: new device ids per client IP per window. A phone needs one; a
-// family on one hotspot a few.
-var audMint = &windowLimiter{max: 20, window: audMintWindow, bound: 50_000}
+// audMint: new device ids per (room, client IP) per 10 min. A whole venue
+// often reaches the server from ONE address (venue Wi-Fi NAT, carrier
+// CGNAT), and PRODUCT A10 wants 1,000 phones per room inside ~30 s, so the
+// ceiling is 2,000 (A10 plus re-scans and cleared cookies). It still bounds
+// a cookie-dropping script to 2,000 identities per room per address per
+// 10 min, and the per-room soak budget (600 req/s) caps the rate.
+var audMint = &windowLimiter{max: 2000, window: audMintWindow, bound: 50_000}
 
 func audToken(secret []byte, id string) string {
 	return id + "." + timerpi.SignSession(secret, "aud", id)
@@ -50,8 +55,15 @@ func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
 			return id, true
 		}
 	}
-	if !audMint.allow(c.ClientIP(), time.Now()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "Too many new devices from this network — try again in a few minutes"})
+	room := c.Param("code")
+	if room == "" { // the venue-link middleware runs on /api/audience/<room>/…
+		if parts := strings.Split(strings.Trim(c.Request.URL.Path, "/"), "/"); len(parts) >= 3 {
+			room = parts[2]
+		}
+	}
+	if !audMint.allow(room+"|"+c.ClientIP(), time.Now()) {
+		c.Header("Retry-After", "30")
+		c.JSON(http.StatusTooManyRequests, gin.H{"ok": false, "error": "This network is very busy — trying again shortly"})
 		return "", false
 	}
 	var b [12]byte

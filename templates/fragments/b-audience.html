@@ -40,7 +40,7 @@
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Map</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove map"></button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-map" alt="Venue map" hidden>
-    <div class="b-map-empty text-muted">No map yet — the Event Technician uploads one in Event settings.</div>
+    <div class="b-map-empty b-tile-empty">{{if $.P.Editable}}No map yet — upload one in Event settings.{{else}}Venue map coming soon{{end}}</div>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>

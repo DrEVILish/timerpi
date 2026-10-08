@@ -30,44 +30,44 @@ var exampleColumns = []string{
 // running order.
 var exampleRows = [][]string{
 	{
-		"Opening keynote", "45:00", "09:00", "PRES GFX",
+		"Opening keynote", "0:45", "09:00", "PRES GFX",
 		"Leslie Knope", "Walk-in music, house lights down", "session",
-		"05:00", "", "",
+		"0:05", "", "",
 	},
 	{
-		"Tech outlook talk", "25:00", "09:48", "PRES CAM",
+		"Tech outlook talk", "0:25", "09:48", "PRES CAM",
 		"Ron Swanson", "Slides on the operator laptop, not the big screen", "session",
-		"02:00", "", "HOLD",
+		"0:02", "", "HOLD",
 	},
 	{
-		"Coffee break", "10:00", "10:16", "COM",
+		"Coffee break", "0:10", "10:16", "COM",
 		"", "Catering in the foyer; mics muted", "break",
 		"", "", "BLANK",
 	},
 	{
-		"Changeover", "02:00", "10:29", "",
+		"Changeover", "0:02", "10:29", "",
 		"", "Reset stage for the panel", "break",
 		"", "", "HOLD",
 	},
 	{
-		"VT: highlights reel", "08:30", "10:31", "VT",
+		"VT: highlights reel", "0:08:30", "10:31", "VT",
 		"", "Hirez playback, no speaker idle check", "session",
 		"", "", "BLANK",
 	},
 	{
-		"Panel discussion", "30:00", "10:40", "COM CAM",
+		"Panel discussion", "0:30", "10:40", "COM CAM",
 		"Panel: City Council", "4 mics, cards to cue 20:00", "session",
-		"03:00", "", "HOLD",
+		"0:03", "", "HOLD",
 	},
 	{
-		"Lunch break", "45:00", "11:12", "",
+		"Lunch break", "0:45", "11:12", "",
 		"", "Boxes in the loading dock", "break",
 		"", "", "BLANK",
 	},
 	{
-		"Closing remarks & awards", "15:00", "12:00", "PRES GFX",
+		"Closing remarks & awards", "0:15", "12:00", "PRES GFX",
 		"Leslie Knope", "Award row cards on stand-by", "session",
-		"02:00", "", "OVERTIME",
+		"0:02", "", "OVERTIME",
 	},
 }
 
@@ -90,9 +90,9 @@ func ExampleXLSX() ([]byte, error) {
 		"Header row and column names are matched loosely — Label/Title/Name and Duration/Time/Minutes all work.",
 		"",
 		"Duration accepts:",
-		"  45:00        (mm:ss)",
-		"  00:05:00     (hh:mm:ss)",
-		"  1:05.5       (fractional seconds)",
+		"  0:45         (h:mm = 45 minutes; 45:00 would be 45 hours and is refused)",
+		"  0:08:30      (h:mm:ss = 8 min 30 s)",
+		"  45m, 1h30m   (spoken style)",
 		"  1m5s         (spoken style)",
 		"  90           (bares numbers are seconds; 90 = 1:30)",
 		"  90000ms      (explicit milliseconds)",
@@ -100,7 +100,7 @@ func ExampleXLSX() ([]byte, error) {
 		"Start is informational only — TimerPi computes starts from durations.",
 		"Kind: session | break. A break/changeover row is an ordinary cue with break_flag.",
 		"EndAction: HOLD (freeze at 00:00), OVERTIME (count up), BLANK (blank the screen).",
-		"Alert1/Alert2: per-cue thresholds (mm:ss) where the display changes colour.",
+		"Alert1/Alert2: per-cue thresholds (h:mm or 2m30s) where the display changes colour.",
 		"",
 		"You can keep (or delete) this README sheet — the importer picks the first sheet that contains a cue table.",
 	}

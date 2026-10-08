@@ -22,6 +22,7 @@ import { applyTheme, applyIconTheme, loadThemeVersion, initClientLog } from './t
 import { api, toast, setText, el } from './ui.js';
 import { applyWaiting } from './waiting.js';
 import { swatchPicker } from './swatches.js';
+import { tpConfirm } from './dialog.js';
 import { initModerate, refresh as moderateRefresh, paintTabBadge } from './moderate.js';
 import { initScreens } from './screens.js';
 
@@ -176,6 +177,10 @@ class ClockUI {
       // C2 layout: while nothing is on the clock, park the dead meter and
       // dim the placeholder (the --:-- at rail scale read as broken blocks).
       this.el.nowPanel?.classList.toggle('tp-idle-cue', !cue);
+      // Running-order header badges sit outside the swapped #cuelist (REPORT #14).
+      const n = snap.cues.length;
+      setText($('#tp-cue-count'), `${n} cue${n === 1 ? '' : 's'}`);
+      setText($('#tp-cue-total'), `Total ${fmtDuration(this.schedule?.totalMS || 0)}`);
       this.renderRows();
       // U1: release/park the quick-adjust row with the active cue.
       const canAdjust = !!cue;
@@ -217,8 +222,17 @@ class ClockUI {
     // U1: the running cue walks down the table all day — chase it so it is
     // in view without the operator hunting (nearest = no jump if visible).
     if (activeTr && act !== this._chasedPos) {
+      const first = this._chasedPos === undefined;
       this._chasedPos = act;
-      activeTr.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      // Scroll the table's own scrollport when it has one; the page itself
+      // only follows later cue changes, never on load (phones jumped past
+      // the header).
+      const wrap = activeTr.closest('.tp-cuelist-wrap');
+      if (wrap && wrap.scrollHeight > wrap.clientHeight + 1) {
+        const r = activeTr.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+        const head = wrap.querySelector('thead')?.offsetHeight || 0;
+        if (r.top < w.top + head || r.bottom > w.bottom) wrap.scrollTop += r.top - w.top - head;
+      } else if (!first) activeTr.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
     this.renderDaybarSegs();
   }
@@ -290,7 +304,9 @@ class ClockUI {
     const isBreak = c.kind === 'break';
     const tr = document.createElement('tr');
     tr.dataset.pos = String(c.pos);
+    if (c.id) tr.dataset.cueId = String(c.id);
     tr.className = isBreak ? 'tp-row-break' : 'tp-row-session';
+    if (c.color) { tr.classList.add('tp-row-color'); tr.style.setProperty('--tp-row-accent', c.color); }
     const td = (cls, edit) => {
       const t = document.createElement('td');
       if (cls) t.className = cls;
@@ -714,8 +730,18 @@ const TRANSPORT_GRACE_MS = 150;
 let lastTransportKey = '';
 let lastTransportAt = 0;
 
+const CUE_BY_ID = new Set(['go', 'start', 'jump', 'cueEdit', 'cueDel', 'cueMove', 'cueDup']);
+
 function sendCommand(action, args = {}, opts = {}) {
   if (!mesh) return;
+  // E2E #6: per-cue commands carry the id of the row the operator acted
+  // on, so a stale view can't hit whichever cue now sits at that slot.
+  // Undo replays (noCapture) are positional by design.
+  if (CUE_BY_ID.has(action) && args.pos && args.id == null && !opts.noCapture) {
+    const id = Number($(`#cuelist tbody tr[data-pos="${Number(args.pos)}"]`)?.dataset.cueId)
+      || (clockUI?.snap || mesh.snap)?.cues?.find((c) => c.pos === Number(args.pos))?.id;
+    if (id) args = { ...args, id };
+  }
   // B3: capture the inverse BEFORE the effect leaves the page.
   if (!opts.noCapture) undo.capture(action, args, clockUI?.snap || mesh.snap);
   if (['go', 'start', 'pause', 'reset', 'next', 'prev'].includes(action)) {
@@ -759,7 +785,7 @@ function flushAdjust() {
   const cue = (mesh.snap.cues || []).find(c => c.pos === p.pos);
   if (!cue) return;
   const dur = Math.max(0, (cue.durationMS || 0) + p.delta);
-  sendCommand('cueEdit', { pos: cue.pos, durationMS: dur });
+  sendCommand('cueEdit', { pos: cue.pos, id: cue.id, durationMS: dur });
   toast(`Cue ${String(cue.pos).padStart(2, '0')} now ${fmtDuration(dur)}`, 'info');
 }
 
@@ -827,17 +853,24 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
         sendCommand(document.body?.dataset.blanked === 'true' ? 'unblank' : 'blank', {});
         return;
       }
+      const msgDel = e.target.closest('[data-msg-del]');
+      if (msgDel) {
+        api('DELETE', `/api/shows/${document.body.dataset.show}/messages/${msgDel.dataset.msgDel}`).catch((err) => toast(err.message, 'danger'));
+        return;
+      }
       // A6 "Day starts now" (lives in the oob-swapped #tp-daybar — same
       // delegation rule). Re-anchoring mid-show confirms (times shift).
       const dayBtn = e.target.closest('#tp-day-start');
       if (dayBtn) {
-        const snap = clockUI?.snap;
-        if (snap?.runtime?.dayStartTS) {
-          const fmt = fmtTimeOfDay(snap.runtime.dayStartTS);
-          if (!confirm(`Day already anchored at ${fmt}. Move the anchor to now (times shift)?`)) return;
-        }
-        sendCommand('settings', { ts: Date.now() });
-        toast('Day anchored to now', 'info');
+        (async () => {
+          const snap = clockUI?.snap;
+          if (snap?.runtime?.dayStartTS) {
+            const fmt = fmtTimeOfDay(snap.runtime.dayStartTS);
+            if (!(await tpConfirm(`The day is anchored at ${fmt}. Move the anchor to now? Scheduled times shift.`, { title: 'Day starts now?', ok: 'Move to now' }))) return;
+          }
+          sendCommand('settings', { ts: Date.now() });
+          toast('Day anchored to now', 'info');
+        })();
         return;
       }
       return;
@@ -873,11 +906,15 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     const dsf = e.target.closest?.('#tp-day-start-form');
     if (dsf) {
       e.preventDefault();
-      const hhmm = dsf.querySelector('#tp-day-begins')?.value.trim() || '';
+      const inp = dsf.querySelector('#tp-day-begins');
+      const hhmm = inp?.value.trim() || '';
+      inp?.addEventListener('input', () => inp.removeAttribute('aria-invalid'), { once: true });
       try {
         const j = await api('POST', `/api/shows/${document.body.dataset.show}/daystart`, { hhmm });
+        inp?.removeAttribute('aria-invalid');
         toast(j.anchored ? `Day anchored to ${hhmm} — saved` : 'Schedule saved (clears automation)', 'info');
       } catch (err) {
+        inp?.setAttribute('aria-invalid', 'true'); // ftl error ring
         toast(err.message, 'danger');
       }
       return;
@@ -897,8 +934,8 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
       if (sub.dataset.show !== undefined) args.show = sub.dataset.show !== 'false';
     }
     if (args.mss !== undefined) { // "30"|"1:30"|"30s" → durationMS
-      const ms = parseDur(args.mss);
-      if (ms == null || ms < 0) { toast('Duration must be like 30, 1:30 or 30s', 'danger'); return; }
+      const { ms, err } = durCheck(args.mss);
+      if (ms == null) { toast(err, 'danger'); return; }
       args.durationMS = ms;
       delete args.mss;
     }
@@ -955,15 +992,38 @@ function initRateDelegation() {
     unit 'ms' is for alerts and hold, whose fields say m:ss: there a
     two-part value is minutes:seconds ("5:00" = 5 minutes, not 5 hours). */
 function parseDur(text, unit = 'hm') {
-  const s = String(text).trim();
-  const secm = /^(\d+)[sS]$/.exec(s);
-  if (secm) return Number(secm[1]) * 1000;
-  if (/^-?\d+$/.test(s)) return Number(s) * 60000;
-  const parts = s.split(':').map(Number);
-  if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
-  if (parts.length === 2) return unit === 'ms' ? (parts[0] * 60 + parts[1]) * 1000 : (parts[0] * 60 + parts[1]) * 60000;
-  if (parts.length === 3) return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000;
-  return null;
+  return durCheck(text, unit).ms;
+}
+
+/** parseDur with the reason: { ms } or { ms: null, err }. Same rules as
+    importdocs.ParseDurationMS for two-part times (REPORT #13): "45:00" is
+    45 hours, so hours ≥ 24 or minutes ≥ 60 are refused with a hint.
+    Unit suffixes work too: "45m", "2h", "1h30m", "90s", "1m30s". */
+function durCheck(text, unit = 'hm') {
+  const s = String(text).trim().toLowerCase().replace(/\s+/g, '');
+  const bad = (err) => ({ ms: null, err });
+  const generic = unit === 'ms' ? 'Alerts are m:ss, like 5:00' : 'That is not a duration — try 30 (minutes), 0:45 (h:mm) or 45m';
+  if (/^\d+$/.test(s)) return { ms: Number(s) * 60000 }; // bare = minutes
+  const units = /^(?:(\d+)h)?(?:(\d+)m(?:in)?)?(?:(\d+)s)?$/.exec(s);
+  if (units && s) return { ms: ((Number(units[1] || 0) * 60 + Number(units[2] || 0)) * 60 + Number(units[3] || 0)) * 1000 };
+  if (!/^\d+(:\d+){1,2}$/.test(s)) return bad(generic);
+  const p = s.split(':').map(Number);
+  if (p.length === 3) {
+    if (p[1] >= 60 || p[2] >= 60) return bad(`"${text}": minutes and seconds must be 0–59`);
+    return { ms: ((p[0] * 60 + p[1]) * 60 + p[2]) * 1000 };
+  }
+  const [a, b] = p;
+  if (unit === 'ms') {
+    if (b >= 60) return bad(`"${text}": seconds must be 0–59 (alerts are m:ss)`);
+    return { ms: (a * 60 + b) * 1000 };
+  }
+  if (a >= 24) {
+    const hint = b ? `use 0:${String(a).padStart(2, '0')}:${String(b).padStart(2, '0')} or ${a}m${b}s for ${a} min ${b} s`
+      : `use ${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')} for ${a} minutes or ${a}m`;
+    return bad(`${s} is ${a} hours — ${hint}`);
+  }
+  if (b >= 60) return bad(`"${text}": minutes must be 0–59 (two-part times are hours:minutes, e.g. 0:45 = 45 minutes)`);
+  return { ms: (a * 60 + b) * 60000 };
 }
 
 /* ------------------------------------------------------------ keyboard -- */
@@ -1060,6 +1120,8 @@ function initRoomTabs() {
     });
   }
   show(location.hash.slice(1) || 'run');
+  // A link to /c/<room>#audience from the same page only changes the hash.
+  addEventListener('hashchange', () => show(location.hash.slice(1) || 'run'));
 }
 
 /* -------------------------------------------------- inline rate editor -- */
@@ -1228,8 +1290,8 @@ function initAddRow() {
     if (who) args[args.kind === 'break' ? 'location' : 'speaker'] = who;
     const mss = String(v.mss || '').trim();
     if (mss) {
-      const ms = parseDur(mss);
-      if (ms == null || ms < 0) { toast('Duration must be like 30, 1:30 or 30s', 'danger'); return; }
+      const { ms, err } = durCheck(mss);
+      if (ms == null) { toast(err, 'danger'); return; }
       args.durationMS = ms;
     }
     args.timerKind = v.timerKind || 'COUNTDOWN';
@@ -1237,8 +1299,8 @@ function initAddRow() {
     for (const n of [1, 2]) {
       const t = String(v[`alert${n}`] || '').trim();
       if (t) {
-        const ms = parseDur(t, 'ms');
-        if (ms == null || ms < 0) { toast(`Alert ${n} must be like 5:00`, 'danger'); return; }
+        const { ms, err } = durCheck(t, 'ms');
+        if (ms == null) { toast(`Alert ${n}: ${err}`, 'danger'); return; }
         args[`alert${n}MS`] = ms;
       }
       if (v[`alertColor${n}`]) args[`alertColor${n}`] = v[`alertColor${n}`];
@@ -1415,8 +1477,9 @@ function startCellEdit(td, opts = {}) {
     if (commit && isMS) {
       if (v === '' && field !== 'durationMS') val = 0;
       else {
-        val = parseDur(v, unit);
-        if (val == null || val < 0) err = field === 'durationMS' ? 'That is not a duration — try 30 (minutes) or 1:30 (h:mm)' : 'Alerts are m:ss, like 5:00';
+        const chk = durCheck(v, unit);
+        val = chk.ms;
+        if (val == null) err = chk.err;
       }
     }
     if (commit && field === 'label' && v === '') err = 'Cue title cannot be empty';
@@ -1427,7 +1490,7 @@ function startCellEdit(td, opts = {}) {
     td.classList.remove('is-editing');
     td.replaceChildren(...old); // the next repaint brings the truth
     if (commit && !err && val !== (cue[field] ?? (isMS ? 0 : ''))) {
-      sendCommand('cueEdit', { pos, [field]: val });
+      sendCommand('cueEdit', { pos, id: cue.id, [field]: val });
       // ftl cell states: saving until the server's cuelist swap lands
       // (markCellSaved), which flashes .is-saved on the fresh cell.
       td.classList.add('is-saving');
@@ -1486,7 +1549,7 @@ function initAlertDots() {
     if (!cue) return;
     const key = dot.dataset.color;
     openColorPop(dot, cue[key] || '', key === 'alertColor1' ? DEFAULT_ALERT1 : DEFAULT_ALERT2, (v) => {
-      sendCommand('cueEdit', { pos, [key]: v });
+      sendCommand('cueEdit', { pos, id: cue.id, [key]: v });
     });
   });
 }
@@ -1568,6 +1631,7 @@ function initInspector() {
   const dlg = $('#tp-inspector');
   if (!dlg) return;
   let openPos = 0;
+  let openId = 0;
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest?.('[data-insp]');
@@ -1602,6 +1666,7 @@ function initInspector() {
     field('tp-insp-location').value = cue.location || '';
     field('tp-insp-duration').value = fmtDurText(cue.durationMS || 0);
     field('tp-insp-kind').value = cue.kind === 'break' ? 'break' : 'session';
+    syncKind();
     field('tp-insp-timerKind').value = cue.timerKind || 'COUNTDOWN';
     field('tp-insp-endAction').value = cue.endAction || 'HOLD';
     field('tp-insp-alert1').value = cue.alert1MS ? fmtDurText(cue.alert1MS, 'ms') : '';
@@ -1616,11 +1681,18 @@ function initInspector() {
     err.hidden = true;
   }
 
+  // Break: Speaker hides (a break has a location, not a speaker).
+  function syncKind() {
+    field('tp-insp-speaker').closest('.field').hidden = field('tp-insp-kind').value === 'break';
+  }
+  field('tp-insp-kind').addEventListener('change', syncKind);
+
   function openInspector(pos) {
     const snap = clockUI?.snap;
     const cue = snap?.cues.find((c) => c.pos === pos);
     if (!cue) { toast('Cue not in this snapshot yet', 'danger'); return; }
     openPos = pos;
+    openId = cue.id; // the save edits THIS cue even if rows moved meanwhile (E2E #6)
     fill(cue, cue.label || '');
     dlg.showModal();
     field('tp-insp-label').focus();
@@ -1631,14 +1703,16 @@ function initInspector() {
   function save() {
     const err = field('tp-insp-error');
     const fail = (msg) => { err.textContent = msg; err.hidden = false; };
-    const args = { pos: openPos };
+    const args = { pos: openPos, id: openId };
     const label = field('tp-insp-label').value.trim();
     if (!label) return fail('Cue label cannot be empty');
     args.label = label;
-    args.speaker = field('tp-insp-speaker').value.trim();
+    // A Break has no speaker (the table shows its location): don't keep a
+    // hidden one in the data.
+    args.speaker = field('tp-insp-kind').value === 'break' ? '' : field('tp-insp-speaker').value.trim();
     args.location = field('tp-insp-location').value.trim();
-    const dur = parseDur(field('tp-insp-duration').value);
-    if (dur == null || dur < 0) return fail('Duration is not a time — try 30 (minutes) or 1:30 (h:mm)');
+    const { ms: dur, err: durErr } = durCheck(field('tp-insp-duration').value);
+    if (dur == null) return fail(durErr);
     args.durationMS = dur;
     args.kind = field('tp-insp-kind').value;
     args.timerKind = field('tp-insp-timerKind').value;
@@ -1651,8 +1725,8 @@ function initInspector() {
     ]) {
       const txt = field(msKey).value.trim();
       if (txt) {
-        const ms = parseDur(txt, 'ms');
-        if (ms == null || ms < 0) return fail(`${labelTxt} is not a time — try 5:00`);
+        const { ms, err: aErr } = durCheck(txt, 'ms');
+        if (ms == null) return fail(`${labelTxt}: ${aErr}`);
         args[{ 'tp-insp-alert1': 'alert1MS', 'tp-insp-alert2': 'alert2MS' }[msKey]] = ms;
       } else {
         args[{ 'tp-insp-alert1': 'alert1MS', 'tp-insp-alert2': 'alert2MS' }[msKey]] = 0;
@@ -1660,6 +1734,10 @@ function initInspector() {
       const color = field(colorKey).value.trim();
       if (!hexOK(color)) return fail(`${labelTxt} colour must be a hex value like #7C3AED`);
       args[{ 'tp-insp-alert1Color': 'alertColor1', 'tp-insp-alert2Color': 'alertColor2' }[colorKey]] = color || '';
+    }
+    // An alert longer than the cue would fire before the cue even starts.
+    for (const n of [1, 2]) {
+      if (dur > 0 && args[`alert${n}MS`] > dur) return fail(`Alert ${n} (${fmtDurText(args[`alert${n}MS`], 'ms')}) is longer than the cue (${fmtDurText(dur)}) — it would show from the start`);
     }
     const rowColor = field('tp-insp-color').value.trim();
     if (!hexOK(rowColor)) return fail('Row accent must be a hex value like #7C3AED');
@@ -1847,6 +1925,25 @@ function initImportDrop() {
   });
 }
 
+/** U34 keeps the time of day at the exact top centre — unless it would
+    cover the nav or the actions; then .tp-bar-crowded puts it in the flow. */
+function initBarClock() {
+  const bar = $('.app-bar');
+  const tod = $('#tp-tod');
+  const nav = bar?.querySelector('.nav');
+  if (!tod || !nav) return;
+  const fit = () => {
+    bar.classList.remove('tp-bar-crowded');
+    if (getComputedStyle(tod).position !== 'absolute') return;
+    const n = nav.getBoundingClientRect(), c = tod.getBoundingClientRect();
+    const k = bar.querySelector('.cluster')?.getBoundingClientRect();
+    bar.classList.toggle('tp-bar-crowded', n.left + nav.scrollWidth + 8 > c.left || (!!k && c.right + 8 > k.left));
+  };
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(bar);
+  document.fonts?.ready.then(fit);
+  fit();
+}
+
 /* ----------------------------------------------------------------- boot -- */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1874,6 +1971,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSharePanel();
   initKioskLinks();
   initImportDrop();
+  initBarClock();
 
   if (page === 'screens') {
     initScreens();
@@ -1905,6 +2003,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Offline indicator toggling (display + dashboard)
   setInterval(() => {
     const off = $('#tp-offline');
-    if (off && mesh) off.classList.toggle('is-visible', !mesh.serverOnline() && !mesh.isMaster() && mesh.openPeerIds().length === 0 && !!mesh.snap);
+    if (off && mesh) off.classList.toggle('is-visible', !mesh.linkLive() && !!mesh.snap);
   }, 1000);
 });
