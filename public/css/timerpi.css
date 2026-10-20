@@ -663,18 +663,8 @@ body[data-editing] .b-grid { padding-block-end: 10rem; }
          locked until "Edit layout" is pressed.
    ========================================================================== */
 
-/* --------------------------------------------------------------------------
-   Supervisor[C1/REVIEW-2 O1]: the purple mandate, finally painted. Scoped
-   component-token override (NOT a global --accent re-point — the theme keeps
-   its own accent for links/focus/rail art): the two triggers that mean
-   "TimerPi's action" render brand purple on every theme. White on
-   #7C3AED clears 5.7:1 (spec --on-accent).
-   -------------------------------------------------------------------------- */
-.btn-primary, .btn-go { --accent: #7C3AED; --on-accent: #ffffff; }
-/* Themes whose primary button is a dark tint with ACCENT-coloured text:
-   brand purple text on near-black measured 1–3.5:1 ("Set up here", GO).
-   There the label takes --on-accent; the purple stays on the edge (E2E). */
-html:is([data-theme="alienware"], [data-theme="matrix"], [data-theme="pipboy"], [data-theme="tokie"], [data-theme="tron"], [data-theme="winamp-classic"]) :is(.btn-primary, .btn-go) { --btn-fg: var(--on-accent); }
+/* Primary buttons and GO take the theme's own primary (owner 2026-10-20:
+   each theme renders as its source; brand purple stays in the logo). */
 
 /* --------------------------------------------------------------------------
    Supervisor[C5]: TV legibility minimums per docs/TIMERPI-THEME-SPEC.md.

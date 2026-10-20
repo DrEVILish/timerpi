@@ -752,6 +752,11 @@ export class Mesh {
       runtime: { ...incoming.runtime },
       cues: (incoming.cues || []).map(c => ({ ...c })),
       messages: (incoming.messages || []).map(m => ({ ...m })),
+      // The on-air audience items ride every server state frame (omitted =
+      // nothing on air). Dropping them here blanked pushed items on every
+      // screen whenever any state frame (a stage message, a GO) arrived.
+      poll: incoming.poll || null,
+      presenter: incoming.presenter || null,
       // Offline-delete tombstones propagate through the mesh with the state
       // (server snapshots never carry them). Adopt UNIONs them with the ones
       // already held: on rejoin _adopt runs BEFORE the push, so replacing
