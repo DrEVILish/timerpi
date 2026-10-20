@@ -4,7 +4,7 @@ Found on the E2E test server (48 screens, one per theme). Each is theme
 artwork or theme CSS we cannot fix from `timerpi.css` without overriding the
 theme.
 
-**Filed as:** [ftl-themes issue #71](https://github.com/DrEVILish/ftl-themes/issues/71), owner direction, 2026-10-09.
+**Filed as:** [ftl-themes issue #71](https://github.com/DrEVILish/ftl-themes/issues/71), owner direction, 2026-10-09. **Fixed upstream** (closed 2026-10-20; TimerPi pins ftl-themes 01f445f).
 
 ## Display artwork over content (screens)
 
