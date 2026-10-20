@@ -126,8 +126,11 @@ function render() {
   }
   const tbody = el('tbody');
   for (const it of [...items].reverse()) tbody.append(...rows(it, opened));
-  host.replaceChildren(
-    el('h3', { class: 'tp-aud-libtitle', text: 'Library' }),
+  // On a phone the library folds away while something is on air: the On
+  // air cards are what the moderator works with (review: a 7,400px page).
+  const fold = matchMedia('(max-width: 600px)').matches && items.some((i) => i.toAudience || i.toPresenter);
+  host.replaceChildren(el('details', { class: 'accordion-item tp-aud-lib', open: opened.has('lib') ? opened.get('lib') : !fold, dataset: { key: 'lib' } },
+    el('summary', { class: 'accordion-trigger tp-aud-libtitle' }, `Library (${items.length})`),
     el('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': 'Audience items' },
       el('table', { class: 'table is-stacked tp-aud-table' },
         el('thead', {}, el('tr', {},
@@ -137,7 +140,7 @@ function render() {
           el('th', { scope: 'col', text: 'Presenter' }),
           el('th', { scope: 'col', text: 'Auto Approve' }),
           el('th', { scope: 'col' }, el('span', { class: 'visually-hidden', text: 'Actions' })))),
-        tbody)));
+        tbody))));
 }
 
 /* ---- on air: the live Audience and Presenter items with their controls -- */
@@ -339,11 +342,20 @@ function tally(it) {
 
 /* ---- moderation queue --------------------------------------------------- */
 
-// moderate sets an entry's status; undo (the previous status) rides on a
-// toast, so a stray tap on a tablet is one tap to take back.
+// moderate sets an entry's status; undo rides on a toast, so a stray tap on
+// a tablet is one tap to take back. The snapshot is the entry's status AND
+// the item's spotlight: the server drops the spotlight when its question
+// leaves the wall, so Undo puts both back (review N3).
 function moderate(k, status, msg, undo) {
+  const it = items.find((i) => (i.children || []).some((c) => c.id === k.id));
+  const wasSpot = !!it && it.spotlight?.id === k.id;
   act(`/${k.id}/moderate`, { status });
-  if (msg && undo) toast(msg, 'info', { label: 'Undo', run: () => act(`/${k.id}/moderate`, { status: undo }) });
+  if (msg && undo) {
+    toast(msg, 'info', { label: 'Undo', run: async () => {
+      await act(`/${k.id}/moderate`, { status: undo });
+      if (wasSpot) await act(`/${it.id}/spotlight`, { entry: k.id });
+    } });
+  }
 }
 
 // acts: an entry's buttons, kept together (they wrap as one group).
@@ -456,6 +468,18 @@ function initEditor() {
       if (r.querySelector('input[type=radio]')?.checked) correct = kept.length;
       kept.push(v);
     }
+    const err = dlg.querySelector('.field-error');
+    const radios = [...dlg.querySelectorAll('.tp-opt-row input[type=radio]')];
+    for (const r of radios) r.removeAttribute('aria-invalid');
+    err.hidden = true;
+    // A quiz without its answer is caught here, at the options (review N7).
+    if (kind === 'quiz' && correct < 0) {
+      for (const r of radios) r.setAttribute('aria-invalid', 'true');
+      err.textContent = 'Tick the correct answer.';
+      err.hidden = false;
+      (rows.find((r) => r.querySelector('input[type=text]').value.trim())?.querySelector('input[type=radio]'))?.focus();
+      return;
+    }
     const body = { kind, question, autoApprove: dlg.querySelector('#tp-aud-auto').checked };
     if (kind === 'poll' || kind === 'quiz') body.options = kept;
     if (kind === 'quiz') body.correct = correct;
@@ -465,10 +489,9 @@ function initEditor() {
       dlg.close();
       toast(editing ? 'Saved' : 'Created — hidden until you show it', 'success');
       refresh(true);
-    } catch (err) {
-      const p = dlg.querySelector('.field-error');
-      p.textContent = err.message;
-      p.hidden = false;
+    } catch (ex) {
+      err.textContent = ex.message.charAt(0).toUpperCase() + ex.message.slice(1).replace(/([^.!?])$/, '$1.');
+      err.hidden = false;
     }
   });
 }

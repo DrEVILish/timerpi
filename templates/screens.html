@@ -10,6 +10,7 @@
   <a class="tab" href="/c/{{.Show.Code}}">Run</a>
   <a class="tab" href="/c/{{.Show.Code}}#audience">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></a>
   <a class="tab is-active" href="/screens/{{.Show.Code}}" aria-current="page">Screens</a>
+    {{if .Event.IsSuper}}<a class="tab tp-tab-et" href="/e/{{.Event.Code}}/admin" aria-label="Event Technician" title="Event Technician">Event</a>{{end}}{{/* phones: the bar has no room for it (review N10) */}}
 </nav>
 <div class="tp-page stack is-gap-l" id="tp-screens-page" data-room="{{.Show.Code}}" data-room-name="{{.Show.Title}}">
   <section class="stack is-gap-2xs">

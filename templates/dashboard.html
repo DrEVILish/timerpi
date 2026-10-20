@@ -19,6 +19,7 @@
     {{- /* Moderators work in Run and Audience only; Screens is the
          SuperOperator's (STATUS U25, U29: no Setup tab). */}}
     {{if .Event.IsSuper}}<a class="tab" href="/screens/{{.Show.Code}}">Screens</a>{{end}}
+    {{if .Event.IsSuper}}<a class="tab tp-tab-et" href="/e/{{.Event.Code}}/admin" aria-label="Event Technician" title="Event Technician">Event</a>{{end}}{{/* phones: the bar has no room for it (review N10) */}}
   </nav>
   <div class="tp-dash" data-panel="run">
 

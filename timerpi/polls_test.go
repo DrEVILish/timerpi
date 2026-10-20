@@ -397,3 +397,33 @@ func TestPollOptionsLockedOnceVoted(t *testing.T) {
 		t.Fatalf("question edit with same options: %v", err)
 	}
 }
+
+// Mine gives a device back its own vote and upvotes (review N8).
+func TestMine(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Mine")
+	p := mustItem(t, d, show.ID, KindPoll, "Lunch?", `["Pizza","Soup"]`, -1)
+	_ = d.ShowTo(show.ID, p.ID, TargetAudience, true)
+	if m, err := d.Mine(show.ID, p.ID, "ph1"); err != nil || m.Vote != nil {
+		t.Fatalf("no vote yet: %+v %v", m, err)
+	}
+	if err := d.Vote(show.ID, p.ID, "ph1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := d.Mine(show.ID, p.ID, "ph1"); m.Vote == nil || *m.Vote != 1 {
+		t.Fatalf("vote not returned: %+v", m)
+	}
+	qa := mustItem(t, d, show.ID, KindQA, "Ask", "", -1)
+	_ = d.ShowTo(show.ID, qa.ID, TargetAudience, true)
+	q, _ := d.Submit(show.ID, qa.ID, "Why?", "ph2")
+	_ = d.Moderate(show.ID, q.ID, StateOpen)
+	if err := d.Vote(show.ID, q.ID, "ph1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := d.Mine(show.ID, qa.ID, "ph1"); len(m.Up) != 1 || m.Up[0] != q.ID {
+		t.Fatalf("upvote not returned: %+v", m)
+	}
+	if m, _ := d.Mine(show.ID, qa.ID, "ph2"); len(m.Up) != 0 {
+		t.Fatalf("another device's upvote leaked: %+v", m)
+	}
+}

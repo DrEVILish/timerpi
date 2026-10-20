@@ -927,6 +927,35 @@ func (d *DB) AudienceRead(showID int64) (*AudienceVisible, error) {
 	return &AudienceVisible{Poll: active.Trimmed(MaxPublicEntries)}, nil // RW53
 }
 
+// AudienceMine is one device's own responses to an item: its poll/quiz
+// choice (Vote, nil when it has not voted) and the entries it upvoted
+// (Up). A phone whose storage was cleared gets its answer back (review N8).
+type AudienceMine struct {
+	Item int64   `json:"item"`
+	Vote *int64  `json:"vote,omitempty"`
+	Up   []int64 `json:"up,omitempty"`
+}
+
+// Mine returns peer's responses to item (one of showID's items).
+func (d *DB) Mine(showID, itemID int64, peer string) (*AudienceMine, error) {
+	out := &AudienceMine{Item: itemID}
+	var choice []string
+	if err := d.Select(&choice, `SELECT v.choice FROM votes v JOIN polls p ON p.id = v.poll_id
+		WHERE v.poll_id = ? AND v.peer = ? AND p.show_id = ? AND p.parent = 0`, itemID, peer, showID); err != nil {
+		return nil, err
+	}
+	if len(choice) == 1 {
+		if n, err := atoi64(choice[0]); err == nil {
+			out.Vote = &n
+		}
+	}
+	if err := d.Select(&out.Up, `SELECT v.poll_id FROM votes v JOIN polls p ON p.id = v.poll_id
+		WHERE p.parent = ? AND p.show_id = ? AND v.peer = ?`, itemID, showID, peer); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func atoi64(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 }

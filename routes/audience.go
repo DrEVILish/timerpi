@@ -128,7 +128,16 @@ func (d *Deps) apiAudienceRead(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "data": out})
+	resp := gin.H{"ok": true, "data": out}
+	// This device's own answer to the item on air (never mints a device id).
+	if out.Poll != nil {
+		if peer, ok := d.knownAudiencePeer(c); ok {
+			if mine, err := d.Store.Mine(id, out.Poll.ID, peer); err == nil {
+				resp["mine"] = mine
+			}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // POST /api/audience/:code/ask {item, text, peer} — a question / idea /

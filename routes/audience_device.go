@@ -46,15 +46,10 @@ func audToken(secret []byte, id string) string {
 // (and setting the cookie) when the request has no valid one. ok=false
 // means the mint budget is spent; a 429 has been written.
 func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
-	if p, ok := linkedPeer(c); ok {
-		return p, true // a phone on the cloud, vouched for over the venue link
+	if id, ok := d.knownAudiencePeer(c); ok {
+		return id, true
 	}
 	secret := d.Store.SessionSecret()
-	if ck, err := c.Cookie(audCookieName); err == nil {
-		if id, _, found := strings.Cut(ck, "."); found && tokenEq(ck, audToken(secret, id)) {
-			return id, true
-		}
-	}
 	room := c.Param("code")
 	if room == "" { // the venue-link middleware runs on /api/audience/<room>/…
 		if parts := strings.Split(strings.Trim(c.Request.URL.Path, "/"), "/"); len(parts) >= 3 {
@@ -75,6 +70,20 @@ func (d *Deps) audiencePeer(c *gin.Context) (string, bool) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(audCookieName, audToken(secret, id), audCookieAge, "/", "", secureCookie(c), true)
 	return id, true
+}
+
+// knownAudiencePeer is this phone's device id when it already has one
+// (valid cookie, or vouched for over the venue link); it never mints.
+func (d *Deps) knownAudiencePeer(c *gin.Context) (string, bool) {
+	if p, ok := linkedPeer(c); ok {
+		return p, true // a phone on the cloud, vouched for over the venue link
+	}
+	if ck, err := c.Cookie(audCookieName); err == nil {
+		if id, _, found := strings.Cut(ck, "."); found && tokenEq(ck, audToken(d.Store.SessionSecret(), id)) {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // throttle is a per-key "at most once per window" guard. take reserves the

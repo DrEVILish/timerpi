@@ -641,7 +641,6 @@ body[data-editing] .b-w-chrome .b-w-title { margin-inline-end: auto; overflow: h
    each tile its inline grid-column/grid-row. */
 body[data-editing] .b-grid { --dashboard-cols: 12; --dashboard-row-min: 0px; }
 body[data-editing] .b-w-grip { font-size: 1.1em; color: var(--accent); letter-spacing: -.1em; }
-body[data-editing] .b-w-chrome .icon { width: 1em; height: 1em; }
 /* In the Screens page editor the modal owns Done and the layout choice. */
 body[data-compose] #b-edit-toggle, body[data-compose] #b-boards,
 body[data-compose] .b-boards-label, body[data-compose] #b-new,

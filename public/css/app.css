@@ -93,9 +93,12 @@ body.tp-aud .tp-aud-opt[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg
 .tp-aud-cloud { display: flex; flex-wrap: wrap; gap: .4rem .5rem; margin-top: .9rem; align-items: center; }
 .tp-aud-foot { font-size: .8rem; }
 .tp-aud-foot .connection { white-space: normal; max-width: 100%; }
-/* Upvote toggles: one line, one width; the upvoted one (aria-pressed, lit
-   lamp) stays fully opaque although it is disabled. */
+/* Upvote toggles: one line, one width. "▲ n" is the only mark (review N9:
+   the lamp and the arrow said the same thing twice); the upvoted one takes
+   the chosen-answer accent fill and stays opaque although disabled. */
 .tp-aud-up { flex: none; white-space: nowrap; min-width: 4.2em; justify-content: center; }
+.tp-aud-up[aria-pressed]::before { content: none; }
+body.tp-aud .tp-aud-up[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg-hover: var(--accent); --btn-fg: var(--on-accent); --btn-border: var(--accent); font-weight: 700; }
 .tp-aud-up[aria-pressed="true"]:disabled { opacity: 1; }
 /* Reduced motion is honoured on phones only (PRODUCT L4). */
 @media (prefers-reduced-motion: no-preference) {
@@ -351,6 +354,11 @@ dialog.modal.is-maximized:modal { height: 100%; }
 /* ------------------------------------------------- room page tabs */
 .tp-room-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .tp-room-tabs .tab { min-height: 2.6rem; display: inline-flex; align-items: center; gap: .4em; }
+.tp-room-tabs .tp-tab-et { display: none; }
+@media (max-width: 600px) { .tp-room-tabs .tp-tab-et { display: inline-flex; margin-inline-start: auto; } .tp-room-tabs .tab { padding-inline: .55rem; } }
+/* Phones: the bar scrolls away and the room tabs stick at the top, so
+   toasts start below the tabs (ftl's --toast-offset-top; review #10). */
+@media (max-width: 600px) { body.app:has(.tp-room-tabs) { --toast-offset-top: 3.6rem; } }
 /* ios-skeuomorphic sets its dark tab-bar inks (white active tab) on every
    .tabs, so the active Run tab vanished on the light page. */
 html[data-theme="ios-skeuomorphic"] .tp-room-tabs { --tab-fg-active: var(--text); --tab-fg: var(--muted); }
@@ -389,16 +397,18 @@ body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
   body.app > .app-bar .tp-bar-clock { margin-inline: auto; }
   /* Room page (UI M9): one bar row — logo, room name (truncated), clock,
      theme, Leave. Event Technician is one tap away from the logo's Rooms
-     page, so the room page has the screen for running the room. */
-  body.app[data-page="dashboard"] > .app-bar { flex-wrap: nowrap; }
-  body.app[data-page="dashboard"] > .app-bar > .nav { flex: 1 1 0; order: 0; min-width: 0; }
-  body.app[data-page="dashboard"] > .app-bar > .nav > .nav-item { display: none; }
-  body.app[data-page="dashboard"] > .app-bar .breadcrumbs { min-width: 0; }
-  body.app[data-page="dashboard"] > .app-bar .breadcrumb-item.is-current { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  body.app[data-page="dashboard"] > .app-bar > .cluster { flex-wrap: nowrap; flex: none; }
+     page, so the room page has the screen for running the room. The
+     Screens page uses the same bar (review #9); Event Technician is the
+     room tabs' phone-only last tab (.tp-tab-et). */
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar { flex-wrap: nowrap; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar > .nav { flex: 1 1 0; order: 0; min-width: 0; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar > .nav > .nav-item { display: none; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar .breadcrumbs { min-width: 0; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar .breadcrumb-item.is-current { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar > .cluster { flex-wrap: nowrap; flex: none; }
   /* The phone's own status bar has the time of day, and the slim transport
      bar has the time left, so the room page's bar clock goes here. */
-  body.app[data-page="dashboard"] > .app-bar .tp-bar-clock { display: none; }
+  body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar .tp-bar-clock { display: none; }
 }
 
 /* liquid-glass (E2E #3): the theme floats a 3rem capsule bar over the
@@ -443,6 +453,17 @@ html[data-theme="liquid-glass"] .modal-header > .btn-close {
 /* Phone sign-in QR (Event Technician page). */
 .tp-phone-qr { display: block; width: min(320px, 100%); height: auto; margin: .8rem auto; padding: .5rem; background: #fff; border-radius: var(--radius, 6px); image-rendering: pixelated; }
 html[data-device-orient] #phone-link-btn { display: none; } /* already on the phone */
+@media (pointer: coarse) and (max-width: 600px) { #phone-link-btn { display: none; } } /* same, where the UA check misses */
+/* Event ID in the bar: the code is the information, the label is quiet
+   (review #17: the label was bright and the value a muted badge). */
+.tp-event-id { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.tp-event-id > .mono { color: var(--text); font-size: 1rem; }
+.tp-room-lock { display: inline-flex; color: var(--muted); }
+/* Pair: the button rides on the Screen name input's row (review #4). */
+.tp-pair-last { flex: 1 1 16rem; max-inline-size: 32rem; }
+.tp-pair-last .input { flex: 1 1 auto; min-width: 0; }
+/* Default theme saves on change; the select gets the row (review #8). */
+#ev-theme-select { flex: 1 1 auto; min-width: 0; padding-inline-end: 2.2em; text-overflow: ellipsis; }
 
 /* Event Technician room cards: the ⋯ menu is a full-size ftl icon button
    (review #10; touch gets ftl's 44px --tap-min on top). */
@@ -458,3 +479,63 @@ html[data-device-orient] #phone-link-btn { display: none; } /* already on the ph
    Event Technician) drops the nav's own block padding; the items keep
    their 44px targets. Room pages (no .tp-shell) are not touched here. */
 @media (max-width: 600px) { body.tp-shell > .app-bar > .nav { padding-block: 0; } }
+
+/* Layout editor chrome (review #16): the board's root font follows the
+   frame height (1.5vh), which left toolbar labels and tile glyphs at
+   ~9px; the compose chrome keeps a readable floor of its own. */
+.b-chrome :is(.btn, .select, .input, .segmented-item, label) { font-size: max(.8125rem, 13px); }
+.b-palette .b-palette-title { font-size: max(.78rem, 11px); }
+body[data-editing] .b-w-chrome { font-size: max(.78rem, 12px); }
+body[data-editing] .b-w-chrome .btn { font-size: 14px; } /* ftl sizes .btn-icon and its .icon in em */
+body[data-editing] .b-w-chrome .btn-close { font-size: 14px; }
+/* ≤1024px: "Add a tile" is one dropdown, not 20 buttons. */
+.b-add-select { display: none; }
+@media (min-width: 1025px) {
+  .b-palette-tiles { flex: 1 1 100%; } /* the tile buttons get the full row, canvas and start-over the next */
+  .b-palette-list { max-width: none; }
+  .b-palette-list .btn { font-size: 12px; padding-inline: .6em; }
+}
+@media (max-width: 1024px) {
+  .b-palette-tiles { flex: 0 1 18rem; }
+  .b-add-select { display: block; }
+  .b-palette-list { display: none; }
+}
+/* Phones: the tile list under the canvas has every control, so the tiles
+   keep only their drag bar and show what they hold. */
+@media (max-width: 760px) { body[data-editing] .b-w-chrome > button { display: none; } body[data-editing] .b-w-chrome { font-size: 10px; } }
+/* A refused drop says why on the tile itself (review N12). */
+.b-w-refused { position: absolute; inset-inline: .5rem; inset-block-end: .5rem; z-index: 3; margin: 0; font-size: max(.8rem, 12px); pointer-events: none; }
+/* The save state floats over the canvas corner so it never pushes the
+   canvas down when it appears (review N12). */
+@media (min-width: 761px) {
+  body[data-compose] .b-toolbar { position: fixed; inset-block-end: .5rem; inset-inline-end: 1rem; z-index: 5; padding: .2rem .6rem; border: 1px solid var(--border); pointer-events: none; }
+}
+.b-ed-row > .b-ed-name { flex: 1 0 calc(100% - 120px); } /* name + settings + remove on line 1 */
+.b-ed-row > .b-ed-grp { flex: 1 1 40%; } /* then X Y, then W H */
+.b-ed-grp > .btn { inline-size: 2.5rem; min-inline-size: 0; padding-inline: 0; }
+.b-add-select { min-inline-size: 13rem; padding-inline-end: 2.2em; }
+/* Screens cards: Type and Mounted share a row; Layout and Theme names are
+   long, so they get the card's width (review #8). */
+.tp-scr-field.is-wide { grid-column: 1 / -1; }
+
+/* Moderator library on phones: one compact card per item (title and type,
+   then the Audience / Presenter toggles and ⋯), not a six-row label table.
+   Auto Approve stays in the item editor. Same breakpoint as ftl's
+   .table.is-stacked. */
+.tp-aud-lib > .accordion-panel, .tp-aud-lib > .table-wrap { margin-block-start: .5rem; }
+@media (max-width: 480px) {
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row:not([hidden]) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 5rem; align-items: end; /* fixed last column: every card lines up */
+    grid-template-areas: "title title type" "aud pre more"; gap: .4rem .5rem; padding: .5rem .6rem;
+  }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(n) { padding: 0; border: 0; background: none; } /* the card is the row; striped cells read as boxes */
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(1) { grid-area: type; display: block; align-self: start; justify-self: end; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(2) { grid-area: title; display: block; align-self: start; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(3) { grid-area: aud; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(4) { grid-area: pre; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(5) { display: none; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:nth-child(6) { grid-area: more; display: block; justify-self: center; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:is(:nth-child(1), :nth-child(2), :nth-child(6))::before { content: none; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:is(:nth-child(3), :nth-child(4)) { display: flex; flex-direction: column; align-items: stretch; gap: .15rem; }
+  .tp-aud-table.is-stacked > tbody > tr.tp-aud-row .tp-aud-title { min-width: 0; }
+}

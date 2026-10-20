@@ -19,7 +19,7 @@
     {{if .Event.IsSuper}}<a class="nav-item{{if eq .Page "event-admin"}} is-active{{end}}" href="/e/{{.Event.Code}}/admin">Event Technician</a>{{end}}
   </nav>
   <div class="cluster push">
-    <span class="tp-event-id tp-wide-only"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
+    <span class="tp-event-id tp-wide-only">Event ID <span class="mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
     {{if .Event.IsSuper}}<form class="tp-nav-form" method="post" action="/e/{{.Event.Code}}/signout"><button class="nav-item btn btn-ghost" type="submit" title="Sign out as Event Technician and go back to the rooms">Sign out</button></form>{{end}}
     <form class="tp-nav-form" method="post" action="/e/{{.Event.Code}}/leave"><button class="nav-item btn btn-ghost" type="submit" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave<span class="tp-wide-only"> event</span></button></form>
   </div>
@@ -45,7 +45,7 @@
     <section class="grid" style="--grid-min: 18rem" id="room-grid">
       {{range .Event.Rooms}}
       <article class="panel stack is-gap-s" data-room="{{.Code}}">
-        <div class="panel-header">{{.Name}}{{if .HasPassword}} <span class="badge" title="This room has a moderator password">🔒</span>{{end}}</div>
+        <div class="panel-header">{{.Name}}{{if .HasPassword}} <span class="tp-room-lock" role="img" aria-label="Has a room password" title="This room has a moderator password"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/{{if $.DefaultTheme}}{{$.DefaultTheme}}{{else}}blue-future{{end}}.svg#icon-lock"/></svg></span>{{end}}</div>
         {{if .CanModerate}}
         <a class="btn btn-primary tp-btn-lg" href="/c/{{.Code}}">Open room</a>
         {{else}}
@@ -85,7 +85,7 @@
     </section>
   </div>
 </main>
-<footer class="app-status"><span class="text-muted">TimerPi · {{.Event.Name}}</span><span class="text-muted push">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span></footer>
+<footer class="app-status"><span class="text-muted">TimerPi · {{.Event.Name}}</span><span class="text-muted push tp-phone-only">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span></footer>
 <script type="module" src="{{asset "/src/event.js"}}"></script>
 </body>
 </html>
@@ -129,7 +129,7 @@
           <button class="btn btn-sm btn-secondary tp-nowrap" type="submit">Add room</button>
         </form>
         <button class="btn btn-sm" id="room-pw-all">Same password for every room…</button>
-        <label class="btn btn-sm btn-ghost">Import a room file
+        <label class="btn btn-sm">Import a room file
           <input type="file" id="room-import" accept="application/json,.json" hidden>
         </label>
       </div>
@@ -163,9 +163,8 @@
           <select class="select" id="pair-template"></select></div>
         <div class="field"><label class="label" for="pair-rotation">Mounted</label>
           <select class="select" id="pair-rotation"><option value="0">Landscape</option><option value="90">Portrait (90°)</option><option value="180">Upside down</option><option value="270">Portrait (270°)</option></select></div>
-        <div class="field"><label class="label" for="pair-name">Screen name</label>
-          <input class="input" id="pair-name" maxlength="40" placeholder="Keep the box's name"></div>
-        <button class="btn btn-primary" type="submit">Pair</button>
+        <div class="field tp-pair-last"><label class="label" for="pair-name">Screen name</label>
+          <div class="row is-gap-xs"><input class="input" id="pair-name" maxlength="40" placeholder="Keep the box's name"><button class="btn btn-primary" type="submit">Pair</button></div></div>
       </form>
     </section>
 
@@ -179,13 +178,12 @@
         <form id="ev-theme" class="field">
           <label class="label" for="ev-theme-select">Default screen theme</label>
           <div class="row is-gap-xs">
-            <select class="select" id="ev-theme-select">
+            <select class="select" id="ev-theme-select" title="Saved as soon as you pick">
               <option value="">Box default ({{.DefaultTheme}})</option>
               {{range .Themes}}<option value="{{.}}"{{if eq . $.Event.Theme}} selected{{end}}>{{.}}</option>{{end}}
             </select>
-            <button class="btn" type="submit">Save</button>
           </div>
-          <span class="field-hint">Each screen can still pick its own theme.</span>
+          <span class="field-hint">Saved as soon as you pick. Each screen can still pick its own theme.</span>
         </form>
         <div class="field">
           <span class="label">Venue map</span>
@@ -214,7 +212,7 @@
       <p class="field-hint">Download the whole event (rooms, running orders, messages, polls, screens, layouts and map) as one file. Importing a file makes a new event with new codes; you choose its password. Passwords and screen keys are never in the file.</p>
       <div class="row is-gap-s is-wrap mt-s">
         <a class="btn btn-sm" id="ev-export" href="/api/events/{{.Event.Code}}/export" download>Export event</a>
-        <label class="btn btn-sm btn-ghost">Import an event file…
+        <label class="btn btn-sm">Import an event file…
           <input type="file" id="ev-import" accept="application/json,.json" hidden>
         </label>
       </div>
@@ -246,7 +244,7 @@
 <footer class="app-status">
   <span class="connection" id="live-status" data-state="reconnecting" role="status">connecting…</span>
   <span class="text-muted push">Ping <span class="mono" id="conn-ping">—</span></span>
-  <span class="text-muted">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span>
+  <span class="text-muted tp-phone-only">Event ID <span class="mono">{{.Event.CodeFmt}}</span></span>
 </footer>
 <div class="toast-region" popover="manual" id="toast-region"></div>
 <script type="module" src="{{asset "/src/event.js"}}"></script>

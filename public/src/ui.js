@@ -61,6 +61,27 @@ export function toast(text, kind = 'info', action = null) {
 }
 
 /** setText(el, text) — write only on change (no needless layout churn). */
+/** Operator names of screen tiles: the layout editor's "Add a tile"
+ * palette words, used wherever a tile is named (review N6). */
+export const TILE_LABEL = {
+  countdown: 'Countdown', cuelabel: 'Cue label', speaker: 'Speaker', nextup: 'Next up', nownext: 'Current & next',
+  wallclock: 'Wall clock', progress: 'Cue progress', dayprogress: 'Day progress', messages: 'Messages', showtitle: 'Show title',
+  rate: 'Rate chip', schedule: 'Schedule', notice: 'Notice', poll: 'Audience item', qa: 'Q&A wall', wordcloud: 'Word cloud',
+  map: 'Map', joinqr: 'Join QR', rooms: 'All rooms now', eventschedule: 'Event schedule',
+};
+export const tileLabel = (type) => TILE_LABEL[type] || type;
+
+/** An icon from the shared ftl sprite (CONTRACT "Icons"), aria-hidden. */
+export function spriteIcon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `/ftl/assets/icons/icons.svg#icon-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+
 export function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }

@@ -30,7 +30,7 @@ import {
 } from './engine.js';
 import { Mesh, screenName } from './mesh.js';
 import { applyTheme, loadThemeVersion, initClientLog } from './theme.js';
-import { api, setText } from './ui.js';
+import { api, setText, tileLabel, spriteIcon } from './ui.js';
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 import { paintAudience, clearAudience } from './audtiles.js';
@@ -974,6 +974,23 @@ function overlaps(a, b) {
 // down). Returns false when neither works; the caller then reverts w.
 // Mutates and re-places the neighbours it changes.
 const NO_ROOM = 'No room there: drop on a tile to swap places, or make a neighbour smaller first';
+// refuse(tile): a gesture that can't land reverts with a nudge and the
+// reason ON the tile, where the operator is looking (review N12).
+function refuse(tile, msg = NO_ROOM) {
+  if (!tile) { saveState(msg); return; }
+  tile.classList.remove('b-overlap');
+  void tile.offsetWidth; // restart the shake on rapid retry
+  tile.classList.add('b-overlap');
+  tile.querySelector('.b-w-refused')?.remove();
+  const note = document.createElement('span');
+  note.className = 'b-w-refused alert alert-warning';
+  note.setAttribute('role', 'status');
+  note.textContent = msg;
+  tile.appendChild(note);
+  clearTimeout(tile._refuseT);
+  tile._refuseT = setTimeout(() => { tile.classList.remove('b-overlap'); note.remove(); }, 3000);
+}
+
 function makeRoom(w, orig) {
   const others = (layout.widgets || []).filter((o) => o.id !== w.id);
   const hits = others.filter((o) => overlaps(w, o));
@@ -1036,12 +1053,14 @@ function addAlignButtons(tile) {
   labelHandles(tile);
   const chrome = $('.b-w-chrome', tile);
   if (!chrome || chrome.querySelector('[data-align]')) return;
+  // Sprite icons, not text glyphs (review #16: ~9px ⚙ ◂ ▸).
+  $('[data-gear]', chrome)?.replaceChildren(spriteIcon('settings'));
   for (const side of ['left', 'right']) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn btn-icon btn-sm is-clear';
     b.dataset.align = side;
-    b.textContent = side === 'left' ? '⯇' : '⯈';
+    b.appendChild(spriteIcon(`chevron-${side}`));
     b.title = `Align ${side} edge`;
     b.setAttribute('aria-label', `Align tile ${side}`);
     chrome.appendChild(b);
@@ -1124,11 +1143,7 @@ function dragTile(tile, wid, startEvent, mode) {
     if (!makeRoom(w, orig)) {
       Object.assign(w, orig);
       applyGeometry(w.id);
-      tile.classList.remove('b-overlap');
-      void tile.offsetWidth; // restart the shake on rapid retry
-      tile.classList.add('b-overlap');
-      setTimeout(() => tile.classList.remove('b-overlap'), 1000);
-      saveState(NO_ROOM);
+      refuse(tile);
       return;
     }
     if (w.x !== orig.x || w.y !== orig.y || w.w !== orig.w || w.h !== orig.h) scheduleSave();
@@ -1191,8 +1206,9 @@ function buildEditorList(editing) {
     row.className = 'b-ed-row';
     const name = document.createElement('span');
     name.className = 'b-ed-name';
-    setText(name, w.type);
+    setText(name, tileLabel(w.type));
     row.appendChild(name);
+    const tail = [];
     for (const [field, label] of [['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']]) {
       const grp = document.createElement('span');
       grp.className = 'b-ed-grp';
@@ -1211,23 +1227,24 @@ function buildEditorList(editing) {
     }
     const gear = document.createElement('button');
     gear.type = 'button';
-    gear.className = 'btn btn-sm btn-icon';
-    gear.textContent = '⚙';
-    gear.setAttribute('aria-label', `${w.type} settings`);
+    gear.className = 'btn btn-sm btn-icon btn-ghost';
+    gear.appendChild(spriteIcon('settings'));
+    gear.setAttribute('aria-label', `${tileLabel(w.type)} settings`);
     gear.addEventListener('click', () => { openSettings(w.id); tick(); });
-    row.appendChild(gear);
+    tail.push(gear);
     const del = document.createElement('button');
     del.type = 'button';
-    del.className = 'btn btn-sm btn-icon btn-danger';
-    del.textContent = '🗑';
-    del.setAttribute('aria-label', `Delete ${w.type} tile`);
+    del.className = 'btn btn-sm btn-icon btn-ghost text-danger';
+    del.appendChild(spriteIcon('trash'));
+    del.setAttribute('aria-label', `Delete ${tileLabel(w.type)} tile`);
     del.addEventListener('click', async () => {
       const rest = (layout.widgets || []).filter((x) => x.id !== w.id);
       if (!rest.length) { saveState('A board needs at least one tile'); return; }
       layout.widgets = rest;
       await reloadEditing();
     });
-    row.appendChild(del);
+    tail.push(del);
+    name.after(...tail); // settings and remove ride on the name line
     editor.appendChild(row);
   }
   const note = document.createElement('span');
@@ -1257,7 +1274,7 @@ function openSettings(wid) {  const w = widgetOf(wid);
   form.textContent = '';
   form.hidden = false;
   const title = document.createElement('strong');
-  title.textContent = `Tile ${w.type} (${w.id})`;
+  title.textContent = `${tileLabel(w.type)} tile`;
   form.appendChild(title);
   const mk = (labelText, control) => {
     const lab = document.createElement('label');
@@ -1490,9 +1507,7 @@ function wireKeys() {
     if (!makeRoom(w, orig)) {
       Object.assign(w, orig);
       applyGeometry(w.id);
-      if (tile) tile.classList.add('b-overlap');
-      setTimeout(() => tile?.classList.remove('b-overlap'), 600);
-      saveState(NO_ROOM);
+      refuse(tile);
       return;
     }
     lastTouched.w = { ...w };
@@ -1583,6 +1598,14 @@ function wireCompose() {
     }
   });
 
+  const addSel = $('#b-add-select');
+  if (addSel) {
+    for (const b of $$('#b-palette-list [data-add]')) addSel.appendChild(new Option(b.textContent, b.dataset.add));
+    addSel.addEventListener('change', () => {
+      $(`#b-palette-list [data-add="${CSS.escape(addSel.value)}"]`)?.click();
+      addSel.value = '';
+    });
+  }
   $('#b-palette-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-add]');
     if (!btn) return;

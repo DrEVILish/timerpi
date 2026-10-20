@@ -59,10 +59,18 @@ export async function run(t) {
   await pg.waitForTimeout(900);
   t.check('Approve all approves every pending question', (await items()).find((i) => i.id === qa.id).children.every((c) => c.state === 'open'));
   const entry = (text) => card.locator('.tp-entry', { hasText: text });
+  // Spotlight it first: Answered drops the spotlight, Undo must restore it (review N3).
+  const firstID = (await items()).find((i) => i.id === qa.id).children.find((c) => c.question === 'First?').id;
+  await api('POST', `/api/shows/${room}/polls/${qa.id}/spotlight`, { entry: firstID });
+  await pg.waitForTimeout(900);
   await entry('First?').getByRole('button', { name: 'Answered' }).click();
+  await pg.waitForTimeout(500);
+  t.check('Answered drops the spotlight', !(await items()).find((i) => i.id === qa.id).spotlight);
   await pg.locator('.toast button', { hasText: 'Undo' }).click();
   await pg.waitForTimeout(900);
   t.check('Undo takes back Answered', (await items()).find((i) => i.id === qa.id).children.find((c) => c.question === 'First?').state === 'open');
+  t.check('Undo puts the spotlight back', (await items()).find((i) => i.id === qa.id).spotlight?.id === firstID);
+  await api('POST', `/api/shows/${room}/polls/${qa.id}/spotlight`, { entry: 0 });
   await entry('Second?').getByRole('button', { name: 'Answered' }).click();
   await pg.waitForTimeout(900);
   await entry('Second?').getByRole('button', { name: 'Reopen' }).click();

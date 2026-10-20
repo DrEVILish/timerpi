@@ -144,8 +144,23 @@ function initLobby() {
 }
 
 /* ----------------------------------------------------------------- admin -- */
+// An icon from the page theme's own sprite (aria-hidden; label the parent).
+function themeIcon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `/ftl/dist/icons/${encodeURIComponent(document.documentElement.dataset.theme || 'blue-future')}.svg#icon-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+
 function initAdmin() {
   rememberEvent(EV, body.dataset.eventName);
+  if (new URLSearchParams(location.search).has('imported')) {
+    toast(`Imported as a new event: ${body.dataset.eventName} (Event ID ${fmtCode(EV)})`, 'success');
+    history.replaceState(null, '', location.pathname + location.hash);
+  }
   const grid = document.getElementById('live-grid');
   const status = document.getElementById('live-status');
   let rooms = [];
@@ -195,7 +210,7 @@ function initAdmin() {
     const room = () => rooms.find((x) => x.code === code) || {};
     const parts = {
       name: el('span', { title: 'Double-click to rename' }),
-      lock: el('span', { class: 'badge', title: 'This room has a moderator password', text: '🔒' }),
+      lock: el('span', { class: 'tp-room-lock', title: 'This room has a moderator password', role: 'img', 'aria-label': 'Has a room password' }, themeIcon('lock')),
       status: el('span', { class: 'status push' }),
       // .tp-clock[data-state]: idle is muted with no glow (review #5: glow
       // means live), paused/overtime take the room page's colours.
@@ -217,13 +232,7 @@ function initAdmin() {
       class: 'btn btn-ghost btn-icon tp-room-more', type: 'button', title: 'Rename, password, order, duplicate, export, delete',
       'aria-label': `Room actions`, 'aria-haspopup': 'menu', dataset: { roomMenu: code },
     });
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'icon');
-    svg.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `/ftl/dist/icons/${encodeURIComponent(document.documentElement.dataset.theme || 'blue-future')}.svg#icon-more-horizontal`);
-    svg.appendChild(use);
-    more.appendChild(svg);
+    more.appendChild(themeIcon('more-horizontal'));
     more.addEventListener('click', () => openRoomMenu(code, more));
     const card = el('article', { class: 'panel stack is-gap-xs', dataset: { room: code } },
       el('div', { class: 'panel-header cluster' }, parts.name, parts.lock, parts.status, more),
@@ -433,7 +442,8 @@ function initAdmin() {
     fd.append('password', res.pw);
     try {
       const out = await api('POST', '/api/events/import', fd);
-      location.href = out.admin;
+      // The new event's page says so (a toast here would vanish with the page).
+      location.href = `${out.admin}${out.admin.includes('?') ? '&' : '?'}imported=1`;
     } catch (ex) { toast(ex.message, 'danger'); }
   });
 
@@ -442,6 +452,7 @@ function initAdmin() {
     e.preventDefault();
     run(() => api('PATCH', `/api/events/${EV}`, { name: document.getElementById('ev-name-input').value }), 'Event renamed').then((ok) => ok && reload());
   });
+  document.getElementById('ev-theme-select')?.addEventListener('change', (e) => e.target.form.requestSubmit());
   document.getElementById('ev-theme')?.addEventListener('submit', (e) => {
     e.preventDefault();
     run(() => api('PATCH', `/api/events/${EV}`, { theme: document.getElementById('ev-theme-select').value }), 'Default screen theme saved');

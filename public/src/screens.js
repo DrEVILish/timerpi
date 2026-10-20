@@ -7,7 +7,7 @@
  * change applies immediately and is pushed to the screen. Browsers waiting
  * on /d/ are set up (captured) from here with the same choices.
  */
-import { api, toast, el, inlineEdit, isEditingIn } from './ui.js';
+import { api, toast, el, inlineEdit, isEditingIn, tileLabel } from './ui.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 
 const KIND_LABEL = { audience: 'Audience', walkin: 'Walk-in', presenter: 'Presenter' };
@@ -120,7 +120,7 @@ function preview(s) {
   const rows = Math.max(1, s.rows || 8);
   const box = el('div', { class: `tp-scr-prev${portrait ? ' is-portrait' : ''}` });
   for (const w of s.widgets || []) {
-    const t = el('span', { class: 'tp-scr-tile', text: w.type });
+    const t = el('span', { class: 'tp-scr-tile', text: tileLabel(w.type) });
     t.style.left = `${(w.x / 12) * 100}%`;
     t.style.width = `${(w.w / 12) * 100}%`;
     t.style.top = `${(w.y / rows) * 100}%`;
@@ -176,14 +176,14 @@ function card(s) {
     el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Type' }), kindSel),
     // A phone or tablet follows the way it is held: no Mounted setting.
     s.handheld ? null : el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Mounted' }), rotSel),
-    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Layout' }), tplSel),
-    el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Theme' }), themeSel));
+    el('label', { class: 'tp-scr-field is-wide' }, el('span', { class: 'label', text: 'Layout' }), tplSel),
+    el('label', { class: 'tp-scr-field is-wide' }, el('span', { class: 'label', text: 'Theme' }), themeSel));
 
   const actions = el('div', { class: 'cluster is-gap-2xs' },
     el('button', { class: 'btn btn-sm', type: 'button', onclick: () => editLayout(s) }, 'Edit layout'),
     el('a', { class: 'btn btn-sm', href: `/d/${code}?screen=${encodeURIComponent(s.name)}`, target: '_blank', rel: 'opener', title: 'Open what this screen shows' }, 'View'),
     el('button', {
-      class: 'btn btn-sm btn-ghost', type: 'button', title: 'The address to open on this screen by hand (kiosk start page, TV bookmark)',
+      class: 'btn btn-sm', type: 'button', title: 'The address to open on this screen by hand (kiosk start page, TV bookmark)',
       onclick: async () => {
         try {
           const out = await post('/screens/link', { name: s.name });
@@ -260,7 +260,7 @@ async function quickCapture(w, btn) {
   btn.disabled = true;
   capKind = 'presenter';
   try {
-    const out = await api('POST', `/api/waiting/${w.id}/capture`, { code, name: nextName(), kind: 'presenter', template: DEFAULT_LAYOUT.presenter, rotation: 0, theme: '' });
+    const out = await api('POST', `/api/waiting/${w.id}/capture`, { code, name: freeName(w.name), kind: 'presenter', template: DEFAULT_LAYOUT.presenter, rotation: 0, theme: '' });
     toast(`"${out.name}" shows the timer within a few seconds`, 'success');
     for (const d of [500, 1500, 3000, 5000]) setTimeout(pull, d);
   } catch (e) {
@@ -303,6 +303,14 @@ function setKind(k) {
   fillTemplates();
 }
 
+// The waiting screen's own name (what the TV shows) unless this room has
+// a screen of that name already (review N7).
+function freeName(name) {
+  const used = new Set(st.screens.map((s) => s.name));
+  if (name && !used.has(name)) return name;
+  return nextName();
+}
+
 function nextName() {
   const used = new Set(st.screens.map((s) => s.name));
   const base = { audience: 'Main screen', walkin: 'Walk-in', presenter: 'Presenter' }[capKind] || 'Screen';
@@ -323,7 +331,7 @@ function openCapture(w) {
   document.getElementById('tp-capture-rotation').closest('.field').hidden = !!w.handheld;
   dlg.querySelector('.field-error').hidden = true;
   setKind('audience');
-  document.getElementById('tp-capture-name').value = nextName();
+  document.getElementById('tp-capture-name').value = freeName(w.name);
   busy = true;
   dlg.showModal();
 }

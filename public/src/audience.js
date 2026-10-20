@@ -45,7 +45,7 @@ function setLink(text, state) {
   paintNote();
 }
 function say(text) {
-  flash = text;
+  flash = text ? text.charAt(0).toUpperCase() + text.slice(1) : ''; // server errors arrive lowercase
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => { flash = ''; paintNote(); }, 4000);
   paintNote();
@@ -63,6 +63,10 @@ async function postRetry(path, body) {
     try {
       return await post(path, body);
     } catch (e) {
+      if (!e.status) { // no answer at all: the link is gone, whatever the socket says (review N4)
+        relink();
+        throw new Error('Not sent: no connection. Try again in a moment.');
+      }
       if (e.status !== 429 || i >= 5) throw e;
       const why = e.message.replace(/ — .*/, '');
       say(`${why.charAt(0).toUpperCase()}${why.slice(1)} — retrying…`);
@@ -332,10 +336,53 @@ function renderCloud(box, formSlot) {
 function adopt(poll) {
   item = poll || null;
   render();
+  recall();
+}
+
+// recall: a phone with no memory of its answer to this item (storage
+// cleared, another tab) asks the server, which knows this device by its
+// tp_aud cookie (review N8). Once per item round.
+const recalled = new Set();
+function recall() {
+  if (!item) return;
+  const k = `${item.id}.${item.round || 0}`;
+  if (recalled.has(k) || store.get(key('vote'), null) !== null || store.get(key('up'), []).length) return;
+  recalled.add(k);
+  fetch(`/api/audience/${code}`).then((r) => r.json()).then((j) => {
+    const m = j.mine;
+    if (!m || !item || m.item !== item.id || `${item.id}.${item.round || 0}` !== k) return;
+    if (m.vote != null) store.set(key('vote'), m.vote);
+    if (m.up?.length) store.set(key('up'), m.up.slice(-200));
+    if (m.vote != null || m.up?.length) render();
+  }).catch(() => {});
 }
 
 let ws = null;
 let backoff = 1000;
+// Heartbeat (review N4): a dropped Wi-Fi leaves the socket half-open and
+// silent, with no close event. The phone pings every 15 s (the hub answers
+// {t:"pong"}) and gives the socket up after 35 s with nothing heard.
+const PING_MS = 15000;
+const SILENT_MS = 35000;
+let heardAt = 0;
+let pingedAt = 0;
+setInterval(() => {
+  if (!ws || ws.readyState !== 1) return;
+  const now = Date.now();
+  if (now - heardAt > SILENT_MS) { relink(); return; }
+  if (now - pingedAt >= PING_MS) {
+    pingedAt = now;
+    try { ws.send(JSON.stringify({ v: 1, t: 'ping' })); } catch { relink(); }
+  }
+}, 5000);
+// relink drops the current socket (its late close is ignored) and falls
+// back to REST while reconnecting.
+function relink() {
+  const s = ws;
+  ws = null;
+  try { s?.close(); } catch { /* */ }
+  retry();
+}
 let restTimer = null;
 let retryTimer = 0;
 
@@ -370,10 +417,12 @@ function connect() {
   try { sock = new WebSocket(`${proto}://${location.host}/ws`); } catch { return retry(); }
   ws = sock;
   sock.onopen = () => {
+    heardAt = pingedAt = Date.now();
     sock.send(JSON.stringify({ v: 1, t: 'join', role: 'audience', show: code, peerId: peer, joinedAt: Date.now() }));
   };
   sock.onmessage = (ev) => {
     let m;
+    heardAt = Date.now();
     try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === 'poll') {
       backoff = 1000;

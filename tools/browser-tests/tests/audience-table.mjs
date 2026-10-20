@@ -52,7 +52,7 @@ export async function run(t) {
   t.check('Take off air takes it off that target', !(await item(qa.id)).toPresenter);
 
   // Run and Screens carry the same tab badge, so the tabs never shift.
-  const tabX = async () => pg.$eval('.tp-room-tabs .tab:last-child', (e) => Math.round(e.getBoundingClientRect().left));
+  const tabX = async () => pg.$eval('.tp-room-tabs .tab[href^="/screens/"]', (e) => Math.round(e.getBoundingClientRect().left));
   const runX = await tabX();
   await pg.goto(`${t.base}/screens/${room}`);
   await pg.waitForTimeout(1200);

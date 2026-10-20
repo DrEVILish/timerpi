@@ -77,6 +77,7 @@ export async function run(t) {
   const s = await (await api('GET', `/api/shows/${room}/screens`)).json();
   const made = (s.screens || []).find((x) => x.kind === 'presenter');
   t.check(`"Show the timer here" sets up a presenter screen on Full timer (${made?.name}, ${made?.template})`, !!made && made.template === 'stage' && !(await pg.$('#tp-capture[open]')));
+  t.check(`the captured screen keeps the name the TV shows (${made?.name} = ${newest})`, made?.name === newest);
 
   /* ---- I11: the editor is a standard ftl modal ---- */
   await api('POST', `/api/shows/${room}/screens/config`, { name: made?.name || 'Presenter', boardId: nb.id, kind: 'presenter' });
@@ -118,9 +119,12 @@ export async function run(t) {
   const pe = await phone.newPage();
   pe.on('pageerror', (e) => errs.push(e.message));
   await pe.goto(`${t.base}/d/${room}?view=board&board=${nb.id}&edit=1&preview=1&compose=1`);
-  await pe.waitForSelector('body[data-editing] .b-w-chrome button');
-  const minBtn = await pe.$$eval('.b-w-chrome button', (bs) => Math.min(...bs.map((b) => b.getBoundingClientRect().height)));
-  t.check(`phone editor: tile controls are ≥ 44px (${Math.round(minBtn)})`, minBtn >= 43.5);
+  // Round 2 (#16): on phones the tiles keep only their drag bar; every
+  // control is in the tile list under the canvas, at touch size.
+  await pe.waitForSelector('body[data-editing] .b-ed-row button');
+  t.check('phone editor: tile chrome buttons give the tile its room', (await pe.$$eval('.b-w-chrome button', (bs) => bs.filter((b) => b.getBoundingClientRect().height > 0).length)) === 0);
+  const minBtn = await pe.$$eval('.b-ed-row button', (bs) => Math.min(...bs.map((b) => b.getBoundingClientRect().height)));
+  t.check(`phone editor: tile list controls are ≥ 44px (${Math.round(minBtn)})`, minBtn >= 43.5);
   const listShown = await pe.$eval('#b-editor', (e) => getComputedStyle(e).display !== 'none' && e.querySelectorAll('.b-ed-row').length > 0);
   t.check('phone editor: the X/Y/W/H tile list shows', listShown);
   const pa = await phone.newPage();
