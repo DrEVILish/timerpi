@@ -97,6 +97,9 @@ export async function run(t) {
   await pg.fill('#cuelist tfoot input[name=label]', 'Typed');
   await pg.fill('#cuelist tfoot input[name=mss]', '10:00');
   await pg.press('#cuelist tfoot input[name=mss]', 'Enter');
+  // Over 4 h asks first (UX N4); keep it here.
+  await pg.waitForSelector('dialog.modal[open]');
+  await pg.click('dialog.modal[open] .modal-footer .btn-primary');
   await pg.waitForSelector('#cuelist tbody tr[data-pos="7"]');
   const toastText = await pg.evaluate(() => [...document.querySelectorAll('.toast')].map((x) => x.textContent).join(' | '));
   t.check(`adding echoes the parsed duration (${toastText})`, /Typed.*10:00 \(10 h\)/.test(toastText));

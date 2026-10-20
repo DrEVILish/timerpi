@@ -58,7 +58,7 @@ export async function run(t) {
   await pg.selectOption(`${cell('tp-cue-atzero')} select`, 'OVERTIME');
   await pg.waitForTimeout(900);
   const shown = await pg.$eval('#cuelist tbody tr[data-pos="2"]', (tr) => ['tp-cue-who', 'tp-cue-alert1', 'tp-cue-notes', 'tp-cue-atzero'].map((c) => tr.querySelector(`td.${c}`).textContent.trim()));
-  t.check(`edited cells show the new values (${shown.join(' | ')})`, shown[0] === 'Foyer' && shown[1].startsWith('1:00') && shown[2] === 'Urns on' && shown[3] === 'Overtime');
+  t.check(`edited cells show the new values (${shown.join(' | ')})`, shown[0] === 'Foyer' && shown[1].startsWith('1m') && shown[2] === 'Urns on' && shown[3] === 'Overtime');
 
   // Messages: Send puts each one on stage at once; Hide and Show work.
   const items = () => pg.$$eval('#messages-panel ul.list .list-item', (n) => n.map((li) => li.innerText.replace(/\s+/g, ' ').trim()));

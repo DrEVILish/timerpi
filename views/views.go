@@ -202,20 +202,39 @@ func FmtDur(ms int64) string {
 }
 
 // FmtDurHM renders a cue length the way an operator types it: h:mm
-// ("0:10" is ten minutes, "1:30" an hour and a half), with :ss only when
-// there are seconds ("0:00:30"). Durations are h:mm (owner, 2026-10-05), so
-// the running order shows the form its editors read back (client parity:
+// ("0:10" is ten minutes, "1:30" an hour and a half). Durations are h:mm
+// (owner, 2026-10-05), so the running order shows the form its editors read
+// back. A length with seconds reads in units ("1m 30s", UX N4: "0:01:30"
+// looked like a clock), which the editors read back too (client parity:
 // timerpi.js fmtDurText 'hm').
 func FmtDurHM(ms int64) string {
 	total := (ms + 500) / 1000
 	if total < 0 {
 		total = 0
 	}
-	h, m, s := total/3600, (total%3600)/60, total%60
-	if s != 0 {
-		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	if total%60 != 0 {
+		return FmtUnits(ms)
 	}
-	return fmt.Sprintf("%d:%02d", h, m)
+	return fmt.Sprintf("%d:%02d", total/3600, (total%3600)/60)
+}
+
+// FmtUnits renders a length in units: "5m", "1m 30s", "1h 5m", "45s" (the
+// alert cells and lengths with seconds; client parity: timerpi.js fmtUnits).
+func FmtUnits(ms int64) string {
+	total := (ms + 500) / 1000
+	if total <= 0 {
+		return "0s"
+	}
+	var parts []string
+	for _, u := range []struct {
+		n    int64
+		unit string
+	}{{total / 3600, "h"}, {total % 3600 / 60, "m"}, {total % 60, "s"}} {
+		if u.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", u.n, u.unit))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // FmtTimeOfDay renders an epoch-ms instant as the local wall clock HH:MM:SS
@@ -510,7 +529,7 @@ func fmtAlert(alertMS int64) string {
 	if alertMS <= 0 {
 		return ""
 	}
-	return FmtDur(alertMS)
+	return FmtUnits(alertMS)
 }
 
 func offset(ms int64) string {

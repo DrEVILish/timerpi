@@ -21,7 +21,7 @@ import { createUndo } from './undo.js';
 import { applyTheme, applyIconTheme, loadThemeVersion, initClientLog } from './theme.js';
 import { api, toast, setText, el } from './ui.js';
 import { applyWaiting } from './waiting.js';
-import { swatchPicker } from './swatches.js';
+import { swatchPicker, PRESETS } from './swatches.js';
 import { tpConfirm } from './dialog.js';
 import { initModerate, refresh as moderateRefresh, paintTabBadge } from './moderate.js';
 import { initScreens } from './screens.js';
@@ -215,7 +215,9 @@ class ClockUI {
       // ftl ordered rows (tables.md): the running cue is tr.is-active +
       // aria-current="time", done rows tr.is-past (muted + struck title),
       // the cue up next tr.is-next (dashed marker). Each state also has a
-      // text equivalent for screen readers.
+      // text equivalent for screen readers. "Done" is position-based: the
+      // snapshot keeps no per-cue "has run" record, so a cue dragged above
+      // the running one is struck through too (UX N11, STATUS U50).
       const past = !!act && pos < act, next = pos === snap.runtime.nextPos && pos !== act;
       tr.classList.toggle('is-active', pos === act);
       tr.classList.toggle('is-past', past);
@@ -387,7 +389,7 @@ class ClockUI {
       dot.title = `Alert ${n} colour`;
       dot.dataset.color = `alertColor${n}`;
       cell.appendChild(dot);
-      cell.appendChild(document.createTextNode(c[`alert${n}MS`] > 0 ? fmtDuration(c[`alert${n}MS`]) : '—'));
+      cell.appendChild(document.createTextNode(c[`alert${n}MS`] > 0 ? fmtUnits(c[`alert${n}MS`]) : '—'));
       return cell;
     };
 
@@ -412,8 +414,9 @@ class ClockUI {
     mkBtn('btn-tertiary', `GO — start cue ${ariaPos}`, 'Go', null, { cmd: 'go', pos: String(c.pos) });
     mkBtn('btn-ghost btn-icon', "Cue it up (playhead here, don't start yet)", null, 'icon-chevron-right', { cmd: 'jump', pos: String(c.pos), start: 'false' });
     mkBtn('btn-icon btn-ghost', `Edit cue ${ariaPos} — all details`, null, 'icon-edit', { insp: String(c.pos) });
-    // ftl two-tap delete: idle icon, armed label (.btn.is-armed).
-    const del = mkBtn('btn-icon btn-danger', `Delete cue ${ariaPos}`, null, null, { cmd: 'cueDel', pos: String(c.pos) });
+    // ftl two-tap delete: a quiet ghost icon; .btn.is-armed brings the
+    // danger ring and the "Delete?" label (UI #15).
+    const del = mkBtn('btn-icon btn-ghost', `Delete cue ${ariaPos}`, null, null, { cmd: 'cueDel', pos: String(c.pos) });
     del.setAttribute('aria-describedby', 'tp-del-help');
     const idle = span('btn-idle-label', '');
     idle.appendChild(this.icon('icon-trash'));
@@ -808,7 +811,8 @@ function flushAdjust() {
   if (!cue) return;
   const dur = Math.max(0, (cue.durationMS || 0) + p.delta);
   sendCommand('cueEdit', { pos: cue.pos, id: cue.id, durationMS: dur });
-  toast(`Cue ${String(cue.pos).padStart(2, '0')} now ${fmtDurText(dur)} (${durWords(dur)})`, 'info');
+  // Say it is the plan that changed, not just the clock (UX N11).
+  toast(`Cue ${String(cue.pos).padStart(2, '0')} planned length now ${fmtDurText(dur)} (${durWords(dur)}); later cues move`, 'info');
 }
 
 /**
@@ -833,6 +837,14 @@ function confirmDelete(btn) {
     if (help) setText(help, '');
   }, 2500);
   return false;
+}
+
+/** Delete a cue and offer Undo in the toast (UX N11: the touch menu's
+    Delete is instant, and Ctrl+Z has no touch path). */
+function deleteCue(pos) {
+  const cue = (clockUI?.snap || mesh?.snap)?.cues?.find((c) => c.pos === pos);
+  sendCommand('cueDel', { pos });
+  toast(`Deleted “${cue?.label || `cue ${String(pos).padStart(2, '0')}`}”`, 'info', { label: 'Undo', run: performUndo });
 }
 
 // E3 blackout: one body flag drives the .tp-blanked overlay (CSS-only
@@ -898,7 +910,7 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     }
     const action = btn.dataset.cmd;
     // U1: destructive deletes need the two-tap arming first.
-    if (action === 'cueDel' && !confirmDelete(btn)) return;
+    if (action === 'cueDel') { if (confirmDelete(btn)) deleteCue(Number(btn.dataset.pos)); return; }
     const args = {};
     if (btn.dataset.pos) args.pos = Number(btn.dataset.pos);
     if (btn.dataset.start !== undefined) args.start = btn.dataset.start !== 'false';
@@ -1024,7 +1036,7 @@ function parseDur(text, unit = 'hm') {
 function durCheck(text, unit = 'hm') {
   const s = String(text).trim().toLowerCase().replace(/\s+/g, '');
   const bad = (err) => ({ ms: null, err });
-  const generic = unit === 'ms' ? 'Alerts are m:ss, like 5:00' : 'That is not a duration — try 30 (minutes), 0:45 (h:mm) or 45m';
+  const generic = unit === 'ms' ? 'Alerts are minutes before zero, like 5, 5m or 1m30s' : 'That is not a duration — try 30 (minutes), 0:45 (h:mm) or 45m';
   if (/^\d+$/.test(s)) return { ms: Number(s) * 60000 }; // bare = minutes
   const units = /^(?:(\d+)h)?(?:(\d+)m(?:in)?)?(?:(\d+)s)?$/.exec(s);
   if (units && s) return { ms: ((Number(units[1] || 0) * 60 + Number(units[2] || 0)) * 60 + Number(units[3] || 0)) * 1000 };
@@ -1303,6 +1315,8 @@ function syncAddRow() {
   }
   const label = get('label');
   if (label) label.placeholder = isBreak ? 'Break name (e.g. Coffee)' : 'Session title';
+  const brk = document.querySelector('#cuelist tfoot [name="isBreak"]');
+  if (brk) brk.checked = isBreak;
   for (const n of [1, 2]) {
     const dot = document.querySelector(`#cuelist tfoot [data-pick="alertColor${n}"]`);
     const v = get(`alertColor${n}`)?.value;
@@ -1317,9 +1331,14 @@ function initAddRow() {
   const form = $('#tp-add-form');
   if (!form) return;
   document.addEventListener('change', (e) => {
-    if (e.target.matches?.('[form="tp-add-form"][name="kind"]')) syncAddRow();
+    // Touch: the Break toggle stands in for the hidden Type select (UX N5).
+    if (e.target.matches?.('#cuelist tfoot [name="isBreak"]')) {
+      const kind = document.querySelector('[form="tp-add-form"][name="kind"]');
+      if (kind) kind.value = e.target.checked ? 'break' : 'session';
+    }
+    if (e.target.matches?.('[form="tp-add-form"][name="kind"], #cuelist tfoot [name="isBreak"]')) syncAddRow();
   });
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(form));
     const label = String(v.label || '').trim();
@@ -1348,13 +1367,20 @@ function initAddRow() {
     }
     const notes = String(v.notes || '').trim();
     if (notes) args.notes = notes;
+    if (!(await confirmLongCue(args.durationMS, mss))) {
+      document.querySelector('[form="tp-add-form"][name="mss"]')?.focus();
+      return;
+    }
     sendCommand('cueAdd', args);
-    toast(`Added “${label}”${echo}`, 'success');
-    // Ready for the next one: title, who, duration, alerts and notes clear;
-    // type, timer and at-zero stay (rows usually come in runs).
+    toast(`Added “${label}”${args.kind === 'break' ? ' (break)' : ''}${echo}`, 'success');
+    // Ready for the next one: title, who, duration, alerts and notes clear,
+    // and the type goes back to Session (UX N5: a Break silently stuck);
+    // timer and at-zero stay (rows usually come in runs).
     for (const f of addRowFields()) {
       if (['label', 'who', 'mss', 'alert1', 'alert2', 'notes'].includes(f.name)) f.value = '';
+      if (f.name === 'kind') f.value = 'session';
     }
+    syncAddRow();
     document.querySelector('[form="tp-add-form"][name="label"]')?.focus();
   });
   // Alert colour dots in the add row open the picker.
@@ -1375,10 +1401,11 @@ function initAddRow() {
     anchored to the element that opened it. */
 function openColorPop(anchor, value, defaultColor, onPick) {
   let pop = $('#tp-color-pop');
-  if (!pop) {
-    pop = el('div', { id: 'tp-color-pop', class: 'popover', popover: true });
-    document.body.appendChild(pop);
-  }
+  if (!pop) pop = el('div', { id: 'tp-color-pop', class: 'popover', popover: true });
+  // Inside a modal dialog (the cue editor) the popover must live in the
+  // dialog: everything outside it is inert.
+  const host = anchor.closest('dialog') || document.body;
+  if (pop.parentNode !== host) { try { pop.hidePopover(); } catch { /* closed */ } host.appendChild(pop); }
   pop.replaceChildren(swatchPicker({
     value, defaultColor, label: anchor.getAttribute('aria-label') || anchor.title || 'Colour',
     onChange: (v) => { onPick(v); try { pop.hidePopover(); } catch { /* closed */ } },
@@ -1396,7 +1423,10 @@ function initRowMenu() {
   const menu = $('#tp-row-menu');
   if (!menu) return;
   let pos = 0;
-  const open = (tr, x, y) => {
+  // keyboard: focus the first item (opened from the keyboard). A pointer
+  // open leaves focus alone, or ftl's focus fill lights the first item as
+  // if it were chosen (UI #13).
+  const open = (tr, x, y, keyboard = false) => {
     pos = Number(tr.dataset.pos);
     const n = clockUI?.snap?.cues?.length || 0;
     menu.querySelector('[data-row-act="up"]').disabled = pos <= 1;
@@ -1404,7 +1434,7 @@ function initRowMenu() {
     menu.style.setProperty('--x', `${Math.max(8, Math.min(x, innerWidth - 220))}px`);
     menu.style.setProperty('--y', `${Math.max(8, Math.min(y, innerHeight - 260))}px`);
     try { menu.showPopover(); } catch { return; }
-    menu.querySelector('button:not(:disabled)')?.focus();
+    if (keyboard) menu.querySelector('button:not(:disabled)')?.focus();
   };
   // A long press on touch: the menu opens when the finger LIFTS after
   // 550 ms. Opened while the finger was still down, the following pointerup
@@ -1415,7 +1445,9 @@ function initRowMenu() {
     if (!tr || e.target.closest('input, select, textarea')) return;
     e.preventDefault();
     if (press) { press.ready = true; return; } // Android's long-press contextmenu: open on lift
-    open(tr, e.clientX, e.clientY);
+    const fromKeys = e.button !== 2 && !['mouse', 'pen', 'touch'].includes(e.pointerType); // the Menu key / Shift+F10
+    if (!fromKeys) open(tr, e.clientX, e.clientY);
+    else { const r = tr.getBoundingClientRect(); open(tr, r.left + 40, r.bottom, true); }
   });
   document.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return;
@@ -1446,7 +1478,7 @@ function initRowMenu() {
     const btn = e.target.closest?.('#cuelist [data-row-menu]');
     if (!btn) return;
     const r = btn.getBoundingClientRect();
-    open(btn.closest('tr'), r.right - 200, r.bottom + 4);
+    open(btn.closest('tr'), r.right - 200, r.bottom + 4, e.detail === 0);
   });
   menu.addEventListener('click', (e) => {
     const item = e.target.closest('[data-row-act]');
@@ -1456,7 +1488,7 @@ function initRowMenu() {
     if (act === 'dup') sendCommand('cueDup', { pos });
     if (act === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
     if (act === 'up' || act === 'down') moveCue(pos, act === 'up' ? -1 : 1);
-    if (act === 'del') sendCommand('cueDel', { pos }); // choosing it from the menu is the confirmation
+    if (act === 'del') deleteCue(pos); // choosing it from the menu is the confirmation
   });
 }
 
@@ -1495,7 +1527,7 @@ const CELL_CHOICES = {
 const CELL_HINTS = {
   label: 'Title', speaker: 'Speaker', location: 'Where (e.g. Great Hall)', notes: 'Notes',
   durationMS: 'Duration (h:mm — 30 = 30 min, 1:30 = 1 h 30 min, 30s = seconds)',
-  alert1MS: 'Alert 1 (m:ss before zero, empty = off)', alert2MS: 'Alert 2 (m:ss before zero, empty = off)',
+  alert1MS: 'Alert 1, before zero (5 = 5 min, 1m30s, 30s; empty = off)', alert2MS: 'Alert 2, before zero (5 = 5 min, 1m30s, 30s; empty = off)',
 };
 
 function startCellEdit(td, opts = {}) {
@@ -1559,6 +1591,15 @@ function startCellEdit(td, opts = {}) {
     td.classList.remove('is-editing');
     td.replaceChildren(...old); // the next repaint brings the truth
     if (commit && !err && val !== (cue[field] ?? (isMS ? 0 : ''))) {
+      if (field === 'durationMS' && val > LONG_CUE_MS) {
+        // Ask first (UX N4); the cell shows the old value meanwhile.
+        confirmLongCue(val, v).then((ok) => { if (ok) send(); });
+      } else send();
+    }
+    // Replay the cuelist swap deferred while the editor was open — make
+    // sure the LAST state wins, not a stale one from before our own edit.
+    flushPendingSwap();
+    function send() {
       sendCommand('cueEdit', { pos, id: cue.id, [field]: val });
       if (field === 'durationMS') toast(`Cue ${String(pos).padStart(2, '0')} now ${fmtDurText(val)} (${durWords(val)})`, 'info');
       // ftl cell states: saving until the server's cuelist swap lands
@@ -1569,9 +1610,6 @@ function startCellEdit(td, opts = {}) {
       // No swap (mesh-only, offline): don't spin forever.
       setTimeout(() => { td.classList.remove('is-saving'); td.removeAttribute('aria-busy'); }, 3000);
     }
-    // Replay the cuelist swap deferred while the editor was open — make
-    // sure the LAST state wins, not a stale one from before our own edit.
-    flushPendingSwap();
   };
   ctl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true, true); }
@@ -1640,9 +1678,28 @@ function roomTitle(snap) {
 function fmtDurText(ms, unit = 'hm') {
   const total = Math.round(ms / 1000);
   const h = Math.floor(total / 3600), m = (total % 3600) / 60 | 0, s = total % 60;
-  const p2 = (n) => String(n).padStart(2, '0');
-  if (unit === 'ms') return h > 0 ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
-  return s ? `${h}:${p2(m)}:${p2(s)}` : `${h}:${p2(m)}`;
+  // Alerts, and lengths with seconds, read in units ("5m", "1m 30s"; UX N4:
+  // "0:01:30" looked like a clock). Whole-minute lengths stay h:mm.
+  if (unit === 'ms' || s) return fmtUnits(ms);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+/** milliseconds → "5m", "1m 30s", "1h 5m", "45s" (Go views.FmtUnits). */
+function fmtUnits(ms) {
+  const total = Math.round(ms / 1000);
+  const parts = [[Math.floor(total / 3600), 'h'], [Math.floor(total % 3600 / 60), 'm'], [total % 60, 's']]
+    .filter(([n]) => n > 0).map(([n, u]) => `${n}${u}`);
+  return parts.join(' ') || '0s';
+}
+
+/** UX N4: a cue over 4 h is almost always "10:00" meant as ten minutes.
+    Ask before keeping it; resolves true to go ahead. */
+const LONG_CUE_MS = 4 * 3600000;
+async function confirmLongCue(ms, typed) {
+  if (!(ms > LONG_CUE_MS)) return true;
+  const mins = /^(\d+):00$/.exec(String(typed).trim());
+  const hint = mins ? ` For ${Number(mins[1])} minutes, type ${Number(mins[1])} or ${Number(mins[1])}m.` : '';
+  return tpConfirm(`“${String(typed).trim()}” is ${durWords(ms)}: two-part times are hours:minutes.${hint}`, { title: `Make this cue ${durWords(ms)} long?`, ok: `Keep ${durWords(ms)}` });
 }
 
 /** milliseconds → words for the echo toasts: "10 min", "1 h 30 min", "45 s". */
@@ -1741,21 +1798,39 @@ function initInspector() {
 
   function field(id) { return dlg.querySelector('#' + id); }
 
-  // U30: colours are ftl swatches; each writes its hidden input.
+  // U30: colours are ftl swatches; each writes its hidden input. The row
+  // colour shows its swatches; each alert colour is one ftl .color-dot that
+  // opens the same picker in a popover (UX N3: a slimmer editor).
   const pickers = {};
   for (const host of dlg.querySelectorAll('[data-swatches-for]')) {
     const id = host.dataset.swatchesFor;
-    const def = { 'tp-insp-alert1Color': '#ffaa00', 'tp-insp-alert2Color': '#ff4444' }[id] || '';
     pickers[id] = swatchPicker({
-      defaultColor: def, defaultLabel: host.dataset.defaultLabel || 'Default',
+      defaultLabel: host.dataset.defaultLabel || 'Default',
       label: dlg.querySelector('#' + host.getAttribute('aria-labelledby'))?.textContent || 'Colour',
       onChange: (v) => { field(id).value = v; },
     });
     host.appendChild(pickers[id]);
   }
+  const ALERT_DEFAULTS = { 'tp-insp-alert1Color': DEFAULT_ALERT1, 'tp-insp-alert2Color': DEFAULT_ALERT2 };
+  const dotFor = (id) => dlg.querySelector(`[data-pick-for="${id}"]`);
   function setColor(id, v) {
     field(id).value = v;
     pickers[id]?.setValue(v);
+    const dot = dotFor(id);
+    if (dot) {
+      const shown = v || ALERT_DEFAULTS[id];
+      dot.style.setProperty('--swatch', shown);
+      const name = PRESETS.find(([, hex]) => hex === shown.toLowerCase())?.[0] || shown;
+      dot.setAttribute('aria-label', `${dot.dataset.label}: ${v ? name : `default (${name})`}`);
+      dot.title = dot.getAttribute('aria-label');
+    }
+  }
+  for (const dot of dlg.querySelectorAll('[data-pick-for]')) {
+    dot.dataset.label = dot.getAttribute('aria-label');
+    dot.addEventListener('click', () => {
+      const id = dot.dataset.pickFor;
+      openColorPop(dot, field(id).value, ALERT_DEFAULTS[id], (v) => setColor(id, v));
+    });
   }
 
   function fill(cue, label) {
@@ -1776,6 +1851,8 @@ function initInspector() {
     field('tp-insp-alert2Flash').checked = !!cue.alertFlash2;
     setColor('tp-insp-color', cue.color || '');
     field('tp-insp-notes').value = cue.notes || '';
+    // Notes and row colour open when the cue has either.
+    dlg.querySelector('.tp-insp-more').open = !!(cue.notes || cue.color);
     const err = field('tp-insp-error');
     err.hidden = true;
   }
@@ -1802,7 +1879,7 @@ function initInspector() {
 
   const hexOK = (v) => v === '' || /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v);
 
-  function save() {
+  async function save() {
     const err = field('tp-insp-error');
     const fail = (msg) => { err.textContent = msg; err.hidden = false; };
     const args = { pos: openPos, id: openId };
@@ -1846,6 +1923,7 @@ function initInspector() {
     args.color = rowColor || '';
     args.notes = field('tp-insp-notes').value;
 
+    if (!(await confirmLongCue(dur, field('tp-insp-duration').value))) { field('tp-insp-duration').focus(); return; }
     sendCommand('cueEdit', args);
     closeInspector();
     toast('Cue saved', 'info');
@@ -1999,11 +2077,17 @@ function initImportDrop() {
     tpConfirm(`Replace all ${n} cue${n === 1 ? '' : 's'} in this running order with the file's cues?`, { title: 'Replace the running order?', ok: 'Replace', danger: true })
       .then((ok) => (ok ? e.detail.issueRequest() : e.detail.dropRequest()));
   });
+  // The panel takes the drop; the ftl .dropzone inside it lights up.
+  const dz = zone.querySelector('.dropzone');
+  const named = $('#import-file-name');
+  const showName = () => { if (named && input.files?.[0]) setText(named, `“${input.files[0].name}” — check Mode, then Import`); };
+  input.addEventListener('change', showName);
   const over = (e) => {
     if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
-    zone.classList.add('is-dropping');
+    if (!zone.open) zone.open = true;
+    dz?.classList.add('is-dragover');
   };
-  const leave = () => { zone.classList.remove('is-dropping'); };
+  const leave = () => { dz?.classList.remove('is-dragover'); };
   zone.addEventListener('dragover', over);
   zone.addEventListener('dragenter', over);
   zone.addEventListener('dragleave', leave);
@@ -2021,6 +2105,7 @@ function initImportDrop() {
       dt.items.add(file);
       input.files = dt.files;
     } catch { /* no DataTransfer: the picker still works */ }
+    showName();
     toast(`“${file.name}” attached — check Mode, then Import`, 'info');
   });
 }

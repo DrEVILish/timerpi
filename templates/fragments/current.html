@@ -23,12 +23,12 @@
          readout. Every tap is one cueEdit over the existing WS protocol
          (CONTRACT-UI §4); JS supplies pos/duration. Rendered disabled;
          timerpi.js releases the row once a cue is active. -->
-    <div class="btn-group tp-adjust-row" role="group" aria-label="Quick adjust the current cue">
-      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue by 1 minute" aria-label="Shorten current cue by 1 minute">−1m</button>
-      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue by 30 seconds" aria-label="Shorten current cue by 30 seconds">−30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue by 30 seconds" aria-label="Lengthen current cue by 30 seconds">+30s</button>
-      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue by 1 minute" aria-label="Lengthen current cue by 1 minute">+1m</button>
-      <button class="btn btn-sm" type="button" data-adjust="300000" disabled title="Lengthen the current cue by 5 minutes" aria-label="Lengthen current cue by 5 minutes">+5m</button>
+    <div class="btn-group tp-adjust-row" role="group" aria-label="Change the current cue's planned length">
+      <button class="btn btn-sm" type="button" data-adjust="-60000" disabled title="Shorten the current cue's planned length by 1 minute (later start times move)" aria-label="Shorten current cue by 1 minute">−1m</button>
+      <button class="btn btn-sm" type="button" data-adjust="-30000" disabled title="Shorten the current cue's planned length by 30 seconds (later start times move)" aria-label="Shorten current cue by 30 seconds">−30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="30000" disabled title="Lengthen the current cue's planned length by 30 seconds (later start times move)" aria-label="Lengthen current cue by 30 seconds">+30s</button>
+      <button class="btn btn-sm" type="button" data-adjust="60000" disabled title="Lengthen the current cue's planned length by 1 minute (later start times move)" aria-label="Lengthen current cue by 1 minute">+1m</button>
+      <button class="btn btn-sm" type="button" data-adjust="300000" disabled title="Lengthen the current cue's planned length by 5 minutes (later start times move)" aria-label="Lengthen current cue by 5 minutes">+5m</button>
     </div>
 
     <div class="tp-rate">

@@ -20,7 +20,7 @@ export async function run(t) {
   const bar = await box('.tp-transport-bar');
   const order = await box('.tp-runorder');
   t.check('the transport sits above the running order', bar.b <= order.y + 1 && Math.abs(bar.x - order.x) < 2);
-  const cmds = await pg.$$eval('.tp-transport-bar [data-cmd], .tp-transport-bar #tp-blank', (n) => n.map((b) => b.dataset.cmd || b.id));
+  const cmds = await pg.$$eval('.tp-transport-bar [data-cmd], .tp-transport-bar #tp-blank', (n) => n.filter((b) => b.offsetParent).map((b) => b.dataset.cmd || b.id));
   t.check(`transport: ${cmds.join(',')}`, cmds.join(',') === 'prev,go,pause,next,flash,tp-blank');
   t.check('no Stop/Reset button anywhere', (await pg.$$('[data-cmd="reset"]')).length === 0);
 

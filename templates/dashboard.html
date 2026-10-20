@@ -35,10 +35,14 @@
           <form class="stack is-gap-s"
                 hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
                 hx-target="#import-result" hx-swap="innerHTML" hx-confirm="replace">
-            <div class="field">
-              <label class="label" for="import-file">File</label>
-              <input class="input" type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json">
-              <span class="field-hint">Or drop an .xlsx / .xls / .csv / .json file on this panel. Bare numbers are minutes.</span>
+            {{- /* ftl .dropzone (UI #7): the whole panel takes a drop
+                 (timerpi.js lights the zone); the button opens the picker. */}}
+            <div class="dropzone tp-import-zone">
+              <span id="import-file-name">Drop an .xlsx, .xls, .csv or .json file here</span>
+              <label class="btn btn-sm btn-secondary">Choose file…
+                <input type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json" hidden>
+              </label>
+              <span class="field-hint">Bare numbers are minutes.</span>
             </div>
             <div class="field">
               <label class="label" for="import-mode">Mode</label>
@@ -59,17 +63,29 @@
            (owner, 2026-10-06): GO on a row restarts that cue. Outside the
            oob-swapped #tp-now, so these buttons are never re-rendered. */}}
       <div class="transport tp-transport-bar">
-        {{- /* Phones: the slim sticky bar shows the time left (timerpi.js
-             paints it with the main clock). */}}
-        <time class="countdown tp-bar-left" id="tp-clock-mini" data-state="idle" aria-hidden="true"></time>
-        <button class="btn btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
-        <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
-        <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
-        <button class="btn btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
-        <button class="btn" data-cmd="flash" type="button" title="Flash the timer on presenter screens" aria-label="Flash the timer on presenter screens">FLASH</button>
-        <!-- E3: global display blackout — kills every display to STANDBY until
-             released. Pressed state follows snapshot show.blanked. -->
-        <button class="btn btn-danger" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
+        {{- /* Two groups so the phone bar can lay them out as two rows (time
+             left · FLASH · WRAP UP · BLANK over Prev · GO · Pause · Next);
+             wider screens see one row (display: contents). */}}
+        <div class="tp-bar-main">
+          <button class="btn btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
+          <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
+          <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
+          <button class="btn btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
+        </div>
+        <div class="tp-bar-talk">
+          {{- /* Phones: the slim sticky bar shows the time left (timerpi.js
+               paints it with the main clock). */}}
+          <time class="countdown tp-bar-left" id="tp-clock-mini" data-state="idle" aria-hidden="true"></time>
+          <button class="btn" data-cmd="flash" type="button" title="Flash the timer on presenter screens" aria-label="Flash the timer on presenter screens">FLASH</button>
+          {{- /* Phones (UX N9): WRAP UP rides the sticky bar, one tap away; the
+               Messages panel keeps its own on wider screens. */}}
+          <button class="btn btn-danger tp-bar-wrapup" type="button"
+                  data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
+                  title="Put “PLEASE WRAP UP!” on the presenter screens now" aria-label="Send the wrap-up message to the stage">WRAP UP</button>
+          <!-- E3: global display blackout — kills every display to STANDBY until
+               released. Pressed state follows snapshot show.blanked. -->
+          <button class="btn btn-danger" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
+        </div>
       </div>
 
       <section class="panel tp-runorder">
@@ -217,7 +233,7 @@
       </div>
     </div>
     <div class="row is-gap-s">
-      <div class="field" style="flex:1">
+      <div class="field">
         <label class="label" for="tp-insp-timerKind">Timer</label>
         <select class="select" id="tp-insp-timerKind">
           <option value="COUNTDOWN">Countdown</option>
@@ -225,7 +241,7 @@
           <option value="CLOCK">Wall clock</option>
         </select>
       </div>
-      <div class="field" style="flex:1">
+      <div class="field">
         <label class="label" for="tp-insp-endAction">At zero</label>
         <select class="select" id="tp-insp-endAction">
           <option value="HOLD">Hold at 0:00</option>
@@ -234,36 +250,45 @@
         </select>
       </div>
     </div>
-    {{- /* One alert per line: label, then time · colour · Flash (UI M6). */}}
-    <div class="field">
-      <label class="label" for="tp-insp-alert1">Alert 1 <span class="text-muted">m:ss before zero</span></label>
-      <div class="row is-gap-s is-items-center tp-insp-alert">
-        <input class="input mono" id="tp-insp-alert1" type="text" size="6" autocomplete="off" placeholder="5:00">
-        <input type="hidden" id="tp-insp-alert1Color">
-        <span class="visually-hidden" id="tp-insp-alert1Color-l">Alert 1 colour</span>
-        <div data-swatches-for="tp-insp-alert1Color" aria-labelledby="tp-insp-alert1Color-l"></div>
-        <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert1Flash">Flash</label>
+    {{- /* UX N3: the two alerts sit side by side, each time · colour ·
+         Flash on one line; the colour is one ftl .color-dot that opens the
+         swatch popover (the running order's picker). Notes and Row colour
+         wait behind a disclosure, and the footer sticks, so Save is always
+         in view. */}}
+    <div class="row is-gap-s tp-insp-alerts">
+      <div class="field">
+        <label class="label" for="tp-insp-alert1">Alert 1 <span class="text-muted">before zero</span></label>
+        <div class="row is-gap-xs is-items-center tp-insp-alert">
+          <input class="input mono" id="tp-insp-alert1" type="text" size="6" autocomplete="off" placeholder="5m" title="5 = 5 min, 1m30s, 30s = seconds; empty = off">
+          <input type="hidden" id="tp-insp-alert1Color">
+          <button type="button" class="color-dot tp-insp-dot" data-pick-for="tp-insp-alert1Color" aria-label="Alert 1 colour"></button>
+          <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert1Flash">Flash</label>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="tp-insp-alert2">Alert 2 <span class="text-muted">before zero</span></label>
+        <div class="row is-gap-xs is-items-center tp-insp-alert">
+          <input class="input mono" id="tp-insp-alert2" type="text" size="6" autocomplete="off" placeholder="1m" title="5 = 5 min, 1m30s, 30s = seconds; empty = off">
+          <input type="hidden" id="tp-insp-alert2Color">
+          <button type="button" class="color-dot tp-insp-dot" data-pick-for="tp-insp-alert2Color" aria-label="Alert 2 colour"></button>
+          <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert2Flash">Flash</label>
+        </div>
       </div>
     </div>
-    <div class="field">
-      <label class="label" for="tp-insp-alert2">Alert 2 <span class="text-muted">m:ss before zero</span></label>
-      <div class="row is-gap-s is-items-center tp-insp-alert">
-        <input class="input mono" id="tp-insp-alert2" type="text" size="6" autocomplete="off" placeholder="1:00">
-        <input type="hidden" id="tp-insp-alert2Color">
-        <span class="visually-hidden" id="tp-insp-alert2Color-l">Alert 2 colour</span>
-        <div data-swatches-for="tp-insp-alert2Color" aria-labelledby="tp-insp-alert2Color-l"></div>
-        <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert2Flash">Flash</label>
+    <details class="accordion-item tp-insp-more">
+      <summary class="accordion-trigger">Notes and row colour</summary>
+      <div class="accordion-panel stack is-gap-s">
+        <div class="field">
+          <label class="label" for="tp-insp-notes">Cue notes</label>
+          <textarea class="input" id="tp-insp-notes" rows="2"></textarea>
+        </div>
+        <div class="field tp-insp-rowcolor">
+          <span class="label" id="tp-insp-color-l">Row colour</span>
+          <input type="hidden" id="tp-insp-color">
+          <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
+        </div>
       </div>
-    </div>
-    <div class="field">
-      <label class="label" for="tp-insp-notes">Cue notes</label>
-      <textarea class="input" id="tp-insp-notes" rows="2" aria-label="Cue notes"></textarea>
-    </div>
-    <div class="field tp-insp-rowcolor">
-      <span class="label" id="tp-insp-color-l">Row colour</span>
-      <input type="hidden" id="tp-insp-color">
-      <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
-    </div>
+    </details>
     <div class="field-error" id="tp-insp-error" role="alert" hidden></div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" data-close>Cancel</button>

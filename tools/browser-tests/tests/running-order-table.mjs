@@ -116,9 +116,11 @@ export async function run(t) {
   // Details panel: swatches, no Hold after / auto-continue / auto-start.
   await pg.click('#cuelist tbody tr[data-pos="1"] [data-insp]');
   await pg.waitForSelector('#tp-inspector[open]');
-  t.check('details panel has three swatch pickers', (await pg.$$('#tp-inspector fieldset.swatches')).length === 3);
+  t.check('details panel: row colour swatches and two alert .color-dot pickers (UX N3)', (await pg.$$('#tp-inspector fieldset.swatches')).length === 1 && (await pg.$$('#tp-inspector button.color-dot[data-pick-for]')).length === 2);
   t.check('no Hold after, auto-continue or auto-start', !(await pg.$('#tp-insp-hold, #tp-insp-autoContinue, #tp-insp-startAt')));
-  await pg.click('[data-swatches-for="tp-insp-alert1Color"] label.swatch[title="Red"]');
+  await pg.click('[data-pick-for="tp-insp-alert1Color"]');
+  await pg.click('#tp-inspector #tp-color-pop label.swatch[title="Red"]');
+  t.check('the alert dot shows the picked colour', /Red/.test(await pg.getAttribute('[data-pick-for="tp-insp-alert1Color"]', 'aria-label')));
   await pg.click('#tp-insp-save');
   await pg.waitForTimeout(700);
   t.check('a swatch picked in the details panel saves', (await snap()).cues[0].alertColor1 === '#ff4444');

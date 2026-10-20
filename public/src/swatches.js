@@ -1,8 +1,8 @@
 /**
  * swatches.js — the colour picker (STATUS U30): ftl-themes' `.swatches`
- * fieldset (radio swatches with the theme's ring and check) plus a native
- * <input type="color"> for any other colour (core sizes it). Used by the
- * cue details panel and the running order's alert cells.
+ * fieldset (radio swatches with the theme's ring and check); the last
+ * swatch opens the native colour picker for any other colour. Used by the
+ * cue editor and the running order's alert cells.
  */
 
 // Named presets. The first entry is "Default": '' (the server fills the
@@ -60,26 +60,43 @@ export function swatchPicker({ value = '', defaultColor = '', defaultLabel = 'De
     return r;
   };
   add(defaultLabel, '', defaultColor || 'var(--accent)');
-  for (const [title, hex] of presets) add(title, hex, hex);
+  // A preset equal to the default would be a second, identical swatch.
+  for (const [title, hex] of presets) if (norm(hex) !== norm(defaultColor)) add(title, hex, hex);
 
-  // Any other colour: the native picker, styled by core.
+  // Any other colour (UI #3): the last ftl swatch. Its label holds the
+  // native picker (visually hidden by .swatch > input, opened by the label)
+  // and a radio that carries the checked ring and ✓ while a custom colour
+  // is chosen. Unchosen, the swatch shows a colour wheel.
+  const wheel = 'conic-gradient(#ff4444, #ffaa00, #16a34a, #2f7cf6, #a855f7, #ff4444)';
+  const customLabel = document.createElement('label');
+  customLabel.className = 'swatch tp-swatch-custom';
+  customLabel.title = 'Another colour';
   const custom = document.createElement('input');
   custom.type = 'color';
-  custom.className = 'tp-swatch-custom';
-  custom.title = 'Another colour';
   custom.setAttribute('aria-label', `${label}: another colour`);
-  if (withCustom) fs.appendChild(custom);
+  const customRadio = document.createElement('input');
+  customRadio.type = 'radio';
+  customRadio.name = name;
+  customRadio.tabIndex = -1;
+  customRadio.setAttribute('aria-hidden', 'true');
+  customLabel.append(custom, customRadio);
+  if (withCustom) fs.appendChild(customLabel);
 
   const set = (v) => {
-    const n = norm(v);
+    // The default's own colour (a server-filled alert default) is the default swatch.
+    const n = defaultColor && norm(v) === norm(defaultColor) ? '' : norm(v);
     let hit = false;
     for (const r of radios) { r.checked = norm(r.value) === n; hit = hit || r.checked; }
-    custom.classList.toggle('is-selected', !hit && n !== '');
-    if (/^#[0-9a-f]{6}$/.test(n)) custom.value = n;
+    const isCustom = !hit && /^#[0-9a-f]{6}$/.test(n);
+    customRadio.checked = isCustom;
+    customRadio.value = isCustom ? n : '';
+    if (isCustom) custom.value = n;
+    customLabel.style.setProperty('--swatch', isCustom ? n : wheel);
   };
   set(value);
 
   fs.addEventListener('change', (e) => {
+    if (e.target === customRadio && !customRadio.value) return;
     const v = e.target === custom ? custom.value : e.target.value;
     set(v);
     onChange?.(v);

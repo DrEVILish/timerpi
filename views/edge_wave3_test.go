@@ -60,10 +60,19 @@ func TestFmtAgoBoundaries(t *testing.T) {
 	}
 }
 
+// FmtUnits: alert cells and lengths with seconds (UX N4).
+func TestFmtUnits(t *testing.T) {
+	for ms, want := range map[int64]string{0: "0s", 300_000: "5m", 90_000: "1m 30s", 45_000: "45s", 3_900_000: "1h 5m"} {
+		if got := FmtUnits(ms); got != want {
+			t.Errorf("FmtUnits(%d) = %q, want %q", ms, got, want)
+		}
+	}
+}
+
 // I1: the running order shows durations as h:mm, the form its editors read
 // back ("10:00" typed is ten hours, so ten minutes must display "0:10").
 func TestFmtDurHM(t *testing.T) {
-	for ms, want := range map[int64]string{0: "0:00", 600_000: "0:10", 5_400_000: "1:30", 36_000_000: "10:00", 30_000: "0:00:30", 3_605_000: "1:00:05"} {
+	for ms, want := range map[int64]string{0: "0:00", 600_000: "0:10", 5_400_000: "1:30", 36_000_000: "10:00", 30_000: "30s", 90_000: "1m 30s", 3_605_000: "1h 5s"} {
 		if got := FmtDurHM(ms); got != want {
 			t.Errorf("FmtDurHM(%d) = %q, want %q", ms, got, want)
 		}

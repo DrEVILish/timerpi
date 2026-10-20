@@ -54,6 +54,9 @@
   .tp-dash .tp-runorder { order: 3; }
   .tp-dash #messages-panel { order: 4; }
   .tp-dash .tp-import { order: 5; }
+  /* The page scrolls here, so the running order's header sticks under the
+     sticky tabs (UX N8): no inner scroller. */
+  #cuelist.tp-cuelist-wrap { overflow: clip; --sticky-top: var(--tp-tabs-h); }
   /* Tablet (UI B3, UX I6): the Current cue is one compact band (clock on
      the left, adjust and rate on the right) so the running order starts
      high, and the table keeps what you run a room with: Type, End, At zero
@@ -61,16 +64,23 @@
   .tp-cuetable :is(.tp-cue-kind, .tp-cue-end, .tp-cue-atzero, .tp-cue-notes) { display: none; }
 }
 @media (min-width: 601px) and (max-width: 1100px) {
-  .tp-now > .stack { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-l, 1.5rem); row-gap: var(--space-xs, .5rem); align-items: center; }
-  .tp-now > .stack > :first-child { grid-column: 1 / -1; }
-  .tp-now > .stack > #tp-clock { grid-row: 2 / span 3; }
+  /* The clock on the left, title, meter, adjust and rate beside it: the
+     band is as tall as the clock, so more rows show (round-2 density). */
+  .tp-now > .stack { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "clock title title" "clock meter meter" "clock adjust rate"; column-gap: var(--space-l, 1.5rem); row-gap: var(--space-xs, .5rem); align-items: center; }
+  .tp-now > .stack > :first-child { grid-area: title; }
+  .tp-now > .stack > #tp-clock { grid-area: clock; }
+  .tp-now > .stack > .tp-progress { grid-area: meter; }
+  .tp-now > .stack > .tp-adjust-row { grid-area: adjust; }
+  .tp-now > .stack > .tp-rate { grid-area: rate; }
   .tp-now > .stack > #tp-clock-status { position: absolute; }
+  .tp-now > .panel-header { display: none; } /* the band speaks for itself; its aria-label stays */
 }
 
 .tp-dash-main { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .tp-dash-main .tp-runorder { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .tp-dash-main .tp-cuelist-wrap { flex: 1 1 auto; min-height: 12rem; overflow: auto; }
-.tp-bar-left { display: none; }
+.tp-bar-left, .tp-bar-wrapup { display: none; }
+.tp-bar-main, .tp-bar-talk { display: contents; }
 /* Transport: ftl buttons with borders (touch screens get no hover, so the
    edge is what shows a button). GO is 25% taller than its neighbours. */
 .tp-transport-bar { --tp-tbtn: 2.75rem; justify-content: flex-start; }
@@ -92,18 +102,17 @@
   .tp-dash .tp-transport-bar {
     position: sticky; bottom: 0; z-index: 3; order: 9;
     --tp-tbtn: 2.75rem;
-    display: grid; grid-template-columns: var(--tp-tbtn) minmax(0, 1fr) minmax(0, 1fr) var(--tp-tbtn) var(--tp-tbtn);
-    grid-template-areas: "left left flash blank blank" "prev go go pause next";
+    display: flex; flex-direction: column; align-items: stretch;
     gap: var(--space-xs, .5rem); padding-block: var(--space-xs, .5rem);
   }
-  .tp-transport-bar .tp-bar-left { display: block; grid-area: left; align-self: center; --countdown-size: 1.9rem; font-size: var(--countdown-size); line-height: 1; white-space: nowrap; }
-  .tp-transport-bar [data-cmd="prev"] { grid-area: prev; }
-  .tp-transport-bar [data-cmd="go"] { grid-area: go; block-size: var(--tp-tbtn); min-inline-size: 0; font-size: 1.2rem; }
-  .tp-transport-bar [data-cmd="pause"] { grid-area: pause; }
-  .tp-transport-bar [data-cmd="next"] { grid-area: next; }
-  .tp-transport-bar [data-cmd="flash"] { grid-area: flash; }
-  .tp-transport-bar #tp-blank { grid-area: blank; }
-  .tp-transport-bar > :is([data-cmd="flash"], #tp-blank) { inline-size: auto; min-inline-size: 0; padding-inline: .6rem; justify-content: center; block-size: var(--tp-tbtn); }
+  /* Row 1: time left · FLASH · WRAP UP · BLANK (UX N9: the wrap-up is one
+     tap away); row 2: Prev · GO · Pause · Next. */
+  .tp-transport-bar .tp-bar-talk { display: flex; order: -1; align-items: center; gap: var(--space-xs, .5rem); }
+  .tp-transport-bar .tp-bar-main { display: grid; grid-template-columns: var(--tp-tbtn) minmax(0, 1fr) var(--tp-tbtn) var(--tp-tbtn); gap: var(--space-xs, .5rem); }
+  .tp-transport-bar .tp-bar-left { display: block; flex: 1 1 auto; min-inline-size: 0; --countdown-size: 1.7rem; font-size: var(--countdown-size); line-height: 1; white-space: nowrap; }
+  .tp-transport-bar [data-cmd="go"] { block-size: var(--tp-tbtn); min-inline-size: 0; font-size: 1.2rem; }
+  #messages-panel .tp-wrapup { display: none; } /* the bar's WRAP UP is the one here */
+  .tp-transport-bar .tp-bar-talk > .btn { display: inline-flex; flex: none; inline-size: auto; min-inline-size: 0; padding-inline: .55rem; justify-content: center; block-size: var(--tp-tbtn); }
   body.app[data-page="dashboard"] > .app-status { position: static; }
   html:has(body[data-page="dashboard"]) { scroll-padding-block-end: 8rem; }
   /* The running order keeps what you run a room with; timer, alerts and
@@ -111,19 +120,32 @@
   .tp-cuetable :is(.tp-cue-kind, .tp-cue-who, .tp-cue-end, .tp-cue-timer, .tp-cue-atzero, .tp-cue-alert1, .tp-cue-alert2, .tp-cue-notes) { display: none; }
   #cuelist .tp-cuetable .tp-cue-title { min-width: 0; }
   .tp-cuetable :is(th, td) { padding-inline: .2rem; }
-  #cuelist tfoot .tp-cue-title .input { inline-size: 4.5rem; min-inline-size: 0; }
+  #cuelist tfoot .tp-cue-pos > span { display: none; }
+  #cuelist tfoot .tp-cue-title > .input { field-sizing: fixed; min-inline-size: 0; } /* the column sets its width (UI #5) */
+  /* Toasts sit at the bottom, just above the sticky transport, clear of
+     the sticky tabs (UI #10). */
+  body.app[data-page="dashboard"] .toast-region[popover] { top: auto; bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px)); }
   /* The # cell is the drag handle on phones (with the ftl grip glyph);
      the handle column goes, so #, title, duration, start, GO and ⋯ fit. */
   .tp-cuetable .drag-handle { display: none; }
   .tp-cuetable tbody .tp-cue-pos::before { content: var(--drag-handle-glyph, "\283F") / ""; margin-inline-end: .2rem; color: var(--muted); }
-  /* Cue up, All details and Delete live in the row menu (⋯) on phones. */
-  .tp-cuetable .tp-cue-rowbtns :is([data-cmd="jump"], [data-insp], [data-cmd="cueDel"]) { display: none; }
 }
 /* The row's ⋯ (the row menu without a right-click or long press) shows on
-   touch screens and phones. */
+   touch screens and phones; there rows keep only Go and ⋯ — Cue up, All
+   details and Delete live in the menu (UI #15, UX N11). */
 .tp-row-more { display: none; }
 @media (pointer: coarse), (max-width: 600px) {
   .tp-cuetable .tp-row-more { display: inline-flex; }
+  .tp-cuetable .tp-cue-rowbtns :is([data-cmd="jump"], [data-insp], [data-cmd="cueDel"]) { display: none; }
+}
+/* The tabs' height: the running order's sticky header sits under them
+   wherever the page scrolls. */
+.tp-room { --tp-tabs-h: 2.75rem; }
+/* Touch and narrow: the Type column is hidden, so the add row's Break
+   toggle stands in for it (UX N5). */
+.tp-add-break { display: none; }
+@media (max-width: 1100px) {
+  #cuelist tfoot .tp-add-break { display: inline-flex; vertical-align: middle; margin-inline-end: .25rem; padding-inline: .45rem; }
 }
 .tp-msg-send > .input { flex: 1 1 auto; min-width: 0; }
 
@@ -179,7 +201,7 @@
   min-block-size: 1em;
 }
 @media (max-width: 1100px) {
-  .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 12vw, 5.5rem), 40cqi); }
+  .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 10vw, 4.5rem), 40cqi); }
 }
 @media (max-width: 600px) {
   .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 17vw, 5rem), 17cqi); }
@@ -269,7 +291,7 @@ body[data-editing] .b-list-editor { order: 1; }
 .tp-cue-pos { opacity: .75; font-variant-numeric: tabular-nums; }
 .tp-cue-dur, .tp-cue-start, .tp-cue-end { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tp-cue-label { font-weight: 600; }
-.tp-cue-notes { color: var(--muted); font-size: .85em; }
+td.tp-cue-notes { color: var(--muted); font-size: .85em; }
 .tp-cue-rowbtns { white-space: nowrap; }
 
 /* Row states are ftl's (tables.md): tr.is-active + aria-current="time",
@@ -890,13 +912,11 @@ body[data-editing] .b-overlap {
    with the pending marker? Nothing to link — it is instant. No pulse. */
 .tp-wrapup { inline-size: 100%; justify-content: center; font-weight: 700; }
 
-/* --- U1: import dropzone affordance --------------------------------------
-   Self-child edges usually come from core; this only defines the drop
-   state and it stays hairline-quiet while nothing is being dragged. */
-.tp-import.is-dropping {
-  outline: 2px dashed var(--accent-2, var(--accent));
-  outline-offset: -3px;
-}
+/* Import: the ftl .dropzone lights while a file is over the panel
+   (timerpi.js); closed, the panel is just its header (UI #6). */
+.tp-import:not([open]) { padding-block-end: 0; }
+.tp-import:not([open]) > .panel-header { margin-block-end: 0; border-block-end-color: transparent; }
+.tp-import-zone { padding: var(--space-m, 1rem); }
 
 /* --- U1: the running row reads from across the room ----------------------
    Core's --row-active-bg + first-cell inset marker stay; TWO cheap boosts:
@@ -905,13 +925,6 @@ body[data-editing] .b-overlap {
 #cuelist tr.is-active .tp-cue-label { font-weight: 800; }
 #cuelist tr.is-active .tp-cue-pos { color: var(--accent-text, var(--accent-2, var(--accent))); font-weight: 700; }
 
-/* --- U1: sticky cue-table header survives phone scroll -------------------
-   On phones the page (not the wrap) is the scrollport — the sticky th
-   then hides with the content. Give the wrap its own viewport-height
-   scrollport so `.table.is-sticky` (core) keeps the header nailed. */
-@media (max-width: 760px) {
-  .tp-dash-main .tp-cuelist-wrap { max-height: 62dvh; }
-}
 
 
 /* --- A3: cue filter rides the running-order header ---------------------- */
@@ -968,7 +981,7 @@ body[data-waiting] .tp-waiting { display: flex; }
 .tp-inspector .row { flex-wrap: wrap; }
 .tp-inspector .row > .field { flex: 1 1 7rem; min-width: 7rem; }
 .tp-inspector .row > .tp-insp-wide { flex: 3 1 12rem; }
-.tp-inspector .row > .tp-insp-narrow { flex: 0 1 7rem; }
+.tp-inspector .row > .tp-insp-narrow { flex: 0 1 8.5rem; min-width: 8.5rem; }
 
 /* Audit hardening RETIRED 2026-10-05: upstream 19c1e02 gave lcars/
    death-star a visible --border and windows95 added .badge to its
@@ -1065,7 +1078,11 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .tp-cuetable :is(th, td) { padding-inline: .25rem; vertical-align: middle; }
 .tp-cuetable th { font-size: .7rem; }
 .tp-cuetable .tp-cue-title { min-width: 8em; }
-.tp-cuetable .tp-cue-notes { color: var(--muted); font-size: inherit; }
+.tp-cuetable td.tp-cue-notes { color: var(--muted); font-size: inherit; }
+/* An inline editor fills its cell instead of widening the column (UI #1). */
+/* ftl sizes inputs to their content (field-sizing: content), which made
+   the cell grow by what was typed. */
+.tp-cuetable td.is-editing > :is(.input, .select) { field-sizing: fixed; inline-size: 100%; min-inline-size: 0; box-sizing: border-box; }
 .tp-cuetable .text-truncate { display: block; max-width: 6.7em; }
 .tp-cuetable .tp-cue-notes .text-truncate { max-width: 4.9em; }
 .tp-cuetable .tp-cue-rowbtns .btn { padding-inline: .2rem; }
@@ -1089,6 +1106,9 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 #cuelist tfoot .tp-cue-dur .input { width: 4.2em; }
 .tp-alert-field { display: flex; align-items: center; gap: .25rem; }
 .tp-alert-field .input { width: 3.6em; }
+/* ftl gives editing controls the editing border only as direct cell
+   children (upstream R-A3); the alert inputs sit beside their dot. */
+#cuelist tfoot .tp-alert-field > .input:not([aria-invalid="true"]) { border-color: var(--cell-editing-border, var(--accent)); background-color: var(--cell-input-bg, var(--input-bg, var(--surface))); }
 /* Alert colour dots (U30): a swatch the operator clicks to change. */
 .tp-alert-dot {
   display: inline-block; inline-size: .85rem; block-size: .85rem; flex: none;
@@ -1103,7 +1123,6 @@ button.tp-alert-dot { inline-size: 1.1rem; block-size: 1.1rem; margin: 0; }
   .tp-alert-dot::after { content: ""; position: absolute; inset: -.85rem; }
 }
 .tp-swatches { flex-wrap: wrap; max-width: 15rem; }
-.tp-swatch-custom.is-selected { outline: 2px solid var(--text); outline-offset: 2px; }
 /* Breaks wear their own accent (U43) through ftl's tr.has-row-color (the
    leading bar and tint); a row colour from the cue editor wins. */
 .tp-cuetable tr.tp-row-break { --row-color: var(--accent-2, var(--warning)); }
@@ -1117,10 +1136,20 @@ body.b-flash .b-js-clock, .b-js-clock.is-flash { animation: b-blink 1s steps(1) 
 /* Edit modal: the row colour picker spans the dialog. */
 .tp-insp-rowcolor .swatches { flex-wrap: wrap; } /* tablet/phone: wrap, never clip */
 .tp-insp-rowcolor .swatches > * { flex-shrink: 0; }
+.tp-inspector .tp-insp-alerts > .field { flex: 1 1 12rem; }
+.tp-insp-alert { flex-wrap: nowrap; }
+.tp-insp-alert > .input { inline-size: 5.5em; flex: none; }
 .tp-insp-flash { align-self: center; flex: none; }
-.tp-insp-alert > .input { inline-size: 6.5em; flex: none; }
-.tp-insp-alert .swatches { flex-wrap: wrap; }
-@media (max-width: 600px) { /* phones: time and Flash on one line, the colours under them */
-  .tp-insp-alert > [data-swatches-for] { order: 3; flex-basis: 100%; }
-  .tp-insp-alert :is(.swatches, .tp-swatches) { max-width: none; }
+.tp-insp-dot { --color-dot-size: 1.5rem; margin-inline: .35rem; }
+/* ftl's .modal scrolls as a whole and has no sticky footer: keep Cancel /
+   Save in view on short screens (UX N3; upstream proposal
+   reviews/upstream-issues/ftl-modal-sticky-footer.md). */
+.tp-inspector .modal-footer {
+  position: sticky; inset-block-end: calc(-1 * var(--surface-pad, 1.5rem)); z-index: 1;
+  margin-block-end: calc(-1 * var(--surface-pad, 1.5rem));
+  padding-block: var(--space-s, .75rem) var(--surface-pad, 1.5rem);
+  background-color: var(--surface); /* the modal's base fill; --modal-bg may carry theme art (blue-future's brackets) */
+}
+@media (max-width: 600px) { /* phones: one field per line, nothing clipped under a chevron (UI #2) */
+  .tp-inspector .row > .field { flex-basis: 100%; }
 }
