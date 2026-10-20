@@ -1,6 +1,6 @@
 # ftl-themes: a maximized native `<dialog class="modal">` collapses to its content
 
-**Type:** bug (core). Not filed yet (owner decides).
+**Type:** bug (core). Filed upstream as item 3 of https://github.com/DrEVILish/ftl-themes/issues/72.
 
 ## Repro
 
