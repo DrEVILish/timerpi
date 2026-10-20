@@ -127,8 +127,12 @@ func (d *Deps) displayVariants(c *gin.Context) {
 					dst = fmt.Sprintf("/d/%s?view=board&tpl=%s&screen=%s",
 						c.Param("ident"), url.QueryEscape(scr.Template), url.QueryEscape(name))
 				}
-				if key := c.Query("key"); key != "" {
-					dst += "&key=" + url.QueryEscape(key) // the screen key rides along (RW9)
+				// The screen key rides along (RW9), and so do the version
+				// pickers (?orient= / ?rotate=), or a portrait panel lost them.
+				for _, k := range []string{"key", "orient", "rotate"} {
+					if v := c.Query(k); v != "" {
+						dst += "&" + k + "=" + url.QueryEscape(v)
+					}
 				}
 				c.Redirect(http.StatusFound, dst)
 				return

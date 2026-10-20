@@ -336,7 +336,8 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 	pd.Peers = d.peerCount()
 	// Boards read better with the day's first cue up front when idle (same
 	// rule as the variant boards: server pre-render and first WS adopt agree).
-	if pd.Next.Pos == 0 && len(pd.Cues) > 0 {
+	// Only before the day starts: on the last session nothing is next (I5).
+	if pd.Next.Pos == 0 && len(pd.Cues) > 0 && snap.Runtime.ActivePos == 0 {
 		first := pd.Cues[0]
 		pd.Next = views.NextCue{Pos: first.Pos, Label: first.Label, DurFmt: first.DurFmt, StartFmt: first.StartFmt}
 	}
@@ -377,12 +378,14 @@ func (d *Deps) boardData(c *gin.Context, snap timerpi.Snapshot, showID int64, bo
 		rotation = r // editor preview / manual override
 	}
 	return &views.BoardPage{
-		Rotation:       rotation,
-		ScreenKind:     kind,
-		PageData:       pd,
-		Board:          views.BoardVM{ID: board.ID, Name: board.Name, Rows: layout.Rows, Orientation: layout.Orientation, Widgets: widgets},
-		Boards:         infos,
-		Join:           boardJoinOf(c, snap),
+		Rotation:   rotation,
+		ScreenKind: kind,
+		PageData:   pd,
+		Board:      views.BoardVM{ID: board.ID, Name: board.Name, Rows: layout.Rows, Orientation: layout.Orientation, Widgets: widgets},
+		Boards:     infos,
+		Join:       boardJoinOf(c, snap),
+		// Printed beside the join QR (ftl .qr-card: always print the URL).
+		JoinURL:        strings.TrimPrefix(strings.TrimPrefix(d.audienceJoinURL(c, snap.Show.Code), "https://"), "http://"),
 		BoardID:        board.ID,
 		NowFmt:         views.FmtTimeOfDay(now),
 		CountdownFmt:   countdownFmt,

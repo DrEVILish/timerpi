@@ -73,11 +73,14 @@ export async function run(t) {
   const kids = (await (await api('GET', `/api/shows/${room}/polls`)).json()).items.find((i) => i.id === qa.id).children;
   const third = kids.find((c) => c.question === 'Third?');
   await api('POST', `/api/shows/${room}/polls/${qa.id}/spotlight`, { entry: third.id });
-  await tv.waitForSelector('.b-qa-item.is-spot', { timeout: 8000 }).catch(() => {});
+  // The spotlight is its own full-size card above the wall (PRODUCT A7).
+  await tv.waitForSelector('.b-qa-spot:not([hidden])', { timeout: 8000 }).catch(() => {});
   await tv.waitForTimeout(1200);
-  const top = await tv.$$eval('.b-qa-item', (ls) => ls.map((l) => ({ text: l.querySelector('.b-qa-text').textContent, y: l.getBoundingClientRect().top }))
-    .sort((a, b) => a.y - b.y)[0]?.text);
-  t.check(`spotlight card is on top (${top})`, top === 'Third?');
+  const top = await tv.evaluate(() => {
+    const spot = document.querySelector('.b-qa-spot'), wall = document.querySelector('.b-qa-wall');
+    return { text: spot?.querySelector('.b-qa-spot-text').textContent, above: spot && spot.getBoundingClientRect().bottom <= wall.getBoundingClientRect().top + 1, onWall: document.querySelectorAll('.b-qa-item').length };
+  });
+  t.check(`spotlight card is on top, off the wall (${JSON.stringify(top)})`, top.text === 'Third?' && top.above && top.onWall === 2);
 
   const first = kids.find((c) => c.question === 'First?');
   await api('POST', `/api/shows/${room}/polls/${first.id}/moderate`, { status: 'answered' });
@@ -87,8 +90,9 @@ export async function run(t) {
   const answeredY = await yOf('First?');
   const belowY = await yOf('Second?');
   const aboveFirst = belowY > answeredY;
-  await tv.waitForFunction(() => document.querySelectorAll('.b-qa-item').length === 2, null, { timeout: 8000 }).catch(() => {});
-  t.check('then it leaves the wall', (await tv.$$('.b-qa-item')).length === 2);
+  t.check('it says so in text, not colour alone', /Answered/.test(await tv.$eval('.b-qa-item.is-answered', (l) => l.textContent).catch(() => '')));
+  await tv.waitForFunction(() => document.querySelectorAll('.b-qa-item').length === 1, null, { timeout: 8000 }).catch(() => {});
+  t.check('then it leaves the wall', (await tv.$$('.b-qa-item')).length === 1);
   await tv.waitForTimeout(900);
   t.check('the card below moves up into its place', !aboveFirst || (await yOf('Second?')) === answeredY);
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);

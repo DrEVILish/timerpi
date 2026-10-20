@@ -13,7 +13,7 @@
 */ -}}
 {{define "display_board"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}} data-layout-orient="{{.Board.Orientation}}">
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}} data-layout-orient="{{.Board.Orientation}}"{{if not .Editable}} data-surface="signage" data-motion="always"{{end}}>
 <head>
 {{if not .Editable}}<script>
 /* A phone or tablet shows the layout version for the way it is held
@@ -27,8 +27,19 @@
   var mobile = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
     (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
   var handheld = mobile && (navigator.maxTouchPoints || 0) > 0 && ('orientation' in screen || 'onorientationchange' in window);
-  if (!handheld || !window.matchMedia) return;
+  if (!window.matchMedia) return;
   var mq = matchMedia('(orientation: portrait)');
+  if (!handheld) {
+    /* A TV with no Mounted rotation takes the version that matches its own
+       shape: a panel the OS already shows portrait gets the portrait
+       version, not a squeezed landscape one (review #6). Mounted 90/270
+       (data-rotate) and an explicit ?orient= keep the last word. */
+    var q = new URL(location.href);
+    if (h.dataset.rotate || q.searchParams.has('orient')) return;
+    var shape = mq.matches ? 'portrait' : 'landscape';
+    if (shape !== h.dataset.layoutOrient) { q.searchParams.set('orient', shape); location.replace(q.toString()); }
+    return;
+  }
   function follow() {
     var want = mq.matches ? 'portrait' : 'landscape';
     document.cookie = 'tp_orient=' + want + '; path=/; max-age=31536000; SameSite=Lax';
@@ -92,9 +103,9 @@
 <div class="toast-region" popover="manual" id="toast-region"></div>
 {{template "frag-waiting"}}
 <!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
-<div class="tp-blanked" aria-hidden="true">
-  <img src="/img/timerpi.svg" alt="">
-  <p>STANDBY</p>
+<div class="splash is-standby tp-blanked" aria-hidden="true">
+  <div class="splash-art"></div>
+  <p class="splash-title">STANDBY</p>
 </div>
 <script src="{{asset "/src/htmax.min.js"}}" defer></script>
 <script type="module" src="{{asset "/src/timerpi.js"}}"></script>

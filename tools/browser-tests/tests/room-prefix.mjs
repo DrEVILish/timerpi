@@ -8,8 +8,8 @@ export async function run(t) {
   const tv = await (await t.browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   await tv.goto(`${t.base}/d/${room}`);
   await tv.waitForTimeout(1500); // joined; the live snapshot has been applied
-  const status = await tv.textContent('#d-status');
-  t.check(`stage status line: "${status}"`, status.includes('Room: Stark'));
+  const status = await tv.textContent('#d-label'); // the stage has no status line (operator chrome)
+  t.check(`stage room label: "${status}"`, status.includes('Room: Stark'));
   await tv.goto(`${t.base}/d/${room}?view=board`);
   await tv.waitForTimeout(1500);
   const titles = await tv.$$eval('.b-js-showtitle, .b-topbar-show', (els) => els.map((e) => e.textContent.trim()).filter(Boolean));

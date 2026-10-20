@@ -121,7 +121,7 @@ class ClockUI {
       stage: $('#d-stage'), dClock: $('#d-clock'), dLabel: $('#d-label'),
       dSpeaker: $('#d-speaker'), dNextLabel: $('#d-next-label'),
       dNextDur: $('#d-next-dur'), dMessage: $('#d-message'),
-      dStatus: $('#d-status'), dChip: $('#d-chip'),
+      dChip: $('#d-chip'), dNext: $('#d-next'),
     };
     this._slowKey = ''; // fresh nodes: the next frame repaints everything
     // Display digits announce politely. The room page's ftl .countdown is
@@ -189,7 +189,8 @@ class ClockUI {
       }
     } else {
       setText(this.el.dLabel, cue ? cue.label : roomTitle(snap));
-      setText(this.el.dSpeaker, cue && cue.speaker ? `🎙 ${cue.speaker}` : '');
+      setText(this.el.dSpeaker, cue && cue.speaker ? cue.speaker : '');
+      if (this.el.dNext) this.el.dNext.hidden = !next; // no empty "NEXT" label (I18)
       setText(this.el.dNextLabel, next ? next.label : '');
       setText(this.el.dNextDur, next ? fmtDuration(next.durationMS) : '');
     }
@@ -559,18 +560,8 @@ class ClockUI {
           delete chip.dataset.state;
         }
       }
-      const st = this.el.dStatus;
-      if (st) {
-        // State word first so HELD/overtime read at TV distance, then the
-        // show identity, link state, next cue.
-        const bits = [
-          view.state.toUpperCase(),
-          roomTitle(snap),
-          statusLabel(mesh),
-          this.el.dNextLabel && snap.runtime.nextPos ? `Next: ${this.el.dNextLabel.textContent}` : '',
-        ];
-        setText(st, bits.filter(Boolean).join('  ·  '));
-      }
+      // No status line: link state and peer counts are operator chrome,
+      // and displays carry none (review: "Server link up" on screens).
     }
   }
 

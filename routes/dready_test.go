@@ -18,7 +18,7 @@ func TestDisplayReadyPage(t *testing.T) {
 	}
 	s := string(body)
 	for _, sub := range []string{
-		`READY FOR SHOW OPERATOR`, `id="tp-waiting"`,
+		`READY TO SET UP`, `id="tp-waiting"`,
 		`data-waiting="1"`, `runWaiting`, `waiting.js`,
 	} {
 		if !strings.Contains(s, sub) {
@@ -31,7 +31,7 @@ func TestDisplayReadyPage(t *testing.T) {
 	// GET /d (no slash) lands on the same surface (gin trailing-slash 301,
 	// client follows).
 	code, body = ts.call("GET", "/d", nil, "")
-	if code != 200 || !strings.Contains(string(body), "READY FOR SHOW OPERATOR") {
+	if code != 200 || !strings.Contains(string(body), "READY TO SET UP") {
 		t.Fatalf("/d redirect: %d %.200s", code, body)
 	}
 }

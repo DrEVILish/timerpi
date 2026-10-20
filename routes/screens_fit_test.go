@@ -59,6 +59,25 @@ func TestScreenLayoutVersions(t *testing.T) {
 	check("a retired -portrait key lands on its layout", "presenter", "stage", 90)
 }
 
+// Review ux-audience #2: a screen given only a type gets that type's first
+// built-in, so an Audience screen shows what is pushed to it (it used to
+// stay on the plain timer with an operator status line).
+func TestTypeWithoutLayoutGetsDefault(t *testing.T) {
+	ts := newAPITest(t)
+	if err := boards.Migrate(ts.db.DB); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"audience": "main", "presenter": "dsm", "walkin": "event"} {
+		body := `{"name":"S-` + name + `","kind":"` + name + `"}`
+		if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/screens/config", []byte(body), "application/json"); code != 200 {
+			t.Fatalf("%s: %d %s", name, code, b)
+		}
+		if s, err := ts.db.GetScreenByName(ts.showID, "S-"+name); err != nil || s.Template != want || s.BoardID != 0 {
+			t.Errorf("%s screen: template=%q board=%d, want %q", name, s.Template, s.BoardID, want)
+		}
+	}
+}
+
 func TestFitTemplate(t *testing.T) {
 	for _, c := range []struct{ key, kind, want string }{
 		{"room", "walkin", "room"},

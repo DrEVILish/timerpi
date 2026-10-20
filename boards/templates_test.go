@@ -135,3 +135,20 @@ func TestLayoutVersions(t *testing.T) {
 		t.Error("an empty version should be dropped")
 	}
 }
+
+// Review ui-displays #2: stage messages are for the speaker, so no built-in
+// audience or walk-in layout carries a messages tile (either version).
+func TestNoStageMessagesOnAudienceFacingTemplates(t *testing.T) {
+	for _, tpl := range boards.Templates() {
+		if tpl.Kind == "presenter" {
+			continue
+		}
+		for _, l := range []boards.Layout{tpl.Layout.For(false), tpl.Layout.For(true)} {
+			for _, w := range l.Widgets {
+				if w.Type == "messages" {
+					t.Errorf("%s (%s) has a messages tile", tpl.Key, l.Orientation)
+				}
+			}
+		}
+	}
+}

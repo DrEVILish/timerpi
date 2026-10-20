@@ -13,12 +13,13 @@ export async function run(t) {
   const tvCtx = await t.browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const tv = await tvCtx.newPage();
   await tv.goto(await linkOf('DSM'));
-  await tv.waitForSelector('.b-tile-empty', { timeout: 8000 }).catch(() => {});
+  await tv.waitForSelector('.b-w-poll[hidden]', { timeout: 8000 }).catch(() => {});
   await tv.waitForTimeout(800);
-  const blank = await tv.$$eval('.b-widget', (ws) => ws.filter((w) => !w.querySelector('.b-w-body').innerText.trim()).map((w) => w.dataset.widget));
+  const blank = await tv.$$eval('.b-widget:not([hidden])', (ws) => ws.filter((w) => !w.querySelector('.b-w-body').innerText.trim()).map((w) => w.dataset.widget));
   t.check(`idle presenter tiles all say something (blank: ${blank.join(', ') || 'none'})`, blank.length === 0);
-  const aud = await tv.textContent('.b-js-poll .b-tile-empty').catch(() => '');
-  t.check(`audience tile empty state ("${aud}")`, /appear here/.test(aud));
+  // Nothing on air for the presenter: no placeholder; the countdown takes the room (review #11).
+  const room2 = await tv.evaluate(() => ({ item: document.querySelector('.b-w-poll').hidden, cd: getComputedStyle(document.querySelector('.b-w-countdown')).gridColumnEnd }));
+  t.check(`empty presenter item gives its room to the countdown (${JSON.stringify(room2)})`, room2.item && /13|span 12/.test(room2.cd));
 
   // Schedule tile: 14 cues, start the 4th — the list starts there, rows fit whole.
   const cues = Array.from({ length: 14 }, (_, i) => ({ label: `Session ${i + 1}`, durationMS: 1_800_000 }));

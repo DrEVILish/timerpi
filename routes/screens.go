@@ -382,8 +382,10 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 			return
 		}
 		// A built-in layout follows the type: a walk-in layout never stays
-		// on a presenter screen. (Mounting only picks its version.)
-		if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.BoardID == 0 && cur.Template != "" {
+		// on a presenter screen, and a screen with no layout gets its type's
+		// first one, so an Audience screen shows what is pushed to it.
+		// (Mounting only picks its version.)
+		if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.BoardID == 0 && (cur.Template != "" || kind != "") {
 			if fit := boards.FitTemplate(cur.Template, kind); fit != cur.Template {
 				_ = d.Store.SetScreenTemplate(id, name, fit)
 			}

@@ -621,6 +621,7 @@ type BoardPage struct {
 	Board   BoardVM
 	Boards  []BoardInfo
 	Join    BoardJoinVM
+	JoinURL string // the room's phone page, host/a/CODE, printed beside the QR
 	BoardID int64
 	// Server-rendered initials (readable with zero JS; board.js repaints):
 	NowFmt         string      // wall clock HH:MM:SS at render

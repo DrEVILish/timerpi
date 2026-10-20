@@ -54,9 +54,13 @@ export async function run(t) {
   await phone.waitForSelector('.tp-aud-spot');
   t.check('phone wall is an ftl .list of .list-item', await phone.$eval('.tp-aud-wall', (l) => l.classList.contains('list') && [...l.children].every((li) => li.classList.contains('list-item'))));
   t.check('phone spotlight is an ftl .alert', await phone.$eval('.tp-aud-spot', (s) => s.classList.contains('alert')));
-  await tv.waitForSelector('.b-qa-item.is-spot', { timeout: 8000 }).catch(() => {});
-  t.check('screen spotlight is a card of the wall', await tv.$eval('.b-qa-item.is-spot', (s) => s.classList.contains('list-item')).catch(() => false));
-  t.check('screen wall is an ftl .list', await tv.$eval('.b-qa-wall', (l) => l.classList.contains('list')).catch(() => false));
+  // Screen: the spotlight is its own full-size ftl .ranked-item.is-spotlight
+  // ("Now answering", PRODUCT A7); the wall is an ftl .ranked-list.
+  await tv.waitForSelector('.b-qa-spot:not([hidden])', { timeout: 8000 }).catch(() => {});
+  await tv.waitForTimeout(1300); // the old card fades off the wall
+  const spot = await tv.$eval('.b-qa-spot', (s) => ({ cls: s.classList.contains('ranked-item') && s.classList.contains('is-spotlight'), text: s.textContent })).catch(() => ({}));
+  t.check(`screen spotlight is a "Now answering" card (${spot.text})`, spot.cls && /Now answering/i.test(spot.text) && spot.text.includes('First?'));
+  t.check('screen wall is an ftl .ranked-list without the spotlight', await tv.$eval('.b-qa-wall', (l) => l.classList.contains('ranked-list') && ![...l.children].some((li) => li.textContent.includes('First?'))).catch(() => false));
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
   await ctx.close();
 }

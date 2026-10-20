@@ -6,7 +6,7 @@
 */ -}}
 {{define "display"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}}>
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}"{{if .Rotation}} data-rotate="{{.Rotation}}"{{end}} data-surface="signage" data-motion="always">
 <head>
 {{template "head" .}}
 <style>
@@ -18,9 +18,9 @@
 
 {{template "frag-waiting"}}
 <!-- E3: operator blackout — visibility is purely body[data-blanked]. -->
-<div class="tp-blanked" aria-hidden="true">
-  <img src="/img/timerpi.svg" alt="">
-  <p>STANDBY</p>
+<div class="splash is-standby tp-blanked" aria-hidden="true">
+  <div class="splash-art"></div>
+  <p class="splash-title">STANDBY</p>
 </div>
 
 {{template "frag-offline"}}

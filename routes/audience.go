@@ -229,6 +229,20 @@ func (d *Deps) apiAudienceVote(c *gin.Context) {
 
 // GET /api/audience/:code/qr — PNG of the audience join URL for this
 // server (scheme+host honored, so proxied domains work).
+// audienceJoinURL is a room's phone page as the join QR encodes it (and
+// as screens print it beside the code).
+func (d *Deps) audienceJoinURL(c *gin.Context, code string) string {
+	scheme := "https"
+	if c.Request.TLS == nil && !strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "http"
+	}
+	base := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	if cloud := config.CloudURL(); cloud != "" && !d.isCloud() {
+		base = cloud // phones reach TimerPi only through the cloud (VENUE-CLOUD §1)
+	}
+	return base + "/a/" + code
+}
+
 func (d *Deps) apiAudienceQR(c *gin.Context) {
 	id, ok := d.resolveAudienceCode(c)
 	if !ok {
@@ -239,16 +253,7 @@ func (d *Deps) apiAudienceQR(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false})
 		return
 	}
-	scheme := "https"
-	if c.Request.TLS == nil && !strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
-		scheme = "http"
-	}
-	base := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
-	if cloud := config.CloudURL(); cloud != "" && !d.isCloud() {
-		base = cloud // phones reach TimerPi only through the cloud (VENUE-CLOUD §1)
-	}
-	url := base + "/a/" + sh.Code
-	png, err := qrcode.Encode(url, qrcode.Medium, 320)
+	png, err := qrcode.Encode(d.audienceJoinURL(c, sh.Code), qrcode.Medium, 320)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false})
 		return

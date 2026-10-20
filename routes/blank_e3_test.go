@@ -30,7 +30,7 @@ func TestBlankRoundTripE3(t *testing.T) {
 		if code != http.StatusOK {
 			t.Fatalf("%s: %d", p, code)
 		}
-		for _, sub := range []string{`class="tp-blanked"`, `data-blanked="true"`, `STANDBY`} {
+		for _, sub := range []string{`class="splash is-standby tp-blanked"`, `data-blanked="true"`, `STANDBY`} {
 			if !strings.Contains(string(body), sub) {
 				t.Errorf("%s missing %q while blanked", p, sub)
 			}
@@ -51,7 +51,7 @@ func TestBlankRoundTripE3(t *testing.T) {
 		t.Fatalf("snapshot show.blanked = %v, want false", show["blanked"])
 	}
 	code, body := ts.call("GET", "/d/"+ts.showCode, nil, "")
-	if code != http.StatusOK || !strings.Contains(string(body), `data-blanked="false"`) || !strings.Contains(string(body), `class="tp-blanked"`) {
+	if code != http.StatusOK || !strings.Contains(string(body), `data-blanked="false"`) || !strings.Contains(string(body), `class="splash is-standby tp-blanked"`) {
 		t.Errorf("unblanked display: %d (overlay must ship, flag false)", code)
 	}
 

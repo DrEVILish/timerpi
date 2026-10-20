@@ -333,7 +333,7 @@ func (h *Hub) register(s *session) bool {
 		joinSnap = snap.Public()
 		others = nil
 	} else if !seesPresenter {
-		joinSnap.Presenter = nil
+		joinSnap = snap.AudienceFacing()
 	}
 	s.sendFrame("t", "joined",
 		"you", map[string]any{"peerId": s.id, "role": s.role, "joinedAt": s.joinedAt, "trusted": s.trusted},

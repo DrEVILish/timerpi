@@ -486,14 +486,13 @@ func (h *Hub) broadcast(showID int64, snap timerpi.Snapshot) {
 
 // fanoutState sends each session the snapshot it may see: operators and
 // presenter screens the full one, audience/walk-in screens the same minus
-// the Presenter-only item, untrusted screens the public one (RW9).
+// the Presenter-only item and the stage messages, untrusted screens the
+// public one (RW9).
 func (h *Hub) fanoutState(showID int64, snap timerpi.Snapshot) {
 	full := marshalFrame("t", "state", "snapshot", snap)
 	noPres := full
-	if snap.Presenter != nil {
-		np := snap
-		np.Presenter = nil
-		noPres = marshalFrame("t", "state", "snapshot", np)
+	if snap.Presenter != nil || len(snap.Messages) > 0 {
+		noPres = marshalFrame("t", "state", "snapshot", snap.AudienceFacing())
 	}
 	h.fanoutTiered(showID, full, noPres, marshalFrame("t", "state", "snapshot", snap.Public()))
 }

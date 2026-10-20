@@ -11,19 +11,19 @@
 */ -}}
 {{define "dready"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}">
+<html lang="en" data-theme="{{if .DefaultTheme}}{{.DefaultTheme}}{{else}}blue-future{{end}}" data-surface="signage" data-motion="always">
 <head>
 {{template "head" .}}
 </head>
 <body class="tp-display" data-page="dready" data-waiting="1">
 <!-- PLAN §11.3: the READY surface IS the waiting overlay (visibility is
      purely body[data-waiting], same pattern as the blackout). -->
-<div class="splash tp-waiting" id="tp-waiting" role="status">
+<div class="splash is-stage tp-waiting" id="tp-waiting" role="status">
   <div class="splash-art" aria-hidden="true"></div>
-  <p class="splash-title">READY FOR SHOW OPERATOR</p>
-  <p class="tp-ready-id">This screen is <strong id="tp-ready-name" class="tp-ready-name">…</strong></p>
-  <p class="splash-message">This screen is unassigned. Any operator on this
-    network can capture it into a show from the Screens page.</p>
+  <p class="splash-title">READY TO SET UP</p>
+  <p class="tp-ready-id">This screen is <strong id="tp-ready-name" class="badge badge-solid tp-ready-name">…</strong></p>
+  <p class="splash-message">Open your room's Screens page and pick this
+    screen to show it in your room.</p>
 </div>
 <!-- Unversioned on purpose: the appliance serves everything no-cache, and
      the reference must survive rev bumps without touching this template. -->

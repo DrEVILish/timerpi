@@ -19,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"timerpi/boards"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -284,6 +285,9 @@ func (d *Deps) captureWaiting(c *gin.Context, id int64, body captureBody) (strin
 	if err := d.Store.SetScreenLook(sid, name, body.Kind, body.Rotation); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return "", "", false
+	}
+	if tplKey == "" && boardID == 0 && body.Kind != "" {
+		tplKey = boards.FitTemplate("", body.Kind) // a typed screen never lands on the plain timer
 	}
 	if tplKey != "" {
 		if err := d.Store.SetScreenTemplate(sid, name, tplKey); err != nil {

@@ -171,9 +171,20 @@ const WALL_FADE_MS = 1000; // fade out; the gap closes at half way
 
 function updateWall(st, p, w) {
   if (!st.list) {
-    st.list = mk('ol', 'list b-qa-wall');
+    // ftl .ranked-list.is-positioned: we set each card's --slot-y and ftl
+    // slides it there. The spotlight is its own big card above the wall,
+    // "Now answering" (PRODUCT A7: shown full size; review #8).
+    st.spot = mk('div', 'ranked-item is-spotlight b-qa-spot');
+    st.spot.setAttribute('aria-current', 'true');
+    st.spotText = mk('span', 'b-qa-spot-text');
+    st.spotVotes = mk('span', 'ranked-votes');
+    const head = mk('span', 'b-eyebrow', 'Now answering');
+    st.spot.append(head, st.spotText, st.spotVotes);
+    st.spot.hidden = true;
+    st.list = mk('ol', 'ranked-list is-positioned b-qa-wall');
+    st.list.setAttribute('aria-label', p.kind === 'qa' ? 'Questions by votes' : 'Ideas by votes');
     st.empty = mk('div', 'b-poll-meta b-aud-empty');
-    st.body.append(st.empty, st.list);
+    st.body.append(st.spot, st.empty, st.list);
     st.items = new Map(); // entry id → { el, votes, text, leaving, holding }
     st.slots = [];        // ids in screen order (incl. answered ones fading)
     st.ro = new ResizeObserver(() => layoutWall(st));
@@ -181,11 +192,26 @@ function updateWall(st, p, w) {
   }
   const kids = p.children || [];
   const spotID = p.spotlight?.id || 0;
-  const limit = Number(w?.opts?.count) || 8;
-  // Spotlight first, then the open entries in server order (most upvoted
-  // first). Answered entries never come in; one that was on screen leaves.
+  // A speaker reads from metres away: fewer, bigger questions (review #9).
+  const limit = Number(w?.opts?.count) || (w?.opts?.target === 'presenter' ? 4 : 8);
+  // The spotlight on its own card; the wall lists the open entries in
+  // server order (most upvoted first). Answered entries never come in;
+  // one that was on screen says so, then leaves.
+  const spot = p.spotlight || null;
+  if ((st.spotID || 0) !== (spot?.id || 0)) {
+    st.spotID = spot?.id || 0;
+    st.spot.classList.remove('is-new');
+    void st.spot.offsetWidth;
+    if (spot) st.spot.classList.add('is-new'); // ftl ranked-rise: the new spotlight rises in
+  }
+  st.spot.hidden = !spot;
+  st.body.classList.toggle('has-spot', !!spot);
+  if (spot) {
+    setText(st.spotText, spot.question);
+    setText(st.spotVotes, `▲ ${spot.upvotes || 0}`);
+  }
   const open = kids.filter((c) => c.state === 'open' && c.id !== spotID);
-  const want = (p.spotlight ? [p.spotlight, ...open] : open).slice(0, limit);
+  const want = open.slice(0, limit);
   const wantIDs = new Set(want.map((c) => c.id));
   const answered = new Set(kids.filter((c) => c.state === 'answered').map((c) => c.id));
 
@@ -194,16 +220,16 @@ function updateWall(st, p, w) {
     if (it?.leaving) { // came back (un-answered): stop leaving
       it.leaving = false;
       it.el.classList.remove('is-answered', 'is-leaving');
+      it.tag?.remove();
     }
     if (!it) {
-      it = { el: mk('li', 'list-item b-qa-item'), votes: mk('span', 'b-qa-votes mono'), text: mk('span', 'b-qa-text'), fresh: true };
-      it.el.append(it.votes, it.text);
+      it = { el: mk('li', 'ranked-item b-qa-item'), votes: mk('span', 'ranked-votes'), text: mk('span', 'b-qa-text'), fresh: true };
+      it.el.append(it.text, it.votes);
       st.list.append(it.el);
       st.items.set(c.id, it);
     }
     setText(it.votes, `▲ ${c.upvotes || 0}`);
     setText(it.text, c.question);
-    it.el.classList.toggle('is-spot', c.id === spotID);
   }
   for (const [id, it] of st.items) {
     if (wantIDs.has(id) || it.leaving) continue;
@@ -212,6 +238,9 @@ function updateWall(st, p, w) {
       // Green, then fade; the others close up once it is half gone.
       it.holding = true;
       it.el.classList.add('is-answered');
+      // Not colour alone: the card says so (ftl .is-answered).
+      it.tag = mk('span', 'badge badge-solid badge-success', 'Answered');
+      it.text.after(it.tag);
       later(st, WALL_HOLD_MS, () => {
         it.el.classList.add('is-leaving');
         later(st, WALL_FADE_MS / 2, () => { it.holding = false; layoutWall(st); });
@@ -232,14 +261,14 @@ function updateWall(st, p, w) {
   });
   st.slots = order;
   setText(st.empty, want.length ? '' : (p.kind === 'qa' ? 'No questions yet' : 'No ideas yet'));
-  st.empty.hidden = want.length > 0 || order.length > 0;
+  st.empty.hidden = want.length > 0 || order.length > 0 || !!spot;
   layoutWall(st);
 }
 
 function layoutWall(st) {
   if (!st.list) return;
   const H = st.list.clientHeight;
-  const gap = parseFloat(getComputedStyle(st.list).rowGap) || 10;
+  const gap = 0.6 * parseFloat(getComputedStyle(st.list).fontSize) || 10; // ftl --ranked-gap
   // Off-screen start for new cards: the bottom edge of the screen.
   const fromBottom = Math.max(H, window.innerHeight - st.list.getBoundingClientRect().top);
   let y = 0;
@@ -253,12 +282,12 @@ function layoutWall(st) {
     if (it.fresh) {
       it.fresh = false;
       it.el.style.transition = 'none';
-      it.el.style.transform = `translateY(${fromBottom}px)`;
+      it.el.style.setProperty('--slot-y', `${fromBottom}px`);
       it.el.style.opacity = '0';
       void it.el.offsetWidth;
       it.el.style.transition = '';
     }
-    it.el.style.transform = `translateY(${y}px)`;
+    it.el.style.setProperty('--slot-y', `${y}px`); // ftl moves the card (translate)
     // Cards that don't fit fade instead of being cut through.
     it.el.style.opacity = it.leaving ? '' : (y + h <= H + 1 ? '1' : '0');
     y += h + gap;
@@ -281,7 +310,7 @@ const ANGLES = [0, 0, 0, 0, 0, -90, 90, -90, 90, -30, 30, -15, 15];
 const PULL = 0.012;   // spring towards the centre, per frame
 const DAMP = 0.82;    // velocity kept per frame
 const GROW = 0.08;    // share of the size gap closed per frame
-const FILL = 0.42;    // share of the tile the words cover
+const FILL = 0.5;     // share of the tile the words cover
 
 function hash(s) {
   let h = 2166136261;
@@ -291,7 +320,8 @@ function hash(s) {
 
 function updateCloud(st, p) {
   if (!st.area) {
-    st.area = mk('div', 'b-cloud');
+    st.area = mk('ul', 'word-cloud b-cloud');
+    st.area.setAttribute('aria-label', 'Audience words');
     st.empty = mk('div', 'b-poll-meta b-aud-empty');
     st.body.append(st.area, st.empty);
     st.words = new Map(); // lower-case word → word state
@@ -310,8 +340,8 @@ function updateCloud(st, p) {
     if (it?.gone) { it.gone = false; it.el.style.opacity = '1'; }
     if (!it) {
       const h = hash(key);
-      it = { el: mk('span', 'b-cloud-word', text), n: 1, angle: ANGLES[h % ANGLES.length], s: 0, fresh: true, vx: 0, vy: 0, dir: (h % 628) / 100 };
-      it.el.dataset.tone = String((h >>> 8) % 3);
+      it = { el: mk('li', 'word-cloud-word b-cloud-word', text), n: 1, angle: ANGLES[h % ANGLES.length], s: 0, fresh: true, vx: 0, vy: 0, dir: (h % 628) / 100 };
+      it.el.dataset.tone = String(((h >>> 8) % 6) + 1); // ftl's six chart tones; .is-top glows (review #14)
       st.area.append(it.el);
       st.words.set(key, it);
     }
@@ -346,7 +376,7 @@ function sizeCloud(st) {
     const w = it.el.offsetWidth, h = it.el.offsetHeight;
     const r = (it.angle * Math.PI) / 180, c = Math.abs(Math.cos(r)), sn = Math.abs(Math.sin(r));
     it.w0 = w * c + h * sn; it.h0 = w * sn + h * c;
-    it.rel = 0.34 + 0.66 * Math.sqrt(it.n / max);
+    it.rel = 0.3 + 0.7 * (it.n / max); // linear, like ftl --weight: the most sent word stands out
     area += it.w0 * it.h0 * it.rel * it.rel;
   }
   // No word may be wider or taller than the tile, measured on its own

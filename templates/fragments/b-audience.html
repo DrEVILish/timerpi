@@ -6,7 +6,7 @@
 */ -}}
 
 {{define "frag-b-poll"}}
-<section class="b-widget b-w-poll" id="b-w-{{.W.ID}}" data-widget="poll" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-poll" id="b-w-{{.W.ID}}" data-widget="poll" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Audience item</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Audience item settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove audience item"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-poll" aria-live="polite"></div>
@@ -16,7 +16,7 @@
 {{end}}
 
 {{define "frag-b-qa"}}
-<section class="b-widget b-w-qa" id="b-w-{{.W.ID}}" data-widget="qa" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-qa" id="b-w-{{.W.ID}}" data-widget="qa" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Q&amp;A wall</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Q&A settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove Q&A"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-qa" aria-live="polite"></div>
@@ -26,7 +26,7 @@
 {{end}}
 
 {{define "frag-b-wordcloud"}}
-<section class="b-widget b-w-wordcloud" id="b-w-{{.W.ID}}" data-widget="wordcloud" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-wordcloud" id="b-w-{{.W.ID}}" data-widget="wordcloud" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Word cloud</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Word cloud settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove word cloud"></button></div>{{end}}
   <div class="b-w-body">
     <div class="b-js-cloud" aria-live="polite"></div>
@@ -36,29 +36,32 @@
 {{end}}
 
 {{define "frag-b-map"}}
-<section class="b-widget b-w-map" id="b-w-{{.W.ID}}" data-widget="map" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-map" id="b-w-{{.W.ID}}" data-widget="map" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Map</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Map settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove map"></button></div>{{end}}
   <div class="b-w-body">
     <img class="b-js-map" alt="Venue map" hidden>
-    <div class="b-map-empty b-tile-empty">{{if $.P.Editable}}No map yet — upload one in Event settings.{{else}}Venue map coming soon{{end}}</div>
+    {{if $.P.Editable}}<div class="b-map-empty b-tile-empty">No map yet — upload one in Event settings.</div>{{end}}
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-joinqr"}}
-<section class="b-widget b-w-joinqr" id="b-w-{{.W.ID}}" data-widget="joinqr" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-joinqr" id="b-w-{{.W.ID}}" data-widget="joinqr" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Join QR</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Join QR settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove join QR"></button></div>{{end}}
   <div class="b-w-body">
-    <img class="b-js-joinqr" alt="Scan to join this room" src="/api/audience/{{.P.Show.Code}}/qr">
-    <div class="b-js-joinlabel b-join-label">{{if .W.Opts.label}}{{.W.Opts.label}}{{else}}Scan to take part{{end}}</div>
+    <div class="qr-card b-qr">
+      <img class="qr-card-code b-js-joinqr" alt="QR code: join at {{.P.JoinURL}}" src="/api/audience/{{.P.Show.Code}}/qr">
+      <span class="qr-card-label b-js-joinlabel">{{if .W.Opts.label}}{{.W.Opts.label}}{{else}}Scan to take part{{end}}</span>
+      <span class="qr-card-url">{{.P.JoinURL}}</span>
+    </div>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>
 {{end}}
 
 {{define "frag-b-rooms"}}
-<section class="b-widget b-w-rooms" id="b-w-{{.W.ID}}" data-widget="rooms" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-rooms" id="b-w-{{.W.ID}}" data-widget="rooms" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">All rooms now</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="All rooms settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove all rooms"></button></div>{{end}}
   <div class="b-w-body"><div class="b-js-rooms b-rooms" aria-live="polite"></div></div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
@@ -66,7 +69,7 @@
 {{end}}
 
 {{define "frag-b-eventschedule"}}
-<section class="b-widget b-w-eventschedule" id="b-w-{{.W.ID}}" data-widget="eventschedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
+<section class="panel b-widget b-w-eventschedule" id="b-w-{{.W.ID}}" data-widget="eventschedule" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Event schedule</span><button class="btn btn-icon btn-sm is-clear b-w-gear" type="button" data-gear aria-label="Event schedule settings">⚙</button><button class="btn-close b-w-del" type="button" data-del aria-label="Remove event schedule"></button></div>{{end}}
   <div class="b-w-body"><div class="b-js-evsched b-evsched"></div></div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}

@@ -378,14 +378,9 @@ html:has(body.tp-display) { font-size: max(1.5vh, 11px); } /* floor: a phone hel
 /* E3 blackout overlay: shown purely by the body flag (server-rendered AND
    JS-repainted on every snapshot adopt, so it survives oob swaps and works
    with zero JS past first paint). Pure black + dim logo + STANDBY. */
-.tp-blanked {
-  position: fixed; inset: 0; z-index: 60;
-  display: none; place-items: center; align-content: center; gap: 2vh;
-  background: #000; text-align: center;
-}
-body[data-blanked="true"] .tp-blanked { display: grid; }
-.tp-blanked img { width: clamp(4rem, 12vh, 8rem); height: auto; opacity: .55; }
-.tp-blanked p { color: #666; letter-spacing: .35em; font-size: clamp(.8rem, 2vh, 1.2rem); }
+/* The overlay is ftl's operator blackout, .splash.is-standby. */
+.tp-blanked { position: fixed; inset: 0; z-index: 60; display: none; }
+body[data-blanked="true"] .tp-blanked { display: flex; }
 
 /* E3: blackout toggle pressed = displays are dark right now. */
 #tp-blank[aria-pressed="true"] { outline: 3px solid var(--danger, #ff4444); outline-offset: 3px; }
@@ -514,15 +509,14 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
   min-height: 0;
 }
 
+/* Tiles are ftl .panel (blue-future's corner brackets); this only clips. */
 .b-widget {
   position: relative;
   min-width: 0; min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border, transparent);
-  border-radius: var(--radius, .5rem);
-  background: var(--surface, transparent);
   padding: .5rem .7rem;
 }
+.b-widget[hidden] { display: none; } /* board.js absorb: a neighbour takes its room */
 .b-widget .b-w-body {
   height: 100%;
   display: flex; flex-direction: column; justify-content: center;
@@ -530,12 +524,12 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 }
 
 /* Tile typography */
-.b-clock { font-size: clamp(2rem, 6vh, 4.5rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
-.b-w-countdown .b-clock { font-size: clamp(2.6rem, 9vh, 7rem); }
 .b-cd-label { color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-cue-label { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-speaker { font-size: clamp(1rem, 2.6vh, 1.8rem); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-eyebrow { font-size: .8rem; letter-spacing: .22em; font-weight: 800; color: var(--accent); }
+.b-speaker { font-size: clamp(1rem, 2.6vh, 1.8rem); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: .4em; }
+.b-speaker .icon { flex: none; width: .9em; height: .9em; color: var(--muted); }
+/* Labels recede (blue-future: dim, tracked, uppercase); cyan is for live data. */
+.b-eyebrow { font-size: .8rem; letter-spacing: .2em; font-weight: 700; text-transform: uppercase; color: var(--muted); }
 .b-next-label { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-next-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
 .b-wall { font-size: clamp(1.6rem, 4.5vh, 3.2rem); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -545,28 +539,22 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .b-notice { font-size: clamp(1rem, 2.6vh, 1.8rem); font-weight: 600; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .b-rate { font-size: clamp(1.2rem, 3.4vh, 2.4rem); font-weight: 800; font-variant-numeric: tabular-nums; }
 
-/* Countdown state semantics (state colors only — alert1/alert2/overtime). */
-.b-w-countdown[data-state="alert1"] .b-clock { color: var(--clock-alert1, var(--warning-text, var(--warning))); }
-.b-w-countdown[data-state="alert2"] .b-clock,
-.b-w-countdown[data-state="overtime"] .b-clock { color: var(--clock-alert2, var(--danger-text, var(--danger))); }
-.b-w-countdown[data-state="paused"] .b-clock,
-.b-w-countdown[data-state="held"] .b-clock { color: var(--warning-text, var(--warning, inherit)); }
-.b-w-countdown[data-state="idle"] .b-clock,
-.b-w-countdown[data-state="armed"] .b-clock { color: var(--muted, inherit); }
+/* The countdown is ftl .countdown[data-state] (states, pause glyph, "+",
+   pulse, glow in the state colour). Server-rendered engine states that ftl
+   has no name for read like their ftl twin until board.js maps them. */
+.b-clock.countdown { flex-wrap: nowrap; gap: .04em; align-items: baseline; }
+.b-clock.countdown:is([data-state="idle"], [data-state="blank"]) { --countdown-fg: var(--muted); --countdown-glow: none; }
 
 /* Progress bars: cue = ftl .progress, day = ftl .gauge-linear > .meter
    (one accent fill, not the level meter's traffic-light bands). */
 .b-bar-label { color: var(--muted); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-w-dayprogress { --meter-low: var(--accent); --meter-mid: var(--accent); --meter-high: var(--accent); }
 
-/* Message tiles (message semantics may carry warning/danger tones). */
-.b-msgs { display: flex; flex-direction: column; gap: .4rem; overflow: auto; min-height: 0; }
-.b-msg {
-  border: 2px solid var(--warning, currentColor);
-  border-radius: var(--radius, .5rem);
-  padding: .3em .7em; font-weight: 800; text-align: center;
-}
-.b-msg-empty { color: var(--muted); font-style: italic; }
+/* Message tiles: ftl .lower-third bands stacked in the tile (the band's
+   paint is ftl's: leading edge in the operator's colour, bold text). */
+.b-w-messages .lower-third { position: static; flex-direction: column; justify-content: center; gap: .5rem; padding: 0; height: 100%; min-height: 0; overflow: hidden; }
+.b-w-messages .lower-third > .b-msg { max-inline-size: 100%; }
+.b-msg-empty { color: var(--muted); }
 
 /* Schedules are ftl .schedule-list; rows on a TV are not tap targets. */
 .b-board .schedule-list { --tap-min: 0px; min-height: 0; overflow: hidden; }
@@ -829,13 +817,10 @@ body[data-editing] .b-join-card { display: none; }
 .b-cd-label { font-size: clamp(.9rem, 2vh, 1.7rem); }
 .b-next-meta { font-size: clamp(.8rem, 1.9vh, 1.5rem); }
 .b-bar-label { font-size: clamp(.8rem, 1.7vh, 1.4rem); }
-.b-msg { font-size: clamp(1rem, 2.4vh, 2rem); }
 .b-msg-empty { font-size: clamp(.85rem, 1.8vh, 1.4rem); }
 
 /* Countdown urgency on the wallboard widget: same pulse language as the
    stage readout (color/shape carry it; pulse is enhancement only). */
-.b-clock[data-state="overtime"],
-.b-clock[data-state="alert2"] { animation: tp-overtime-pulse 1s steps(2, jump-none) infinite; }
 
 /* --- U2-6: compositor feel + overlap nudge (edit mode) --------------------- */
 /* Compose chrome sits on a SURFACE: --muted is only certified there, and on
@@ -943,8 +928,7 @@ body[data-editing] .b-overlap {
    black stage with our logo as the art. The stage is black on every theme,
    so the ink is fixed light too (a light theme's --text would vanish). */
 .tp-display .splash {
-  --splash-bg: #000; --splash-fg: #f2f2f2; --splash-message-fg: #a0a0ac; --splash-title-fg: #a0a0ac;
-  --readout-fg: #f2f2f2;
+  /* Colours: ftl .splash.is-stage / .is-standby (a black stage, light ink). */
   --splash-art: url("/img/timerpi.svg") center / contain no-repeat;
   --splash-art-mask: none; --splash-art-radius: 0; --splash-art-motion: none;
   --splash-art-size: clamp(6rem, 18vh, 12rem); --splash-gap: 2.5vh;
@@ -1002,47 +986,45 @@ body[data-waiting] .tp-waiting { display: flex; }
 .b-aud-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 [data-aud-mode="bars"] > .b-aud-body { justify-content: center; }
 .b-poll-q { font-size: clamp(1rem, 2.2vw, 1.7rem); font-weight: 600; overflow-wrap: anywhere; }
-.b-poll-meta { color: var(--muted, #9a9aa8); font-size: .9em; margin: .2rem 0 .6rem; }
+.b-poll-meta { color: var(--muted); font-size: .9em; margin: .2rem 0 .6rem; }
 .b-poll-opt { margin-bottom: .55rem; }
 .b-poll-opt-head { display: flex; justify-content: space-between; gap: .8rem; font-size: .95em; }
-.b-poll-opt.is-correct .b-poll-opt-head { color: var(--success, #22C55E); font-weight: 600; }
+.b-poll-opt.is-correct .b-poll-opt-head { color: var(--success-text, var(--success)); font-weight: 600; }
 .b-poll-bar { margin-top: .25rem; --progress-height: .55rem; }
 .b-poll-opt.is-correct .b-poll-bar { --progress-fill: var(--success); }
 .b-poll-num { font-variant-numeric: tabular-nums; }
 .b-poll-reveal { animation: b-poll-reveal .6s ease-out both; }
 @keyframes b-poll-reveal { from { opacity: .35; transform: translateX(-.6rem); } to { opacity: 1; transform: none; } }
 
-/* Word cloud: absolute words around the centre, no badges. */
-.b-cloud { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-.b-cloud-word { position: absolute; left: 50%; top: 50%; white-space: nowrap; line-height: 1; font-weight: 700;
-  font-size: 100px; transform-origin: 0 0; opacity: 0; color: var(--text); will-change: transform;
+/* Word cloud: ftl .word-cloud / .word-cloud-word paint the words (six
+   tones, .is-top glows); audtiles.js places them by transform (physics),
+   so ftl's own placement is switched off here. */
+.b-cloud.word-cloud { flex: 1; min-height: 0; min-block-size: 0; }
+.b-cloud .word-cloud-word { inset: auto; left: 50%; top: 50%; translate: none; rotate: none;
+  font-size: 100px; transform-origin: 0 0; opacity: 0; will-change: transform;
   transition: opacity .9s ease-out, color .6s; }
-.b-cloud-word[data-tone="1"] { color: var(--accent); }
-.b-cloud-word[data-tone="2"] { color: var(--muted, var(--text)); }
-.b-cloud-word.is-top { color: var(--accent); }
 
-/* Q&A / ideas wall: cards stacked by transform; the spotlight is a
-   thicker border; an answered card goes green, then fades. */
-.b-qa-wall { position: relative; flex: 1; min-height: 0; margin: 0; padding: 0; list-style: none; overflow: hidden; row-gap: .6rem;
-  --list-border-width: 0; --list-bg: transparent; } /* the cards carry the borders */
-.b-qa-item { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: .8rem; align-items: baseline;
-  font-size: clamp(.95rem, 1.8vw, 1.4rem); padding: .5em .8em; border: 2px solid var(--border);
-  border-radius: var(--radius, .5rem); background: var(--surface-2, var(--surface));
-  transition: transform .8s cubic-bezier(.2, .8, .2, 1), opacity 1s ease, border-color .4s, background-color .4s; }
-.b-qa-item.is-spot { border-width: 6px; border-color: var(--accent); }
-.b-qa-item.is-answered { border-color: var(--success); background: color-mix(in srgb, var(--success) 18%, var(--surface-2, var(--surface))); }
-.b-qa-item.is-leaving { opacity: 0 !important; }
-.b-qa-votes { min-width: 3.2em; color: var(--muted, #9a9aa8); font-size: .85em; font-variant-numeric: tabular-nums; }
+/* Q&A / ideas wall: ftl .ranked-list.is-positioned (audtiles.js sets each
+   card's --slot-y; ftl slides it, paints answered/leaving). The spotlight
+   is its own big .ranked-item.is-spotlight card above the wall. */
+.b-qa-wall.ranked-list { flex: 1; min-height: 0; block-size: auto; }
 .b-qa-text { overflow-wrap: anywhere; }
+.b-qa-item .badge { flex: none; }
+.b-qa-spot { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .2em .8em; margin-bottom: .8rem; }
+.b-qa-spot[hidden] { display: none; }
+.b-qa-spot > .b-eyebrow { grid-column: 1 / -1; }
+.b-qa-spot-text { font-size: 2.2em; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.b-qa-spot .ranked-votes { font-size: 1.4em; }
 .b-aud-empty { margin: auto; text-align: center; }
 
 .b-w-map .b-w-body, .b-w-joinqr .b-w-body { display: flex; flex-direction: column;
   align-items: center; justify-content: center; height: 100%; }
 .b-js-map { max-width: 100%; max-height: 100%; object-fit: contain; }
 .b-map-empty { text-align: center; padding: 1rem; font-size: .9em; }
-.b-js-joinqr { width: min(100%, 22vh); aspect-ratio: 1; background: #fff; border-radius: 8px; }
-.b-join-label { margin-top: .4rem; color: var(--muted, #9a9aa8); font-size: .9em;
-  text-align: center; overflow-wrap: anywhere; }
+/* Join QR: ftl .qr-card (light quiet zone, URL printed beside the code),
+   stacked in a tall tile. */
+.b-qr.qr-card { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; max-width: 100%; }
+.b-qr .qr-card-code { grid-row: auto; }
 
 /* Tile entrance/exit — the operator picks the mode per tile (anim/animMS). */
 .b-js-poll, .b-js-qa, .b-js-cloud { --b-anim-ms: 400ms; }
@@ -1068,10 +1050,9 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 
 /* ---------------------------------------------------------------------------
    PLAN §11.2 capture modal + nav polish (owner feedback round). */
-.tp-ready-id { font-size: 1.1rem; margin: .6rem 0 .2rem; }
+.tp-ready-id { font-size: clamp(1.1rem, 2.8vh, 2rem); margin: .6rem 0 .2rem; }
 .tp-dlg-msg { margin: 0 0 .6rem; overflow-wrap: anywhere; }
-.tp-ready-name { background: var(--accent, #7C3AED); color: #fff;
-  padding: .15rem .6rem; border-radius: 6px; letter-spacing: .06em; }
+.tp-ready-name { letter-spacing: .06em; font-size: 1em; } /* ftl .badge.badge-solid */
 
 /* ---------------------------------------------------------------------------
    Layout-editor feel round (owner): template row. The drag ghost is ftl's

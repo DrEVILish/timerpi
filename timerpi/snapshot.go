@@ -217,3 +217,14 @@ func (s Snapshot) Public() Snapshot {
 	}
 	return out
 }
+
+// AudienceFacing is the snapshot for a trusted Audience or Walk-in screen:
+// everything a trusted screen gets except what is meant for the speaker
+// only, the Presenter item and the stage messages ("Wrap up", "Mic 2
+// battery low" never reach the room or the foyer).
+func (s Snapshot) AudienceFacing() Snapshot {
+	out := s
+	out.Presenter = nil
+	out.Messages = []Message{}
+	return out
+}

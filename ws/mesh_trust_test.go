@@ -193,3 +193,47 @@ func TestRenameNeedsEventTechnician(t *testing.T) {
 		t.Fatal("moderator renamed the room")
 	}
 }
+
+// Review ui-displays #2: stage messages are for the speaker. Audience and
+// walk-in screens never get them (join or state); presenter screens do.
+func TestStageMessagesOnlyToPresenterScreens(t *testing.T) {
+	ts := newTestServer(t, false)
+	m, err := ts.db.CreateMessage(ts.showID, "WRAP-UP-SECRET", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.db.ShowMessage(ts.showID, m.ID, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	join := func(name, kind string) (*wsClient, map[string]any) {
+		if err := ts.db.SetScreenLook(ts.showID, name, kind, 0); err != nil {
+			t.Fatal(err)
+		}
+		key, _ := ts.db.ScreenKey(ts.showID, name)
+		c := ts.dialAnon(t, "m-"+name, name, key)
+		return c, c.readUntil(t, "joined")
+	}
+	msgs := func(f map[string]any) []any {
+		l, _ := f["snapshot"].(map[string]any)["messages"].([]any)
+		return l
+	}
+	aud, j1 := join("Main", timerpi.ScreenAudience)
+	walk, j2 := join("Foyer", timerpi.ScreenWalkin)
+	dsm, j3 := join("DSM", timerpi.ScreenPresenter)
+	if len(msgs(j1)) != 0 || len(msgs(j2)) != 0 {
+		t.Fatalf("audience/walk-in join carries stage messages: %v %v", msgs(j1), msgs(j2))
+	}
+	if len(msgs(j3)) != 1 {
+		t.Fatalf("presenter join lost the stage message: %v", msgs(j3))
+	}
+	eng, _ := ts.engines.Get(ts.showID)
+	_ = eng.Notify()
+	for _, c := range []*wsClient{aud, walk} {
+		if l := msgs(c.readUntil(t, "state")); len(l) != 0 {
+			t.Fatalf("audience-facing state carries stage messages: %v", l)
+		}
+	}
+	if l := msgs(dsm.readUntil(t, "state")); len(l) != 1 {
+		t.Fatalf("presenter state lost the stage message: %v", l)
+	}
+}

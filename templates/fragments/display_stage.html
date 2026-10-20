@@ -23,17 +23,14 @@
     <span class="readout tp-clock" id="d-clock" data-state="idle">--:--</span>
   </div>
 
-  <div class="tp-display-next">
+  <div class="tp-display-next" id="d-next"{{if not .Next.Label}} hidden{{end}}>
     <span>NEXT</span>
     <strong id="d-next-label">{{if .Next}}{{.Next.Label}}{{end}}</strong>
     <span class="mono" id="d-next-dur">{{if .Next}}{{.Next.DurFmt}}{{end}}</span>
   </div>
 
-  <div class="tp-display-speaker" id="d-speaker">{{if .Current}}{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}{{end}}</div>
+  <div class="tp-display-speaker" id="d-speaker">{{if .Current}}{{.Current.Speaker}}{{end}}</div>
 
-  <div class="tp-display-status">
-    <span id="d-status">{{if .Show}}{{.RoomPrefix}}{{.Show.Title}}{{end}}</span>
-  </div>
 
   <div class="tp-stage-message" id="d-message" hidden><div></div></div>
 </div>
