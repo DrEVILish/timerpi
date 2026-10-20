@@ -28,14 +28,14 @@ export async function api(method, path, body) {
   return data;
 }
 
-/** toast(text, kind) — 'info' | 'success' | 'danger'. The region is a
+/** toast(text, kind, action?) — 'info' | 'success' | 'danger'. The region is a
  * manual popover (closed = display:none) so toasts sit above modals. */
 let lastToast = null;
-export function toast(text, kind = 'info') {
+export function toast(text, kind = 'info', action = null) {
   // C2 drill UX: a flapping link (or a reconnect storm's err frames) must
   // not stack identical popups — swallow an exact repeat inside 4 s.
   const now = Date.now();
-  if (lastToast && lastToast.text === text && lastToast.kind === kind && now - lastToast.at < 4000) return;
+  if (!action && lastToast && lastToast.text === text && lastToast.kind === kind && now - lastToast.at < 4000) return;
   lastToast = { text, kind, at: now };
   const region = document.getElementById('toast-region');
   if (!region) return;
@@ -43,11 +43,21 @@ export function toast(text, kind = 'info') {
   const el = document.createElement('div');
   el.className = kind === 'info' ? 'toast' : `toast toast-${kind}`;
   el.textContent = text;
-  region.appendChild(el);
-  setTimeout(() => {
+  const done = () => {
     el.remove();
     if (!region.children.length && region.matches(':popover-open')) region.hidePopover();
-  }, 4000);
+  };
+  // action {label, run}: one button in the toast (e.g. Undo), kept up 8 s.
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-sm btn-tertiary';
+    b.textContent = action.label;
+    b.addEventListener('click', () => { done(); action.run(); });
+    el.append(' ', b);
+  }
+  region.appendChild(el);
+  setTimeout(done, action ? 8000 : 4000);
 }
 
 /** setText(el, text) — write only on change (no needless layout churn). */

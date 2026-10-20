@@ -49,10 +49,10 @@ body.tp-aud { margin: 0; min-height: 100dvh; display: flex; justify-content: cen
 .tp-aud-head img { height: 2rem; width: auto; opacity: .85; }
 .tp-aud-head h1 { font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .tp-aud-wait { padding: 2.5rem 0; }
-.tp-aud-q { font-size: 1.3rem; margin: .1rem 0 .9rem; overflow-wrap: anywhere; }
+.tp-aud-q { font-size: 1.25rem; line-height: 1.35; margin: .1rem 0 .9rem; overflow-wrap: anywhere; } /* a <p>: content, not a dim heading */
 /* U17: options are ftl .btn (chosen = .btn-primary), tallies ftl
    <progress class="progress">, the wall an ftl .list, the spotlight and
-   the quiz verdict ftl .alert, cloud words ftl .badge. Only layout here. */
+   the quiz verdict ftl .alert, cloud words ftl .tag. Only layout here. */
 .tp-aud-opts { display: grid; gap: .55rem; }
 /* flex (not block): ftl's .btn[aria-pressed]::before lamp is a flex item; as
    an inline box it collapsed to a squashed pill glued to the label. */
@@ -78,23 +78,34 @@ body.tp-aud .tp-aud-opt[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg
 .tp-aud-spot p { flex: 1 1 100%; }
 .tp-aud-spot p { margin: .2rem 0 0; font-weight: 600; }
 .tp-aud-wall { margin: .8rem 0 0; }
-.tp-aud-entry { display: flex; gap: .6rem; align-items: flex-start; overflow-wrap: anywhere; }
-.tp-aud-entry.is-answered { opacity: .55; }
+.tp-aud-entry { display: flex; gap: .6rem; align-items: center; overflow-wrap: anywhere; }
+.tp-aud-entry-text { flex: 1; min-width: 0; }
+.tp-aud-entry.is-answered .tp-aud-entry-text { color: var(--muted); } /* plus an "Answered" tag: not colour alone */
+.tp-aud-word { hyphens: auto; overflow-wrap: anywhere; max-width: 100%; }
 .tp-aud-cloud { display: flex; flex-wrap: wrap; gap: .4rem .5rem; margin-top: .9rem; align-items: center; }
 .tp-aud-foot { font-size: .8rem; }
 .tp-aud-foot .connection { white-space: normal; max-width: 100%; }
-/* Upvote badges: one line, one width; the upvoted one is ftl's active chip
-   and stays fully opaque although it is disabled. */
-.tp-aud-up { flex: none; white-space: nowrap; min-width: 3.4em; justify-content: center; }
-.tp-aud-up.is-active:disabled { opacity: 1; }
+/* Upvote toggles: one line, one width; the upvoted one (aria-pressed, lit
+   lamp) stays fully opaque although it is disabled. */
+.tp-aud-up { flex: none; white-space: nowrap; min-width: 4.2em; justify-content: center; }
+.tp-aud-up[aria-pressed="true"]:disabled { opacity: 1; }
 /* Reduced motion is honoured on phones only (PRODUCT L4). */
 @media (prefers-reduced-motion: no-preference) {
   .tp-aud-in { animation: var(--motion-enter); }
 }
 
 /* ------------------------------------------- moderator Audience panel */
-.tp-onair { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .75rem 0; }
-.tp-onair > .badge { max-width: 100%; gap: .3em; } /* flex badge trims the space after "Audience:" */
+/* On air strip: one card per target, side by side when there is room. */
+.tp-onair { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: .75rem; padding: .75rem .75rem 0; }
+.tp-air-card { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.tp-air-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.tp-air-label, .tp-aud-libtitle { margin: 0; }
+.tp-air-q { margin: 0; font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+.tp-air-ctl { flex-wrap: wrap; align-items: center; }
+.tp-air-ctl .tp-aud-more { margin-inline-start: auto; }
+.tp-live { display: inline-flex; align-items: center; gap: .4em; font-size: .85em; } /* sized like ftl .status */
+.tp-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tp-approve-all { align-self: flex-start; }
 #tp-aud-items { padding: .5rem .75rem .75rem; }
 .tp-tally { display: grid; gap: .35rem; }
 .tp-tally-row { display: grid; grid-template-columns: 1fr auto; gap: .1rem .6rem; align-items: center; }
@@ -102,6 +113,8 @@ body.tp-aud .tp-aud-opt[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg
 .tp-tally-row.is-correct { color: var(--success-text, var(--success)); font-weight: 600; }
 .tp-entry { flex-wrap: wrap; } /* ftl .list-item; buttons wrap under long text */
 .tp-entry-text { flex: 1 1 10rem; overflow-wrap: anywhere; }
+.tp-entry-acts { margin-inline-start: auto; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 40rem) { .tp-entry-acts { flex-basis: 100%; justify-content: flex-start; } }
 .tp-entry-votes { color: var(--muted); min-width: 2.6rem; }
 .tp-entry.is-answered .tp-entry-text { color: var(--muted); text-decoration: line-through 1px; } /* readable, just done */
 .tp-entry.is-spot { background: var(--surface-2); }
@@ -283,7 +296,6 @@ html[data-theme="ios-skeuomorphic"] .tp-room-tabs { --tab-fg-active: var(--text)
 .tp-aud-table .tp-aud-title > :first-child { font-weight: 700; }
 .tp-aud-showbtn { min-inline-size: 4.2em; }
 .tp-aud-table .tp-aud-actions { white-space: nowrap; }
-.tp-aud-row.is-shown > td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .tp-aud-detail > td { padding-top: 0; }
 /* The row is the dropdown (2026-10-07): click anywhere to open the detail. */
 .tp-aud-row.is-expandable { cursor: pointer; }

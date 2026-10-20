@@ -30,10 +30,12 @@ export async function run(t) {
   await phone.unroute('**/vote');
   const after = await (await api('GET', `/api/shows/${room}/polls`)).json();
   t.check('the retried vote counted', after.items.find((i) => i.id === poll.id).total === 1);
-  // Feedback is still readable a moment later although live frames keep coming.
+  // ux-audience #7: once counted, the footer is the link state again (no
+  // stale "retrying…") and the hint under the answers says it was received.
   await phone.waitForTimeout(1200);
   const fb = await phone.textContent('#tp-aud-note');
-  t.check(`vote feedback stays visible ("${fb}")`, fb.startsWith('Vote received'));
+  t.check(`footer is back to the link state ("${fb}")`, fb === 'Connected');
+  t.check('the hint says the vote was received', (await phone.textContent('.tp-aud-hint')).startsWith('Vote received'));
   const foot = await phone.$eval('#tp-aud-note', (n) => [n.getBoundingClientRect().right, document.getElementById('tp-aud-card').getBoundingClientRect().right]);
   t.check(`footer note fits the card at 390px (${foot})`, foot[0] <= foot[1] + 0.5);
 
@@ -58,8 +60,8 @@ export async function run(t) {
   await phone.waitForSelector('.tp-aud-up');
   await phone.click('.tp-aud-up >> nth=0');
   await phone.waitForTimeout(500);
-  const up = await phone.$eval('.tp-aud-up[aria-pressed="true"]', (b) => ({ active: b.classList.contains('is-active'), op: getComputedStyle(b).opacity }));
-  t.check(`the upvoted badge is the active chip (${JSON.stringify(up)})`, up.active && up.op === '1');
+  const up = await phone.$eval('.tp-aud-up[aria-pressed="true"]', (b) => ({ btn: b.classList.contains('btn'), op: getComputedStyle(b).opacity, r: parseFloat(getComputedStyle(b).borderTopLeftRadius) }));
+  t.check(`the upvoted one is a pressed ftl button, opaque, not a pill (${JSON.stringify(up)})`, up.btn && up.op === '1' && up.r < 8);
   const hs = await phone.$$eval('.tp-aud-up', (bs) => bs.map((b) => Math.round(b.getBoundingClientRect().height)));
   t.check(`upvote badges are one size (${hs})`, new Set(hs).size === 1);
   await api('POST', `/api/shows/${room}/polls/${qa.id}/reset`, {});

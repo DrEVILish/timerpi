@@ -48,13 +48,13 @@ func TestPushTargets(t *testing.T) {
 	if on.Audience == nil || on.Audience.ID != b.ID || on.Presenter == nil || on.Presenter.ID != a.ID {
 		t.Fatalf("targets after B→audience: %+v", on)
 	}
-	// Taking A off its last target hides it.
+	// Taking A off its last target takes it off air; its phase stays.
 	if err := d.ShowTo(show.ID, a.ID, TargetPresenter, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := d.GetPoll(show.ID, a.ID)
-	if got.State != StateHidden || got.ToAudience || got.ToPresenter {
-		t.Fatalf("A should be hidden: %+v", got)
+	if got.State != StateOpen || got.ToAudience || got.ToPresenter {
+		t.Fatalf("A should be off air, still open: %+v", got)
 	}
 	if err := d.ShowTo(show.ID, a.ID, "projector", true); err == nil {
 		t.Error("unknown target accepted")
@@ -121,6 +121,59 @@ func TestVotingAndResults(t *testing.T) {
 	}
 	if err := d.Vote(show.ID, p.ID, "ph5", "0"); err == nil {
 		t.Error("vote accepted after results")
+	}
+}
+
+// ux-audience #3/#4: on air is separate from the voting phase. Taking an
+// item off air (another item pushed, Hide, a target toggled off) keeps its
+// shown results and its spotlight; showing it again does not reopen
+// voting; results cannot be un-shown; only Clear responses reopens.
+func TestOffAirKeepsResultsAndSpotlight(t *testing.T) {
+	d := openTestDB(t)
+	show := mustCreateShow(t, d, "Phases")
+	p := mustItem(t, d, show.ID, KindPoll, "Lunch?", `["Pizza","Skyr"]`, -1)
+	q := mustItem(t, d, show.ID, KindQuiz, "2+2?", `["4","5"]`, 0)
+	_ = d.ShowTo(show.ID, p.ID, TargetAudience, true)
+	_ = d.Vote(show.ID, p.ID, "ph1", "1")
+	if err := d.SetResults(show.ID, p.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetResults(show.ID, p.ID, false); err != ErrResultsShown {
+		t.Fatalf("hiding results must be refused, got %v", err)
+	}
+	_ = d.ShowTo(show.ID, q.ID, TargetAudience, true) // p leaves the audience
+	if got, _ := d.GetPoll(show.ID, p.ID); got.State != StateResults || got.ToAudience {
+		t.Fatalf("off air must keep results: %+v", got)
+	}
+	_ = d.ShowTo(show.ID, p.ID, TargetAudience, true)
+	if got, _ := d.GetPoll(show.ID, p.ID); got.State != StateResults {
+		t.Fatalf("showing again reopened voting: %+v", got)
+	}
+	if err := d.Vote(show.ID, p.ID, "ph2", "0"); err == nil {
+		t.Fatal("vote accepted on a re-shown item with results")
+	}
+	_ = d.HidePoll(show.ID, p.ID)
+	if got, _ := d.GetPoll(show.ID, p.ID); got.State != StateResults {
+		t.Fatalf("Hide dropped results: %+v", got)
+	}
+	if err := d.ResetPoll(show.ID, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.GetPoll(show.ID, p.ID); got.State != StateOpen {
+		t.Fatalf("Clear responses must reopen voting: %+v", got)
+	}
+
+	qa := mustItem(t, d, show.ID, KindQA, "Ask", `[]`, -1)
+	_ = d.ShowTo(show.ID, qa.ID, TargetAudience, true)
+	c, err := d.Submit(show.ID, qa.ID, "Why?", "ph1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = d.Spotlight(show.ID, qa.ID, c.ID)
+	_ = d.ShowTo(show.ID, qa.ID, TargetAudience, false)
+	_ = d.ShowTo(show.ID, qa.ID, TargetPresenter, true)
+	if on, _ := d.OnAirNow(show.ID); on.Presenter == nil || on.Presenter.Spotlight == nil || on.Presenter.Spotlight.ID != c.ID {
+		t.Fatalf("spotlight lost going off air: %+v", on.Presenter)
 	}
 }
 

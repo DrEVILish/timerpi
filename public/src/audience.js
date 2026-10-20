@@ -29,18 +29,26 @@ if (!peer) {
 let item = null; // the on-air item (or null)
 let shownSig = '';
 
-// setNote writes the footer line; state (live|reconnecting|offline) moves
-// the .connection lamp. Action feedback (no state) stays readable for a
-// few seconds: the "Connected" of the next live frame waits for it.
-let holdUntil = 0;
-function setNote(text, state) {
-  if (state === 'live' && Date.now() < holdUntil) {
-    note.dataset.state = state;
-    return;
-  }
-  note.textContent = text;
-  if (state) note.dataset.state = state;
-  else holdUntil = Date.now() + 4000;
+// The footer is one ftl .connection line that always matches the state:
+// the link (live|reconnecting|offline) with its text, or, for 4 s after an
+// action, that action's feedback. Feedback never outlives its item state:
+// render() drops it when the item or its phase changes (ux-audience #7).
+let link = { text: 'connecting…', state: 'reconnecting' };
+let flash = '';
+let flashTimer = 0;
+function paintNote() {
+  note.textContent = flash || link.text;
+  note.dataset.state = link.state;
+}
+function setLink(text, state) {
+  link = { text, state };
+  paintNote();
+}
+function say(text) {
+  flash = text;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flash = ''; paintNote(); }, 4000);
+  paintNote();
 }
 
 // The device id is the server's tp_aud cookie, issued on the first vote or
@@ -57,7 +65,7 @@ async function postRetry(path, body) {
     } catch (e) {
       if (e.status !== 429 || i >= 5) throw e;
       const why = e.message.replace(/ — .*/, '');
-      setNote(`${why.charAt(0).toUpperCase()}${why.slice(1)} — retrying…`);
+      say(`${why.charAt(0).toUpperCase()}${why.slice(1)} — retrying…`);
       const wait = Math.max((e.retryAfter || 0) * 1000, 500 * 2 ** i) * (0.6 + Math.random() * 0.8);
       await new Promise((r) => setTimeout(r, wait));
     }
@@ -81,7 +89,8 @@ let liveSlot = null;
 // (VENUE-CLOUD §6) — phones wait instead of voting into nothing.
 let paused = false;
 function setPaused(on) {
-  if (on) setNote('Audience paused', 'reconnecting');
+  if (on) setLink('Audience paused', 'reconnecting');
+  else if (link.text === 'Audience paused') setLink('Connected', 'live');
   if (!!on === paused) return;
   paused = !!on;
   shownSig = null;
@@ -91,6 +100,7 @@ function render() {
   const sig = paused ? 'paused' : (item ? `${item.id}:${item.kind}:${item.state}` : '');
   const fresh = sig !== shownSig;
   shownSig = sig;
+  if (fresh && flash) { flash = ''; paintNote(); }
   if (!fresh && item && liveSlot && main.contains(liveSlot)) {
     setText(main.querySelector('.tp-aud-q'), item.question);
     const live = el('div', 'tp-aud-live');
@@ -106,7 +116,8 @@ function render() {
   } else if (!item) {
     box.append(stateBox('loading', 'Waiting for the room', 'Keep this page open — questions and polls appear here when the presenter starts them.'));
   } else {
-    box.append(el('h2', 'tp-aud-q', item.question));
+    // The question is the content, not a theme heading (dim, uppercase).
+    box.append(el('p', 'tp-aud-q', item.question));
     const formSlot = el('div', 'tp-aud-formslot');
     const live = el('div', 'tp-aud-live');
     box.append(formSlot, live);
@@ -157,17 +168,17 @@ function renderVote(box) {
         render();
         try {
           await postRetry('/vote', { pollId: item.id, choice: String(i) });
-          setNote('Vote received — you can change it until the results are shown.');
+          say(''); // counted: the hint below says so; the footer is the link again
         } catch (e) {
           // Not counted: don't show it as this phone's vote (BUGLOG RS11).
           store.set(k, before);
           render();
-          setNote(e.message);
+          say(e.message);
         }
       });
       list.appendChild(b);
     });
-    box.append(list, el('p', 'text-muted tp-aud-hint', mine === null ? 'Tap an answer.' : 'Thanks! Tap another answer to change your vote.'));
+    box.append(list, el('p', 'text-muted tp-aud-hint', mine === null ? 'Tap an answer.' : 'Vote received. Tap another answer to change it until the results are shown.'));
     return;
   }
   const total = Math.max(1, item.total || 0);
@@ -178,11 +189,11 @@ function renderVote(box) {
     const correct = item.kind === 'quiz' && i === item.correct;
     const row = el('div', 'tp-aud-res' + (correct ? ' is-correct' : '') + (mine === i ? ' is-mine' : ''));
     const head = el('div', 'tp-aud-res-head');
-    head.append(el('span', '', (correct ? '✔ ' : '') + label + (mine === i ? ' (you)' : '')), el('span', 'mono', `${pct}%`));
+    head.append(el('span', '', (correct ? '✔ ' : '') + label + (mine === i ? ' (you)' : '')), el('span', 'mono', `${n} · ${pct}%`));
     const bar = el('progress', 'progress tp-aud-bar'); // ftl progress (U17)
     bar.max = 100;
     bar.value = pct;
-    bar.setAttribute('aria-label', `${label}: ${pct}%`);
+    bar.setAttribute('aria-label', `${label}: ${n} votes, ${pct}%`);
     row.append(head, bar);
     box.appendChild(row);
   });
@@ -220,10 +231,10 @@ function askForm(box, { placeholder, max, multiline, sentText }) {
         store.set(key('sent'), sent.slice(-10));
       }
       input.value = '';
-      setNote(out.approved ? 'Sent!' : sentText);
+      say(out.approved ? 'Sent!' : sentText);
       render();
     } catch (err) {
-      setNote(err.message);
+      say(err.message);
     } finally {
       send.disabled = false;
     }
@@ -249,8 +260,9 @@ function renderWall(box, formSlot) {
   for (const k of kids) {
     if (item.spotlight && k.id === item.spotlight.id) continue;
     const li = el('li', 'list-item tp-aud-entry' + (k.state === 'answered' ? ' is-answered' : ''));
-    // ftl filter chip; the one this phone upvoted is its active chip.
-    const up = el('button', `badge badge-button tp-aud-up${ups.has(k.id) ? ' is-active' : ''}`, `▲ ${k.upvotes || 0}`);
+    // ftl server-confirmed toggle: aria-pressed lights the lamp of the one
+    // this phone upvoted (square, like the theme; not a rounded pill).
+    const up = el('button', 'btn btn-sm tp-aud-up', `▲ ${k.upvotes || 0}`);
     up.type = 'button';
     up.setAttribute('aria-pressed', String(ups.has(k.id)));
     up.setAttribute('aria-label', `Upvote: ${k.question}`);
@@ -259,21 +271,21 @@ function renderWall(box, formSlot) {
       ups.add(k.id);
       store.set(key('up'), [...ups].slice(-200));
       up.disabled = true;
-      up.classList.add('is-active');
       up.setAttribute('aria-pressed', 'true');
       try {
         await postRetry('/vote', { pollId: k.id, choice: '1' });
+        say('');
       } catch (e) {
         // Not counted: the phone may try again (RS11).
         ups.delete(k.id);
         store.set(key('up'), [...ups].slice(-200));
         up.disabled = false;
-        up.classList.remove('is-active');
         up.setAttribute('aria-pressed', 'false');
-        setNote(e.message);
+        say(e.message);
       }
     });
-    li.append(up, el('span', '', k.question));
+    li.append(up, el('span', 'tp-aud-entry-text', k.question));
+    if (k.state === 'answered') li.append(el('span', 'badge', 'Answered'));
     list.appendChild(li);
   }
   if (kids.length) box.appendChild(list);
@@ -308,7 +320,7 @@ function renderCloud(box, formSlot) {
   const max = Math.max(1, ...words.map((w) => w.upvotes || 0));
   const cloud = el('div', 'tp-aud-cloud');
   for (const w of words) {
-    const t = el('span', 'badge badge-accent tp-aud-word', w.question); // ftl badge (U17)
+    const t = el('span', 'tag tp-aud-word', w.question); // ftl static chip (square in this theme)
     t.style.fontSize = `${(0.9 + ((w.upvotes || 0) / max) * 1.1).toFixed(2)}rem`;
     cloud.appendChild(t);
   }
@@ -366,18 +378,18 @@ function connect() {
     if (m.t === 'poll') {
       backoff = 1000;
       stopRest();
-      setNote('Connected', 'live');
+      setLink('Connected', 'live');
       setPaused(m.paused);
       adopt(m.poll);
     } else if (m.t === 'err') {
-      setNote(m.message || 'Connection problem', 'offline');
+      setLink(m.message || 'Connection problem', 'offline');
     }
   };
   sock.onclose = () => { if (sock === ws) retry(); };
   sock.onerror = () => { try { sock.close(); } catch { /* */ } };
 }
 function retry() {
-  setNote('Reconnecting…', 'reconnecting');
+  setLink('Reconnecting…', 'reconnecting');
   startRest();
   if (retryTimer) return;
   const wait = backoff + Math.random() * backoff;

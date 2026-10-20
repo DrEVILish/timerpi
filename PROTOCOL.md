@@ -109,9 +109,9 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `GET /api/shows/:ident/polls` | mod. `{items:[PollView + pending + all entries]}` |
 | `POST /api/shows/:ident/polls {kind, question, options[], correct?, autoApprove?}` | mod. Quiz needs `correct`; poll/quiz need ≥2 options |
 | `PATCH …/polls/:pid {question, options?, correct?, autoApprove}` | mod. Edit text/options/answer |
-| `POST …/polls/:pid/show {target: audience\|presenter, on}` | mod. Show to / take off a target |
-| `POST …/polls/:pid/results {on}` | mod. Reveal results (closes voting) wherever it is shown |
-| `POST …/polls/:pid/hide` | mod. Off every target |
+| `POST …/polls/:pid/show {target: audience\|presenter, on}` | mod. Show to / take off a target. Going off air keeps the item's phase (shown results) and spotlight; first show opens voting |
+| `POST …/polls/:pid/results {on}` | mod. Reveal results (closes voting) wherever it is shown. Results stay until Clear responses: `on:false` is refused (400) once shown, a no-op before |
+| `POST …/polls/:pid/hide` | mod. Off every target (phase and spotlight kept) |
 | `POST …/polls/:pid/spotlight {entry}` | mod. Q&A spotlight (0 clears; spotlighting approves) |
 | `POST …/polls/:entry/moderate {status: pending\|approved\|answered\|dismissed}` | mod. Word-cloud approval covers every identical word |
 | `DELETE …/polls/:pid` | mod. Item (with entries) or one entry |
@@ -126,7 +126,7 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
 | `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
 
-**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden|open|results), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[], round}`. `round` (omitted while 0) counts "Clear responses" on the item; phones key their remembered vote, upvotes and sent entries by item id + round, so a cleared item starts fresh. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
+**PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden = never shown yet \| open \| results; independent of the targets), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[], round}`. `round` (omitted while 0) counts "Clear responses" on the item; phones key their remembered vote, upvotes and sent entries by item id + round, so a cleared item starts fresh. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
 
 ### Box, assets, OSC
 | Method & path | Notes |

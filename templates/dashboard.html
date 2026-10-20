@@ -132,8 +132,13 @@
         <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span>
           <a class="btn btn-sm push" id="tp-aud-export" href="/api/shows/{{.Show.Code}}/polls/export" download title="Download every item's votes and submissions as a CSV file"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Export</a>
           <button class="btn btn-sm btn-primary" type="button" id="tp-aud-new">+ New item</button></div>
-        <div class="tp-onair" id="tp-aud-onair"></div>
+        <div class="tp-onair" id="tp-aud-onair" aria-label="On air"></div>
         <div id="tp-aud-items" class="stack is-gap-s"></div>
+        <div class="dropdown" id="tp-aud-menu" popover role="menu" aria-label="Item actions">
+          <button class="dropdown-item" type="button" role="menuitem" data-aud-act="edit">Edit…</button>
+          <button class="dropdown-item" type="button" role="menuitem" data-aud-act="clear">Clear responses…</button>
+          <button class="dropdown-item text-danger" type="button" role="menuitem" data-aud-act="delete">Delete…</button>
+        </div>
       </section>
       <aside class="stack">
       {{template "frag-share" .}}

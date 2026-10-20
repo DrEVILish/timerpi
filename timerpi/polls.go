@@ -9,10 +9,13 @@ package timerpi
 //	to_audience   phones + the room's audience displays ("Show to Audience")
 //	to_presenter  the room's presenter displays / DSM ("Show to Presenter")
 //
-// state is the phase: hidden (on no target) → open (voting / asking) →
-// results (voting closed, results revealed wherever it is shown). At most
-// one item per target per room is on air: pushing an item to a target
-// takes it off that target for every other item.
+// state is the voting phase, kept apart from where the item is on air:
+// hidden (never shown yet) → open (voting /
+// asking) → results (voting closed, results revealed wherever it is
+// shown). Taking an item off air keeps its phase and its spotlight; only
+// "Clear responses" (ResetPoll) reopens voting. At most one item per
+// target per room is on air: pushing an item to a target takes it off
+// that target for every other item.
 //
 // Audience contributions (Q&A questions, cloud words, ideas) are CHILD rows
 // (parent = the item) with a moderation status in state:
@@ -349,8 +352,9 @@ func targetCol(target string) (string, error) {
 }
 
 // ShowTo puts an item on (on=true) or takes it off one target. Putting it
-// on takes every other item of the room off that target. An item on no
-// target is hidden; an item coming on air from hidden opens for voting.
+// on takes every other item of the room off that target. An item shown
+// for the first time opens for voting; one shown again keeps its phase
+// (shown results stay shown, ux-audience #3).
 func (d *DB) ShowTo(showID, id int64, target string, on bool) error {
 	defer d.airDirty(showID)
 	col, err := targetCol(target)
@@ -383,16 +387,16 @@ func (d *DB) ShowTo(showID, id int64, target string, on bool) error {
 			return err
 		}
 	}
-	// Anything now on no target is hidden.
-	if _, err := tx.Exec(`UPDATE polls SET state = ?, spot = 0 WHERE show_id = ? AND parent = 0 AND to_audience = 0 AND to_presenter = 0 AND state != ?`,
-		StateHidden, showID, StateHidden); err != nil {
-		return err
-	}
 	return tx.Commit()
 }
 
-// SetResults reveals (on) or re-closes (off) an item's results wherever it
-// is shown. Results close voting.
+// ErrResultsShown: results cannot be un-shown (that would silently reopen
+// voting, ux-audience #4); "Clear responses" starts the item over.
+var ErrResultsShown = fmt.Errorf("timerpi: results stay shown until you clear the responses")
+
+// SetResults reveals an item's results wherever it is shown, which closes
+// voting. on=false is accepted only while results are not shown (a no-op,
+// for the legacy state verb).
 func (d *DB) SetResults(showID, id int64, on bool) error {
 	defer d.airDirty(showID)
 	p, err := d.GetPoll(showID, id)
@@ -405,15 +409,17 @@ func (d *DB) SetResults(showID, id int64, on bool) error {
 	if !p.ToAudience && !p.ToPresenter {
 		return fmt.Errorf("timerpi: show the item first, then its results")
 	}
-	state := StateOpen
-	if on {
-		state = StateResults
+	if !on {
+		if p.State == StateResults {
+			return ErrResultsShown
+		}
+		return nil
 	}
-	_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, state, nowMS(), id)
+	_, err = d.Exec(`UPDATE polls SET state = ?, updated = ? WHERE id = ?`, StateResults, nowMS(), id)
 	return err
 }
 
-// HidePoll takes an item off every target.
+// HidePoll takes an item off every target (its phase and spotlight stay).
 func (d *DB) HidePoll(showID, id int64) error {
 	defer d.airDirty(showID)
 	p, err := d.GetPoll(showID, id)
@@ -423,8 +429,7 @@ func (d *DB) HidePoll(showID, id int64) error {
 	if p.Parent != 0 {
 		return fmt.Errorf("timerpi: use moderation for submissions")
 	}
-	_, err = d.Exec(`UPDATE polls SET to_audience = 0, to_presenter = 0, state = ?, spot = 0, updated = ? WHERE id = ?`,
-		StateHidden, nowMS(), id)
+	_, err = d.Exec(`UPDATE polls SET to_audience = 0, to_presenter = 0, updated = ? WHERE id = ?`, nowMS(), id)
 	return err
 }
 

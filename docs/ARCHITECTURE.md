@@ -149,7 +149,7 @@ go to the home page.
 
 - **Kinds:** `poll`, `quiz` (with a correct answer), `qa`, `wordcloud`, `ideas`.
 - **Items** (`parent = 0`) are created off air. Two independent push targets, `to_audience` (phones + audience screens) and `to_presenter` (presenter/DSM screens). Pushing an item to a target takes every other item of the room off that target.
-- **Phase** (`state`): `hidden` (on no target) → `open` (voting/asking) → `results` (voting closed; results wherever it is shown).
+- **Phase** (`state`): `hidden` (never shown yet) → `open` (voting/asking) → `results` (voting closed; results wherever it is shown). The phase is independent of the targets: going off air keeps it (and the spotlight); only Clear responses (`ResetPoll`) reopens voting.
 - **Entries** (`parent = item`) are audience submissions with a moderation status: `hidden` (pending) → `open` (approved) → `answered`, or `dismissed`. `auto_approve` skips review. Q&A items have one `spot` (spotlight). Word-cloud approval applies to every identical word, and the view aggregates them (weight = senders).
 - **Votes** are one row per (item or entry, device): poll choices, or upvotes on entries.
 - **Visibility contract:** `OnAirNow` gives `{audience, presenter}`. Phones only ever receive the audience item, so hidden items are absent from their payload. A quiz's answer is withheld until results. Screens get both and each tile follows one target (`opts.target`).
