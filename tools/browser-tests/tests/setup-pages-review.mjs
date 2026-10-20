@@ -123,7 +123,7 @@ export async function run(t) {
   // control is in the tile list under the canvas, at touch size.
   await pe.waitForSelector('body[data-editing] .b-ed-row button');
   t.check('phone editor: tile chrome buttons give the tile its room', (await pe.$$eval('.b-w-chrome button', (bs) => bs.filter((b) => b.getBoundingClientRect().height > 0).length)) === 0);
-  const minBtn = await pe.$$eval('.b-ed-row button', (bs) => Math.min(...bs.map((b) => b.getBoundingClientRect().height)));
+  const minBtn = await pe.$$eval('.b-ed-row button', (bs) => Math.min(...bs.map((b) => b.getBoundingClientRect().height).filter((h) => h > 0))); // folded rows hide their steppers
   t.check(`phone editor: tile list controls are ≥ 44px (${Math.round(minBtn)})`, minBtn >= 43.5);
   const listShown = await pe.$eval('#b-editor', (e) => getComputedStyle(e).display !== 'none' && e.querySelectorAll('.b-ed-row').length > 0);
   t.check('phone editor: the X/Y/W/H tile list shows', listShown);

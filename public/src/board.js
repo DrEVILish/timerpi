@@ -1204,9 +1204,15 @@ function buildEditorList(editing) {
   for (const w of layout.widgets || []) {
     const row = document.createElement('div');
     row.className = 'b-ed-row';
+    row.dataset.rowWid = w.id;
+    // Phones: a row opens its X/Y/W/H steppers when selected (tap, or focus).
+    row.addEventListener('click', () => selectTile(w.id));
+    row.addEventListener('focusin', () => selectTile(w.id));
     const name = document.createElement('span');
     name.className = 'b-ed-name';
     setText(name, tileLabel(w.type));
+    name.tabIndex = 0;
+    name.setAttribute('role', 'button');
     row.appendChild(name);
     const tail = [];
     for (const [field, label] of [['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']]) {
@@ -1249,8 +1255,26 @@ function buildEditorList(editing) {
   }
   const note = document.createElement('span');
   note.className = 'field-hint';
-  note.textContent = 'X/Y move a tile; W/H resize it. Autosaves on change.';
+  note.textContent = 'Tap a tile to select it. X/Y move it; W/H resize it. Autosaves on change.';
   editor.appendChild(note);
+  const sel = $('.b-widget.is-selected', grid)?.dataset.wid;
+  selectTile(sel && widgetOf(sel) ? sel : layout.widgets?.[0]?.id, false);
+}
+
+// selectTile: one tile at a time is "selected" in the editor. On phones
+// (review 2, layout editor 7.6) only the selected tile shows its bar, so
+// small tiles stay readable, and only its row in the tile list opens its
+// steppers; the canvas is the live preview.
+function selectTile(wid, scroll = true) {
+  if (!wid || !grid) return;
+  for (const t of $$('.b-widget.is-selected', grid)) t.classList.toggle('is-selected', t.dataset.wid === wid);
+  tileOf(wid)?.classList.add('is-selected');
+  for (const r of $$('#b-editor .b-ed-row')) {
+    const on = r.dataset.rowWid === wid;
+    r.classList.toggle('is-selected', on);
+    r.querySelector('.b-ed-name')?.setAttribute('aria-expanded', String(on));
+    if (on && scroll && getComputedStyle(r).display !== 'none') r.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function clipBytes(s, n) {
@@ -1569,6 +1593,7 @@ function wireCompose() {
     const tile = e.target.closest('.b-widget');
     if (!tile) return;
     const wid = tile.dataset.wid;
+    selectTile(wid);
     if (e.target.closest('[data-resize]')) dragTile(tile, wid, e, 'resize');
     // UX2: the move handle is the chrome row minus its buttons — gear/delete
     // must stay clean click targets, not drag launches.

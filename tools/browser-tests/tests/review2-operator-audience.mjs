@@ -91,6 +91,16 @@ export async function run(t) {
   await edPh.waitForSelector('.b-ed-name');
   const names = await edPh.$$eval('.b-ed-name', (ns) => ns.map((n) => n.textContent));
   t.check(`phone tile list uses tile names (${names})`, names[0] === 'Countdown' && names.includes('Cue label'));
+  // Phone editing: one selected tile shows its bar and opens its row; the
+  // canvas stays in view above the list.
+  const bars = () => edPh.$$eval('.b-w-chrome', (cs) => cs.filter((c) => c.getBoundingClientRect().height > 0).map((c) => c.closest('.b-widget').dataset.wid));
+  t.check(`phone: only the selected tile shows its bar (${await bars()})`, (await bars()).join() === 'a');
+  await edPh.tap('#b-w-b');
+  t.check(`phone: tapping a tile selects it (${await bars()})`, (await bars()).join() === 'b' &&
+    await edPh.$eval('.b-ed-row[data-row-wid="b"]', (r) => r.classList.contains('is-selected') && r.querySelectorAll('.b-ed-grp').length === 4 && [...r.querySelectorAll('.b-ed-grp')].every((g) => g.offsetHeight > 0)));
+  t.check('phone: other rows keep their steppers folded', await edPh.$eval('.b-ed-row[data-row-wid="a"] .b-ed-grp', (g) => g.offsetHeight === 0));
+  await edPh.evaluate(() => { document.getElementById('b-editor').style.paddingBlockEnd = '1500px'; window.scrollBy(0, 600); }); // a long tile list
+  t.check('phone: the canvas stays in view while the list scrolls', await edPh.$eval('.b-grid', (g) => Math.abs(g.getBoundingClientRect().top) < 2));
 
   // --- Quiz editor: a missing answer is caught at the options -----------
   await pg.goto(`${t.base}/c/${room}#audience`);

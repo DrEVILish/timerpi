@@ -539,3 +539,19 @@ body[data-editing] .b-w-chrome .btn-close { font-size: 14px; }
   .tp-aud-table.is-stacked > tbody > tr.tp-aud-row > td:is(:nth-child(3), :nth-child(4)) { display: flex; flex-direction: column; align-items: stretch; gap: .15rem; }
   .tp-aud-table.is-stacked > tbody > tr.tp-aud-row .tp-aud-title { min-width: 0; }
 }
+
+/* Layout editor on phones (review 2: 7.6): the canvas is a live preview
+   that stays in view (sticky, landscape) above the tile list; one tile is
+   selected at a time, only it shows its bar, and only its row opens the
+   X/Y/W/H steppers. */
+body[data-editing] .b-widget.is-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 760px) {
+  body[data-editing] .b-widget:not(.is-selected) > .b-w-chrome { display: none; }
+  body[data-editing] .b-widget.is-selected > .b-w-chrome { position: relative; z-index: 1; background: var(--surface); } /* a clean bar over a small tile's first line */
+  body.b-board[data-editing]:not([data-orientation="portrait"]) .b-grid { position: sticky; inset-block-start: 0; z-index: 2; background: var(--bg); }
+  body[data-editing]:not([data-orientation="portrait"]) .b-ed-row { scroll-margin-block-start: 62vw; }
+  .b-ed-row:not(.is-selected) > .b-ed-grp { display: none; }
+  .b-ed-row { padding: .3rem .4rem; border-inline-start: 3px solid transparent; cursor: pointer; }
+  .b-ed-row.is-selected { border-inline-start-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: default; }
+  .b-ed-row.is-selected > .b-ed-name { color: var(--accent-text, var(--accent)); }
+}
