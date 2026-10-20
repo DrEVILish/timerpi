@@ -166,6 +166,8 @@ export async function run(t) {
     const { c, pg, errs } = await open({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const o = await pg.evaluate(() => { const w = document.querySelector('#cuelist'); return { sw: w.scrollWidth, cw: w.clientWidth, inner: getComputedStyle(w).overflowY }; });
     t.check(`phone: the table fits (${o.sw} ≤ ${o.cw})`, o.sw <= o.cw);
+    const rows = await pg.$$eval('#cuelist tbody tr[data-pos]', (n) => { const top = document.querySelector('.tp-transport-bar').getBoundingClientRect().top; return n.filter((r) => r.getBoundingClientRect().bottom <= top).length; });
+    t.check(`phone: 4+ running-order rows show above the sticky bar on load (${rows})`, rows >= 4);
     t.check(`phone: the running order has no scroller of its own (${o.inner}) (UX N8)`, o.inner !== 'auto' && o.inner !== 'scroll');
     const plus = await pg.$eval('#cuelist tfoot button[type=submit]', (b) => { const r = b.getBoundingClientRect(), w = document.querySelector('#cuelist').getBoundingClientRect(); return r.right <= w.right + .5 && r.left >= w.left; });
     t.check('phone: the add button is whole (UI #5)', plus);

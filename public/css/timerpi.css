@@ -112,6 +112,21 @@
   .tp-transport-bar .tp-bar-left { display: block; flex: 1 1 auto; min-inline-size: 0; --countdown-size: 1.7rem; font-size: var(--countdown-size); line-height: 1; white-space: nowrap; }
   .tp-transport-bar [data-cmd="go"] { block-size: var(--tp-tbtn); min-inline-size: 0; font-size: 1.2rem; }
   #messages-panel .tp-wrapup { display: none; } /* the bar's WRAP UP is the one here */
+  /* One compact Current cue band (round-2 follow-up): title and speaker on
+     one line each, the clock beside the meter and rate, adjust under them,
+     so 4–5 running-order rows show on load. */
+  .tp-now > .panel-header { display: none; }
+  .tp-now > .stack { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "title title" "clock meter" "clock rate" "adjust adjust"; column-gap: var(--space-s, .75rem); row-gap: var(--space-2xs, .3rem); align-items: center; }
+  .tp-now > .stack > :first-child { grid-area: title; min-width: 0; }
+  .tp-now > .stack > :first-child > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tp-now > .stack > #tp-clock { grid-area: clock; }
+  .tp-now > .stack > .tp-progress { grid-area: meter; }
+  .tp-now > .stack > .tp-rate { grid-area: rate; min-width: 0; }
+  .tp-now > .stack > .tp-rate > .label { display: none; }
+  .tp-now > .stack > .tp-adjust-row { grid-area: adjust; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .tp-now > .stack > #tp-clock-status { position: absolute; }
+  /* Long titles take two lines at most in the running order. */
+  #cuelist tbody .tp-cue-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .tp-transport-bar .tp-bar-talk > .btn { display: inline-flex; flex: none; inline-size: auto; min-inline-size: 0; padding-inline: .55rem; justify-content: center; block-size: var(--tp-tbtn); }
   body.app[data-page="dashboard"] > .app-status { position: static; }
   html:has(body[data-page="dashboard"]) { scroll-padding-block-end: 8rem; }
@@ -204,7 +219,7 @@
   .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 10vw, 4.5rem), 40cqi); }
 }
 @media (max-width: 600px) {
-  .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 17vw, 5rem), 17cqi); }
+  .tp-now .countdown-xl { --countdown-xl-size: 2.6rem; }
 }
 
 @keyframes tp-overtime-pulse {
