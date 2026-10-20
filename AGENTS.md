@@ -32,7 +32,7 @@ The previous docs became append-only logs: three trackers and many handoff notes
 - Before finishing: `go build ./... && go vet ./... && go test ./...` must pass. Every feature or bug fix lands with a test. UI behaviour that only a browser shows gets a test in `tools/browser-tests/` (`make browser-test`).
 - If the machine runs `timerpi.service` from this checkout: `make build` → `systemctl restart timerpi` → `curl -s localhost/health`. Never leave a stale binary serving.
 - **Do not run `go mod tidy`.** Dependencies are pinned by `tools/deps/deps.go`; add new deps there first.
-- Changing JS/CSS: bump the asset version with `tools/bump-assets.sh`, so screens don't run cached code (see ARCHITECTURE §12).
+- Changing JS/CSS: asset URLs carry a content hash automatically (ARCHITECTURE §12); just rebuild so the binary embeds the new files.
 
 ## 4. Code conventions
 
