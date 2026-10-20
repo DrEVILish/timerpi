@@ -19,17 +19,18 @@
       ⚠ WRAP UP! — show it now
     </button>
 
-    <form class="cluster is-gap-s" data-cmd="addMsg">
-      <input class="input" type="text" name="text" placeholder="Message to stage…" aria-label="Message text" required>
+    <!-- Send puts the message on every presenter display at once (owner,
+         2026-10-20: no "Add"/queue step); Hide takes it down again. -->
+    <form class="stack is-gap-xs" data-cmd="addMsg">
+      <div class="row is-gap-xs tp-msg-send">
+        <input class="input" type="text" name="text" placeholder="Message to stage…" aria-label="Message text" required>
+        <button class="btn btn-primary" type="submit" data-show="true">Send</button>
+      </div>
       <!-- Colour: the shared swatch picker (swatches.js) fills the host and
            writes the hidden input. Brand #7C3AED is the default; Theme ('')
            follows the theme; amber/red are the SPEC alert semantics. -->
       <input type="hidden" id="msg-color" name="color" value="#7C3AED">
       <div data-swatches-for="msg-color"></div>
-      <label class="check" title="Put it on every display immediately (unchecked = queue it for the Show button)">
-        <input class="checkbox" type="checkbox" name="show" value="true" checked> Show now
-      </label>
-      <button class="btn btn-sm btn-primary" type="submit">Add</button>
     </form>
 
     {{if .Messages}}
@@ -56,7 +57,7 @@
     <div class="empty-state">
       <span class="empty-state-icon">💬</span>
       <span class="empty-state-title">No messages</span>
-      <span class="empty-state-hint">One tap on WRAP UP! puts it on every display — or type your own above and Add.</span>
+      <span class="empty-state-hint">One tap on WRAP UP! puts it on every display — or type your own above and Send.</span>
     </div>
     {{end}}
   </div>

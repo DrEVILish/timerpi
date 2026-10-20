@@ -17,8 +17,12 @@ func TestFavicon(t *testing.T) {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	if loc := res.Header.Get("Location"); loc != "/img/favicon.svg" {
-		t.Errorf("/favicon.ico → %q, want /img/favicon.svg", loc)
+	if loc := res.Header.Get("Location"); loc != "/img/favicon.ico" {
+		t.Errorf("/favicon.ico → %q, want /img/favicon.ico", loc)
+	}
+	// Safari has no SVG tab icons: a real .ico (magic 00 00 01 00) of the mark.
+	if ico, err := os.ReadFile("../public/img/favicon.ico"); err != nil || len(ico) < 6 || string(ico[:4]) != "\x00\x00\x01\x00" {
+		t.Errorf("public/img/favicon.ico should be an ICO file: %v", err)
 	}
 	// The binary embeds public/; the test server has no static tree.
 	if svg, err := os.ReadFile("../public/img/favicon.svg"); err != nil || !strings.Contains(string(svg), `viewBox="0 0 96 96"`) {
@@ -26,7 +30,7 @@ func TestFavicon(t *testing.T) {
 	}
 	for _, path := range []string{"/", "/e/" + ts.eventCode, "/d/" + ts.showCode, "/a/" + ts.showCode} {
 		_, page := ts.anon("GET", path, nil, "")
-		if !strings.Contains(string(page), `<link rel="icon" href="/img/favicon.svg"`) {
+		if !strings.Contains(string(page), `<link rel="icon" href="/img/favicon.svg"`) || !strings.Contains(string(page), `<link rel="icon" href="/img/favicon.ico"`) {
 			t.Errorf("%s has no favicon link", path)
 		}
 	}

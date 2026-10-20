@@ -359,7 +359,20 @@ function stampCue(cue, now) {
 function renumber(snap) {
   // Assign dense 1..N in CURRENT array order (splices above already place
   // rows; sorting by the stale pos values would undo the operation).
+  // The playhead follows its cue, not its slot (parity with engine.go
+  // reconcileLocked): a reorder never stops or swaps the running cue.
+  const r = snap.runtime;
+  const active = r?.activePos ? snap.cues.find((c) => c.pos === r.activePos) : null;
   snap.cues.forEach((c, i) => { c.pos = i + 1; });
+  if (!r?.activePos) return;
+  if (active) {
+    r.activePos = active.pos;
+  } else { // the active cue is gone: arm whatever now sits in its slot
+    Object.assign(r, { running: false, paused: false, anchorTS: 0, pausedElapsedMS: 0 });
+    r.activePos = Math.min(r.activePos, snap.cues.length);
+  }
+  r.prevPos = r.activePos > 1 ? r.activePos - 1 : 0;
+  r.nextPos = r.activePos && r.activePos < snap.cues.length ? r.activePos + 1 : 0;
 }
 
 function nextTempId(snap) {
@@ -407,8 +420,7 @@ export function cueAdd(snap, args = {}, now = Date.now()) {
   };
   stampCue(cue, now);
   const at = Number(args.pos) > 0 ? Math.min(Math.max(1, Math.floor(Number(args.pos))), snap.cues.length + 1) : snap.cues.length + 1;
-  cue.pos = at; // position BEFORE the splice so renumber keeps the placement
-  snap.cues.splice(at - 1, 0, cue);
+  snap.cues.splice(at - 1, 0, cue); // pos stays 0 until renumber, so it never poses as the active cue
   renumber(snap);
   snap.updatedAt = bump(snap, now);
   return 'applied';
@@ -465,20 +477,21 @@ export function cueDel(snap, args = {}, now = Date.now()) {
   return 'applied';
 }
 
-/** cueMove {pos, dir: up|down} — parity with ws `cueMove` (adjacent swap). Both swapped rows are content-touched (see stamp rule above). */
+/** cueMove {pos, dir: up|down} or {pos, to} — parity with ws `cueMove` (the drag sends `to`; out-of-range clamps). Moved and displaced rows are content-touched (see stamp rule above). */
 export function cueMove(snap, args = {}, now = Date.now()) {
   const dir = args.dir;
-  if (dir !== 'up' && dir !== 'down') return 'ignored';
+  const hasTo = Number(args.to) > 0;
+  if (!hasTo && dir !== 'up' && dir !== 'down') return 'ignored';
   renumber(snap);
   const idx = snap.cues.indexOf(cueRef(snap, args));
-  const other = dir === 'up' ? idx - 1 : idx + 1;
-  if (idx < 0 || other < 0 || other >= snap.cues.length) return 'ignored'; // edge: no-op like the DB layer
-  const neighbour = snap.cues[other];
+  const other = hasTo ? Math.min(Math.floor(Number(args.to)), snap.cues.length) - 1 : dir === 'up' ? idx - 1 : idx + 1;
+  if (idx < 0 || other < 0 || other >= snap.cues.length || other === idx) return 'ignored'; // edge: no-op like the DB layer
+  const lo = Math.min(idx, other), hi = Math.max(idx, other);
+  const touched = snap.cues.slice(lo, hi + 1);
   const [moved] = snap.cues.splice(idx, 1);
   snap.cues.splice(other, 0, moved);
   renumber(snap);
-  stampCue(moved, now);
-  stampCue(neighbour, now);
+  for (const c of touched) stampCue(c, now);
   snap.updatedAt = bump(snap, now);
   return 'applied';
 }
@@ -488,7 +501,7 @@ export function cueDup(snap, args = {}, now = Date.now()) {
   const idx = snap.cues.indexOf(cueRef(snap, args));
   if (idx < 0) return 'ignored';
   const src = snap.cues[idx];
-  const copy = { ...src, id: nextTempId(snap) };
+  const copy = { ...src, id: nextTempId(snap), pos: 0 };
   stampCue(copy, now);
   snap.cues.splice(idx + 1, 0, copy);
   renumber(snap);

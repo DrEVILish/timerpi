@@ -7,7 +7,7 @@
  */
 import {
   api, toast, showError, normalizeCode, el, setText,
-  recentEvents, rememberEvent, forgetEvent, inlineEdit,
+  recentEvents, rememberEvent, forgetEvent,
 } from './ui.js';
 import { fmtCode, fmtRemaining } from './engine.js';
 
@@ -56,8 +56,9 @@ function initHome() {
     rooms?.appendChild(row);
     if (focus) { input.focus(); input.select(); }
   };
-  addRoom('Room A');
-  addRoom('Room B');
+  // No rooms by default (owner 2026-10-20): an event without named rooms
+  // gets one room, so a quick timer is one form away. Named rooms can be
+  // added here or later on the Event Technician page.
   document.getElementById('ev-add-room')?.addEventListener('click', () => {
     const n = rooms.querySelectorAll('input').length;
     addRoom(`Room ${String.fromCharCode(65 + Math.min(n, 25))}`, true);
@@ -77,14 +78,15 @@ function initHome() {
     try {
       const out = await api('POST', '/api/events', { name, password: pw, rooms: roomNames });
       rememberEvent(out.code, name);
-      location.href = out.admin; // stays disabled while the page changes
+      // One room: straight to its timer. Several: the Event Technician page.
+      location.href = out.room || out.admin; // stays disabled while the page changes
     } catch (ex) {
       if (btn) btn.disabled = false;
       showError(err, ex.message);
     }
   });
 
-  // Recent events (this browser only), shown above everything with a
+  // Your recent events (this browser only), shown above everything with a
   // Resume button; the whole panel stays hidden when there are none
   // (STATUS U20).
   const list = document.getElementById('recent-list');
@@ -192,7 +194,8 @@ function initAdmin() {
   function buildCard(code) {
     const room = () => rooms.find((x) => x.code === code) || {};
     const parts = {
-      name: el('span'),
+      name: el('span', { title: 'Double-click to rename' }),
+      lock: el('span', { class: 'badge', title: 'This room has a moderator password', text: '🔒' }),
       status: el('span', { class: 'status push' }),
       clock: el('div', { class: 'readout readout-lg', dataset: { remaining: '1' } }),
       now: el('dd'),
@@ -205,8 +208,14 @@ function initAdmin() {
     parts.pause.addEventListener('click', () => verb(room().paused ? 'resume' : 'pause', code, parts.pause));
     parts.blank = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'blank' } });
     parts.blank.addEventListener('click', () => verb(room().blanked ? 'unblank' : 'blank', code, parts.blank));
+    parts.name.addEventListener('dblclick', () => renameRoom(code));
+    const more = el('button', {
+      class: 'btn btn-sm btn-ghost btn-icon', type: 'button', title: 'Rename, password, order, duplicate, export, delete',
+      'aria-label': 'Room actions', 'aria-haspopup': 'menu', dataset: { roomMenu: code },
+    }, '⋯');
+    more.addEventListener('click', () => openRoomMenu(code, more));
     const card = el('article', { class: 'panel stack is-gap-xs', dataset: { room: code } },
-      el('div', { class: 'panel-header cluster' }, parts.name, parts.status),
+      el('div', { class: 'panel-header cluster' }, parts.name, parts.lock, parts.status, more),
       parts.clock,
       el('dl', { class: 'props' },
         el('dt', { text: 'Now' }), parts.now,
@@ -241,6 +250,7 @@ function initAdmin() {
       const { card, parts } = entry;
       const [label, cls] = stateOf(r);
       setText(parts.name, r.name);
+      parts.lock.hidden = !r.hasPassword;
       setText(parts.status, label);
       parts.status.className = `status ${cls} push`;
       setText(parts.clock, r.running ? fmtClock(r.remainingMS) : '—');
@@ -302,42 +312,62 @@ function initAdmin() {
     });
   }
 
-  // Rooms table
+  // Room actions: one ⋯ menu shared by every card (ftl .dropdown popover,
+  // anchored to the button that opened it).
   const reload = () => location.reload();
-  for (const row of document.querySelectorAll('#rooms-body tr[data-room]')) {
-    const room = row.dataset.room;
-    const nameEl = row.querySelector('[data-rename]');
-    inlineEdit(nameEl, (name) => api('PATCH', `/api/events/${EV}/rooms/${room}`, { name }));
-    row.querySelector('[data-room-pw]')?.addEventListener('click', async () => {
-      const res = await tpPrompt(`Moderators of "${nameEl.textContent}" will need this password.`, '', {
+  const menu = document.getElementById('room-menu');
+  let menuRoom = '';
+  const roomName = (code) => rooms.find((r) => r.code === code)?.name || '';
+  const patchRoom = (code, body, okMsg) => run(() => api('PATCH', `/api/events/${EV}/rooms/${code}`, body), okMsg);
+  async function renameRoom(code) {
+    const res = await tpPrompt('Room name', roomName(code), { title: 'Rename room', ok: 'Rename' });
+    const name = res?.value?.trim();
+    if (name && name !== roomName(code)) patchRoom(code, { name }, 'Room renamed').then((ok) => ok && reload());
+  }
+  function openRoomMenu(code, btn) {
+    menuRoom = code;
+    const i = rooms.findIndex((r) => r.code === code);
+    menu.querySelector('[data-room-pw-clear]').hidden = !rooms[i]?.hasPassword;
+    menu.querySelector('[data-room-move="-1"]').hidden = i <= 0;
+    menu.querySelector('[data-room-move="1"]').hidden = i < 0 || i >= rooms.length - 1;
+    menu.querySelector('[data-room-export]').href = `/api/shows/${code}/file`;
+    try { menu.showPopover({ source: btn }); } catch { menu.showPopover(); }
+  }
+  menu?.addEventListener('click', async (e) => {
+    const item = e.target.closest('.dropdown-item');
+    if (!item) return;
+    const room = menuRoom;
+    const name = roomName(room);
+    menu.hidePopover();
+    if (item.matches('[data-room-export]')) return; // the link downloads
+    if (item.matches('[data-room-rename]')) return renameRoom(room);
+    if (item.matches('[data-room-pw]')) {
+      const res = await tpPrompt(`Moderators of "${name}" will need this password.`, '', {
         title: 'Room password', ok: 'Set password',
         fields: [{ id: 'pw', label: 'Password', type: 'password', autocomplete: 'new-password' }],
       });
-      const pw = res?.pw;
-      if (pw) run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { password: pw }), 'Room password set').then((ok) => ok && reload());
-    });
-    row.querySelector('[data-room-pw-clear]')?.addEventListener('click', () =>
-      run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { clearPassword: true }), 'Room password removed').then((ok) => ok && reload()));
-    for (const b of row.querySelectorAll('[data-room-move]')) {
-      b.addEventListener('click', () => {
-        const pos = Number(row.firstElementChild.textContent) + Number(b.dataset.roomMove);
-        run(() => api('PATCH', `/api/events/${EV}/rooms/${room}`, { pos })).then((ok) => ok && reload());
-      });
+      if (res?.pw) patchRoom(room, { password: res.pw }, 'Room password set');
+      return;
+    }
+    if (item.matches('[data-room-pw-clear]')) return patchRoom(room, { clearPassword: true }, 'Room password removed');
+    if (item.matches('[data-room-move]')) {
+      const pos = rooms.findIndex((r) => r.code === room) + 1 + Number(item.dataset.roomMove);
+      return patchRoom(room, { pos }).then((ok) => ok && reload());
     }
     // Duplicate (moved here from the room's Setup tab, STATUS U29): same
     // sessions, notes and day start — a new room, stopped, no password.
-    row.querySelector('[data-room-dup]')?.addEventListener('click', async () => {
-      const res = await tpPrompt('The new room gets the same sessions, notes and day start. It starts stopped, without a password.', `${nameEl.textContent} (copy)`, {
+    if (item.matches('[data-room-dup]')) {
+      const res = await tpPrompt('The new room gets the same sessions, notes and day start. It starts stopped, without a password.', `${name} (copy)`, {
         title: 'Duplicate room', ok: 'Duplicate',
       });
-      if (!res) return;
-      run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then((ok) => ok && reload());
-    });
-    row.querySelector('[data-room-delete]')?.addEventListener('click', async () => {
-      const ok = await tpConfirm(`"${nameEl.textContent}" and its sessions, polls and screen layouts are deleted for good.`, { title: 'Delete room?', ok: 'Delete', danger: true });
-      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then((ok) => ok && reload());
-    });
-  }
+      if (res) run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then((ok) => ok && reload());
+      return;
+    }
+    if (item.matches('[data-room-delete]')) {
+      const ok = await tpConfirm(`"${name}" and its sessions, polls and screen layouts are deleted for good.`, { title: 'Delete room?', ok: 'Delete', danger: true });
+      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then((done) => done && reload());
+    }
+  });
   document.getElementById('room-add')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();

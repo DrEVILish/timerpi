@@ -1,5 +1,6 @@
 // BUGLOG RS24: pressing Enter twice on "Create event" creates one event.
-export const name = 'create event submits once';
+// With no rooms named it gets one room and opens on its timer (2026-10-20).
+export const name = 'create event submits once; no rooms → one room, straight to its timer';
 
 export async function run(t) {
   const ctx = await t.browser.newContext();
@@ -14,7 +15,9 @@ export async function run(t) {
   await pg.fill('#ev-pw2', 'secret-pw');
   await pg.press('#ev-pw2', 'Enter');
   await pg.press('#ev-pw2', 'Enter').catch(() => {});
-  await pg.waitForURL(/\/admin$/, { timeout: 8000 });
+  await pg.waitForURL(/\/c\/[A-Z0-9]+$/, { timeout: 8000 });
   t.check(`one create request (${posts})`, posts === 1);
+  await pg.waitForSelector('#tp-clock');
+  t.check('opened on the room\'s Run page', !!(await pg.$('.tp-transport-bar [data-cmd="go"]')));
   await ctx.close();
 }

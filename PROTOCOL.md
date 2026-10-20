@@ -25,6 +25,7 @@
 | `GET /settings` | box | Box settings: device identity, default theme, OSC. No box session → 303 to `/box?next=/settings` |
 | `GET /box` | anyone | Box password: first-time setup, sign-in, or (signed in) change password / sign out |
 | `POST /logout` | — | Drops every TimerPi session cookie on this browser (a same-origin form; `GET` just redirects home, so a cross-site link can't sign anyone out) |
+| `POST /e/:code/signout` | — | Event Technician sign-out: drops only that event's Event Technician session, then 303 to `/e/:code` (room sessions stay). `GET` just redirects home |
 | `POST /e/:code/leave` | — | "Leave event": drops this browser's sessions for that event (SuperOperator + its rooms), then 303 home. `GET` just redirects home |
 | `GET /super`, `GET /setup` | — | Retired; 302 to `/` |
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
@@ -50,7 +51,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 ### Events (`routes/events.go`)
 | Method & path | Notes |
 |---|---|
-| `POST /api/events {name, password, rooms[]}` | Create (password ≥ 4 chars). Sets the supervisor session. → `{code, codeFmt, admin}` |
+| `POST /api/events {name, password, rooms[]?}` | Create (password ≥ 6 chars). `rooms` is optional: none named → one room. Sets the supervisor session. → `{code, codeFmt, admin, room?}`; `room` (`/c/<code>`) only when the event has exactly one room, and the page opens it |
 | `GET /api/events/:code` | Lobby data: `{event:{code, name, theme, mapAsset, hasSuperPassword, isSuper, rooms[{code, name, pos, hasPassword, canModerate}]}}` |
 | `POST /api/events/:code/login {pw, now?}` | Event Technician sign-in. `now` (browser ms) sets a box's clock when it was never set |
 | `POST /api/events/:code/rooms/:room/login {pw}` | Moderator sign-in (`pw` empty when the room has none) → `{room:"/c/<code>"}` |

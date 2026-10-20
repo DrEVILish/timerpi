@@ -77,6 +77,18 @@ func registerEvents(r *gin.Engine, d *Deps) {
 		c.Redirect(http.StatusSeeOther, "/")
 	})
 	r.GET("/e/:code/leave", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
+	// Sign out drops only the Event Technician session (owner 2026-10-20)
+	// and lands on the event's Rooms page; room sessions stay.
+	r.POST("/e/:code/signout", func(c *gin.Context) {
+		ev, ok := d.Store.ResolveEvent(c.Param("code"))
+		if !ok {
+			c.Redirect(http.StatusSeeOther, "/")
+			return
+		}
+		c.SetCookie(superCookieName(ev.Code), "", -1, "/", "", secureCookie(c), true)
+		c.Redirect(http.StatusSeeOther, "/e/"+ev.Code)
+	})
+	r.GET("/e/:code/signout", func(c *gin.Context) { c.Redirect(http.StatusFound, "/") })
 
 	g := r.Group("/api/events")
 	g.POST("", d.apiCreateEvent)
@@ -296,7 +308,11 @@ func (d *Deps) apiCreateEvent(c *gin.Context) {
 		d.notifyShow(r.ID)
 	}
 	d.setSuperSession(c, ev)
-	c.JSON(http.StatusCreated, gin.H{"ok": true, "code": ev.Code, "codeFmt": timerpi.FmtCode(ev.Code), "admin": "/e/" + ev.Code + "/admin"})
+	out := gin.H{"ok": true, "code": ev.Code, "codeFmt": timerpi.FmtCode(ev.Code), "admin": "/e/" + ev.Code + "/admin"}
+	if len(rooms) == 1 { // a single-room event opens straight on its timer
+		out["room"] = "/c/" + rooms[0].Code
+	}
+	c.JSON(http.StatusCreated, out)
 }
 
 func (d *Deps) apiEventLobby(c *gin.Context) {

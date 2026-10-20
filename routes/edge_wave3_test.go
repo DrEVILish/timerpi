@@ -104,13 +104,16 @@ func TestRestMessagesSurface(t *testing.T) {
 	}
 }
 
-// The custom-message form ships "Show now" (checked): Add puts the text
-// on every display immediately instead of silently queueing it.
-func TestMessageFormShowsNow(t *testing.T) {
+// The custom-message form's button is "Send" (owner 2026-10-20): it puts
+// the text on every display immediately; there is no "Add" step.
+func TestMessageFormSends(t *testing.T) {
 	ts := newAPITest(t)
 	_, body := ts.call("GET", "/c/"+ts.showCode, nil, "")
-	if !strings.Contains(string(body), `name="show"`) || !strings.Contains(string(body), `value="true"`) {
-		t.Error("message form missing the show-now checkbox")
+	if !strings.Contains(string(body), `type="submit" data-show="true">Send</button>`) {
+		t.Error("message form has no Send button that shows the message")
+	}
+	if strings.Contains(string(body), `type="submit">Add</button>`) {
+		t.Error("message form still has an Add button")
 	}
 }
 

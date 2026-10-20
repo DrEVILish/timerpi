@@ -79,7 +79,6 @@ export async function run(t) {
 
   // Messages: one delete per message.
   await pg.fill('#messages-panel input[name=text]', 'Mic 2 is live');
-  await pg.uncheck('#messages-panel input[name=show]');
   await pg.click('#messages-panel button[type=submit]');
   await pg.waitForSelector('[data-msg-del]');
   await pg.click('[data-msg-del]');

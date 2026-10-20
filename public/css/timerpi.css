@@ -65,7 +65,17 @@
   .tp-transport-bar { flex-wrap: wrap; }
   .tp-transport-bar .btn-go { flex: 1 1 auto; }
   .tp-transport-bar > :is([data-cmd="flash"], #tp-blank) { flex: 1 1 8rem; justify-content: center; }
+  /* Phones (owner 2026-10-20): the transport is last in the column and
+     sticks to the bottom edge, so it stays in thumb reach all the way down. */
+  .tp-dash .tp-transport-bar { position: sticky; bottom: 0; z-index: 3; order: 9; }
+  /* The running order keeps what you run a room with; timer, alerts and
+     notes stay in the cue editor (long-press a row → All details). */
+  .tp-cuetable :is(.tp-cue-kind, .tp-cue-who, .tp-cue-end, .tp-cue-timer, .tp-cue-atzero, .tp-cue-alert1, .tp-cue-alert2, .tp-cue-notes) { display: none; }
+  .tp-cuetable .tp-cue-title { min-width: 0; }
+  /* All details and Delete live in the long-press row menu on phones. */
+  .tp-cuetable .tp-cue-rowbtns :is([data-cmd="jump"], [data-insp], [data-cmd="cueDel"]) { display: none; }
 }
+.tp-msg-send > .input { flex: 1 1 auto; min-width: 0; }
 
 /* Now panel (left rail). A size container so the readout scales with the
    rail's width, not the window's (U33: "0:09.4" lost its tenths off the

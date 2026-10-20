@@ -91,10 +91,12 @@
         {{- /* U39: the add row's fields (in the table's footer) belong to
              this form, which sits outside the swapped #cuelist. */}}
         <form id="tp-add-form" hidden></form>
+        <p class="field-hint tp-phone-only">Long-press a row for all details or to delete it; drag ⠿ to reorder.</p>
         {{- /* U41: right-click / long-press row menu (ftl .context-menu). */}}
         <div class="context-menu is-at-pointer" id="tp-row-menu" popover role="menu" aria-label="Cue actions">
           <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
           <button class="context-menu-item" type="button" role="menuitem" data-row-act="details">All details…</button>
+          <button class="context-menu-item is-danger" type="button" role="menuitem" data-row-act="del">Delete</button>
         </div>
         {{template "frag-cuelist" .}}
         {{- /* C2 layout (owner note "UI layout requires improvement"): the day

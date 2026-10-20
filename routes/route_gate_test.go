@@ -43,6 +43,8 @@ var openRoutes = map[string]bool{
 	"GET /e/:code/admin":                       true,
 	"GET /e/:code/leave":                       true,
 	"POST /e/:code/leave":                      true, // same-origin form; drops only this browser's cookies
+	"GET /e/:code/signout":                     true,
+	"POST /e/:code/signout":                    true, // same-origin form; drops only this browser's Event Technician cookie
 	"POST /logout":                             true,
 	"POST /api/events/import":                  true, // makes a NEW event, like POST /api/events
 	"GET /favicon.ico":                         true,

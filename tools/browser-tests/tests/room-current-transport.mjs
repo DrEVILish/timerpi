@@ -60,24 +60,28 @@ export async function run(t) {
   const shown = await pg.$eval('#cuelist tbody tr[data-pos="2"]', (tr) => ['tp-cue-who', 'tp-cue-alert1', 'tp-cue-notes', 'tp-cue-atzero'].map((c) => tr.querySelector(`td.${c}`).textContent.trim()));
   t.check(`edited cells show the new values (${shown.join(' | ')})`, shown[0] === 'Foyer' && shown[1].startsWith('1:00') && shown[2] === 'Urns on' && shown[3] === 'Overtime');
 
-  // Messages: a queued message stays listed; show and hide work.
+  // Messages: Send puts each one on stage at once; Hide and Show work.
   const items = () => pg.$$eval('#messages-panel ul.list .list-item', (n) => n.map((li) => li.innerText.replace(/\s+/g, ' ').trim()));
+  t.check('the message button says Send', (await pg.textContent('form[data-cmd="addMsg"] button[type=submit]')).trim() === 'Send');
   await pg.fill('form[data-cmd="addMsg"] input[name=text]', 'On now');
   await pg.click('form[data-cmd="addMsg"] button[type=submit]');
   await pg.waitForTimeout(600);
   await pg.fill('form[data-cmd="addMsg"] input[name=text]', 'Later');
-  await pg.uncheck('form[data-cmd="addMsg"] input[name=show]');
   // Colour is an ftl swatch picker (re-mounted after the panel's swap).
   await pg.click('#messages-panel .swatches label.swatch[title="Red"]');
   await pg.click('form[data-cmd="addMsg"] button[type=submit]');
   await pg.waitForTimeout(900);
   t.check('the colour picker is back after the swap', !!(await pg.$('#messages-panel .swatches input:checked[value="#7C3AED"]')));
   let list = await items();
-  t.check(`queued message is listed (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /queued/.test(s)));
+  t.check(`a sent message is on stage (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
+  await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="hideMsg"]');
+  await pg.waitForTimeout(900);
+  list = await items();
+  t.check(`a hidden message stays listed (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /queued/.test(s)));
   await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="showMsg"]');
   await pg.waitForTimeout(900);
   list = await items();
-  t.check(`showing a queued message keeps the list (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
+  t.check(`showing it again keeps the list (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
   t.check('the badge counts both', (await pg.textContent('#messages-panel .badge')).trim() === '2');
   const sj = await snap();
   const cols = Object.fromEntries((sj.messages ?? sj.snapshot?.messages ?? []).map((m) => [m.text, m.color]));

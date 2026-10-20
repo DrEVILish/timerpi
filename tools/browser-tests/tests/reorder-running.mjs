@@ -6,7 +6,7 @@ export const name = 'reordering the running order keeps the running cue';
 export async function run(t) {
   const { ctx, H, room } = await t.newEvent();
   await ctx.request.put(`${t.base}/api/shows/${room}/cues`, {
-    data: ['One', 'Two', 'Three', 'Four'].map((label) => ({ label, durationMS: 1_200_000 })), headers: H,
+    data: ['One', 'Two', 'Three', 'Four'].map((label, i) => ({ label, durationMS: (i + 1) * 600_000 })), headers: H,
   });
   const snap = async () => (await (await ctx.request.get(`${t.base}/api/shows/${room}`)).json());
   const pg = await ctx.newPage();
@@ -28,14 +28,23 @@ export async function run(t) {
     await pg.mouse.down();
     await pg.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 10 });
     await pg.mouse.up();
-    await pg.waitForTimeout(1000);
+    // Watch what the page shows for a second: the clock must stay on
+    // "Three" (30 min cue, so it reads 29:xx) the whole time.
+    for (let i = 0; i < 10; i++) {
+      await pg.waitForTimeout(100);
+      seen.push(await pg.evaluate(() => `${document.getElementById('tp-cue-label').textContent}|${document.getElementById('tp-clock').textContent}`));
+    }
   };
+  const seen = [];
+  const pageOK = () => seen.every((s) => /^Three\|29:/.test(s));
 
   await drag(4, 1); // a row from below to the top: "Three" shifts down
   let r = await running();
   t.check(`order changed (${r.order})`, r.order.startsWith('Four'));
   t.check(`"Three" still running after a row moved above it (${r.label})`, r.label === 'Three' && r.rt.running);
   t.check('anchor unchanged', r.rt.anchorTS === before.anchorTS);
+  t.check(`page kept showing "Three" counting down (${[...new Set(seen)].join(' ; ')})`, pageOK());
+  seen.length = 0;
 
   const pos = r.rt.activePos;
   await drag(pos, 1); // drag the running cue itself to the top
@@ -43,5 +52,6 @@ export async function run(t) {
   t.check(`running cue moved to the top (${r.order})`, r.order.startsWith('Three'));
   t.check(`"Three" still running after being dragged (${r.label}, pos ${r.rt.activePos})`, r.label === 'Three' && r.rt.running && r.rt.activePos === 1);
   t.check('anchor unchanged after its own drag', r.rt.anchorTS === before.anchorTS);
+  t.check(`page kept showing "Three" after its own drag (${[...new Set(seen)].join(' ; ')})`, pageOK());
   await ctx.close();
 }

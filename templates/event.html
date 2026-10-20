@@ -20,6 +20,7 @@
   </nav>
   <div class="cluster push">
     <span class="tp-event-id tp-wide-only"><span class="text-muted">Event ID</span> <span class="badge mono" title="Share it only with your moderators">{{.Event.CodeFmt}}</span></span>
+    {{if .Event.IsSuper}}<form class="tp-nav-form" method="post" action="/e/{{.Event.Code}}/signout"><button class="nav-item btn btn-ghost" type="submit" title="Sign out as Event Technician and go back to the rooms">Sign out</button></form>{{end}}
     <form class="tp-nav-form" method="post" action="/e/{{.Event.Code}}/leave"><button class="nav-item btn btn-ghost" type="submit" title="Leave this event on this browser (sign out of its rooms and Event Technician)">Leave<span class="tp-wide-only"> event</span></button></form>
   </div>
 </header>
@@ -106,46 +107,22 @@
     <div class="alert alert-info" role="status">This event is running at the venue. While the venue is connected, everything here works on the venue's copy; if the link drops, this page shows the last copy and changes pause until it is back.</div>
     {{end}}
 
+    {{- /* One room list (owner 2026-10-20): live cards, each with a ⋯ menu
+         for rename, password, order, duplicate, export and delete. */}}
     <section class="stack is-gap-s" aria-labelledby="live-h">
       <div class="row is-items-center is-gap-s is-wrap">
-        <h2 id="live-h" class="tp-section-title">Live</h2>
+        <h2 id="live-h" class="tp-section-title">Rooms</h2>
         <div class="cluster push">
           {{if .Event.HasSuperPW}}<button class="btn" type="button" id="phone-link-btn" title="Show a QR code that signs your phone in to this dashboard">Sign in on your phone</button>{{end}}
-          <button class="btn btn-danger" data-verb-all="blank" title="Blank every screen in every room">Blackout all rooms</button>
+          <button class="btn btn-danger" data-verb-all="blank" title="Blank every screen in every room">Blackout all</button>
           <button class="btn" data-verb-all="unblank" title="Bring every room's screens back">Restore all</button>
         </div>
       </div>
-      <div class="grid" style="--grid-min: 17rem" id="live-grid" aria-live="polite">
+      <div class="grid" style="--grid-min: min(17rem, 100%)" id="live-grid" aria-live="polite">
         <div class="empty-state is-loading" aria-busy="true"><span class="empty-state-title">Loading rooms…</span></div>
       </div>
-    </section>
-
-    <section class="panel" aria-labelledby="rooms-h">
-      <div class="panel-header" id="rooms-h">Rooms</div>
-      <p class="text-muted">Double-click a room name to rename it. Each room has one moderator; a room password is optional.</p>
-      <table class="table is-stacked">
-        <thead><tr><th>#</th><th>Room</th><th>Moderator password</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
-        <tbody id="rooms-body">
-          {{range .Event.Rooms}}
-          <tr data-room="{{.Code}}">
-            <td class="mono" data-label="#">{{.Pos}}</td>
-            <td class="is-editable" data-label="Room" data-rename tabindex="0" title="Double-click to rename">{{.Name}}</td>
-            <td data-label="Moderator password">{{if .HasPassword}}<span class="badge">Set</span>{{else}}<span class="text-muted">None</span>{{end}}
-              <button class="btn btn-sm btn-ghost" data-room-pw>Set…</button>
-              {{if .HasPassword}}<button class="btn btn-sm btn-ghost" data-room-pw-clear>Clear</button>{{end}}</td>
-            <td data-label="Actions"><div class="cluster is-gap-2xs">
-              <button class="btn btn-sm btn-ghost" data-room-move="-1" title="Move up" aria-label="Move up">▲</button>
-              <button class="btn btn-sm btn-ghost" data-room-move="1" title="Move down" aria-label="Move down">▼</button>
-              <button class="btn btn-sm btn-ghost" data-room-dup title="Copy this room's running order into a new room">Duplicate</button>
-              <a class="btn btn-sm btn-ghost" href="/api/shows/{{.Code}}/file" title="Download this room as a file">Export</a>
-              <button class="btn btn-sm btn-danger" data-room-delete>Delete</button>
-            </div></td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-      <div class="row is-gap-s is-wrap mt-m">
-        <form id="room-add" class="row is-gap-xs">
+      <div class="row is-gap-s is-wrap is-items-center">
+        <form id="room-add" class="row is-gap-xs tp-room-add">
           <input class="input input-sm" name="name" placeholder="New room name" maxlength="60" required aria-label="New room name">
           <button class="btn btn-sm btn-primary tp-nowrap" type="submit">Add room</button>
         </form>
@@ -153,6 +130,17 @@
         <label class="btn btn-sm btn-ghost">Import a room file
           <input type="file" id="room-import" accept="application/json,.json" hidden>
         </label>
+      </div>
+      <p class="field-hint">One room is all a quick timer needs. Each room has one moderator; a room password is optional.</p>
+      <div class="dropdown" id="room-menu" popover role="menu" aria-label="Room actions">
+        <button class="dropdown-item" type="button" role="menuitem" data-room-rename>Rename…</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-room-pw>Room password…</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-room-pw-clear>Remove room password</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-room-move="-1">Move up</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-room-move="1">Move down</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-room-dup title="Copy this room's running order into a new room">Duplicate…</button>
+        <a class="dropdown-item" role="menuitem" data-room-export href="#" title="Download this room as a file">Export</a>
+        <button class="dropdown-item text-danger" type="button" role="menuitem" data-room-delete>Delete…</button>
       </div>
     </section>
 

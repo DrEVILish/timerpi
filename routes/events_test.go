@@ -264,7 +264,7 @@ func TestLeaveEventOnlyThisEvent(t *testing.T) {
 	var other struct{ Code string }
 	_ = json.Unmarshal([]byte(body), &other)
 	_, page := p.do("GET", "/e/"+ts.eventCode, "", "text/html")
-	if !strings.Contains(page, "Event ID") || !strings.Contains(page, `method="post" action="/e/`+ts.eventCode+`/leave"`) || strings.Contains(page, ">Sign out<") {
+	if !strings.Contains(page, "Event ID") || !strings.Contains(page, `method="post" action="/e/`+ts.eventCode+`/leave"`) || strings.Contains(page, `action="/logout"`) {
 		t.Error("event page: want the Event ID label and Leave event")
 	}
 	p.do("GET", "/e/"+ts.eventCode+"/leave", "") // a plain link: no effect
@@ -277,5 +277,42 @@ func TestLeaveEventOnlyThisEvent(t *testing.T) {
 	}
 	if code, _ := p.do("GET", "/e/"+other.Code+"/admin", "", "text/html"); code != 200 {
 		t.Errorf("the other event's session was dropped too: %d", code)
+	}
+}
+
+// Owner 2026-10-20: an event made without named rooms gets one room and
+// opens on its timer; Sign out drops only the Event Technician session and
+// lands on the event's Rooms page.
+func TestEventQuickRoomAndSignOut(t *testing.T) {
+	ts := newAPITest(t)
+	boss := newPersona(ts)
+	code, body := boss.do("POST", "/api/events", `{"name":"Quick","password":"chief1"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create event: %d %s", code, body)
+	}
+	var created struct{ Code, Admin, Room string }
+	_ = json.Unmarshal([]byte(body), &created)
+	if !strings.HasPrefix(created.Room, "/c/") {
+		t.Fatalf("single-room event should open its room, got %q", created.Room)
+	}
+	if code, _ := boss.do("GET", created.Room, "", "text/html"); code != 200 {
+		t.Fatalf("creator opens the room: %d", code)
+	}
+	if _, two := boss.do("POST", "/api/events", `{"name":"Two","password":"chief1","rooms":["A","B"]}`); strings.Contains(two, `"room"`) {
+		t.Errorf("a two-room event should go to the Event Technician page: %s", two)
+	}
+
+	req, _ := http.NewRequest("POST", ts.srv.URL+"/e/"+created.Code+"/signout", nil)
+	req.Header.Set("Origin", ts.srv.URL)
+	res, err := boss.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if loc := res.Header.Get("Location"); res.StatusCode != http.StatusSeeOther || loc != "/e/"+created.Code {
+		t.Errorf("sign out: %d → %q, want 303 to the Rooms page", res.StatusCode, loc)
+	}
+	if code, _ := boss.do("GET", "/api/events/"+created.Code+"/live", ""); code != http.StatusUnauthorized {
+		t.Errorf("after sign out the Event Technician API answers %d, want 401", code)
 	}
 }

@@ -298,8 +298,10 @@ body.app > .app-status > * { min-width: 0; }
    the brand to its own "large title" row (ios-*) are pulled back. */
 body.app > .app-bar > .nav-brand { order: 0; flex: none; font-size: inherit; }
 body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
+.tp-phone-only { display: none; }
 @media (max-width: 600px) {
   .tp-wide-only { display: none !important; } /* utility: beats .app-bar .nav-item */
+  .tp-phone-only { display: revert !important; }
   body.app > .app-bar { gap: .25rem .5rem; }
   /* Phones: brand + clock + actions on line 1, the room and Event
      Technician on line 2. */

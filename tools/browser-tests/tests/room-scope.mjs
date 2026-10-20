@@ -24,7 +24,8 @@ export async function run(t) {
   // SuperOperator: Duplicate on the dashboard.
   const sup = await ctx.newPage();
   await sup.goto(`${t.base}/e/${event}/admin`);
-  await sup.click(`tr[data-room="${room}"] [data-room-dup]`);
+  await sup.click(`#live-grid [data-room="${room}"] [data-room-menu]`);
+  await sup.click('#room-menu [data-room-dup]');
   await sup.fill('dialog.modal input', 'Stark 2');
   await sup.click('dialog.modal .modal-footer .btn-primary');
   await sup.waitForTimeout(1500);

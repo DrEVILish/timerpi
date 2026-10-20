@@ -220,8 +220,9 @@ func registerFTL(r *gin.Engine) {
 
 // registerHealth is the readiness probe (sessions: the injected hub's count).
 func registerHealth(r *gin.Engine, d *Deps) {
-	// Browsers probe /favicon.ico on pages without an icon link.
-	r.GET("/favicon.ico", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/img/favicon.svg") })
+	// Browsers probe /favicon.ico on pages without an icon link; Safari
+	// can't draw an SVG tab icon, so this is the real 16/32/48 px .ico.
+	r.GET("/favicon.ico", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/img/favicon.ico") })
 	r.GET("/health", func(c *gin.Context) {
 		var connected map[string]int
 		if d.Hub != nil {

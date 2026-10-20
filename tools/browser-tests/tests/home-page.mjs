@@ -14,9 +14,9 @@ export async function run(t) {
     await pg.$eval('h1.tp-hero-title', (h) => h.firstElementChild?.tagName === 'IMG' && h.textContent.trim() === 'Run your event'));
 
   // U22: room rows with an X; "Add a room" is a real button.
-  t.check('U22: two room rows to start, each with an X', (await pg.$$('#ev-rooms .tp-room-row button[aria-label="Remove room"]')).length === 2);
-  await pg.click('#ev-add-room');
-  await pg.click('#ev-add-room');
+  t.check('no room rows to start (rooms are optional)', (await pg.$$('#ev-rooms .tp-room-row')).length === 0);
+  for (let i = 0; i < 4; i++) await pg.click('#ev-add-room');
+  t.check('U22: each added room row has an X', (await pg.$$('#ev-rooms .tp-room-row button[aria-label="Remove room"]')).length === 4);
   await pg.click('#ev-rooms .tp-room-row:nth-child(2) button');
   const names = await pg.$$eval('#ev-rooms input', (is) => is.map((i) => i.value));
   t.check(`U22: add two, remove "Room B" → ${names.join(',')}`, names.join(',') === 'Room A,Room C,Room D');
@@ -33,6 +33,7 @@ export async function run(t) {
   t.check(`created with the rooms as listed (${ev.event.rooms.map((r) => r.name).join(',')})`, ev.event.rooms.map((r) => r.name).join(',') === 'Room A,Room C,Room D');
   await pg.goto(t.base + '/');
   t.check('U20: recent box shown', !(await pg.$eval('#recent-panel', (p) => p.hidden)));
+  t.check('the recent box is "Your recent events"', (await pg.textContent('#recent-panel .panel-header')).trim() === 'Your recent events');
   t.check('U20: recent box sits above "Run your event"', await pg.evaluate(() =>
     document.getElementById('recent-panel').compareDocumentPosition(document.querySelector('.tp-hero')) & Node.DOCUMENT_POSITION_FOLLOWING));
   if (process.env.SHOTS) await pg.screenshot({ path: `${process.env.SHOTS}/home.png`, fullPage: true });

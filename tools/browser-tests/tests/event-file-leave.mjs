@@ -31,7 +31,7 @@ export async function run(t) {
 
   if (process.env.SHOTS) await pg.screenshot({ path: `${process.env.SHOTS}/event-file-leave.png` });
   // Leave event: a POST form, back home, signed out of the copy.
-  await Promise.all([pg.waitForURL(`${t.base}/`, { timeout: 5000 }), pg.click('form.tp-nav-form button')]);
+  await Promise.all([pg.waitForURL(`${t.base}/`, { timeout: 5000 }), pg.click('form.tp-nav-form[action$="/leave"] button')]);
   const st = (await ctx.request.get(`${t.base}/api/events/${copy}/export`)).status();
   t.check(`Leave event signed this browser out (${st})`, st === 401);
   // A plain GET link does not sign out.

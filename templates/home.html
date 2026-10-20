@@ -1,10 +1,10 @@
 {{- /*
   home.html — GET / (no session needed).
 
-  "Recent on this device" (only when this browser has one) with Resume,
+  "Your recent events" (only when this browser has one) with Resume,
   then three doors:
     1. Join event   — type the event code → /e/<code> (pick your room)
-    2. Create event — name, supervisor password, rooms → SuperOperator
+    2. Create event — name, supervisor password, optional rooms → the room (one) or SuperOperator
     3. Open a screen here — opens /d/; capture it from a room's Screens page
   Owner wording rules (STATUS U19–U23): no "an" on this page.
 
@@ -31,7 +31,7 @@
 <main class="app-main">
   <div class="tp-page stack is-gap-l">
     <section class="panel" id="recent-panel" hidden>
-      <div class="panel-header">Recent on this device</div>
+      <div class="panel-header">Your recent events</div>
       <ul class="list" id="recent-list"></ul>
     </section>
 
@@ -72,9 +72,10 @@
             <input class="input" id="ev-pw2" type="password" minlength="6" autocomplete="new-password" required>
           </div>
           <div class="field">
-            <span class="label">Rooms</span>
+            <span class="label">Rooms <span class="text-muted">(optional)</span></span>
             <div id="ev-rooms" class="stack is-gap-2xs"></div>
             <button class="btn btn-sm" type="button" id="ev-add-room">+ Add a room</button>
+            <span class="field-hint">Skip this for a quick timer: you get one room. Add named rooms any time.</span>
           </div>
           <button class="btn btn-primary tp-btn-lg" type="submit">Create event</button>
           <p class="field-error" id="create-error" role="alert" hidden></p>

@@ -1348,7 +1348,8 @@ function openColorPop(anchor, value, defaultColor, onPick) {
 }
 
 /** U41: right-click (or a long press on touch) on a row opens its menu:
-    Duplicate and All details. ftl `.context-menu` at the pointer. */
+    Duplicate, All details and Delete (phones hide the row's bin, so the
+    menu is where they delete). ftl `.context-menu` at the pointer. */
 function initRowMenu() {
   const menu = $('#tp-row-menu');
   if (!menu) return;
@@ -1388,6 +1389,7 @@ function initRowMenu() {
     try { menu.hidePopover(); } catch { /* closed */ }
     if (item.dataset.rowAct === 'dup') sendCommand('cueDup', { pos });
     if (item.dataset.rowAct === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
+    if (item.dataset.rowAct === 'del') sendCommand('cueDel', { pos }); // choosing it from the menu is the confirmation
   });
 }
 

@@ -9,7 +9,8 @@ export async function run(t) {
   const pg = await ctx.newPage();
   // Prompt (dialog.js): Duplicate a room.
   await pg.goto(`${t.base}/e/${event}/admin`);
-  await pg.click(`tr[data-room="${room}"] [data-room-dup]`);
+  await pg.click(`#live-grid [data-room="${room}"] [data-room-menu]`);
+  await pg.click('#room-menu [data-room-dup]');
   await pg.waitForSelector('dialog.modal[open] .modal-footer .btn-primary');
   if (shots) await pg.screenshot({ path: `${shots}/prompt.png` });
   await pg.click('dialog.modal[open] .modal-footer [data-close]');
