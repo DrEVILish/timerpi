@@ -173,7 +173,7 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 - Session cookies are `HMAC(secret, scope | codes | stored password hash)`. The secret is random per box (settings `auth.secret`). Changing a password therefore signs every holder of the old one out.
 - Passwords are stored as PBKDF2-SHA256 hashes (`timerpi.HashPassword`).
 - A room code alone, for example from an audience QR, never grants operator access.
-- The waiting room (`/api/waiting`) is the Event Technician's. Each waiting row stores the client IP it registered from; on the cloud a technician sees and captures only rows from their own address (the venue's NAT), on a box every row (`routes/waiting.go` `waitingVisible`).
+- The waiting room (`/api/waiting`) is the Event Technician's. Each waiting row stores the client IP it registered from; on the cloud a technician sees and captures only rows from their own address (the venue's NAT), on a box every row (`routes/waiting.go` `waitingVisible`). A waiting screen polls every 2 s; the list puts rows seen in the last 15 s (`timerpi.WaitingLiveMS`, `live: true`) first, newest first, and the Screens page offers those a one-tap "Show the timer here" (presenter + Full timer).
 - Single-use phone sign-in nonces live in `spent_nonces` until they expire, so a restart doesn't revive a used code. Uploaded image ids are random (2^40–2^53), so `/assets/<id>` can't be walked; older images keep their small ids.
 - Sign-out and Leave event are same-origin `POST` forms (OriginGuard); a cross-site link can't sign anyone out.
 - OriginGuard is open by default (any Host). A non-empty `allowed_hosts` setting switches to strict mode (HTTP 421 for unknown public hosts). The WS upgrader calls `routes.SameOriginRequest`.

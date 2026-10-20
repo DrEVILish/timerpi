@@ -48,6 +48,7 @@ func TestFmtAgoBoundaries(t *testing.T) {
 		want string
 	}{
 		{"just now", now - 5_000, "just now"},
+		{"seconds", now - 40_500, "40s ago"},
 		{"minutes", now - 30*60_000, "30m ago"},
 		{"hours", now - 5*3_600_000, "5h ago"},
 		{"days", now - 3*86_400_000, "3d ago"},

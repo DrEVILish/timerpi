@@ -230,9 +230,14 @@
 .b-ed-row {
   display: flex;
   align-items: center;
-  gap: .4rem;
-  flex-wrap: nowrap;
+  gap: .4rem .75rem;
+  flex-wrap: wrap; /* name, then X/Y/W/H steppers two by two, then settings/remove */
 }
+.b-ed-row > .b-ed-name { flex: 1 0 100%; }
+.b-ed-grp { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
+.b-ed-grp .b-ed-val { min-inline-size: 2ch; text-align: center; }
+/* The canvas first, the tile list under it (the page scrolls). */
+body[data-editing] .b-list-editor { order: 1; }
 .b-ed-name { flex: 1 1 auto; min-width: 4rem; text-transform: uppercase; letter-spacing: .04em; font-size: .8em; }
 .b-ed-val { min-inline-size: 2ch; text-align: center; }
 
@@ -595,7 +600,7 @@ body[data-blanked="true"] .tp-blanked { display: grid; }
 .b-toolbar .b-boards-label { color: var(--muted); font-size: .85rem; }
 .b-toolbar .b-save-state { color: var(--muted); font-size: .85rem; }
 .b-palette {
-  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  display: flex; align-items: flex-start; gap: .6rem 1.5rem; flex-wrap: wrap;
   padding: .4rem 1rem;
   border-block-end: 1px solid var(--border, transparent);
 }
@@ -629,7 +634,11 @@ body[data-editing] .b-w-grip { font-size: 1.1em; color: var(--accent); letter-sp
 body[data-editing] .b-w-chrome .icon { width: 1em; height: 1em; }
 /* In the Screens page editor the modal owns Done and the layout choice. */
 body[data-compose] #b-edit-toggle, body[data-compose] #b-boards,
-body[data-compose] .b-boards-label, body[data-compose] #b-new { display: none !important; }
+body[data-compose] .b-boards-label, body[data-compose] #b-new,
+/* ...and names the layout and says that changes save (review I11), so the
+   frame drops its own bar, badge, name and note. */
+body[data-compose] .b-topbar, body[data-compose] #b-edit-badge,
+body[data-compose] .b-board-name, body[data-compose] .b-edit-note { display: none !important; }
 /* The resize hit area sits over ftl's drawn corner (.widget::after). */
 body[data-editing] .b-w-resize {
   display: block;
@@ -730,11 +739,6 @@ body[data-editing] .b-grid { padding-block-end: 10rem; }
    - Compose buttons meet the 44px coarse-pointer floor.
    -------------------------------------------------------------------------- */
 body[data-editing] .b-join-card { display: none; }
-body[data-editable="1"] .b-topbar-board::after {
-  content: " · compose link — show the locked board on TVs";
-  color: var(--muted);
-  font-weight: 400;
-}
 .b-edit-note { color: var(--muted); font-size: .85rem; }
 @media (pointer: coarse) {
   .b-palette-list button, .b-toolbar .btn, .b-settings .btn,
@@ -844,9 +848,13 @@ body[data-editable="1"] .b-topbar-board::after {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-body[data-editing] .b-w-chrome button { min-block-size: 1.6em; }
+/* Mouse only: on touch the 44px floor above must win (review #13; this
+   rule used to come later with equal specificity and undo it). */
+@media not (pointer: coarse) {
+  body[data-editing] .b-w-chrome button { min-block-size: 1.6em; }
+}
 @media (pointer: coarse) {
-  .b-w-resize { inline-size: 2.6rem; block-size: 2.6rem; }
+  body[data-editing] .b-w-resize { inline-size: 2.75rem; block-size: 2.75rem; }
 }
 @keyframes b-overlap-nudge {
   0%, 100% { translate: 0 0; }
@@ -854,7 +862,7 @@ body[data-editing] .b-w-chrome button { min-block-size: 1.6em; }
   75% { translate: .35% 0; }
 }
 body[data-editing] .b-overlap {
-  outline: 3px solid var(--tp-accent, #7C3AED);
+  outline: 3px solid var(--focus, var(--accent));
   outline-offset: -1px;
   animation: b-overlap-nudge .16s ease-in-out 3;
 }
@@ -967,9 +975,9 @@ body[data-waiting] .tp-waiting { display: flex; }
    -text variant on their own surfaces. */
 .tp-display .tp-clock[data-state="held"] { color: var(--warning); }
 
-/* Link toasts landed over the app-bar's Theme label on every operator
-   page; park them below the bar (display surfaces have no bar). */
-body.app .toast-region { inset-block-start: calc(4.2rem + env(safe-area-inset-top, 0px)); }
+/* Toasts: ftl core anchors .app .toast-region under the app bar's real
+   bottom (anchor positioning), so a two-row phone bar is cleared too. The
+   old fixed 4.2rem offset landed on the phone bar's second row (review #12). */
 
 /* Inspector paired fields collapsed to 61px fragments ("Lesli") under the
    uppercase mono labels; give each field a real floor. */

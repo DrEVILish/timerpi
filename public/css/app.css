@@ -6,14 +6,15 @@
 .tp-page { width: 100%; max-width: 72rem; margin: 0 auto; padding: var(--space-l, 1.5rem) var(--space-m, 1rem) var(--space-2xl, 3rem); }
 .tp-narrow { max-width: 32rem; }
 
-.tp-hero-title { font-size: clamp(1.6rem, 3vw + 1rem, 2.6rem); line-height: 1.1; margin: 0; }
+.tp-hero-title { font-size: clamp(1.4rem, 2vw + .8rem, 2rem); line-height: 1.1; margin: 0; } /* one page title; section headings are .85rem labels */
 .tp-hero-brand { display: flex; align-items: center; gap: .5em; }
 .tp-hero-logo { height: 1.1em; width: auto; flex: none; }
 .tp-room-row > .input { flex: 1; min-width: 0; }
-.tp-section-title { font-size: 1.25rem; margin: 0; }
+/* Section headings are the theme's dim panel labels, not page titles
+   (blue-future: "headings are 0.8em"; review #14): panel-header size. */
+.tp-section-title { font-size: .85rem; margin: 0; }
 .tp-bar-title { font-weight: 700; }
 
-.tp-door .panel-header { font-size: 1.1rem; }
 .tp-code-input { text-transform: uppercase; letter-spacing: .12em; font-size: 1.4rem; }
 .tp-btn-lg { min-height: 2.9rem; padding-inline: 1.25rem; font-size: 1.05rem; justify-content: center; }
 
@@ -25,19 +26,26 @@
 /* ftl .otp sizes its cells from its own width (container query) and has no
    intrinsic width, so in the pairing row it needs one. */
 /* ftl .grid is auto-fit: a lone card would stretch to the full row (a
-   page-wide screen preview). Keep cards at card width. */
-:is(#room-grid, #live-grid, #tp-gal, #tp-waiting-list) > * { max-inline-size: 28rem; }
+   page-wide screen preview). auto-fill keeps empty tracks, so a lone card
+   stays card-width and every row lines up with the panels below (review
+   #14; a max-inline-size cap left uneven gaps). */
+:is(#room-grid, #live-grid, #tp-gal, #tp-waiting-list) { grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr)); }
+/* Pairing code: ftl .otp is overflow:hidden and its input one cell wider
+   than the boxes, so the caret after the 6th digit scrolled the first digit
+   out of view. UPSTREAM (review I15, core/components/prose.css; fix there:
+   overflow: clip); remove this when the bundle has it. */
+.otp { overflow: clip; }
 #pair-form .otp { inline-size: 18rem; max-inline-size: 100%; }
 /* Selects size to their longest option plus the chevron (material's
    chevron sat on "Main Hall"). */
 #pair-form .select { min-inline-size: 10rem; padding-inline-end: 2.2em; }
 .tp-nowrap { white-space: nowrap; flex: none; }
+.tp-signin-pw { flex: 0 1 18rem; min-width: 10rem; }
 .tp-map-thumb { max-height: 4rem; max-width: 8rem; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius, 4px); }
 
 /* Touch-first targets on tablets (moderators) — PRODUCT L6. */
 @media (pointer: coarse) {
-  .tp-shell .btn { min-height: 2.75rem; }
-  .tp-shell .btn-sm { min-height: 2.5rem; }
+  .tp-shell :is(.btn, .btn-sm) { min-height: 2.75rem; } /* 44px: never below ftl's --tap-min */
 }
 
 /* ---------------------------------------------------- audience phone page */
@@ -234,7 +242,15 @@ body.b-board [data-aud-mode="bars"] > .b-aud-body { flex: 0 1 auto; }
 .b-evsched { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2cqw; height: 100%; overflow: hidden;
   font-size: clamp(.8rem, min(6cqh, 1.9cqw), 2.4rem); }
 .b-evsched > * { min-width: 0; overflow: hidden; }
-.b-preset-group { font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); align-self: center; margin-inline-start: .4rem; }
+.b-preset-group { display: block; padding: .4rem .75rem .1rem; } /* ftl .label heading a group of .dropdown-items */
+/* Editor palette: each group keeps its title above its controls. */
+.b-palette-group { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.b-palette-tiles { flex: 1 1 30rem; }
+.b-palette-group:not(.b-palette-tiles) { flex: none; }
+.b-palette-group .cluster > label { flex-wrap: nowrap; white-space: nowrap; }
+/* In the Screens page editor the bar only carries the save state: no empty
+   strip before the first save (phones keep it for the palette toggle). */
+@media (min-width: 761px) { body[data-compose] .b-toolbar:has(.b-save-state:empty) { display: none; } }
 
 /* ------------------------------------------------------- Screens page */
 .tp-scr { position: relative; } /* ftl .panel.stack; anchors the Forget X */
@@ -253,32 +269,32 @@ body.b-board [data-aud-mode="bars"] > .b-aud-body { flex: 0 1 auto; }
 .tp-scr-now { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-scr-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem .6rem; }
 .tp-scr-field { display: grid; gap: .15rem; min-width: 0; }
-.tp-scr-field .select { width: 100%; min-width: 0; }
+.tp-scr-field .select { width: 100%; min-width: 0; padding-inline-end: 2.2em; text-overflow: ellipsis; } /* text clear of the chevron (review #14) */
 /* Display-type pick: ftl .toggle-group of radios with two-line labels,
    full width (the group itself is inline and never wraps). */
 .tp-kind-group { display: flex; }
 .tp-kind-group > .toggle-btn { flex: 1 1 0; flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: start; }
 @media (max-width: 34rem) { .tp-kind-group { flex-direction: column; gap: .35rem; } .tp-kind-group > .toggle-btn { margin-inline-start: 0; flex: none; min-block-size: max-content; } .tp-scr-fields { grid-template-columns: 1fr; } }
-/* Layout editor: an almost-full-screen ftl modal (STATUS U8), edge to edge. */
-dialog.modal.tp-screen-edit:modal { width: 98vw; max-width: 98vw; height: 96vh; max-height: 96vh;
-  --modal-pad: 0; display: flex; flex-direction: column; overflow: hidden; }
-/* Portrait version: a portrait-shaped frame (board.js toggles .is-portrait
-   when the editor switches versions). */
-dialog.modal.tp-screen-edit.is-portrait:modal { width: min(98vw, 64rem); }
+/* Layout editor: ftl .modal.is-maximized (STATUS U8, review I11). One
+   size for both versions; the canvas inside takes the version's shape.
+   Here only the column flow that lets the frame fill the height. */
+dialog.modal.tp-screen-edit:modal { display: flex; flex-direction: column; overflow: hidden; }
+/* UPSTREAM (reviews/upstream-issues/modal-maximized-dialog.md): core's
+   `dialog.modal:modal { height: fit-content }` outranks `.modal.is-maximized
+   { height: 100% }`, so a maximized <dialog> collapses to its content.
+   Same declaration at the higher specificity; drop when core fixes it. */
+dialog.modal.is-maximized:modal { height: 100%; }
 /* Layouts / Presets rows: name, usage, then the buttons together. */
 :is(#tp-layouts, #tp-presets) .list-item { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; }
 .tp-preset-save { flex: 1 1 20rem; flex-wrap: nowrap; }
 .tp-preset-save .input { flex: 1 1 12rem; width: auto; min-width: 0; }
-.tp-screen-edit iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: 0; display: block; background: #000; }
-.tp-screen-edit .modal-header { flex-wrap: wrap; margin-block-end: 0; }
-.tp-screen-edit .modal-header .field-hint { flex: 1 1 20rem; font-weight: normal; }
-.tp-screen-edit .modal-header > #tp-screen-edit-close { margin-inline-start: auto; }
+.tp-screen-edit iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: 1px solid var(--border); display: block; background: var(--bg); }
+.tp-screen-edit .modal-footer { align-items: center; margin-block-start: var(--space-s, .75rem); }
+.tp-screen-edit .modal-footer .tp-edit-legend { flex: 1 1 20rem; }
+@media (max-width: 600px) { .tp-screen-edit .tp-edit-legend { display: none; } } /* mouse hints; the canvas needs the room */
 /* Secondary text in a modal title bar takes the bar's ink (windows95's
    navy bar made --muted hints unreadable). */
 .modal-header :is(.field-hint, .text-muted) { color: inherit; opacity: .8; }
-.modal-header .tp-edit-legend b { color: inherit; }
-.tp-edit-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
-.tp-edit-legend b { color: var(--accent); }
 
 
 /* ------------------------------------------------- room page tabs */
@@ -376,3 +392,18 @@ html[data-theme="liquid-glass"] .modal-header > .btn-close {
 /* Phone sign-in QR (Event Technician page). */
 .tp-phone-qr { display: block; width: min(320px, 100%); height: auto; margin: .8rem auto; padding: .5rem; background: #fff; border-radius: var(--radius, 6px); image-rendering: pixelated; }
 html[data-device-orient] #phone-link-btn { display: none; } /* already on the phone */
+
+/* Event Technician room cards: the ⋯ menu is a full-size ftl icon button
+   (review #10; touch gets ftl's 44px --tap-min on top). */
+.tp-room-more { --btn-icon-size: 2.25rem; font-size: 1rem; }
+@media (max-width: 600px) {
+  #live-grid > [data-idle] > .tp-clock { display: none; } /* an idle card stays short on a phone (its "—" says nothing) */
+  .tp-hero-logo { display: none; } /* the app bar already shows the logo */
+}
+/* Waiting screens: the name is what you match against the TV. */
+.tp-wait-name { font-size: 1.5rem; overflow-wrap: anywhere; }
+.tp-wait.is-offline { opacity: .6; }
+/* Event pages (body.tp-shell) on phones: the bar's second row (Rooms /
+   Event Technician) drops the nav's own block padding; the items keep
+   their 44px targets. Room pages (no .tp-shell) are not touched here. */
+@media (max-width: 600px) { body.tp-shell > .app-bar > .nav { padding-block: 0; } }

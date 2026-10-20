@@ -125,9 +125,10 @@ func (d *Deps) apiWaitingMine(c *gin.Context) {
 // waitingJSON is the operator list shape.
 func waitingJSON(ws []timerpi.WaitingScreen) []gin.H {
 	out := make([]gin.H, 0, len(ws))
+	now := time.Now().UnixMilli()
 	for _, w := range ws {
 		out = append(out, gin.H{"id": w.ID, "name": w.Name, "host": w.Host, "lastSeen": w.LastSeen,
-			"seenAgo": views.FmtAgo(w.LastSeen)})
+			"seenAgo": views.FmtAgo(w.LastSeen), "live": now-w.LastSeen < timerpi.WaitingLiveMS, "handheld": w.Handheld})
 	}
 	return out
 }

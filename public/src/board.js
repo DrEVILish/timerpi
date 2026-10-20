@@ -840,6 +840,38 @@ function overlaps(a, b) {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
+// makeRoom(w, orig): w was just moved or resized from orig. Built-in
+// layouts fill the whole canvas, so "never overlap" refused every gesture
+// (review I13). Now a move onto one tile swaps the two when that tile fits
+// where w was, and a resize trims the neighbours it grows into (right or
+// down). Returns false when neither works; the caller then reverts w.
+// Mutates and re-places the neighbours it changes.
+const NO_ROOM = 'No room there: drop on a tile to swap places, or make a neighbour smaller first';
+function makeRoom(w, orig) {
+  const others = (layout.widgets || []).filter((o) => o.id !== w.id);
+  const hits = others.filter((o) => overlaps(w, o));
+  if (!hits.length) return true;
+  let plan = null; // [[tile, new geometry]]
+  if (w.w === orig.w && w.h === orig.h) {
+    const o = hits[0];
+    const g = { x: orig.x, y: orig.y, w: o.w, h: o.h };
+    const fits = g.x + g.w <= 12 && g.y + g.h <= canvasRows();
+    if (hits.length === 1 && fits && !overlaps(g, w) && others.every((x) => x === o || !overlaps(g, x))) plan = [[o, g]];
+  } else {
+    plan = [];
+    for (const o of hits) {
+      const g = { x: o.x, y: o.y, w: o.w, h: o.h };
+      if (w.x + w.w > orig.x + orig.w && o.x >= orig.x + orig.w) { const nx = w.x + w.w; g.w -= nx - g.x; g.x = nx; }
+      else if (w.y + w.h > orig.y + orig.h && o.y >= orig.y + orig.h) { const ny = w.y + w.h; g.h -= ny - g.y; g.y = ny; }
+      if (g.w < 1 || g.h < 1 || overlaps(g, w)) { plan = null; break; }
+      plan.push([o, g]);
+    }
+  }
+  if (!plan) return false;
+  for (const [o, g] of plan) { Object.assign(o, g); applyGeometry(o.id); }
+  return true;
+}
+
 function applyGeometry(wid) {
   const w = widgetOf(wid);
   const tile = tileOf(wid);
@@ -959,18 +991,17 @@ function dragTile(tile, wid, startEvent, mode) {
     window.removeEventListener('pointercancel', up);
     clampTile(w);
     lastTouched = { id: wid, w: { ...w } }; // arrow keys nudge from here
-    // Overlap (against every OTHER tile) reverts the gesture, flashes a brief
-    // purple nudge on the offending tile (UX2 — visible at the pointer, not
-    // only in the far toolbar) and stays revert-only: never silently accept.
-    const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
-    if (hit) {
+    // A drop on other tiles swaps or trims them (makeRoom); when that can't
+    // work the gesture reverts with a nudge on the tile, visible at the
+    // pointer, and the reason in the toolbar.
+    if (!makeRoom(w, orig)) {
       Object.assign(w, orig);
       applyGeometry(w.id);
       tile.classList.remove('b-overlap');
       void tile.offsetWidth; // restart the shake on rapid retry
       tile.classList.add('b-overlap');
       setTimeout(() => tile.classList.remove('b-overlap'), 1000);
-      saveState('Blocked: tiles overlap');
+      saveState(NO_ROOM);
       return;
     }
     if (w.x !== orig.x || w.y !== orig.y || w.w !== orig.w || w.h !== orig.h) scheduleSave();
@@ -1001,7 +1032,7 @@ function buildEditorList(editing) {
   for (const [ev, fn] of geomListeners) window.removeEventListener(ev, fn);
   geomListeners.length = 0;
   if (!editing) { editor.hidden = true; editor.textContent = ''; return; }
-  editor.hidden = true; // shown by the ≤760px CSS under data-editing
+  editor.hidden = false; // .b-list-editor CSS shows it only ≤760px (hidden here kept it off phones too)
   editor.textContent = '';
   const title = document.createElement('strong');
   title.textContent = 'Tiles';
@@ -1018,10 +1049,10 @@ function buildEditorList(editing) {
       const orig = { ...w };
       w[field] = (w[field] | 0) + delta;
       clampTile(w);
-      if ((layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o))) {
+      if (!makeRoom(w, orig)) {
         Object.assign(w, orig);
         applyGeometry(wid);
-        saveState('Blocked: tiles overlap');
+        saveState(NO_ROOM);
         return;
       }
       if (orig[field] !== w[field]) { applyGeometry(wid); scheduleSave(); }
@@ -1037,7 +1068,8 @@ function buildEditorList(editing) {
     row.appendChild(name);
     for (const [field, label] of [['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']]) {
       const grp = document.createElement('span');
-      grp.className = 'cluster is-gap-2xs';
+      grp.className = 'b-ed-grp';
+      grp.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: label }));
       grp.appendChild(grid1x(w.id, field, -1, null, label));
       const v = document.createElement('span');
       v.className = 'mono b-ed-val';
@@ -1313,7 +1345,7 @@ async function reloadEditing() {
 function wireKeys() {
   // Keyboard nudge (owner "feels bad" round): with editing on, the
   // last-touched tile moves by one cell on the arrow keys (Shift resizes),
-  // drop-style confirm on every nudge — overlap reverts exactly like a drag.
+  // drop-style confirm on every nudge: swap/trim or revert, like a drag.
   document.addEventListener('keydown', (e) => {
     if (!editing || !lastTouched) return;
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -1328,13 +1360,12 @@ function wireKeys() {
     clampTile(w);
     applyGeometry(w.id);
     const tile = document.getElementById('b-w-' + lastTouched.id);
-    const hit = (layout.widgets || []).some((o) => o.id !== w.id && overlaps(w, o));
-    if (hit) {
+    if (!makeRoom(w, orig)) {
       Object.assign(w, orig);
       applyGeometry(w.id);
       if (tile) tile.classList.add('b-overlap');
       setTimeout(() => tile?.classList.remove('b-overlap'), 600);
-      saveState('Blocked: tiles overlap');
+      saveState(NO_ROOM);
       return;
     }
     lastTouched.w = { ...w };
@@ -1456,11 +1487,12 @@ function wireCompose() {
       for (const [kind, label] of Object.entries(groups)) {
         const items = catalog.filter((t) => t.kind === kind);
         if (!items.length) continue;
-        presetList.appendChild(Object.assign(document.createElement('span'), { className: 'b-preset-group', textContent: label }));
+        presetList.appendChild(Object.assign(document.createElement('span'), { className: 'label b-preset-group', textContent: label }));
         for (const t of items) {
           const b = document.createElement('button');
           b.type = 'button';
-          b.className = 'btn btn-sm';
+          b.className = 'dropdown-item';
+          b.setAttribute('role', 'menuitem');
           b.dataset.preset = t.key;
           b.title = t.desc;
           b.textContent = t.name;
@@ -1474,6 +1506,7 @@ function wireCompose() {
     if (!btn) return;
     const t = catalog.find((x) => x.key === btn.dataset.preset);
     if (!t) return;
+    presetList.hidePopover?.();
     if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
     doc = structuredClone(t.layout); // a built-in brings both versions
     pickVersion();
@@ -1493,8 +1526,6 @@ function wireCompose() {
       const u = new URL(location.href);
       u.searchParams.set('orient', b.dataset.orient);
       try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
-      // The Screens page frames the editor at the layout's shape.
-      try { window.parent.document.getElementById('tp-screen-edit')?.classList.toggle('is-portrait', b.dataset.orient === 'portrait'); } catch { /* not framed */ }
       location.replace(u.toString());
     });
   }

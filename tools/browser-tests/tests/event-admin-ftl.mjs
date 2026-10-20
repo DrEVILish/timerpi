@@ -24,7 +24,9 @@ export async function run(t) {
   t.check('a single room has no Move up/down', await pg.$$eval('#room-menu [data-room-move]', (bs) => bs.every((b) => b.hidden)));
   await pg.click('#room-menu [data-room-rename]');
   await pg.fill('dialog.modal[open] input', 'Main hall');
-  await Promise.all([pg.waitForEvent('load'), pg.click('dialog.modal[open] .modal-footer .btn-primary')]);
+  // Patched in place (review simplification 8): no page reload.
+  await pg.click('dialog.modal[open] .modal-footer .btn-primary');
+  await pg.waitForFunction((c) => document.querySelector(c)?.textContent.includes('Main hall'), card, { timeout: 5000 }).catch(() => {});
   const lobby = await (await ctx.request.get(`${t.base}/api/events/${event}`)).json();
   t.check('the new name is stored', lobby.event.rooms[0].name === 'Main hall');
   t.check('the card shows the new name', await pg.waitForFunction((c) => document.querySelector(c)?.textContent.includes('Main hall'), card).then(() => true, () => false));

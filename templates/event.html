@@ -42,7 +42,7 @@
       <p class="text-muted">Pick the room you are moderating.</p>
     </section>
 
-    <section class="grid" style="--grid-min: 16rem" id="room-grid">
+    <section class="grid" style="--grid-min: 18rem" id="room-grid">
       {{range .Event.Rooms}}
       <article class="panel stack is-gap-s" data-room="{{.Code}}">
         <div class="panel-header">{{.Name}}{{if .HasPassword}} <span class="badge" title="This room has a moderator password">🔒</span>{{end}}</div>
@@ -68,15 +68,17 @@
       {{if .Event.IsSuper}}
       <div class="row is-items-center is-gap-s">
         <p class="text-muted">You are signed in as Event Technician.</p>
-        <a class="btn btn-primary push" href="/e/{{.Event.Code}}/admin">Open Event Technician dashboard</a>
+        <a class="btn btn-secondary push" href="/e/{{.Event.Code}}/admin">Open Event Technician dashboard</a>
       </div>
       {{else}}
-      <form class="row is-items-end is-gap-s is-wrap" id="super-login">
-        <div class="field">
-          <label class="label" for="super-pw">{{if .Event.HasSuperPW}}Event Technician Password{{else}}No Event Technician Password yet{{end}}</label>
-          {{if .Event.HasSuperPW}}<input class="input" type="password" id="super-pw" autocomplete="current-password" required>{{end}}
+      {{- /* Label above one row of input + button, like Event settings (review
+           m5: the button sat 17px below the input). */}}
+      <form class="field" id="super-login">
+        <label class="label" for="super-pw">{{if .Event.HasSuperPW}}Event Technician Password{{else}}No Event Technician Password yet{{end}}</label>
+        <div class="row is-gap-xs is-wrap">
+          {{if .Event.HasSuperPW}}<input class="input tp-signin-pw" type="password" id="super-pw" autocomplete="current-password" required>{{end}}
+          <button class="btn" type="submit">Sign in as Event Technician</button>
         </div>
-        <button class="btn" type="submit">Sign in as Event Technician</button>
         <p class="field-error" id="super-error" role="alert" hidden></p>
       </form>
       {{end}}
@@ -124,7 +126,7 @@
       <div class="row is-gap-s is-wrap is-items-center">
         <form id="room-add" class="row is-gap-xs tp-room-add">
           <input class="input input-sm" name="name" placeholder="New room name" maxlength="60" required aria-label="New room name">
-          <button class="btn btn-sm btn-primary tp-nowrap" type="submit">Add room</button>
+          <button class="btn btn-sm btn-secondary tp-nowrap" type="submit">Add room</button>
         </form>
         <button class="btn btn-sm" id="room-pw-all">Same password for every room…</button>
         <label class="btn btn-sm btn-ghost">Import a room file
@@ -210,7 +212,7 @@
     <section class="panel" id="ev-file" aria-labelledby="ev-file-h">
       <div class="panel-header" id="ev-file-h">Event file</div>
       <p class="field-hint">Download the whole event (rooms, running orders, messages, polls, screens, layouts and map) as one file. Importing a file makes a new event with new codes; you choose its password. Passwords and screen keys are never in the file.</p>
-      <div class="row is-gap-s is-wrap">
+      <div class="row is-gap-s is-wrap mt-s">
         <a class="btn btn-sm" id="ev-export" href="/api/events/{{.Event.Code}}/export" download>Export event</a>
         <label class="btn btn-sm btn-ghost">Import an event file…
           <input type="file" id="ev-import" accept="application/json,.json" hidden>

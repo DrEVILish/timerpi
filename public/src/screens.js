@@ -180,7 +180,7 @@ function card(s) {
     el('label', { class: 'tp-scr-field' }, el('span', { class: 'label', text: 'Theme' }), themeSel));
 
   const actions = el('div', { class: 'cluster is-gap-2xs' },
-    el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => editLayout(s) }, 'Edit layout'),
+    el('button', { class: 'btn btn-sm', type: 'button', onclick: () => editLayout(s) }, 'Edit layout'),
     el('a', { class: 'btn btn-sm', href: `/d/${code}?screen=${encodeURIComponent(s.name)}`, target: '_blank', rel: 'opener', title: 'Open what this screen shows' }, 'View'),
     el('button', {
       class: 'btn btn-sm btn-ghost', type: 'button', title: 'The address to open on this screen by hand (kiosk start page, TV bookmark)',
@@ -228,7 +228,7 @@ function renderScreens() {
   if (!st.screens.length) {
     host.replaceChildren(el('div', { class: 'empty-state' },
       el('span', { class: 'empty-state-title', text: 'No screens in this room yet.' }),
-      el('span', { class: 'empty-state-hint', text: 'Open /d/ on a TV, then set it up from “Waiting to be set up”.' })));
+      el('span', { class: 'empty-state-hint', text: 'Open /d/ on the TV. It appears under “Waiting to be set up”: press “Show the timer here”.' })));
     return;
   }
   host.replaceChildren(...st.screens.map(card));
@@ -236,23 +236,45 @@ function renderScreens() {
 
 /* ------------------------------------------------------------- waiting -- */
 
+// Live screens first, newest first (the server orders them; review I8):
+// the TV you just opened is the top card, with a big name and a lamp. A
+// closed tab stays (dimmed, "Offline") until it is dismissed or ages out.
 function renderWaiting() {
   const panel = document.getElementById('tp-waiting-panel');
   const host = document.getElementById('tp-waiting-list');
   if (!panel || !host) return;
   panel.hidden = !st.waiting.length;
-  document.getElementById('tp-waiting-count').textContent = String(st.waiting.length);
-  host.replaceChildren(...st.waiting.map((w) => el('div', { class: 'card stack is-gap-xs' },
-    el('div', { class: 'stack is-gap-none' }, el('strong', { text: w.name }), el('span', { class: 'text-muted', text: w.host || '' })),
+  document.getElementById('tp-waiting-count').textContent = String(st.waiting.filter((w) => w.live).length);
+  host.replaceChildren(...st.waiting.map((w) => el('div', { class: `card stack is-gap-xs tp-wait${w.live ? '' : ' is-offline'}`, dataset: { waiting: String(w.id) } },
+    el('strong', { class: 'tp-wait-name', text: w.name }),
+    el('span', { class: 'connection', dataset: { state: w.live ? 'live' : 'offline' }, text: w.live ? 'Live · waiting' : `Offline · seen ${w.seenAgo || 'a while ago'}` }),
     el('div', { class: 'cluster is-gap-2xs' },
-      el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: () => openCapture(w) }, 'Set up here'),
+      // One tap from a quick timer to a screen (review simplification 3):
+      // presenter + Full timer, no dialog. "Options…" opens the full form.
+      w.live ? el('button', { class: 'btn btn-sm btn-primary', type: 'button', onclick: (e) => quickCapture(w, e.currentTarget) }, 'Show the timer here') : null,
+      w.live ? el('button', { class: 'btn btn-sm', type: 'button', onclick: () => openCapture(w) }, 'Options…') : null,
       el('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: () => api('DELETE', `/api/waiting/${w.id}`).then(pull).catch((e) => toast(e.message, 'danger')) }, 'Dismiss')))));
+}
+
+async function quickCapture(w, btn) {
+  btn.disabled = true;
+  capKind = 'presenter';
+  try {
+    const out = await api('POST', `/api/waiting/${w.id}/capture`, { code, name: nextName(), kind: 'presenter', template: DEFAULT_LAYOUT.presenter, rotation: 0, theme: '' });
+    toast(`"${out.name}" shows the timer within a few seconds`, 'success');
+    for (const d of [500, 1500, 3000, 5000]) setTimeout(pull, d);
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message, 'danger');
+  }
 }
 
 /* ------------------------------------------------------------- capture -- */
 
 let capWaiting = null;
 let capKind = 'audience';
+// The built-in each display type starts on (review simplification 8).
+const DEFAULT_LAYOUT = { audience: 'main', walkin: 'room', presenter: 'stage' };
 
 function fillTemplates() {
   // The layouts of the chosen display type (each has both versions; the
@@ -263,7 +285,9 @@ function fillTemplates() {
   sel.replaceChildren();
   for (const t of st.catalog.filter((x) => x.kind === capKind)) sel.appendChild(new Option(t.name, t.key));
   sel.appendChild(new Option('Plain timer (no layout)', ''));
-  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  const def = DEFAULT_LAYOUT[capKind];
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  else if ([...sel.options].some((o) => o.value === def)) sel.value = def;
   const sync = () => {
     const t = st.catalog.find((x) => x.key === sel.value);
     hint.textContent = t ? t.desc : 'The full-screen timer.';
@@ -274,6 +298,7 @@ function fillTemplates() {
 
 function setKind(k) {
   capKind = k;
+  document.getElementById('tp-capture-template').value = ''; // a new type starts on its own default
   for (const r of document.querySelectorAll('#tp-capture-kind input[type=radio]')) r.checked = r.value === k;
   fillTemplates();
 }
@@ -290,7 +315,7 @@ function nextName() {
 function openCapture(w) {
   const dlg = document.getElementById('tp-capture');
   capWaiting = w;
-  document.getElementById('tp-capture-host').textContent = w.host ? `· ${w.host}` : '';
+  document.getElementById('tp-capture-host').textContent = `· ${w.name}`;
   const theme = document.getElementById('tp-capture-theme');
   theme.replaceChildren(new Option('Event default theme', ''), ...st.themes.map((t) => new Option(t, t)));
   document.getElementById('tp-capture-rotation').value = '0';
@@ -427,8 +452,7 @@ function openEditor(b) {
   // Open on the version this screen shows; the editor switches versions.
   q.set('orient', b.orientation === 'portrait' ? 'portrait' : 'landscape');
   frame.src = `/d/${code}?${q}`;
-  dlg.classList.toggle('is-portrait', b.orientation === 'portrait');
-  document.getElementById('tp-screen-edit-title').textContent = 'Layout editor'; // the frame's own bar names the layout
+  document.getElementById('tp-screen-edit-title').textContent = `Edit layout · ${b.name || 'Layout'}`;
   const shared = document.getElementById('tp-screen-edit-shared');
   shared.hidden = !(b.usedBy > 1);
   shared.textContent = `Used by ${b.usedBy} screens: changes show on all of them`;
@@ -451,7 +475,7 @@ async function presetsRefresh() {
   host.replaceChildren(el('ul', { class: 'list' }, ...list.map((pr) => el('li', { class: 'list-item' },
     el('span', { text: pr.name }),
     el('span', { class: 'cluster is-gap-2xs push' },
-    el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Apply',
+    el('button', { type: 'button', class: 'btn btn-sm', text: 'Apply',
       onclick: () => api('POST', `${presetsPath}/${pr.id}/apply`)
         .then(() => toast('Preset applied to all named screens'), (e) => toast(e.message, 'danger')) }),
     el('button', { type: 'button', class: 'btn btn-sm', text: 'Export',

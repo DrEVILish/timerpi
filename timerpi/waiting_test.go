@@ -33,11 +33,12 @@ func TestRegisterWaitingUpsert(t *testing.T) {
 	if len(ws) != 2 {
 		t.Fatalf("want 2 rows (duplicate collapsed + distinct host), got %d: %+v", len(ws), ws)
 	}
-	if ws[0].Name != "Stage Left" {
-		t.Errorf("name not trimmed: %q", ws[0].Name)
+	// Newest first: the long-host row was registered last.
+	if ws[1].Name != "Stage Left" {
+		t.Errorf("name not trimmed: %q", ws[1].Name)
 	}
-	if len(ws[1].Host) != 80 {
-		t.Errorf("host clipped to 80, got %d", len(ws[1].Host))
+	if len(ws[0].Host) != 80 {
+		t.Errorf("host clipped to 80, got %d", len(ws[0].Host))
 	}
 	if err := d.RegisterWaiting(" <> ", "h"); err == nil {
 		t.Error("name that sanitizes to empty should be refused")
@@ -127,5 +128,26 @@ func TestClaimWaitingNeedsToken(t *testing.T) {
 	code, screen, err := d.ClaimWaitingToken("TV-1", "box", "tok-real")
 	if err != nil || code != "ROOMAAAA" || screen != "TV-One" {
 		t.Fatalf("real claim: %q %q %v", code, screen, err)
+	}
+}
+
+// The waiting list puts live screens first, newest first; a screen that
+// stopped polling (closed tab) sinks below them (review I8).
+func TestListWaitingLiveNewestFirst(t *testing.T) {
+	d := openTestDB(t)
+	for _, n := range []string{"dead", "old-live", "new-live"} {
+		if err := d.RegisterWaiting(n, "h"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.Exec(`UPDATE waiting_screens SET last_seen = ? WHERE name = 'dead'`, nowMS()-WaitingLiveMS-5000); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := d.ListWaiting()
+	if err != nil || len(ws) != 3 {
+		t.Fatalf("list: %v %+v", err, ws)
+	}
+	if got := ws[0].Name + "," + ws[1].Name + "," + ws[2].Name; got != "new-live,old-live,dead" {
+		t.Errorf("order = %s, want new-live,old-live,dead", got)
 	}
 }

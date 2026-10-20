@@ -130,19 +130,19 @@
   </form>
 </dialog>
 
-<dialog id="tp-screen-edit" class="modal tp-screen-edit" aria-labelledby="tp-screen-edit-title">
+{{- /* The layout editor (STATUS U8, review I11): a standard ftl modal at
+  ftl's maximized size: title + close, the canvas, then a footer that says
+  changes save by themselves and a Done that only closes. */}}
+<dialog id="tp-screen-edit" class="modal is-maximized tp-screen-edit" aria-labelledby="tp-screen-edit-title">
   <div class="modal-header">
-    <h2 id="tp-screen-edit-title">Layout editor</h2>
-    <span class="badge badge-warning" id="tp-screen-edit-shared" hidden></span>
-    <span class="field-hint tp-edit-legend">
-      <span><b aria-hidden="true">⠿</b> drag to move</span>
-      <span><b aria-hidden="true">◢</b> drag to resize</span>
-      <span><b aria-hidden="true">⚙</b> settings</span>
-      <span><b aria-hidden="true">🗑</b> remove</span>
-      <span>arrow keys nudge · Shift+arrows resize</span>
-    </span>
-    <button type="button" class="btn btn-sm btn-primary" id="tp-screen-edit-close" data-close>Done</button>
+    <h2 id="tp-screen-edit-title">Edit layout</h2>
+    <button type="button" class="btn-close" aria-label="Close" data-close></button>
   </div>
   <iframe id="tp-screen-edit-frame" title="Screen layout editor"></iframe>
+  <div class="modal-footer">
+    <span class="badge badge-warning" id="tp-screen-edit-shared" hidden></span>
+    <span class="field-hint tp-edit-legend">Changes save automatically. Drag a tile's bar to move it and its corner to resize it. Drop a tile on another to swap them.</span>
+    <button type="button" class="btn btn-secondary" id="tp-screen-edit-close" data-close>Done</button>
+  </div>
 </dialog>
 {{end}}

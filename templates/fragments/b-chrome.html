@@ -27,9 +27,9 @@
 
 {{define "frag-b-toolbar"}}
 <div class="b-toolbar b-chrome" id="b-toolbar">
-  <span class="badge badge-accent" id="b-edit-badge">EDIT MODE</span>
+  <span class="badge badge-accent" id="b-edit-badge">Editing</span>
   <span class="b-board-name" id="b-board-name">{{.Board.Name}}</span>
-  <label class="b-boards-label" for="b-boards">Board</label>
+  <label class="b-boards-label" for="b-boards">Layout</label>
   <select class="select input-sm" id="b-boards">
 {{- range .Boards}}
     <option value="{{.ID}}"{{if eq .ID $.BoardID}} selected{{end}}>{{.Name}}</option>
@@ -39,11 +39,14 @@
   <button class="btn btn-sm btn-primary" id="b-edit-toggle" type="button" aria-pressed="false">Edit layout</button>
   <button class="btn btn-sm b-palette-toggle" id="b-palette-toggle" type="button" aria-controls="b-palette" aria-expanded="true">Tiles &amp; layout</button>
   <span class="b-save-state" id="b-save-state" role="status"></span>
-  <span class="b-edit-note">Changes save live to every screen showing this board.</span>
+  <span class="b-edit-note">Changes save automatically to every screen using this layout.</span>
 </div>
 
+{{- /* Three groups (title + controls stay together when the bar wraps;
+     review I11 found orphaned labels): add a tile, the canvas, start over. */}}
 <div class="b-palette b-chrome" id="b-palette" hidden>
-  <span class="b-palette-title">Add widget</span>
+  <div class="b-palette-group b-palette-tiles">
+  <span class="b-palette-title">Add a tile</span>
   <div class="b-palette-list" id="b-palette-list" role="list">
     <button class="btn btn-sm" type="button" data-add="countdown" role="listitem">Countdown</button>
     <button class="btn btn-sm" type="button" data-add="cuelabel" role="listitem">Cue label</button>
@@ -66,8 +69,10 @@
     <button class="btn btn-sm" type="button" data-add="rooms" role="listitem">All rooms now</button>
     <button class="btn btn-sm" type="button" data-add="eventschedule" role="listitem">Event schedule</button>
   </div>
+  </div>
+  <div class="b-palette-group">
   <span class="b-palette-title">Canvas</span>
-  <div class="cluster is-gap-2xs">
+  <div class="cluster is-gap-xs">
     <div class="segmented" id="b-orient" role="group" aria-label="Edit the landscape or the portrait version">
       <button type="button" class="segmented-item" data-orient="landscape">Landscape</button>
       <button type="button" class="segmented-item" data-orient="portrait">Portrait</button>
@@ -80,11 +85,17 @@
       <input class="input input-sm" id="b-anim-ms" type="number" min="120" max="3000" step="20" style="width:5rem" aria-label="Default animation duration (ms)"> ms
     </label>
   </div>
-  <span class="b-palette-title">Layout</span>
-  <div class="b-palette-list" id="b-preset-list" aria-label="Start from a template">
-    <!-- Filled from GET /api/board-templates (catalog, grouped by display type). -->
   </div>
-  <button class="btn btn-sm" id="b-reset" type="button" title="Restore the factory layout">Reset layout</button>
+  <div class="b-palette-group">
+  <span class="b-palette-title">Start over</span>
+  <div class="cluster is-gap-xs">
+    <button class="btn btn-sm" type="button" popovertarget="b-preset-list" aria-haspopup="menu">From a built-in…</button>
+    <div class="dropdown" id="b-preset-list" popover role="menu" aria-label="Start from a built-in layout">
+      <!-- Filled from GET /api/board-templates (catalog, grouped by display type). -->
+    </div>
+    <button class="btn btn-sm" id="b-reset" type="button" title="Restore the factory layout">Reset layout</button>
+  </div>
+  </div>
 </div>
 
 <form class="b-settings b-chrome" id="b-settings" hidden></form>

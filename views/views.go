@@ -230,6 +230,8 @@ func FmtAgo(ms int64) string {
 	switch {
 	case d < 15*time.Second:
 		return "just now"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds())) // not "0m ago"
 	case d < time.Hour:
 		return fmt.Sprintf("%dm ago", int(d.Minutes()))
 	case d < 24*time.Hour:

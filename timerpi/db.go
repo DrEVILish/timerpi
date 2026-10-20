@@ -1727,12 +1727,17 @@ func (d *DB) PruneWaiting() {
 	_, _ = d.Exec(`DELETE FROM waiting_screens WHERE last_seen < ?`, nowMS()-waitingStaleAfterMS)
 }
 
-// ListWaiting returns fresh rows by id.
+// WaitingLiveMS: a waiting screen polls every 2 s, so one silent for
+// longer than this is closed (or lost its network) and is listed as offline.
+const WaitingLiveMS = 15 * 1000
+
+// ListWaiting returns fresh rows: live screens first, newest first, so the
+// TV just opened is the top card and a closed tab never is (review I8).
 func (d *DB) ListWaiting() ([]WaitingScreen, error) {
 	d.PruneWaiting()
 	var out []WaitingScreen
 	err := d.Select(&out, `SELECT id, name, host, last_seen, assigned, screen, handheld, ip FROM waiting_screens
-		WHERE assigned = '' ORDER BY id`)
+		WHERE assigned = '' ORDER BY (last_seen >= ?) DESC, id DESC`, nowMS()-WaitingLiveMS)
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: list waiting: %w", err)
 	}

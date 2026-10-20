@@ -97,7 +97,7 @@ function initHome() {
     for (const ev of recent) {
       list.appendChild(el('li', { class: 'list-item' },
         el('div', { class: 'stack is-gap-none' }, el('span', { class: 'list-item-title', text: ev.name }), el('span', { class: 'list-item-meta mono', text: fmtCode(ev.code) })),
-        el('a', { class: 'btn btn-sm btn-primary push', href: `/e/${ev.code}` }, 'Resume'),
+        el('a', { class: 'btn btn-sm btn-secondary push', href: `/e/${ev.code}` }, 'Resume'),
         el('button', {
           class: 'btn btn-sm btn-ghost', type: 'button', title: 'Forget on this device', 'aria-label': `Forget ${ev.name}`,
           onclick: (e) => {
@@ -197,7 +197,9 @@ function initAdmin() {
       name: el('span', { title: 'Double-click to rename' }),
       lock: el('span', { class: 'badge', title: 'This room has a moderator password', text: '🔒' }),
       status: el('span', { class: 'status push' }),
-      clock: el('div', { class: 'readout readout-lg', dataset: { remaining: '1' } }),
+      // .tp-clock[data-state]: idle is muted with no glow (review #5: glow
+      // means live), paused/overtime take the room page's colours.
+      clock: el('div', { class: 'readout readout-lg tp-clock', dataset: { remaining: '1', state: 'idle' } }),
       now: el('dd'),
       next: el('dd'),
       screens: el('dd'),
@@ -209,10 +211,19 @@ function initAdmin() {
     parts.blank = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'blank' } });
     parts.blank.addEventListener('click', () => verb(room().blanked ? 'unblank' : 'blank', code, parts.blank));
     parts.name.addEventListener('dblclick', () => renameRoom(code));
+    // The theme's own "more" icon at full icon-button size (review #10: a
+    // 10px text glyph was nearly invisible).
     const more = el('button', {
-      class: 'btn btn-sm btn-ghost btn-icon', type: 'button', title: 'Rename, password, order, duplicate, export, delete',
-      'aria-label': 'Room actions', 'aria-haspopup': 'menu', dataset: { roomMenu: code },
-    }, '⋯');
+      class: 'btn btn-ghost btn-icon tp-room-more', type: 'button', title: 'Rename, password, order, duplicate, export, delete',
+      'aria-label': `Room actions`, 'aria-haspopup': 'menu', dataset: { roomMenu: code },
+    });
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `/ftl/dist/icons/${encodeURIComponent(document.documentElement.dataset.theme || 'blue-future')}.svg#icon-more-horizontal`);
+    svg.appendChild(use);
+    more.appendChild(svg);
     more.addEventListener('click', () => openRoomMenu(code, more));
     const card = el('article', { class: 'panel stack is-gap-xs', dataset: { room: code } },
       el('div', { class: 'panel-header cluster' }, parts.name, parts.lock, parts.status, more),
@@ -223,7 +234,7 @@ function initAdmin() {
         el('dt', { text: 'Screens' }), parts.screens,
       ),
       el('div', { class: 'cluster is-gap-2xs' },
-        el('a', { class: 'btn btn-sm btn-primary', href: `/c/${code}` }, 'Open room'),
+        el('a', { class: 'btn btn-sm btn-secondary', href: `/c/${code}` }, 'Open room'), // one primary per panel: none on a card (review #4)
         el('a', { class: 'btn btn-sm', href: `/screens/${code}` }, 'Screens'),
         parts.go, parts.pause, parts.blank,
       ),
@@ -254,6 +265,8 @@ function initAdmin() {
       setText(parts.status, label);
       parts.status.className = `status ${cls} push`;
       setText(parts.clock, r.running ? fmtClock(r.remainingMS) : '—');
+      parts.clock.dataset.state = !r.running ? 'idle' : r.paused ? 'paused' : r.overtime ? 'overtime' : 'running';
+      card.toggleAttribute('data-idle', !r.running);
       setText(parts.now, r.activeLabel || '—');
       setText(parts.next, r.nextLabel || '—');
       setText(parts.screens, String(r.screens));
@@ -264,6 +277,21 @@ function initAdmin() {
       // Move a card only when it is out of place: moving a node drops focus.
       if (grid.children[i] !== card) grid.insertBefore(card, grid.children[i] || null);
     });
+    syncPairRooms();
+  }
+
+  // Room actions patch the page instead of reloading it (review
+  // simplification 8): the poll redraws the cards; the Pair form's room
+  // list follows here, rebuilt only when the rooms changed.
+  let pairKey = '';
+  function syncPairRooms() {
+    const sel = document.getElementById('pair-room');
+    const key = rooms.map((r) => `${r.code}=${r.name}`).join('\n');
+    if (!sel || key === pairKey) return;
+    pairKey = key;
+    const keep = sel.value;
+    sel.replaceChildren(...rooms.map((r) => new Option(r.name, r.code)));
+    if (rooms.some((r) => r.code === keep)) sel.value = keep;
   }
 
   function tick() {
@@ -322,7 +350,7 @@ function initAdmin() {
   async function renameRoom(code) {
     const res = await tpPrompt('Room name', roomName(code), { title: 'Rename room', ok: 'Rename' });
     const name = res?.value?.trim();
-    if (name && name !== roomName(code)) patchRoom(code, { name }, 'Room renamed').then((ok) => ok && reload());
+    if (name && name !== roomName(code)) patchRoom(code, { name }, 'Room renamed');
   }
   function openRoomMenu(code, btn) {
     menuRoom = code;
@@ -352,7 +380,7 @@ function initAdmin() {
     if (item.matches('[data-room-pw-clear]')) return patchRoom(room, { clearPassword: true }, 'Room password removed');
     if (item.matches('[data-room-move]')) {
       const pos = rooms.findIndex((r) => r.code === room) + 1 + Number(item.dataset.roomMove);
-      return patchRoom(room, { pos }).then((ok) => ok && reload());
+      return patchRoom(room, { pos });
     }
     // Duplicate (moved here from the room's Setup tab, STATUS U29): same
     // sessions, notes and day start — a new room, stopped, no password.
@@ -360,18 +388,18 @@ function initAdmin() {
       const res = await tpPrompt('The new room gets the same sessions, notes and day start. It starts stopped, without a password.', `${name} (copy)`, {
         title: 'Duplicate room', ok: 'Duplicate',
       });
-      if (res) run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated').then((ok) => ok && reload());
+      if (res) run(() => api('POST', `/api/shows/${room}/clone`, { title: res.value || '' }), 'Room duplicated');
       return;
     }
     if (item.matches('[data-room-delete]')) {
       const ok = await tpConfirm(`"${name}" and its sessions, polls and screen layouts are deleted for good.`, { title: 'Delete room?', ok: 'Delete', danger: true });
-      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted').then((done) => done && reload());
+      if (ok) run(() => api('DELETE', `/api/events/${EV}/rooms/${room}`), 'Room deleted');
     }
   });
   document.getElementById('room-add')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();
-    if (name) run(() => api('POST', `/api/events/${EV}/rooms`, { name }), 'Room added').then((ok) => ok && reload());
+    if (name) run(() => api('POST', `/api/events/${EV}/rooms`, { name }), 'Room added').then((ok) => ok && e.target.reset());
   });
   document.getElementById('room-pw-all')?.addEventListener('click', async () => {
     const res = await tpPrompt('Every room gets this moderator password. Leave it empty to remove every room password.', '', {
@@ -380,14 +408,15 @@ function initAdmin() {
     });
     if (!res) return;
     const pw = res.pw;
-    run(() => api('POST', `/api/events/${EV}/room-password`, { password: pw }), pw ? 'Password set on every room' : 'Room passwords removed').then((ok) => ok && reload());
+    run(() => api('POST', `/api/events/${EV}/room-password`, { password: pw }), pw ? 'Password set on every room' : 'Room passwords removed');
   });
   document.getElementById('room-import')?.addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const fd = new FormData();
     fd.append('file', f);
-    run(() => api('POST', `/api/events/${EV}/rooms/import`, fd), 'Room imported').then((ok) => ok && reload());
+    e.target.value = '';
+    run(() => api('POST', `/api/events/${EV}/rooms/import`, fd), 'Room imported');
   });
   // Event file (PRODUCT E4): the import becomes a new event.
   document.getElementById('ev-import')?.addEventListener('change', async (e) => {
