@@ -63,8 +63,12 @@ export async function run(t) {
   const area = await tv.$eval('.b-cloud', (c) => { const r = c.getBoundingClientRect(); return (r.left + r.right) / 2; });
   t.check('words gather round the centre', Math.abs(settled.reduce((n, b) => n + cx(b), 0) / settled.length - area) < 200);
   t.check('the cloud comes to rest (no endless loop)', rested);
-  const pct = await tv.evaluate(async () => (await import('/src/audtiles.js')).percents([1, 1, 1], 3));
-  t.check(`poll percentages add up to 100 (${pct})`, pct.reduce((a, b) => a + b, 0) === 100);
+  // One percents() for screen and phone (review2 UI #1): equal counts get
+  // equal percents, otherwise the shares add up to 100.
+  const pct = await tv.evaluate(async () => { const { percents } = await import('/src/ui.js'); return [percents([3, 7, 3, 1], 4), percents([1, 1, 1], 3), percents([1, 2], 2)]; });
+  t.check(`3/7/3/1 votes read 21/50/21/7 (${pct[0]})`, pct[0].join() === '21,50,21,7');
+  t.check(`equal counts get equal percents (${pct[1]})`, new Set(pct[1]).size === 1);
+  t.check(`unequal shares add up to 100 (${pct[2]})`, pct[2].join() === '33,67');
 
   const qa = await (await api('POST', `/api/shows/${room}/polls`, { kind: 'qa', question: 'Ask', autoApprove: true })).json();
   await api('POST', `/api/shows/${room}/polls/${qa.id}/show`, { target: 'audience', on: true });
@@ -87,14 +91,12 @@ export async function run(t) {
   await tv.waitForSelector('.b-qa-item.is-answered', { timeout: 8000 }).catch(() => {});
   t.check('answered card turns green first', !!(await tv.$('.b-qa-item.is-answered')));
   const yOf = async (q) => tv.$$eval('.b-qa-item', (ls, q) => { const l = ls.find((x) => x.querySelector('.b-qa-text').textContent === q); return l ? Math.round(l.getBoundingClientRect().top) : null; }, q);
-  const answeredY = await yOf('First?');
-  const belowY = await yOf('Second?');
-  const aboveFirst = belowY > answeredY;
   t.check('it says so in text, not colour alone', /Answered/.test(await tv.$eval('.b-qa-item.is-answered', (l) => l.textContent).catch(() => '')));
-  await tv.waitForFunction(() => document.querySelectorAll('.b-qa-item').length === 1, null, { timeout: 8000 }).catch(() => {});
-  t.check('then it leaves the wall', (await tv.$$('.b-qa-item')).length === 1);
-  await tv.waitForTimeout(900);
-  t.check('the card below moves up into its place', !aboveFirst || (await yOf('Second?')) === answeredY);
+  await tv.waitForTimeout(1500);
+  // PRODUCT A7 (review2 UI #5): answered stays on the wall, greyed, ranked
+  // after the open questions.
+  t.check('the answered card stays on the wall', (await tv.$$('.b-qa-item')).length === 2 && !!(await tv.$('.b-qa-item.is-answered')));
+  t.check('it ranks after the open ones', (await yOf('Second?')) < (await yOf('First?')));
   t.check(`no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
   await ctx.close();
 }

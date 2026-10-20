@@ -7,7 +7,7 @@
  * comes from the item the moderator has shown to the audience — nothing
  * else exists here. Motion honours prefers-reduced-motion (phones only).
  */
-import { api, el as h, setText } from './ui.js';
+import { api, el as h, setText, percents } from './ui.js';
 
 // el(tag, cls, text): this page's terse shorthand over ui.js el().
 const el = (tag, cls, text) => h(tag, { class: cls || undefined, text });
@@ -189,7 +189,7 @@ function renderVote(box) {
   box.append(el('p', 'text-muted', `${item.total || 0} vote${item.total === 1 ? '' : 's'}`));
   opts.forEach((label, i) => {
     const n = item.counts?.[i] || 0;
-    const pct = Math.round((n / total) * 100);
+    const pct = percents(item.counts || [], opts.length)[i]; // same maths as the screen
     const correct = item.kind === 'quiz' && i === item.correct;
     const row = el('div', 'tp-aud-res' + (correct ? ' is-correct' : '') + (mine === i ? ' is-mine' : ''));
     const head = el('div', 'tp-aud-res-head');

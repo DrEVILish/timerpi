@@ -318,43 +318,52 @@ function nextStartAt(plan, now) {
   if (!snap || !plan.cue) return null;
   const r = snap.runtime;
   if (activeCue(snap) && (r.running || r.paused)) return now + Math.max(0, remainingMS(snap, now));
+  // Held at 0:00 the room is waiting to move on, as in overtime (review2 UI #7).
+  if (activeCue(snap) && clockView(snap, now).state === 'held') return now;
   return r.dayStartTS ? planStart(plan.row) : null;
 }
 
 // absorb(tile, on): a locked board hides a tile that has nothing to show
-// (an unset map, a presenter item tile with nothing on air) and lets the
-// neighbour that shares its whole edge take the room: left, else above,
-// right, below (review: the countdown takes the space when nothing is
-// pushed). Off restores both.
+// (an unset map, a presenter item tile with nothing on air, no stage
+// messages, no speaker) and lets a neighbour that shares its whole edge
+// take the room: left, else above, right, below (review: the countdown
+// takes the space when nothing is pushed). The whole board is worked out
+// again on every change, so two empty neighbours never hand their room to
+// each other and a tile that comes back gets its own place (review2 N6).
 function absorb(tile, on) {
-  if (editable || !tile || (tile.dataset.absorbed === '1') === on) return;
-  const me = widgetOf(tile.dataset.wid);
-  if (!me) return;
-  if (!on) {
-    tile.hidden = false;
-    delete tile.dataset.absorbed;
-    const n = tile._absorber;
-    if (n) { applyGeometry(n.dataset.wid); n._absorbing = false; }
-    tile._absorber = null;
-    dispatchEvent(new Event('resize'));
-    return;
+  if (editable || !tile || (tile.dataset.empty === '1') === on) return;
+  if (on) tile.dataset.empty = '1'; else delete tile.dataset.empty;
+  const tiles = $$('.b-widget', grid);
+  for (const t of tiles) {
+    if (!t.dataset.absorbed && !t._absorbing) continue;
+    t.hidden = false;
+    delete t.dataset.absorbed;
+    t._absorbing = false;
+    applyGeometry(t.dataset.wid);
   }
-  const others = (layout.widgets || []).filter((o) => o.id !== me.id);
-  const pick = others.find((o) => o.y === me.y && o.h === me.h && o.x + o.w === me.x)
-    || others.find((o) => o.x === me.x && o.w === me.w && o.y + o.h === me.y)
-    || others.find((o) => o.y === me.y && o.h === me.h && me.x + me.w === o.x)
-    || others.find((o) => o.x === me.x && o.w === me.w && me.y + me.h === o.y);
-  const n = pick && tileOf(pick.id);
-  if (!n || n._absorbing) return;
-  tile.hidden = true;
-  tile.dataset.absorbed = '1';
-  tile._absorber = n;
-  n._absorbing = true;
-  const x = Math.min(me.x, pick.x), y = Math.min(me.y, pick.y);
-  const w = me.y === pick.y ? me.w + pick.w : me.w;
-  const h = me.x === pick.x ? me.h + pick.h : me.h;
-  n.style.gridColumn = `${x + 1} / span ${w}`;
-  n.style.gridRow = `${y + 1} / span ${h}`;
+  const ws = layout.widgets || [];
+  for (const t of tiles) {
+    const me = t.dataset.empty === '1' && widgetOf(t.dataset.wid);
+    if (!me) continue;
+    const others = ws.filter((o) => {
+      const n = o.id !== me.id && tileOf(o.id);
+      return n && n.dataset.empty !== '1' && !n._absorbing;
+    });
+    const pick = others.find((o) => o.y === me.y && o.h === me.h && o.x + o.w === me.x)
+      || others.find((o) => o.x === me.x && o.w === me.w && o.y + o.h === me.y)
+      || others.find((o) => o.y === me.y && o.h === me.h && me.x + me.w === o.x)
+      || others.find((o) => o.x === me.x && o.w === me.w && me.y + me.h === o.y);
+    if (!pick) continue;
+    const n = tileOf(pick.id);
+    t.hidden = true;
+    t.dataset.absorbed = '1';
+    n._absorbing = true;
+    const x = Math.min(me.x, pick.x), y = Math.min(me.y, pick.y);
+    const w = me.y === pick.y ? me.w + pick.w : me.w;
+    const h = me.x === pick.x ? me.h + pick.h : me.h;
+    n.style.gridColumn = `${x + 1} / span ${w}`;
+    n.style.gridRow = `${y + 1} / span ${h}`;
+  }
   dispatchEvent(new Event('resize')); // fit.js re-fits the digits to the new box
 }
 
@@ -366,7 +375,7 @@ function absorb(tile, on) {
 //   wordcloud → word clouds only
 // Content appears/disappears with the tile's animation (opts.anim +
 // animMS). Screens always animate; only phones honour reduced motion.
-function renderAudience(tile, type, w) {
+function renderAudience(tile, type, w, idleText = (s) => s) {
   const box = $('.b-js-poll', tile) || $('.b-js-qa', tile) || $('.b-js-cloud', tile);
   if (!box) return;
   const target = w?.opts?.target === 'presenter' ? 'presenter' : 'audience';
@@ -393,7 +402,7 @@ function renderAudience(tile, type, w) {
     if (box._aud) clearAudience(box);
     // Nothing on air: the room sees what is on now and next, not an
     // empty tile with a placeholder (review #30).
-    idleAudience(box);
+    idleAudience(box, idleText);
   };
   if (was && mode !== 'none' && box._aud) {
     playAnim(box, mode, ms, 'out', () => { if (tile.dataset.bVis !== '1') { rest(); playAnim(box, mode, ms, 'in'); } });
@@ -404,7 +413,7 @@ function renderAudience(tile, type, w) {
 
 // idleAudience fills an audience tile with nothing on air: NOW + the
 // session title (speaker), NEXT + the next session and its start.
-function idleAudience(box) {
+function idleAudience(box, idleText) {
   let el = box.querySelector(':scope > .b-aud-idle');
   if (!el) {
     box.textContent = '';
@@ -425,7 +434,8 @@ function idleAudience(box) {
     setText($('.b-aud-idle-title', blk), c.label);
     setText($('.b-aud-idle-meta', blk), meta);
   };
-  fill($('.b-aud-idle-now', el), live || (plan.cue ? null : { label: 'Finished for today' }),
+  const done = plan.cue ? '' : idleText('Finished for today');
+  fill($('.b-aud-idle-now', el), live || (done ? { label: done } : null),
     live ? (live.kind === 'break' ? live.location || '' : live.speaker || '') : '');
   const at = nextStartAt(plan, serverNow());
   fill($('.b-aud-idle-next', el), plan.cue, [at ? hhmm(at) : '', plan.cue?.speaker || ''].filter(Boolean).join('  ·  '));
@@ -522,7 +532,7 @@ function renderRooms(tile) {
     const next = over(r) ? null : r.next;
     card.append(mk('div', 'b-room-name', r.label || r.name));
     // schedLabel already carries the speaker: shown once.
-    card.append(mk('div', 'b-room-now' + (r.now ? '' : ' b-empty'), r.now ? schedLabel(r.now) : (next ? 'Next session soon' : 'Finished for today')));
+    card.append(mk('div', 'b-room-now' + (r.now ? '' : ' b-empty'), r.now ? schedLabel(r.now) : (next ? 'Next session soon' : r.schedule.length ? 'Finished for today' : 'No sessions yet')));
     if (next) card.append(mk('div', 'b-room-meta', `Next${next.startTS ? ' ' + hhmm(next.startTS) : ''}: ${schedLabel(next)}`));
     box.appendChild(card);
   }
@@ -540,7 +550,9 @@ function renderEventSchedule(tile) {
     col.append(mk('h3', 'schedule-heading', r.label || r.name), list);
     // Done sessions drop off the top so the column shows what is left.
     const rows = r.schedule.filter((x) => x.state !== 'done');
-    for (const s of (rows.length ? rows : r.schedule)) list.appendChild(schedItem(hhmm(s.startTS), schedLabel(s), s.state));
+    // Rooms sit side by side: an untimed row keeps the time column ("—"),
+    // so every column lines up (review2 UI #8).
+    for (const s of (rows.length ? rows : r.schedule)) list.appendChild(schedItem((s.startTS && hhmm(s.startTS)) || '—', schedLabel(s), s.state));
     box.appendChild(col);
     fitRows(list, col);
   }
@@ -644,7 +656,24 @@ function renderStaticBody() {
   const cue = activeCue(snap);
   const plan = nextPlan();
   // Empty state of an idle room's tiles (E2E #20).
-  const idle = plan.cue ? 'Next session soon' : 'Finished for today';
+  // A room with no sessions at all says so once, calmly, on the first
+  // tile that asks; the others stay quiet (review2 N12: four tiles read
+  // "Finished for today").
+  const none = !snap.cues?.length;
+  let told = false;
+  const idleText = (done) => (none ? (told ? '' : ((told = true), 'No sessions yet')) : done);
+  const idle = () => idleText(plan.cue ? 'Next session soon' : 'Finished for today');
+  // ...and with a countdown on the layout (its caption says it), the
+  // title, bar and next tiles have nothing to show: they give their room
+  // away instead of standing blank.
+  const quiet = none && (layout.widgets || []).some((x) => x.type === 'countdown');
+  // A tile with no neighbour to take its room stays, blank.
+  const hush = (tile) => {
+    absorb(tile, quiet);
+    const body = $('.b-w-body', tile);
+    if (body) body.style.visibility = quiet ? 'hidden' : '';
+    return quiet;
+  };
   // A layout with a cue-label tile shows the session title there only; the
   // countdown and progress captions don't repeat it (E2E: title 3× on Full timer).
   const titled = (layout.widgets || []).some((x) => x.type === 'cuelabel' && (x.opts?.source || 'label') === 'label');
@@ -653,13 +682,14 @@ function renderStaticBody() {
     const w = widgetOf(tile.dataset.wid);
     switch (type) {
       case 'countdown':
-        say($('.b-js-cdlabel', tile), cue?.label, plan.cue ? `Up next: ${plan.cue.label}` : idle);
+        say($('.b-js-cdlabel', tile), cue?.label, plan.cue ? `Up next: ${plan.cue.label}` : idle());
         if ($('.b-js-cdlabel', tile)) $('.b-js-cdlabel', tile).hidden = titled && !!cue;
         break;
       case 'cuelabel': {
+        if (hush(tile)) break;
         const src = w?.opts?.source || 'label';
         // A break reads "Coffee — Great Hall" (where to go), like the schedule.
-        say($('.b-js-cuelabel', tile), src === 'speaker' ? (cue?.speaker || cue?.label) : cue && schedLabel({ ...cue, speaker: '' }), idle);
+        say($('.b-js-cuelabel', tile), src === 'speaker' ? (cue?.speaker || cue?.label) : cue && schedLabel({ ...cue, speaker: '' }), idle());
         break;
       }
       case 'speaker': {
@@ -675,9 +705,10 @@ function renderStaticBody() {
         renderNowNext(tile, cue, plan);
         break;
       case 'nextup': {
+        if (hush(tile)) break;
         // Labelled facts (E2E): "Duration 30:00 · Starts 10:30 · in 12:00";
         // the start and the time-until only once the day has started.
-        say($('.b-js-nextlabel', tile), plan.cue?.label, 'Finished for today');
+        say($('.b-js-nextlabel', tile), plan.cue?.label, idleText('Finished for today'));
         const meta = $('.b-next-meta', tile);
         if (meta) meta.hidden = !plan.cue;
         setText($('.b-js-nextdur', tile), plan.cue ? fmtDuration(plan.cue.durationMS) : '');
@@ -685,12 +716,14 @@ function renderStaticBody() {
       }
       case 'messages': {
         // ftl .lower-third bands: the operator's colour is the leading
-        // edge only (--banner-edge). No messages: the tile stays quiet.
+        // edge only (--banner-edge). No messages: nothing is painted and a
+        // screen gives the tile's room to its neighbour (review2 N6); the
+        // layout editor shows a quiet hint instead (CSS).
         const box = $('.b-js-msgs', tile);
         const list = stageMessages();
+        absorb(tile, !list.length);
         if (box && !unchanged(box, JSON.stringify(list.map((m) => [m.id, m.text, m.color])))) {
           box.textContent = '';
-          if (!list.length) box.appendChild(mk('span', 'b-msg-empty', 'No messages on stage'));
           for (const m of list) {
             const p = mk('p', 'b-msg', m.text);
             if (m.color) p.style.setProperty('--banner-edge', m.color);
@@ -702,16 +735,21 @@ function renderStaticBody() {
       case 'showtitle':
         setText($('.b-js-showtitle', tile), snap.show?.title ? (document.body.dataset.roomPrefix || '') + snap.show.title : '');
         break;
-      case 'notice':
-        setText($('.b-js-notice', tile), w?.opts?.text || '');
+      case 'notice': {
+        // A break notice reads only during a break; otherwise the tile
+        // says what is next (review2 UI #12).
+        const onBreak = cue?.kind === 'break' && (snap.runtime.running || snap.runtime.paused);
+        const off = w?.opts?.during === 'break' && !onBreak;
+        setText($('.b-js-notice', tile), off ? (plan.cue ? `Next: ${schedLabel(plan.cue)}` : '') : w?.opts?.text || '');
         break;
+      }
       case 'rate':
         setText($('.b-js-rate', tile), `×${Number(snap.runtime.rate || 1).toFixed(2)}`);
         break;
       case 'poll':
       case 'qa':
       case 'wordcloud':
-        renderAudience(tile, type, w);
+        renderAudience(tile, type, w, idleText);
         break;
       case 'map': {
         const img = $('.b-js-map', tile);
@@ -744,8 +782,12 @@ function renderStaticBody() {
         if (lbl) lbl.textContent = w?.opts?.label || 'Scan to take part';
         break;
       }
+      case 'dayprogress':
+        hush(tile); // the bar is painted by tick()
+        break;
       case 'progress':
-        say($('.b-js-progresslabel', tile), cue?.label, idle);
+        if (hush(tile)) break;
+        say($('.b-js-progresslabel', tile), cue?.label, idle());
         if ($('.b-js-progresslabel', tile)) $('.b-js-progresslabel', tile).hidden = titled && !!cue;
         break;
       case 'schedule': {
@@ -869,18 +911,40 @@ function tick() {
         break;
       }
       case 'dayprogress': {
-        // ftl .gauge-linear: the meter level and the "now" mark move together.
-        const meter = $('.b-js-dayprogress', tile);
-        if (meter) {
-          const tot = sched ? sched.totalMS : computeSchedule(snap).totalMS;
+        // ftl .timeline-bar (signage.md "Day bar"): one segment per cue,
+        // breaks striped, the past dimmed, the live one underlined, and the
+        // needle at now (review2 UI #3).
+        const bar = $('.b-js-dayprogress', tile);
+        if (bar) {
+          const sc = sched || computeSchedule(snap);
+          const tot = sc.totalMS;
           const base = snap.runtime.dayStartTS;
           const pct = base && tot > 0 ? (Math.min(Math.max(now - base, 0), tot) / tot) * 100 : 0;
-          meter.style.setProperty('--meter-level', `${pct.toFixed(2)}%`);
-          $('.b-js-daynow', tile)?.style.setProperty('--at', `${pct.toFixed(2)}%`);
-          const v = String(Math.round(pct));
-          if (meter.getAttribute('aria-valuenow') !== v) meter.setAttribute('aria-valuenow', v);
+          const byPos = new Map(snap.cues.map((c) => [c.pos, c]));
+          const segs = (sc.rows || []).map((r) => [r.pos, r.startMS, r.endMS, byPos.get(r.pos)?.label || '', byPos.get(r.pos)?.kind === 'break']);
+          if (!unchanged(bar, JSON.stringify([tot, segs]))) {
+            for (const el of $$('.timeline-seg', bar)) el.remove();
+            const needle = $('.b-js-daynow', bar);
+            for (const [pos, start, end, label, isBreak] of segs) {
+              const seg = mk('span', 'timeline-seg', label);
+              seg.dataset.pos = pos;
+              if (isBreak) seg.dataset.kind = 'break';
+              seg.style.setProperty('--start', `${tot ? ((start / tot) * 100).toFixed(3) : 0}%`);
+              seg.style.setProperty('--size', `${tot ? (((end - start) / tot) * 100).toFixed(3) : 0}%`);
+              bar.insertBefore(seg, needle);
+            }
+          }
+          const act = activeCue(snap)?.pos || 0;
+          for (const seg of $$('.timeline-seg', bar)) {
+            const pos = Number(seg.dataset.pos);
+            seg.classList.toggle('is-done', !!act && pos < act);
+            seg.classList.toggle('is-active', pos === act);
+          }
+          $('.b-js-daynow', bar)?.style.setProperty('--at', `${pct.toFixed(2)}%`);
           // The scale reads HH:MM like every other time on a screen (review #23).
           if (base) { setText($('.b-js-daystart', tile), hhmm(base)); setText($('.b-js-dayend', tile), hhmm(base + tot)); }
+          const label = base ? `Day ${hhmm(base)}–${hhmm(base + tot)}, now ${hhmm(now)}${cue ? `, in ${cue.label}` : ''}` : 'Day not started';
+          if (bar.getAttribute('aria-label') !== label) bar.setAttribute('aria-label', label);
         }
         break;
       }
@@ -891,7 +955,7 @@ function tick() {
         const el = $('.b-js-nextin', tile);
         const at = nextStartAt(plan, now);
         const r = snap.runtime;
-        const due = !!(at && activeCue(snap) && r.running && remainingMS(snap, now) <= 0);
+        const due = !!(at && activeCue(snap) && ((r.running && remainingMS(snap, now) <= 0) || clockView(snap, now).state === 'held'));
         const sw = $('.b-js-nextstart-wrap', tile);
         if (sw) sw.hidden = !at || due;
         setText($('.b-js-nextstart', tile), at ? hhmm(at) : '');

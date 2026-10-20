@@ -251,3 +251,22 @@ func TestClipsKeepUTF8Whole(t *testing.T) {
 		t.Errorf("board name %q (%d bytes)", b.Name, len(b.Name))
 	}
 }
+
+// PRODUCT §3.2 (review2 UI #2): every presenter layout, both versions,
+// carries the remaining time and the stage messages.
+func TestPresenterTemplatesHaveCountdownAndMessages(t *testing.T) {
+	for _, tpl := range boards.Templates() {
+		if tpl.Kind != "presenter" {
+			continue
+		}
+		for _, l := range []boards.Layout{tpl.Layout, *tpl.Layout.Alt} {
+			has := map[string]bool{}
+			for _, w := range l.Widgets {
+				has[w.Type] = true
+			}
+			if !has["countdown"] || !has["messages"] {
+				t.Errorf("%s (%s): countdown=%v messages=%v", tpl.Key, l.Orientation, has["countdown"], has["messages"])
+			}
+		}
+	}
+}

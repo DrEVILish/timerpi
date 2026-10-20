@@ -14,14 +14,16 @@
  *     fixed per word.
  *   Wall: cards are stacked by position (spotlight first, then by
  *     upvotes). New questions rise in from the bottom of the screen; a
- *     reorder slides cards to their new place. An answered question turns
- *     green, fades, and once it is half gone the cards below close up.
+ *     reorder slides cards to their new place. An answered question stays,
+ *     an .is-answered card after the open ones; a dismissed one fades.
+ *     Entries that don't fit say "+N more".
  *   Poll / quiz: results grow in once they are shown (bars and numbers
  *     count up), then follow the votes smoothly.
  *
  * Text goes in through textContent only.
  */
-import { setText } from './ui.js';
+import { setText, percents } from './ui.js';
+import { fitHeight } from './fit.js';
 
 function mk(tag, cls, text) {
   const n = document.createElement(tag);
@@ -39,11 +41,22 @@ export function paintAudience(box, p, w) {
     st = box._aud = { id: p.id, mode, title: mk('div', 'b-poll-q'), body: mk('div', 'b-aud-body'), timers: new Set() };
     box.dataset.audMode = mode;
     box.append(st.title, st.body);
+    // One content-fit for the whole tile (review2 N1/N2): every part is
+    // sized in em, and the box shrinks until nothing overflows. A new
+    // tile size (absorb, rotation, resize) or a late font re-fits. A poll
+    // also grows into a tall tile; a wall keeps its size and shows more
+    // cards instead.
+    st.fit = () => fitHeight(box, 0.4, mode === 'bars' ? 1.6 : 1);
+    st.boxRO = new ResizeObserver(st.fit);
+    st.boxRO.observe(box);
+    document.fonts?.ready.then(st.fit);
   }
   setText(st.title, p.question || '');
   if (mode === 'wall') updateWall(st, p, w);
   else if (mode === 'cloud') updateCloud(st, p);
   else updateBars(st, p);
+  st.fit();
+  if (mode === 'wall') layoutWall(st);
 }
 
 /** Drop the box's state (timers, observers, elements). */
@@ -52,6 +65,7 @@ export function clearAudience(box) {
   if (st) {
     for (const t of st.timers) clearTimeout(t);
     st.ro?.disconnect();
+    st.boxRO?.disconnect();
     cancelAnimationFrame(st.raf || 0);
     for (const r of st.rows || []) cancelAnimationFrame(r.raf || 0);
   }
@@ -129,19 +143,8 @@ function updateBars(st, p) {
   });
 }
 
-// percents rounds the vote shares so they always add up to 100 (largest
-// remainder); no votes → all 0.
-export function percents(counts, len) {
-  const n = Array.from({ length: len }, (_, i) => counts[i] || 0);
-  const total = n.reduce((a, b) => a + b, 0);
-  if (!total) return n.map(() => 0);
-  const raw = n.map((c) => (c * 100) / total);
-  const out = raw.map(Math.floor);
-  let left = 100 - out.reduce((a, b) => a + b, 0);
-  const order = raw.map((v, i) => [v - out[i], i]).sort((a, b) => b[0] - a[0]);
-  for (const [, i] of order) { if (left-- <= 0) break; out[i]++; }
-  return out;
-}
+// Re-exported for the browser tests; the maths lives in ui.js (shared with the phone).
+export { percents };
 
 // countTo tweens a row's bar and numbers from what it shows to (pct, n).
 function countTo(r, pct, n, delay) {
@@ -166,61 +169,65 @@ function countTo(r, pct, n, delay) {
 
 /* ------------------------------------------------------------ the wall -- */
 
-const WALL_HOLD_MS = 1400; // green accent before the fade
-const WALL_FADE_MS = 1000; // fade out; the gap closes at half way
+const WALL_FADE_MS = 1000; // a card that leaves the wall fades out
 
 function updateWall(st, p, w) {
   if (!st.list) {
-    // ftl .ranked-list.is-positioned: we set each card's --slot-y and ftl
-    // slides it there. The spotlight is its own big card above the wall,
-    // "Now answering" (PRODUCT A7: shown full size; review #8).
-    st.spot = mk('div', 'ranked-item is-spotlight b-qa-spot');
+    // The spotlight is the first entry of its own one-item ftl
+    // .ranked-list, so a screen reader hears it as rank 1 (signage.md),
+    // shown full size above the wall ("Now answering", PRODUCT A7). The
+    // wall is ftl .ranked-list.is-positioned: we set each card's --slot-y
+    // and ftl slides it there.
+    st.spotList = mk('ol', 'ranked-list b-qa-spot-list');
+    st.spot = mk('li', 'ranked-item is-spotlight b-qa-spot');
     st.spot.setAttribute('aria-current', 'true');
     st.spotText = mk('span', 'b-qa-spot-text');
     st.spotVotes = mk('span', 'ranked-votes');
-    const head = mk('span', 'b-eyebrow', 'Now answering');
-    st.spot.append(head, st.spotText, st.spotVotes);
-    st.spot.hidden = true;
+    st.spot.append(mk('span', 'b-eyebrow', 'Now answering'), st.spotText, st.spotVotes);
+    st.spotList.append(st.spot);
+    st.spotList.hidden = true;
     st.list = mk('ol', 'ranked-list is-positioned b-qa-wall');
     st.list.setAttribute('aria-label', p.kind === 'qa' ? 'Questions by votes' : 'Ideas by votes');
     st.empty = mk('div', 'b-poll-meta b-aud-empty');
-    st.body.append(st.spot, st.empty, st.list);
-    st.items = new Map(); // entry id → { el, votes, text, leaving, holding }
-    st.slots = [];        // ids in screen order (incl. answered ones fading)
+    // More open entries than the tile holds: say so (review2 N5).
+    st.more = mk('div', 'b-poll-meta b-qa-more');
+    st.more.hidden = true;
+    st.body.append(st.spotList, st.empty, st.list, st.more);
+    st.items = new Map(); // entry id → { el, votes, text, tag, leaving, answered }
+    st.slots = [];        // ids in screen order
     st.ro = new ResizeObserver(() => layoutWall(st));
     st.ro.observe(st.list);
   }
   const kids = p.children || [];
-  const spotID = p.spotlight?.id || 0;
   // A speaker reads from metres away: fewer, bigger questions (review #9).
   const limit = Number(w?.opts?.count) || (w?.opts?.target === 'presenter' ? 4 : 8);
-  // The spotlight on its own card; the wall lists the open entries in
-  // server order (most upvoted first). Answered entries never come in;
-  // one that was on screen says so, then leaves.
   const spot = p.spotlight || null;
-  if ((st.spotID || 0) !== (spot?.id || 0)) {
-    st.spotID = spot?.id || 0;
+  const spotID = spot?.id || 0;
+  if ((st.spotID || 0) !== spotID) {
+    st.spotID = spotID;
     st.spot.classList.remove('is-new');
     void st.spot.offsetWidth;
     if (spot) st.spot.classList.add('is-new'); // ftl ranked-rise: the new spotlight rises in
   }
-  st.spot.hidden = !spot;
+  st.spotList.hidden = !spot;
   st.body.classList.toggle('has-spot', !!spot);
   if (spot) {
     setText(st.spotText, spot.question);
-    setText(st.spotVotes, `▲ ${spot.upvotes || 0}`);
+    votes(st.spotVotes, spot.upvotes);
   }
+  // Open entries in server order (most upvoted first), then the answered
+  // ones, still on the wall as ftl .is-answered cards with an "Answered"
+  // tag (PRODUCT A7: greyed, not gone). Dismissed entries leave.
   const open = kids.filter((c) => c.state === 'open' && c.id !== spotID);
-  const want = open.slice(0, limit);
-  const wantIDs = new Set(want.map((c) => c.id));
-  const answered = new Set(kids.filter((c) => c.state === 'answered').map((c) => c.id));
-
+  const done = kids.filter((c) => c.state === 'answered' && c.id !== spotID);
+  const shown = open.slice(0, limit);
+  const want = shown.concat(done.slice(0, Math.max(0, limit - shown.length)));
+  st.extra = open.length - shown.length;
   for (const c of want) {
     let it = st.items.get(c.id);
-    if (it?.leaving) { // came back (un-answered): stop leaving
+    if (it?.leaving) { // came back: stop leaving
       it.leaving = false;
-      it.el.classList.remove('is-answered', 'is-leaving');
-      it.tag?.remove();
+      it.el.classList.remove('is-leaving');
     }
     if (!it) {
       it = { el: mk('li', 'ranked-item b-qa-item'), votes: mk('span', 'ranked-votes'), text: mk('span', 'b-qa-text'), fresh: true };
@@ -228,41 +235,33 @@ function updateWall(st, p, w) {
       st.list.append(it.el);
       st.items.set(c.id, it);
     }
-    setText(it.votes, `▲ ${c.upvotes || 0}`);
+    votes(it.votes, c.upvotes);
     setText(it.text, c.question);
+    it.answered = c.state === 'answered';
+    it.el.classList.toggle('is-answered', it.answered);
+    // Not colour alone: the card says so.
+    if (it.answered && !it.tag) { it.tag = mk('span', 'badge badge-solid badge-success', 'Answered'); it.text.after(it.tag); }
+    if (!it.answered && it.tag) { it.tag.remove(); it.tag = null; }
   }
+  const wantIDs = new Set(want.map((c) => c.id));
   for (const [id, it] of st.items) {
     if (wantIDs.has(id) || it.leaving) continue;
     it.leaving = true;
-    if (answered.has(id)) {
-      // Green, then fade; the others close up once it is half gone.
-      it.holding = true;
-      it.el.classList.add('is-answered');
-      // Not colour alone: the card says so (ftl .is-answered).
-      it.tag = mk('span', 'badge badge-solid badge-success', 'Answered');
-      it.text.after(it.tag);
-      later(st, WALL_HOLD_MS, () => {
-        it.el.classList.add('is-leaving');
-        later(st, WALL_FADE_MS / 2, () => { it.holding = false; layoutWall(st); });
-        later(st, WALL_FADE_MS, () => { if (it.leaving) { it.el.remove(); st.items.delete(id); } });
-      });
-    } else {
-      it.holding = false;
-      it.el.classList.add('is-leaving');
-      later(st, WALL_FADE_MS, () => { if (it.leaving) { it.el.remove(); st.items.delete(id); } });
-    }
+    it.el.classList.add('is-leaving');
+    later(st, WALL_FADE_MS, () => { if (it.leaving) { it.el.remove(); st.items.delete(id); } });
   }
-  // Screen order: the wanted entries, with any answered one that is still
-  // fading kept in its old place.
-  const order = want.map((c) => c.id);
-  st.slots.forEach((id, i) => {
-    const it = st.items.get(id);
-    if (it?.leaving && it.holding && !order.includes(id)) order.splice(Math.min(i, order.length), 0, id);
-  });
-  st.slots = order;
+  // DOM order = rank order (screen readers hear the rank).
+  for (const c of want) st.list.append(st.items.get(c.id).el);
+  st.slots = want.map((c) => c.id);
   setText(st.empty, want.length ? '' : (p.kind === 'qa' ? 'No questions yet' : 'No ideas yet'));
-  st.empty.hidden = want.length > 0 || order.length > 0 || !!spot;
+  st.empty.hidden = want.length > 0 || !!spot;
   layoutWall(st);
+}
+
+// The bare count, as on ftl's reference wall; the name says what it is.
+function votes(el, n) {
+  setText(el, String(n || 0));
+  el.setAttribute('aria-label', `${n || 0} vote${n === 1 ? '' : 's'}`);
 }
 
 function layoutWall(st) {
@@ -271,13 +270,10 @@ function layoutWall(st) {
   const gap = 0.6 * parseFloat(getComputedStyle(st.list).fontSize) || 10; // ftl --ranked-gap
   // Off-screen start for new cards: the bottom edge of the screen.
   const fromBottom = Math.max(H, window.innerHeight - st.list.getBoundingClientRect().top);
-  let y = 0;
-  const placed = new Set();
+  let y = 0, cut = 0, full = false;
   for (const id of st.slots) {
     const it = st.items.get(id);
-    // A leaving card gives up its slot once it is half faded; the rest close up.
-    if (!it || (it.leaving && !it.holding)) continue;
-    placed.add(id);
+    if (!it || it.leaving) continue;
     const h = it.el.offsetHeight;
     if (it.fresh) {
       it.fresh = false;
@@ -288,12 +284,17 @@ function layoutWall(st) {
       it.el.style.transition = '';
     }
     it.el.style.setProperty('--slot-y', `${y}px`); // ftl moves the card (translate)
-    // Cards that don't fit fade instead of being cut through.
-    it.el.style.opacity = it.leaving ? '' : (y + h <= H + 1 ? '1' : '0');
+    // Cards that don't fit fade instead of being cut through; from the
+    // first one that doesn't, the rest wait too.
+    full = full || y + h > H + 1;
+    it.el.style.opacity = full ? '0' : '1';
+    if (full && !it.answered) cut++;
     y += h + gap;
   }
-  // Leaving cards that gave up their slot stay where they are while they fade.
-  for (const [id, it] of st.items) if (!placed.has(id)) it.el.style.opacity = '';
+  for (const it of st.items.values()) if (it.leaving) it.el.style.opacity = '';
+  const more = (st.extra || 0) + cut;
+  setText(st.more, more ? `+${more} more` : '');
+  st.more.hidden = !more;
 }
 
 /* ---------------------------------------------------------- word cloud -- */
@@ -430,7 +431,7 @@ function stepCloud(st) {
       const a = list[i];
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
-        const pad = Math.max(6, 12 * Math.min(a.s, b.s));
+        const pad = Math.max(6, 25 * Math.max(a.s, b.s)); // ~0.25em of the bigger word (review2 N10: "oktired")
         const ox = (a.w + b.w) / 2 + pad - Math.abs(a.x - b.x);
         const oy = (a.h + b.h) / 2 + pad - Math.abs(a.y - b.y);
         if (ox <= 0 || oy <= 0) continue;

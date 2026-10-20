@@ -15,7 +15,7 @@ export async function run(t) {
 
   const phone = await (await t.browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: IPHONE })).newPage();
   await phone.goto(link);
-  await phone.waitForSelector('.b-widget');
+  await phone.waitForSelector('.b-widget', { state: 'attached' }); // an empty room's first tile may be absorbed
   const look = () => phone.evaluate(() => ({
     rotate: document.documentElement.dataset.rotate || '',
     device: document.documentElement.dataset.deviceOrient || '',
@@ -27,7 +27,7 @@ export async function run(t) {
   // Turn the phone: it swaps to the landscape version of the same layout.
   await phone.setViewportSize({ width: 844, height: 390 });
   await phone.waitForFunction(() => document.documentElement.dataset.layoutOrient === 'landscape', null, { timeout: 5000 }).catch(() => {});
-  await phone.waitForSelector('.b-widget');
+  await phone.waitForSelector('.b-widget', { state: 'attached' }); // an empty room's first tile may be absorbed
   a = await look();
   t.check(`turned phone: landscape version, still unrotated (${JSON.stringify(a)})`, a.version === 'landscape' && a.rotate === '');
   // And back.
@@ -51,7 +51,7 @@ export async function run(t) {
   await phone.context().close();
   const tv = await (await t.browser.newContext({ viewport: { width: 1920, height: 1080 } })).newPage();
   await tv.goto(link);
-  await tv.waitForSelector('.b-widget');
+  await tv.waitForSelector('.b-widget', { state: 'attached' }); // an empty room's first tile may be absorbed
   const tvLook = await tv.evaluate(() => [document.documentElement.dataset.rotate || '', document.documentElement.dataset.layoutOrient]);
   t.check(`a TV applies Mounted and its version (${tvLook.join(', ')})`, tvLook[0] === '270' && tvLook[1] === 'portrait');
   await ctx.close();

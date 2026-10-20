@@ -99,11 +99,9 @@
 <section class="panel b-widget b-w-dayprogress" id="b-w-{{.W.ID}}" data-widget="dayprogress" data-wid="{{.W.ID}}" style="{{.W.Style}}">
   {{if $.P.Editable}}<div class="b-w-chrome"><span class="b-w-title">Day progress</span><button class="btn-close b-w-del" type="button" data-del aria-label="Remove day progress"></button></div>{{end}}
   <div class="b-w-body">
-    <div class="gauge-linear">
-      <div class="meter b-js-dayprogress" role="meter" aria-label="Day progress" aria-valuemin="0" aria-valuemax="100" style="--meter-level: {{.P.DayPct}}"><div class="meter-fill"></div></div>
-      <span class="gauge-mark b-js-daystart" style="--at: 0%">{{.P.Schedule.DayStartFmt}}</span>
-      <span class="gauge-mark b-js-dayend" style="--at: 100%">{{.P.Schedule.DayEndFmt}}</span>
-      <span class="gauge-mark is-target b-js-daynow" style="--at: {{.P.DayPct}}" aria-hidden="true"></span>
+    <div class="b-day">
+      <div class="timeline-bar b-js-dayprogress" role="img" aria-label="Day {{.P.Schedule.DayStartFmt}}–{{.P.Schedule.DayEndFmt}}"><span class="timeline-now b-js-daynow" style="--at: {{.P.DayPct}}"></span></div>
+      <div class="timeline-scale"><time class="b-js-daystart">{{.P.Schedule.DayStartFmt}}</time><time class="b-js-dayend">{{.P.Schedule.DayEndFmt}}</time></div>
     </div>
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
@@ -117,10 +115,9 @@
     <div class="lower-third b-msgs b-js-msgs" role="status">
 {{- if not (eq .P.ScreenKind "audience" "walkin")}}{{range .P.Messages}}
       <p class="b-msg"{{if .Color}} style="--banner-edge: {{.Color}}"{{end}}>{{.Text}}</p>
-{{- else}}
-      <span class="b-msg-empty">No messages on stage</span>
-{{- end}}{{end}}
+{{- end}}{{end -}}
     </div>
+    {{if $.P.Editable}}<span class="b-tile-empty b-msg-hint">Stage messages appear here</span>{{end}}
   </div>
   {{if $.P.Editable}}<span class="b-w-resize" data-resize aria-hidden="true"></span>{{end}}
 </section>

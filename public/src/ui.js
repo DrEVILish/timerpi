@@ -86,6 +86,30 @@ export function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
 
+/**
+ * percents(counts, len) — vote shares as whole percents, shared by the
+ * screens and the phone so both say the same (review2 UI #1). Largest
+ * remainder, but equal counts always get equal percents: a tie that
+ * can't all take the leftover point gets none (then 99 is shown).
+ * No votes → all 0.
+ */
+export function percents(counts, len) {
+  const n = Array.from({ length: len }, (_, i) => counts[i] || 0);
+  const total = n.reduce((a, b) => a + b, 0);
+  if (!total) return n.map(() => 0);
+  const raw = n.map((c) => (c * 100) / total);
+  const out = raw.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  const rems = [...new Set(raw.map((v, i) => v - out[i]))].filter((r) => r > 1e-9).sort((a, b) => b - a);
+  for (const r of rems) {
+    const tie = raw.map((v, i) => i).filter((i) => Math.abs(raw[i] - out[i] - r) < 1e-9);
+    if (tie.length > left) break;
+    for (const i of tie) out[i]++;
+    left -= tie.length;
+  }
+  return out;
+}
+
 /** showError(el, msg) — field-error paragraphs. */
 export function showError(el, msg) {
   if (!el) return;

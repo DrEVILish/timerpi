@@ -210,7 +210,9 @@ func Templates() []TemplateInfo {
 	aud := map[string]string{"target": "audience"}
 	pres := map[string]string{"target": "presenter"}
 	ask := map[string]string{"label": "Questions? Scan and ask."}
-	brk := map[string]string{"text": "Back shortly — enjoy the break"}
+	// "during": the notice reads only while a break runs; otherwise the
+	// tile names the next session (review2 UI #12).
+	brk := map[string]string{"text": "Back shortly — enjoy the break", "during": "break"}
 	return []TemplateInfo{
 		// --- Audience displays (what the room looks at) ---
 		{Key: "main", Name: "Audience main", Kind: "audience", Desc: "Polls, results, Q&A and word clouds when shown to the audience; join QR alongside",
@@ -260,13 +262,14 @@ func Templates() []TemplateInfo {
 					w("notice", "notice", 0, 12, 12, 4, brk)))},
 		// --- Walk-in displays (posters outside rooms, foyer) ---
 		{Key: "event", Name: "Event walk-in", Kind: "walkin", Desc: "Every room now and next, the venue map and the full-day schedule",
-			// Without an event map the map tile hides and the tile above
-			// takes its room (board.js absorb).
+			// Without an event map the map tile hides and the schedule beside
+			// (portrait: above) it takes its room (board.js absorb), not the
+			// clock (review2 UI #8).
 			Layout: both(land(8,
-				w("rooms", "rooms", 0, 0, 8, 4, nil),
-				w("clock", "wallclock", 8, 0, 4, 2, clock),
-				w("map", "map", 8, 2, 4, 6, nil),
-				w("sched", "eventschedule", 0, 4, 8, 4, nil)),
+				w("rooms", "rooms", 0, 0, 8, 3, nil),
+				w("clock", "wallclock", 8, 0, 4, 3, clock),
+				w("sched", "eventschedule", 0, 3, 8, 5, nil),
+				w("map", "map", 8, 3, 4, 5, nil)),
 				port(16,
 					w("clock", "wallclock", 0, 0, 12, 2, clock),
 					w("rooms", "rooms", 0, 2, 12, 4, nil),
@@ -318,9 +321,11 @@ func Templates() []TemplateInfo {
 				port(16,
 					w("countdown", "countdown", 0, 0, 12, 5, tenths),
 					w("item", "poll", 0, 5, 12, 4, pres),
-					w("label", "cuelabel", 0, 9, 12, 1, label),
-					w("progress", "progress", 0, 10, 12, 1, nil),
-					w("msgs", "messages", 0, 11, 12, 2, nil),
+					// Under the item: an empty messages tile gives the item
+					// (or the title) its room, not the bar.
+					w("msgs", "messages", 0, 9, 12, 2, nil),
+					w("label", "cuelabel", 0, 11, 12, 1, label),
+					w("progress", "progress", 0, 12, 12, 1, nil),
 					w("next", "nextup", 0, 13, 6, 3, nil),
 					w("clock", "wallclock", 6, 13, 6, 3, clock)))},
 		{Key: "stage", Name: "Full timer", Kind: "presenter", Desc: "The classic timer wall: giant countdown, messages, next, progress",
@@ -347,19 +352,25 @@ func Templates() []TemplateInfo {
 				port(16,
 					w("countdown", "countdown", 0, 0, 12, 11, tenths),
 					w("messages", "messages", 0, 11, 12, 5, nil)))},
-		{Key: "speaker", Name: "Speaker support", Kind: "presenter", Desc: "Who is on, the session, progress and what comes next",
-			Layout: both(land(7,
-				w("speaker", "speaker", 0, 0, 12, 2, nil),
-				w("cuelabel", "cuelabel", 0, 2, 12, 2, label),
-				w("progress", "progress", 0, 4, 12, 1, nil),
-				w("nextup", "nextup", 0, 5, 8, 2, nil),
-				w("wallclock", "wallclock", 8, 5, 4, 2, clock)),
+		// Every presenter layout carries the remaining time and the stage
+		// messages (PRODUCT §3.2; review2 UI #2).
+		{Key: "speaker", Name: "Speaker support", Kind: "presenter", Desc: "Who is on, the session, the countdown, stage messages and what comes next",
+			Layout: both(land(8,
+				w("speaker", "speaker", 0, 0, 12, 1, nil),
+				w("cuelabel", "cuelabel", 0, 1, 12, 1, label),
+				w("countdown", "countdown", 0, 2, 8, 3, tenths),
+				w("messages", "messages", 8, 2, 4, 3, nil),
+				w("progress", "progress", 0, 5, 12, 1, nil),
+				w("nextup", "nextup", 0, 6, 8, 2, nil),
+				w("wallclock", "wallclock", 8, 6, 4, 2, clock)),
 				port(16,
-					w("speaker", "speaker", 0, 0, 12, 3, nil),
-					w("cuelabel", "cuelabel", 0, 3, 12, 3, label),
-					w("progress", "progress", 0, 6, 12, 1, nil),
-					w("nextup", "nextup", 0, 7, 12, 5, nil),
-					w("wallclock", "wallclock", 0, 12, 12, 4, clock)))},
+					w("speaker", "speaker", 0, 0, 12, 2, nil),
+					w("cuelabel", "cuelabel", 0, 2, 12, 2, label),
+					w("countdown", "countdown", 0, 4, 12, 5, tenths),
+					w("messages", "messages", 0, 9, 12, 2, nil),
+					w("progress", "progress", 0, 11, 12, 1, nil),
+					w("nextup", "nextup", 0, 12, 12, 2, nil),
+					w("wallclock", "wallclock", 0, 14, 12, 2, clock)))},
 	}
 }
 

@@ -28,3 +28,27 @@ export function fitWidth(sel) {
   document.fonts?.ready.then(all);
   check();
 }
+
+/**
+ * fitHeight(el, floor, ceil): one content-fit pass for a box whose parts
+ * are all sized in em (the audience tiles: poll, quiz, wall, cloud). The
+ * box's CSS font-size multiplies by var(--tp-fit, 1); this finds the
+ * largest factor in [floor, ceil] at which nothing overflows the box, so
+ * a long question or ten options shrink together instead of overprinting,
+ * and a short poll grows into a tall portrait tile (review2 N1/N2, UI #9).
+ * Seven layouts per call (binary search).
+ */
+export function fitHeight(el, floor = 0.4, ceil = 1) {
+  if (!el?.isConnected) return;
+  const set = (k) => el.style.setProperty('--tp-fit', k.toFixed(3));
+  const fits = () => el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+  set(ceil);
+  if (!el.clientHeight || fits()) return;
+  let lo = floor, hi = ceil;
+  for (let i = 0; i < 7; i++) {
+    const mid = (lo + hi) / 2;
+    set(mid);
+    if (fits()) lo = mid; else hi = mid;
+  }
+  set(lo);
+}

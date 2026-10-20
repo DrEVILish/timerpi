@@ -591,7 +591,8 @@ body[data-blanked="true"] .tp-blanked { display: flex; }
    paint is ftl's: leading edge in the operator's colour, bold text). */
 .b-w-messages .lower-third { position: static; flex-direction: column; justify-content: center; gap: .5rem; padding: 0; height: 100%; min-height: 0; overflow: hidden; }
 .b-w-messages .lower-third > .b-msg { max-inline-size: 100%; }
-.b-msg-empty { color: var(--muted); }
+/* No messages: no band (an empty band with a lit edge reads as live, review2 N6); the editor shows a quiet hint. */
+.b-w-messages .lower-third:empty, .b-w-messages .lower-third:not(:empty) + .b-msg-hint { display: none; }
 
 /* Schedules are ftl .schedule-list; rows on a TV are not tap targets. */
 .b-board .schedule-list { --tap-min: 0px; min-height: 0; overflow: hidden; }
@@ -853,7 +854,6 @@ body[data-editing] .b-join-card { display: none; }
 .b-cd-label { font-size: clamp(.9rem, 2vh, 1.7rem); }
 .b-next-meta { font-size: clamp(.8rem, 1.9vh, 1.5rem); }
 .b-bar-label { font-size: clamp(.8rem, 1.7vh, 1.4rem); }
-.b-msg-empty { font-size: clamp(.85rem, 1.8vh, 1.4rem); }
 
 /* Countdown urgency on the wallboard widget: same pulse language as the
    stage readout (color/shape carry it; pulse is enhancement only). */
@@ -958,9 +958,12 @@ body[data-editing] .b-overlap {
   /* Colours: ftl .splash.is-stage / .is-standby (a black stage, light ink). */
   --splash-art: url("/img/timerpi.svg") center / contain no-repeat;
   --splash-art-mask: none; --splash-art-radius: 0; --splash-art-motion: none;
-  --splash-art-size: clamp(6rem, 18vh, 12rem); --splash-gap: 2.5vh;
+  --splash-art-size: clamp(14rem, 40vh, 36rem); --splash-gap: 2.5vh;
   --splash-title-size: clamp(1.2rem, 4.2vh, 2.6rem); --splash-title-tracking: .28em;
 }
+/* The art is the wide wordmark (320×96), not a square: the size is its
+   width, so it reads at about 12vh tall (review2 UI #14). */
+.tp-display .splash-art { aspect-ratio: 10 / 3; }
 .tp-display .splash-message { max-width: 46ch; font-size: clamp(1rem, 2.6vh, 2rem); }
 /* The waiting room shows purely by body[data-waiting] (waiting.js). */
 .tp-waiting { display: none; }
@@ -1011,7 +1014,7 @@ body[data-waiting] .tp-waiting { display: flex; }
    change animates (2026-10-07 audience notes). */
 .b-js-poll, .b-js-qa, .b-js-cloud { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .b-aud-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-[data-aud-mode="bars"] > .b-aud-body { justify-content: center; }
+[data-aud-mode="bars"] > .b-aud-body { justify-content: safe center; }
 .b-poll-q { font-size: clamp(1rem, 2.2vw, 1.7rem); font-weight: 600; overflow-wrap: anywhere; }
 .b-poll-meta { color: var(--muted); font-size: .9em; margin: .2rem 0 .6rem; }
 .b-poll-opt { margin-bottom: .55rem; }
@@ -1033,12 +1036,13 @@ body[data-waiting] .tp-waiting { display: flex; }
 
 /* Q&A / ideas wall: ftl .ranked-list.is-positioned (audtiles.js sets each
    card's --slot-y; ftl slides it, paints answered/leaving). The spotlight
-   is its own big .ranked-item.is-spotlight card above the wall. */
+   is the one item of its own .ranked-list above the wall. */
 .b-qa-wall.ranked-list { flex: 1; min-height: 0; block-size: auto; }
 .b-qa-text { overflow-wrap: anywhere; }
 .b-qa-item .badge { flex: none; }
-.b-qa-spot { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .2em .8em; margin-bottom: .8rem; }
-.b-qa-spot[hidden] { display: none; }
+.b-qa-spot-list { flex: none; margin-bottom: .6em; }
+.b-qa-spot-list[hidden], .b-qa-more[hidden] { display: none; }
+.b-qa-spot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .2em .8em; }
 .b-qa-spot > .b-eyebrow { grid-column: 1 / -1; }
 .b-qa-spot-text { font-size: 2.2em; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .b-qa-spot .ranked-votes { font-size: 1.4em; }

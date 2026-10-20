@@ -188,7 +188,9 @@ body.b-board .b-grid:has(.b-w-countdown:not([hidden])) .b-wall { --readout-fg: v
 /* A countdown's caption ("Back at 11:15") reads under the digits. */
 body.b-board .b-w-countdown .b-w-body { flex-direction: column-reverse; }
 body.b-board .b-w-countdown .b-cd-label:not(.b-empty) { color: var(--text); }
-body.b-board .b-next-label { font-size: clamp(1rem, min(34cqh, 7.5cqw), 14rem); }
+/* The next title wraps to a second line beside free space instead of an
+   ellipsis (review2 UI #4); two lines + caption fit the tile. */
+body.b-board .b-next-label { font-size: clamp(1rem, min(28cqh, 7cqw), 14rem); white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.15; }
 /* Up to three lines that always fit the tile (3 × 1.15 × 27cqh). */
 body.b-board .b-cue-label { font-size: clamp(1rem, min(27cqh, 6.5cqw), 14rem); }
 body.b-board .b-speaker { font-size: clamp(.9rem, min(42cqh, 5.5cqw), 9rem); }
@@ -203,36 +205,48 @@ body.b-board .b-bar-label { font-size: clamp(.9rem, min(30cqh, 3cqw), 2.4rem); }
 body.b-board .b-w-messages { --banner-size: clamp(1.7rem, min(24cqh, 7cqw), 6rem); }
 body.b-board .b-w-schedule .schedule-list { font-size: clamp(.85rem, min(7cqh, 3.8cqw), 3rem); }
 body.b-board .b-w-progress { --progress-height: clamp(.6rem, 28cqh, 3rem); }
-body.b-board .b-w-dayprogress {
-  --meter-thickness: clamp(.6rem, 22cqh, 3rem);
-  --gauge-linear-label-size: clamp(.8rem, max(1.7vh, min(16cqh, 3cqw)), 2.4rem);
-  --gauge-linear-label-room: calc(1.4 * var(--gauge-linear-label-size));
-}
-body.b-board .b-poll-q { font-size: clamp(1.1rem, min(9cqh, 5cqw), 7rem); }
-body.b-board .b-poll-meta { font-size: clamp(.8rem, min(4.5cqh, 2.2cqw), 2.5rem); }
-body.b-board .b-poll-opt-head { font-size: clamp(1rem, min(6.5cqh, 4cqw), 4.5rem); }
-body.b-board .b-poll-opt { margin-bottom: 2.2cqh; }
-body.b-board .b-poll-bar { height: max(.55rem, 3cqh); }
-body.b-board .b-qa-item, body.b-board .b-qa-spot { font-size: clamp(1rem, min(6cqh, 3cqw), 4rem); }
-body.b-board .b-qa-spot { font-size: clamp(1rem, min(5cqh, 2.6cqw), 3.4rem); }
+/* The day bar: ftl .timeline-bar with its scale, sized by the tile. */
+body.b-board .b-w-dayprogress { --timeline-height: clamp(1.4rem, 42cqh, 4.5rem); --timeline-label-size: clamp(.8rem, min(17cqh, 1.8cqw), 1.8rem); }
+body.b-board .b-day { inline-size: 100%; }
+body.b-board .b-w-dayprogress .timeline-scale { font-size: clamp(.8rem, max(1.7vh, min(16cqh, 3cqw)), 2.4rem); }
+/* Audience tiles (poll, quiz, wall, cloud): ONE base size from the tile;
+   every part is an em of it, and fit.js fitHeight() scales the whole box
+   (--tp-fit) until nothing overflows, so a 170-character question with
+   ten options shrinks as one instead of overprinting (review2 N1/N2).
+   A poll reads big from the back row; a wall holds more, smaller cards. */
+body.b-board :is(.b-js-poll, .b-js-qa, .b-js-cloud) { --aud-size: clamp(1rem, min(6cqh, 3cqw), 4rem); font-size: calc(var(--aud-size) * var(--tp-fit, 1)); overflow: hidden; }
+body.b-board [data-aud-mode="bars"] { --aud-size: clamp(1rem, min(8cqh, 5cqw), 5.5rem); }
 /* A presenter screen's item reads from metres away (review #9). */
-body.b-board .b-widget[data-target="presenter"] :is(.b-qa-item, .b-qa-spot, .b-poll-opt-head) { font-size: clamp(1.4rem, max(2.8vmin, min(6cqh, 3cqw)), 4rem); }
+body.b-board .b-widget[data-target="presenter"] :is(.b-js-poll, .b-js-qa, .b-js-cloud) { --aud-size: clamp(1.4rem, max(2.8vmin, min(6cqh, 3cqw)), 4rem); }
+body.b-board .b-poll-q { font-size: 1.35em; flex: none; }
+body.b-board .b-poll-meta { font-size: .8em; margin: .3em 0 .6em; }
+body.b-board .b-poll-opt-head { font-size: 1em; }
+body.b-board .b-poll-opt { margin-bottom: .35em; }
+body.b-board .b-poll-bar { height: .45em; }
+body.b-board .b-qa-item { font-size: 1em; }
+body.b-board .b-qa-spot { font-size: .85em; }
+body.b-board .b-widget[data-target="presenter"] .b-qa-spot { font-size: 1em; }
 body.b-board .b-widget[data-target="presenter"] .b-qa-spot-text { font-size: 1.5em; }
+body.b-board .b-qa-spot > .b-eyebrow { font-size: .75em; }
+body.b-board .b-qa-more { flex: none; margin: .3em 0 0; text-align: center; }
+/* With a spotlight the wall keeps room for one card, so the fit shrinks a
+   long spotlight rather than squeezing every question out (review2 N2). */
+body.b-board .b-aud-body.has-spot > .b-qa-wall { min-height: 3.6em; }
+body.b-board .b-qa-spot-text { font-size: 1.7em; }
 body.b-board .ranked-votes { white-space: nowrap; }
-body.b-board .b-widget[data-target="presenter"] .b-poll-meta { font-size: clamp(1.1rem, 2.2vh, 2.5rem); }
 body.b-board .b-qr { --qr-size: min(86cqw, 66cqh); font-size: clamp(.8rem, min(5.5cqh, 6cqw), 2.5rem); gap: .3em; }
 /* Empty states (E2E #20): an idle tile says so, muted, sized by the tile. */
 body.b-board .b-empty { color: var(--muted); }
 /* A long session title wraps to a second line rather than ellipsising. */
 body.b-board .b-cue-label { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-height: 1.15; }
-body.b-board .b-tile-empty, body.b-board .b-msg-empty { font-size: clamp(1rem, min(12cqh, 7cqw), 3.4rem); color: var(--muted); text-align: center; margin: auto; padding: .4em; }
+body.b-board .b-tile-empty { font-size: clamp(1rem, min(12cqh, 7cqw), 3.4rem); color: var(--muted); text-align: center; margin: auto; padding: .4em; }
 /* Digits sit in the middle of their tile (ftl .readout is inline-flex). */
 body.b-board .b-w-countdown .b-w-body, body.b-board .b-w-wallclock .b-w-body { align-items: center; text-align: center; }
 body.b-board .b-cd-label { max-width: 100%; }
 /* Next-up facts, labelled: "Duration 30:00 · Starts 10:30 · in 12:00". */
 .b-nm + .b-nm::before { content: " · "; }
 /* Poll: question and results read as one block, centred in the tile. */
-body.b-board [data-aud-mode="bars"] { justify-content: center; }
+body.b-board [data-aud-mode="bars"] { justify-content: safe center; }
 body.b-board [data-aud-mode="bars"] > .b-aud-body { flex: 0 1 auto; }
 
 /* All rooms now (event walk-in). */
@@ -245,7 +259,7 @@ body.b-board [data-aud-mode="bars"] > .b-aud-body { flex: 0 1 auto; }
 .b-room-name { font-weight: 800; letter-spacing: .04em; }
 .b-room-now { font-size: 1.3em; font-weight: 700; }
 .b-room-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
-.b-room.is-here .b-room-name::after { content: " · you are here"; color: var(--muted); font-weight: 600; }
+.b-room.is-here .b-room-name::after { content: "· you are here"; margin-inline-start: .3em; display: inline-block; white-space: nowrap; color: var(--muted); font-weight: 600; }
 /* Walk-in "Current & next" tile (STATUS U4). */
 .b-widget .b-nownext { display: grid; justify-content: stretch; gap: 1em; height: 100%; min-height: 0;
   font-size: clamp(.9rem, min(6cqh, 3cqw), 3.4rem); align-content: start; }
@@ -286,8 +300,8 @@ body.b-board .b-w-progress[data-state="overtime"] { --progress-fill: var(--count
   body.b-board .b-cue-label { font-size: clamp(1rem, min(44cqh, 3.3cqw), 14rem); -webkit-line-clamp: 1; }
 }
 body.b-board .b-w-nextup .b-next-meta { font-size: clamp(.9rem, min(12cqh, 4cqw), 3rem); }
-/* The day meter shares the cue bar's track (review #23). */
-body.b-board .b-w-dayprogress { --meter-track: var(--surface-2); }
+/* Held at 0:00 the cue bar goes muted like the digits (review2 UI #13). */
+body.b-board .b-w-progress[data-state="held"] { --progress-fill: var(--muted); }
 
 /* An open wall or cloud with nothing in it yet: the note sits in the middle. */
 body.b-board .b-aud-body > .b-aud-empty:not([hidden]) { flex: 1; display: grid; place-items: center; font-size: 1.4em; margin: 0; }

@@ -8,15 +8,20 @@ export async function run(t) {
   const post = (path, data) => ctx.request.post(`${t.base}/api/shows/${room}${path}`, { data, headers: H });
   const linkOf = async (name) => (await (await post('/screens/link', { name })).json()).link;
 
-  // Idle room, presenter layout: nothing is a blank box.
+  // A room with no sessions, presenter layout: one tile says so, calmly;
+  // no tile repeats "Finished for today" (review2 N12), and the empty
+  // messages tile paints no band and gives its room away (review2 N6).
   await post('/screens/template', { name: 'DSM', template: 'dsm' });
   const tvCtx = await t.browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const tv = await tvCtx.newPage();
   await tv.goto(await linkOf('DSM'));
   await tv.waitForSelector('.b-w-poll[hidden]', { timeout: 8000 }).catch(() => {});
   await tv.waitForTimeout(800);
-  const blank = await tv.$$eval('.b-widget:not([hidden])', (ws) => ws.filter((w) => !w.querySelector('.b-w-body').innerText.trim()).map((w) => w.dataset.widget));
-  t.check(`idle presenter tiles all say something (blank: ${blank.join(', ') || 'none'})`, blank.length === 0);
+  const says = await tv.$$eval('.b-widget:not([hidden])', (ws) => ws.map((w) => w.querySelector('.b-w-body').innerText.trim()));
+  t.check(`one tile says "No sessions yet" (${JSON.stringify(says)})`, says.filter((x) => x.includes('No sessions yet')).length === 1 && !says.includes('NEXT'));
+  t.check('no tile says "Finished for today"', !says.some((x) => /Finished for today/.test(x)));
+  const msgs = await tv.evaluate(() => ({ hidden: document.querySelector('.b-w-messages').hidden, band: !!document.querySelector('.b-w-messages .lower-third:not(:empty)'), text: document.querySelector('.b-w-messages').innerText.trim() }));
+  t.check(`no messages: no band, no text, tile given away (${JSON.stringify(msgs)})`, msgs.hidden && !msgs.band && !msgs.text);
   // Nothing on air for the presenter: no placeholder; the countdown takes the room (review #11).
   const room2 = await tv.evaluate(() => ({ item: document.querySelector('.b-w-poll').hidden, cd: getComputedStyle(document.querySelector('.b-w-countdown')).gridColumnEnd }));
   t.check(`empty presenter item gives its room to the countdown (${JSON.stringify(room2)})`, room2.item && /13|span 12/.test(room2.cd));
