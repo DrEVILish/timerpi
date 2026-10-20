@@ -196,8 +196,8 @@ Digits are **never** sent per second. Clients render from `anchorTS`, `rate`, `p
 | `cueMove` | `{id, pos, dir:"up"\|"down"}` or `{id, pos, to}` |
 
 Per-cue commands address the cue by `id` (the row the operator acted on); a gone id answers `err` "that cue no longer exists …" and changes nothing. `pos` alone (older clients) still works. Alerts may not exceed the cue's duration; a Break has no speaker.
-| `addMsg` | `{text, color?, show?}` |
-| `showMsg` · `hideMsg` | `{id}` |
+| `addMsg` | `{text, color?, show?}` — `show` puts it on stage and takes down the one there (one message on stage at a time) |
+| `showMsg` · `hideMsg` | `{id}` — `showMsg` replaces whatever was on stage |
 | `clearMsgs` | — |
 
 ## 4. Snapshot shape (abridged)

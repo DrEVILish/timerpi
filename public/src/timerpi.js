@@ -110,7 +110,7 @@ class ClockUI {
   _collect() {
     this.el = {
       // dashboard
-      clock: $('#tp-clock'),
+      clock: $('#tp-clock'), miniClock: $('#tp-clock-mini'), clockStatus: $('#tp-clock-status'),
       meter: $('#tp-meter'), nowPanel: $('#tp-now'),
       tod: $('#tp-tod'),
       cueLabel: $('#tp-cue-label'), cueSpeaker: $('#tp-cue-speaker'),
@@ -124,11 +124,11 @@ class ClockUI {
       dStatus: $('#d-status'), dChip: $('#d-chip'),
     };
     this._slowKey = ''; // fresh nodes: the next frame repaints everything
-    // Digit regions announce politely; digits are JS-painted, the server's
-    // placeholder must not be announced (CONTRACT-UI §9d).
-    for (const c of [this.el.clock, this.el.dClock]) {
-      if (c && !c.hasAttribute('aria-live')) c.setAttribute('aria-live', 'polite');
-    }
+    // Display digits announce politely. The room page's ftl .countdown is
+    // not a live region (it changes every frame): its state changes are
+    // announced in #tp-clock-status instead (signage.md).
+    const dc = this.el.dClock;
+    if (dc && !dc.hasAttribute('aria-live')) dc.setAttribute('aria-live', 'polite');
   }
 
   setSnapshot(snap) {
@@ -211,12 +211,18 @@ class ClockUI {
     let activeTr = null;
     for (const tr of this.el.rows()) {
       const pos = Number(tr.dataset.pos);
-      // Core paints rows through tr.is-active (--row-active-bg + accent
-      // marker); tp-row-active stays as app glue (REVIEW-2 R2).
+      // ftl ordered rows (tables.md): the running cue is tr.is-active +
+      // aria-current="time", done rows tr.is-past (muted + struck title),
+      // the cue up next tr.is-next (dashed marker). Each state also has a
+      // text equivalent for screen readers.
+      const past = !!act && pos < act, next = pos === snap.runtime.nextPos && pos !== act;
       tr.classList.toggle('is-active', pos === act);
-      tr.classList.toggle('tp-row-active', pos === act);
-      tr.classList.toggle('tp-row-past', !!act && pos < act);
-      tr.classList.toggle('tp-row-next', pos === snap.runtime.nextPos);
+      tr.classList.toggle('is-past', past);
+      tr.classList.toggle('is-next', next);
+      if (pos === act) tr.setAttribute('aria-current', 'time');
+      else tr.removeAttribute('aria-current');
+      const st = tr.querySelector('.tp-row-state');
+      if (st) setText(st, pos === act ? ' (on the clock)' : past ? ' (done)' : next ? ' (up next)' : '');
       if (pos === act) activeTr = tr;
     }
     // U1: the running cue walks down the table all day — chase it so it is
@@ -248,12 +254,20 @@ class ClockUI {
       if (needle) needle.hidden = true;
       return;
     }
-    const total = this.schedule.totalMS || 1;
     const nowMS = this.serverNow() - this.snap.runtime.dayStartTS;
-    for (const seg of $$('.tp-daybar-seg', bar)) {
-      const s = Number(seg.dataset.startMS), e = Number(seg.dataset.endMS);
+    let inSeg = '';
+    for (const seg of $$('.timeline-seg', bar)) {
+      const s = Number(seg.dataset.startMs), e = Number(seg.dataset.endMs);
       seg.classList.toggle('is-done', e <= nowMS);
-      seg.classList.toggle('is-active', s <= nowMS && nowMS < e);
+      const on = s <= nowMS && nowMS < e;
+      seg.classList.toggle('is-active', on);
+      if (on) inSeg = seg.textContent.trim();
+    }
+    // The bar is one role="img"; its label is the whole story (signage.md).
+    const tl = $('.timeline-bar', bar);
+    if (tl) {
+      const t0 = this.snap.runtime.dayStartTS, t1 = t0 + (this.schedule.totalMS || 0);
+      tl.setAttribute('aria-label', `Day ${fmtTimeOfDay(t0).slice(0, 5)}–${fmtTimeOfDay(t1).slice(0, 5)}, now ${fmtTimeOfDay(this.serverNow()).slice(0, 5)}${inSeg ? `, in ${inSeg}` : ''}`);
     }
   }
 
@@ -288,7 +302,7 @@ class ClockUI {
     const fragment = document.createDocumentFragment();
     if (!rows.length) {
       // Mirror the server's empty row; the add row in the footer stays.
-      const tr = el('tr', { class: 'table-empty' }, el('td', { colspan: 13 }, el('div', { class: 'empty-state' },
+      const tr = el('tr', { class: 'table-empty' }, el('td', { colspan: 15 }, el('div', { class: 'empty-state' },
         el('span', { class: 'empty-state-title', text: 'No cues yet' }),
         el('span', { class: 'empty-state-hint', text: 'Add the first one in the row below, or import a running order.' }))));
       fragment.appendChild(tr);
@@ -305,8 +319,8 @@ class ClockUI {
     const tr = document.createElement('tr');
     tr.dataset.pos = String(c.pos);
     if (c.id) tr.dataset.cueId = String(c.id);
-    tr.className = isBreak ? 'tp-row-break' : 'tp-row-session';
-    if (c.color) { tr.classList.add('tp-row-color'); tr.style.setProperty('--tp-row-accent', c.color); }
+    tr.className = isBreak ? 'tp-row-break has-row-color' : 'tp-row-session';
+    if (c.color) { tr.classList.add('has-row-color'); tr.style.setProperty('--row-color', c.color); }
     const td = (cls, edit) => {
       const t = document.createElement('td');
       if (cls) t.className = cls;
@@ -316,17 +330,21 @@ class ClockUI {
     const span = (cls, text) => { const s = document.createElement('span'); s.className = cls; setText(s, text); return s; };
     const ariaPos = String(c.pos).padStart(2, '0');
 
-    const pos = td('tp-cue-pos');
-    pos.title = 'Drag to reorder · right-click for more';
-    const grip = span('tp-grip', '⠿');
-    grip.setAttribute('aria-hidden', 'true');
-    pos.append(grip, span('mono', ariaPos));
+    const handle = td('drag-handle');
+    const hb = document.createElement('button');
+    hb.type = 'button';
+    hb.title = 'Drag to reorder · Alt+↑/↓ moves it';
+    hb.setAttribute('aria-label', `Move cue ${ariaPos} (Alt+Up or Alt+Down)`);
+    handle.appendChild(hb);
+    const pos = td('tp-cue-pos mono');
+    setText(pos, ariaPos);
 
     const kind = td('tp-cue-kind', 'kind');
-    kind.appendChild(isBreak ? span('badge tp-badge-break', 'Break') : span('badge badge-accent', 'Session'));
+    kind.appendChild(isBreak ? span('badge tp-badge-break', 'Break') : span('badge', 'Session'));
 
     const title = td('tp-cue-title', 'label');
-    title.appendChild(span('tp-cue-label', c.label ?? ''));
+    title.appendChild(span('tp-cue-label row-title', c.label ?? ''));
+    title.appendChild(span('tp-row-state visually-hidden', ''));
     const alertBadge = span('badge tp-alert-badge', '');
     alertBadge.hidden = true;
     title.appendChild(alertBadge);
@@ -342,7 +360,7 @@ class ClockUI {
     who.appendChild(clip(isBreak ? (c.location || '') : (c.speaker || '')));
 
     const dur = td('tp-cue-dur mono', 'durationMS');
-    setText(dur, fmtDuration(c.durationMS));
+    setText(dur, fmtDurText(c.durationMS || 0)); // h:mm, as the editors read it (I1)
 
     const start = td('tp-cue-start mono');
     const end = td('tp-cue-end mono');
@@ -386,15 +404,24 @@ class ClockUI {
       b.title = title;
       b.setAttribute('aria-label', title);
       if (iconId) b.appendChild(this.icon(iconId));
-      else setText(b, text);
+      else if (text) setText(b, text);
       group.appendChild(b);
+      return b;
     };
-    mkBtn('btn-go', `GO — start cue ${ariaPos}`, 'Go', null, { cmd: 'go', pos: String(c.pos) });
+    mkBtn('btn-tertiary', `GO — start cue ${ariaPos}`, 'Go', null, { cmd: 'go', pos: String(c.pos) });
     mkBtn('btn-ghost btn-icon', "Cue it up (playhead here, don't start yet)", null, 'icon-chevron-right', { cmd: 'jump', pos: String(c.pos), start: 'false' });
     mkBtn('btn-icon btn-ghost', `Edit cue ${ariaPos} — all details`, null, 'icon-edit', { insp: String(c.pos) });
-    mkBtn('btn-icon btn-danger', `Delete cue ${ariaPos}`, null, 'icon-trash', { cmd: 'cueDel', pos: String(c.pos) });
+    // ftl two-tap delete: idle icon, armed label (.btn.is-armed).
+    const del = mkBtn('btn-icon btn-danger', `Delete cue ${ariaPos}`, null, null, { cmd: 'cueDel', pos: String(c.pos) });
+    del.setAttribute('aria-describedby', 'tp-del-help');
+    const idle = span('btn-idle-label', '');
+    idle.appendChild(this.icon('icon-trash'));
+    del.append(idle, span('btn-armed-label', 'Delete?'));
+    const more = mkBtn('btn-icon btn-ghost tp-row-more', `More for cue ${ariaPos}`, null, 'icon-more-horizontal', { rowMenu: String(c.pos) });
+    more.type = 'button';
+    more.setAttribute('aria-haspopup', 'menu');
     btns.appendChild(group);
-    tr.append(pos, kind, title, who, dur, start, end, timer, atZero, alertCell(1), alertCell(2), notes, btns);
+    tr.append(handle, pos, kind, title, who, dur, start, end, timer, atZero, alertCell(1), alertCell(2), notes, btns);
     return tr;
   }
 
@@ -469,6 +496,7 @@ class ClockUI {
 
     if (this.page === 'dashboard') {
       paintClock(this.el.clock);
+      paintClock(this.el.miniClock);
       if (this.el.meter && cue) {
         const pct = Math.min(100, Math.max(0, (cue.durationMS ? elapsedMS(snap, this.serverNow()) / cue.durationMS : 0) * 100));
         this.el.meter.style.setProperty('--meter-level', pct.toFixed(1) + '%');
@@ -480,6 +508,9 @@ class ClockUI {
       if (slowKey === this._slowKey) return;
       this._slowKey = slowKey;
       setState(this.el.nowPanel, view.state);
+      // Announce state changes, not digits (ftl countdown a11y).
+      const said = { paused: 'Paused', held: 'Held at zero', overtime: 'Overtime', alert1: 'Alert 1', alert2: 'Alert 2', running: cue ? `Running: ${cue.label}` : '', armed: cue ? `Cued: ${cue.label}` : '' }[view.state] || '';
+      if (this.el.clockStatus && this.el.clockStatus.textContent !== said) setText(this.el.clockStatus, said);
       setText(this.el.tod, fmtTimeOfDay(this.serverNow()));
       // keep rate control in step with the (possibly server/mesh-applied) rate
       // — paused while the inline editor owns the readout (double-click).
@@ -496,7 +527,7 @@ class ClockUI {
           (this.serverNow() - snap.runtime.dayStartTS) / this.schedule.totalMS * 100))
         : null;
       if (this.el.needle) this.el.needle.hidden = p == null;
-      if (p != null) this.el.needle.style.left = p.toFixed(3) + '%';
+      if (p != null) this.el.needle.style.setProperty('--at', p.toFixed(3) + '%');
       // live alert badge on the active row
       const tr = this.el.rows().find(r => Number(r.dataset.pos) === snap.runtime.activePos);
       if (tr) {
@@ -786,7 +817,7 @@ function flushAdjust() {
   if (!cue) return;
   const dur = Math.max(0, (cue.durationMS || 0) + p.delta);
   sendCommand('cueEdit', { pos: cue.pos, id: cue.id, durationMS: dur });
-  toast(`Cue ${String(cue.pos).padStart(2, '0')} now ${fmtDuration(dur)}`, 'info');
+  toast(`Cue ${String(cue.pos).padStart(2, '0')} now ${fmtDurText(dur)} (${durWords(dur)})`, 'info');
 }
 
 /**
@@ -795,21 +826,20 @@ function flushAdjust() {
  * cueDel. No modal maze; a stressed misclick costs nothing.
  */
 function confirmDelete(btn) {
-  if (btn.dataset.u1armed === '1') {
-    clearTimeout(btn._u1armer);
-    delete btn.dataset.u1armed;
-    btn.classList.remove('tp-del-armed');
-    btn.title = 'Delete cue';
+  const help = $('#tp-del-help');
+  if (btn.classList.contains('is-armed')) {
+    clearTimeout(btn._armer);
+    btn.classList.remove('is-armed');
+    if (help) setText(help, '');
     return true;
   }
-  btn.dataset.u1armed = '1';
-  btn.classList.add('tp-del-armed');
-  btn.title = 'Tap again to delete this cue';
-  toast('Delete armed — tap the bin again to remove this cue', 'info');
-  btn._u1armer = setTimeout(() => {
-    delete btn.dataset.u1armed;
-    btn.classList.remove('tp-del-armed');
-    btn.title = 'Delete cue';
+  // ftl .btn.is-armed: double ring, "Delete?" label and a 2.5 s sweep;
+  // the live region says what the second tap does (CONTRACT buttons).
+  btn.classList.add('is-armed');
+  if (help) setText(help, `Tap the bin again to delete cue ${String(btn.dataset.pos).padStart(2, '0')}`);
+  btn._armer = setTimeout(() => {
+    btn.classList.remove('is-armed');
+    if (help) setText(help, '');
   }, 2500);
   return false;
 }
@@ -941,7 +971,8 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
     }
     const action = form.dataset.cmd;
     sendCommand(action, args);
-    if (action !== 'cueEdit') form.reset();
+    // Clear only the text: the chosen colour stays for the next message (I12).
+    if (action !== 'cueEdit') for (const f of form.querySelectorAll('input[type="text"], textarea')) f.value = '';
   });
 
   const rate = $('#tp-rate');
@@ -1038,6 +1069,14 @@ function performUndo() {
 function initKeyboard() {
   document.addEventListener('keydown', (e) => {
     const t = e.target;
+    // Keyboard reorder (ftl tables.md: never drag-only): Alt+↑/↓ on a
+    // row's drag handle moves the row; focus follows it.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && t?.closest?.('#cuelist td.drag-handle')) {
+      e.preventDefault();
+      const tr = t.closest('tr[data-pos]');
+      moveCue(Number(tr.dataset.pos), e.key === 'ArrowUp' ? -1 : 1, { refocus: true });
+      return;
+    }
     // Let focused interactive elements keep native Space/Enter activation and
     // never hijack typing fields (REVIEW-2 O6): a11y + operator safety.
     if (t && (t.matches?.('input, textarea, select, [contenteditable="true"], a, button, [role="button"], summary') || t.isContentEditable)) return;
@@ -1052,8 +1091,10 @@ function initKeyboard() {
     }
     switch (e.key) {
       case ' ': e.preventDefault(); sendCommand('go'); break;
-      case 'ArrowRight': case 'ArrowDown': e.preventDefault(); sendCommand('next'); break;
-      case 'ArrowLeft': case 'ArrowUp': e.preventDefault(); sendCommand('prev'); break;
+      // ←/→ = Prev/Next (PRODUCT T2). ↑/↓ are left to scrolling: they used
+      // to step cues, so scrolling the running order changed the cue.
+      case 'ArrowRight': e.preventDefault(); sendCommand('next'); break;
+      case 'ArrowLeft': e.preventDefault(); sendCommand('prev'); break;
       case 'p': case 'P': e.preventDefault(); sendCommand('pause'); break; // toggles
       default: return;
     }
@@ -1212,8 +1253,15 @@ function applyOOB(m) {
     // U39: the add row lives in the swapped table; keep what is typed
     // there (and the caret) across the swap.
     const keep = m.target === '#cuelist' ? saveAddRow() : null;
+    // The Messages panel swap keeps the picked colour and any typed text (I12).
+    const msgKeep = m.target === '#messages-panel'
+      ? { color: $('#msg-color')?.value ?? '', text: $('#messages-panel input[name="text"]')?.value ?? '' } : null;
     target.replaceWith(frag);
     if (keep) restoreAddRow(keep);
+    if (msgKeep) {
+      const c = $('#msg-color'); if (c) c.value = msgKeep.color;
+      const t = $('#messages-panel input[name="text"]'); if (t && msgKeep.text) t.value = msgKeep.text;
+    }
     if (m.target === '#cuelist') markCellSaved();
     if (m.target === '#messages-panel') mountMsgSwatches();
     window.htmx?.process(frag);
@@ -1294,6 +1342,8 @@ function initAddRow() {
       if (ms == null) { toast(err, 'danger'); return; }
       args.durationMS = ms;
     }
+    // Say what was understood: "10:00" is ten hours, not ten minutes (I1).
+    const echo = mss ? ` · ${fmtDurText(args.durationMS)} (${durWords(args.durationMS)})` : '';
     args.timerKind = v.timerKind || 'COUNTDOWN';
     args.endAction = v.endAction || 'HOLD';
     for (const n of [1, 2]) {
@@ -1308,6 +1358,7 @@ function initAddRow() {
     const notes = String(v.notes || '').trim();
     if (notes) args.notes = notes;
     sendCommand('cueAdd', args);
+    toast(`Added “${label}”${echo}`, 'success');
     // Ready for the next one: title, who, duration, alerts and notes clear;
     // type, timer and at-zero stay (rows usually come in runs).
     for (const f of addRowFields()) {
@@ -1356,40 +1407,65 @@ function initRowMenu() {
   let pos = 0;
   const open = (tr, x, y) => {
     pos = Number(tr.dataset.pos);
-    menu.style.setProperty('--x', `${Math.min(x, innerWidth - 200)}px`);
-    menu.style.setProperty('--y', `${Math.min(y, innerHeight - 120)}px`);
+    const n = clockUI?.snap?.cues?.length || 0;
+    menu.querySelector('[data-row-act="up"]').disabled = pos <= 1;
+    menu.querySelector('[data-row-act="down"]').disabled = pos >= n;
+    menu.style.setProperty('--x', `${Math.max(8, Math.min(x, innerWidth - 220))}px`);
+    menu.style.setProperty('--y', `${Math.max(8, Math.min(y, innerHeight - 260))}px`);
     try { menu.showPopover(); } catch { return; }
-    menu.querySelector('button')?.focus();
+    menu.querySelector('button:not(:disabled)')?.focus();
   };
+  // A long press on touch: the menu opens when the finger LIFTS after
+  // 550 ms. Opened while the finger was still down, the following pointerup
+  // light-dismissed the popover at once (UX review I4).
+  let press = null;
   document.addEventListener('contextmenu', (e) => {
     const tr = e.target.closest?.('#cuelist tbody tr[data-pos]');
     if (!tr || e.target.closest('input, select, textarea')) return;
     e.preventDefault();
+    if (press) { press.ready = true; return; } // Android's long-press contextmenu: open on lift
     open(tr, e.clientX, e.clientY);
   });
-  // Long press: 550 ms without moving.
-  let press = null;
   document.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return;
     const tr = e.target.closest?.('#cuelist tbody tr[data-pos]');
-    if (!tr || e.target.closest('button, input, select')) return;
-    const x = e.clientX, y = e.clientY;
-    press = { x, y, timer: setTimeout(() => { press = null; open(tr, x, y); }, 550) };
+    if (!tr || e.target.closest('button, input, select')) { press = null; return; }
+    press = { tr, x: e.clientX, y: e.clientY, ready: false };
+    press.timer = setTimeout(() => { if (press) { press.ready = true; navigator.vibrate?.(10); } }, 550);
   });
-  const cancel = (e) => {
-    if (!press) return;
-    if (e.type === 'pointermove' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
-    clearTimeout(press.timer);
+  document.addEventListener('pointermove', (e) => {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 10) { clearTimeout(press.timer); press = null; }
+  });
+  document.addEventListener('pointercancel', () => { if (press && !press.ready) { clearTimeout(press.timer); press = null; } });
+  document.addEventListener('pointerup', (e) => {
+    const p = press;
     press = null;
-  };
-  for (const t of ['pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, cancel);
+    if (!p) return;
+    clearTimeout(p.timer);
+    if (!p.ready) return;
+    e.preventDefault();
+    // After this pointerup has been handled, so it can't light-dismiss.
+    setTimeout(() => open(p.tr, p.x, p.y), 0);
+    const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    document.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), 400);
+  });
+  // The row's ⋯ button (shown on touch) opens the same menu beside it.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('#cuelist [data-row-menu]');
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    open(btn.closest('tr'), r.right - 200, r.bottom + 4);
+  });
   menu.addEventListener('click', (e) => {
     const item = e.target.closest('[data-row-act]');
-    if (!item || !pos) return;
+    if (!item || !pos || item.disabled) return;
     try { menu.hidePopover(); } catch { /* closed */ }
-    if (item.dataset.rowAct === 'dup') sendCommand('cueDup', { pos });
-    if (item.dataset.rowAct === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
-    if (item.dataset.rowAct === 'del') sendCommand('cueDel', { pos }); // choosing it from the menu is the confirmation
+    const act = item.dataset.rowAct;
+    if (act === 'dup') sendCommand('cueDup', { pos });
+    if (act === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
+    if (act === 'up' || act === 'down') moveCue(pos, act === 'up' ? -1 : 1);
+    if (act === 'del') sendCommand('cueDel', { pos }); // choosing it from the menu is the confirmation
   });
 }
 
@@ -1427,7 +1503,7 @@ const CELL_CHOICES = {
 };
 const CELL_HINTS = {
   label: 'Title', speaker: 'Speaker', location: 'Where (e.g. Great Hall)', notes: 'Notes',
-  durationMS: 'Duration (H:MM — 30 = 30 min, 30s = seconds)',
+  durationMS: 'Duration (h:mm — 30 = 30 min, 1:30 = 1 h 30 min, 30s = seconds)',
   alert1MS: 'Alert 1 (m:ss before zero, empty = off)', alert2MS: 'Alert 2 (m:ss before zero, empty = off)',
 };
 
@@ -1493,6 +1569,7 @@ function startCellEdit(td, opts = {}) {
     td.replaceChildren(...old); // the next repaint brings the truth
     if (commit && !err && val !== (cue[field] ?? (isMS ? 0 : ''))) {
       sendCommand('cueEdit', { pos, id: cue.id, [field]: val });
+      if (field === 'durationMS') toast(`Cue ${String(pos).padStart(2, '0')} now ${fmtDurText(val)} (${durWords(val)})`, 'info');
       // ftl cell states: saving until the server's cuelist swap lands
       // (markCellSaved), which flashes .is-saved on the fresh cell.
       td.classList.add('is-saving');
@@ -1517,7 +1594,7 @@ function startCellEdit(td, opts = {}) {
 
 /** Messages colour (U30 picker) writes the form's hidden `color`; the
     #messages-panel oob swap brings a fresh empty host, so applyOOB re-runs it. */
-const MSG_COLORS = [['Brand', '#7C3AED'], ['Amber', '#ffaa00'], ['Red', '#ff4444']];
+const MSG_COLORS = [['Amber', '#ffaa00'], ['Red', '#ff4444']];
 function mountMsgSwatches() {
   const host = $('#messages-panel [data-swatches-for]');
   const input = host && document.getElementById(host.dataset.swatchesFor);
@@ -1575,6 +1652,35 @@ function fmtDurText(ms, unit = 'hm') {
   const p2 = (n) => String(n).padStart(2, '0');
   if (unit === 'ms') return h > 0 ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
   return s ? `${h}:${p2(m)}:${p2(s)}` : `${h}:${p2(m)}`;
+}
+
+/** milliseconds → words for the echo toasts: "10 min", "1 h 30 min", "45 s". */
+function durWords(ms) {
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600), m = Math.floor(total % 3600 / 60), s = total % 60;
+  return [h && `${h} h`, m && `${m} min`, s && `${s} s`].filter(Boolean).join(' ') || '0 min';
+}
+
+/** Move a cue one slot up (-1) or down (+1): the row menu's Move up/down
+    and Alt+↑/↓ on the drag handle (ftl: reorder is never drag-only). The
+    running cue keeps running (owner, 2026-10-20). */
+function moveCue(pos, dir, { refocus = false } = {}) {
+  const cues = clockUI?.snap?.cues || [];
+  const to = pos + dir;
+  if (!pos || to < 1 || to > cues.length) return;
+  const label = cues.find((c) => c.pos === pos)?.label || `cue ${pos}`;
+  sendCommand('cueMove', { pos, to });
+  setText($('#tp-del-help'), `Moved ${label} to position ${to}`);
+  if (refocus) {
+    // The table is re-rendered by the server swap; follow the row there.
+    const id = Number($(`#cuelist tr[data-pos="${pos}"]`)?.dataset.cueId);
+    const tryFocus = (n) => {
+      const btn = $(`#cuelist tr[data-cue-id="${id}"] td.drag-handle button`);
+      if (btn && Number(btn.closest('tr').dataset.pos) === to) btn.focus();
+      else if (n > 0) setTimeout(() => tryFocus(n - 1), 100);
+    };
+    tryFocus(20);
+  }
 }
 
 /* -------------------------------------------------------- day controls -- */
@@ -1685,7 +1791,10 @@ function initInspector() {
 
   // Break: Speaker hides (a break has a location, not a speaker).
   function syncKind() {
-    field('tp-insp-speaker').closest('.field').hidden = field('tp-insp-kind').value === 'break';
+    // …and Location is for breaks (where it's served), not sessions (I16).
+    const brk = field('tp-insp-kind').value === 'break';
+    field('tp-insp-speaker').closest('.field').hidden = brk;
+    field('tp-insp-location').closest('.field').hidden = !brk;
   }
   field('tp-insp-kind').addEventListener('change', syncKind);
 
@@ -1762,13 +1871,14 @@ function initInspector() {
 /* --------------------------------------------------- B2 drag reorder --- */
 
 function initDragReorder() {
-  // The `#` cell is the REAL drag handle (U1 removed the old fake one; this
-  // does pointer-drag properly): press+move lifts the row, a live insertion
-  // line picks the drop slot, the drop commits ONE full-slot cueMove
-  // {pos,to}. Mouse + touch via pointer events; scroll stays free until a
-  // drag starts (touch-action:none lives on the handle cell). Listeners are
-  // DOCUMENT-level because oob swaps replace the whole tbody — bound-to-
-  // tbody handlers would die with the old rows.
+  // The handle cells (ftl td.drag-handle, and the # beside it): press+move
+  // lifts the row (tr.is-dragging), the target row draws the drop line
+  // (tr.is-drop-before / -after, drawn on the row so nothing is positioned
+  // inside the scroller), and the drop commits ONE cueMove {pos,to}. Mouse +
+  // touch via pointer events; scroll stays free until a drag starts
+  // (touch-action:none lives on the handle). Listeners are DOCUMENT-level
+  // because oob swaps replace the whole tbody. Alt+↑/↓ and the row menu's
+  // Move up/down do the same without dragging (initKeyboard, initRowMenu).
   let drag = null;
 
   const dropSlotFor = (y, tb) => {
@@ -1780,43 +1890,30 @@ function initDragReorder() {
     return rows.length + 1;
   };
 
+  const clearLine = () => {
+    for (const tr of document.querySelectorAll('#cuelist tr.is-drop-before, #cuelist tr.is-drop-after')) tr.classList.remove('is-drop-before', 'is-drop-after');
+  };
   const paintLine = (slot) => {
-    if (!drag) return;
-    drag.canEl?.remove();
-    drag.canEl = null;
-    const tb = document.querySelector('#cuelist tbody');
-    if (!tb) return;
-    const wrap = tb.closest('.tp-cuelist-wrap') || tb.parentElement;
-    const rows = [...tb.querySelectorAll('tr[data-pos]')];
-    if (!wrap || !rows.length) return;
-    const line = document.createElement('div');
-    line.className = 'tp-drag-line';
-    // slot == rows.length+1 means "append at the very end": draw BELOW
-    // the last row, not above it (the old code anchored the last row's
-    // top for every slot, lying about end-drops).
-    const atEnd = slot > rows.length;
-    const anchor = rows[Math.min(slot, rows.length) - 1];
-    const ar = anchor.getBoundingClientRect();
-    const wr = wrap.getBoundingClientRect();
-    line.style.top = atEnd ? `${ar.bottom - wr.top + 2}px` : `${ar.top - wr.top - 2}px`;
-    line.style.left = '0px';
-    line.style.right = '0px';
-    wrap.appendChild(line);
-    drag.canEl = line;
+    clearLine();
+    const rows = [...document.querySelectorAll('#cuelist tbody tr[data-pos]')];
+    if (!rows.length) return;
+    // slot == rows.length+1 is "append at the very end": the line goes
+    // under the last row.
+    if (slot > rows.length) rows[rows.length - 1].classList.add('is-drop-after');
+    else rows[slot - 1].classList.add('is-drop-before');
   };
 
   const cleanupDrag = () => {
     if (!drag) return;
-    document.body.classList.remove('tp-drag-body');
-    document.querySelector('#cuelist tbody')?.classList.remove('tp-drag-on');
-    drag.row?.classList.remove('tp-dragging');
-    drag.canEl?.remove();
+    document.body.classList.remove('is-dragging');
+    drag.row?.classList.remove('is-dragging');
+    clearLine();
     drag = null;
   };
 
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
-    const handle = e.target.closest?.('td.tp-cue-pos');
+    const handle = e.target.closest?.('td.drag-handle, td.tp-cue-pos');
     const tr = handle && handle.closest('#cuelist tr[data-pos]');
     if (!tr) return;
     drag = {
@@ -1825,7 +1922,6 @@ function initDragReorder() {
       row: tr,
       startX: e.clientX,
       startY: e.clientY,
-      canEl: null,
       active: false,
       pointerId: e.pointerId,
       slot: Number(tr.dataset.pos),
@@ -1839,9 +1935,8 @@ function initDragReorder() {
       const dy = Math.abs(e.clientY - drag.startY);
       if (dx < 8 && dy < 8) return;
       drag.active = true;
-      drag.row.classList.add('tp-dragging');
-      document.querySelector('#cuelist tbody')?.classList.add('tp-drag-on');
-      document.body.classList.add('tp-drag-body');
+      drag.row.classList.add('is-dragging');
+      document.body.classList.add('is-dragging');
       try { drag.row.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
     }
     e.preventDefault();
@@ -1901,6 +1996,18 @@ function initImportDrop() {
   const zone = $('.tp-import');
   const input = $('#import-file');
   if (!zone || !input) return;
+  // Import adds to the end by default; Replace asks first (an ftl modal via
+  // dialog.js, never the browser's confirm). The form carries hx-confirm so
+  // htmx waits for this answer.
+  zone.addEventListener('htmx:confirm', (e) => {
+    // Always answer here: unanswered, htmx falls back to window.confirm.
+    e.preventDefault();
+    const mode = zone.querySelector('#import-mode')?.value;
+    const n = clockUI?.snap?.cues?.length || 0;
+    if (mode !== 'replace' || n === 0) { e.detail.issueRequest(); return; }
+    tpConfirm(`Replace all ${n} cue${n === 1 ? '' : 's'} in this running order with the file's cues?`, { title: 'Replace the running order?', ok: 'Replace', danger: true })
+      .then((ok) => (ok ? e.detail.issueRequest() : e.detail.dropRequest()));
+  });
   const over = (e) => {
     if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
     zone.classList.add('is-dropping');
@@ -1923,7 +2030,7 @@ function initImportDrop() {
       dt.items.add(file);
       input.files = dt.files;
     } catch { /* no DataTransfer: the picker still works */ }
-    toast(`“${file.name}” attached — check Format and Mode, then Import`, 'info');
+    toast(`“${file.name}” attached — check Mode, then Import`, 'info');
   });
 }
 

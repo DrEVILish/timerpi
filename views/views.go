@@ -89,6 +89,7 @@ type CueVM struct {
 	Pos         int64
 	Label       string
 	DurFmt      string
+	DurHM       string // the running order's Duration cell: h:mm, the form the editors read (I1)
 	StartFmt    string
 	EndFmt      string
 	StartHM     string // planned start "15:04" (24 h); "" until the day has a start (walk-in schedule, U3)
@@ -198,6 +199,23 @@ func FmtDur(ms int64) string {
 		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
 	}
 	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// FmtDurHM renders a cue length the way an operator types it: h:mm
+// ("0:10" is ten minutes, "1:30" an hour and a half), with :ss only when
+// there are seconds ("0:00:30"). Durations are h:mm (owner, 2026-10-05), so
+// the running order shows the form its editors read back (client parity:
+// timerpi.js fmtDurText 'hm').
+func FmtDurHM(ms int64) string {
+	total := (ms + 500) / 1000
+	if total < 0 {
+		total = 0
+	}
+	h, m, s := total/3600, (total%3600)/60, total%60
+	if s != 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", h, m)
 }
 
 // FmtTimeOfDay renders an epoch-ms instant as the local wall clock HH:MM:SS
@@ -339,15 +357,17 @@ func ShowData(snap timerpi.Snapshot, nowMS int64, hostname string) *PageData {
 // for the dashboard page and the messages oob: the panel manages queued
 // rows (Show/Hide buttons) the snapshot can't carry.
 func (d *PageData) SetMessages(msgs []timerpi.Message) {
+	// One message is on stage at a time (Send replaces it); the rest is
+	// history, newest first, each with "Show again".
 	out := make([]MessageVM, 0, len(msgs))
-	for _, m := range msgs { // queued first, shown after (Create order)
-		if m.ShownAt <= 0 {
-			out = append(out, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color})
-		}
-	}
 	for _, m := range msgs {
 		if m.ShownAt > 0 {
 			out = append(out, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color, IsShown: true})
+		}
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if m := msgs[i]; m.ShownAt <= 0 {
+			out = append(out, MessageVM{ID: m.ID, Text: m.Text, Color: m.Color})
 		}
 	}
 	d.Messages = out
@@ -450,6 +470,7 @@ func cueVMs(cues []timerpi.Cue, sched timerpi.Schedule, rt timerpi.RuntimeView) 
 			ID:          c.ID,
 			Label:       c.Label,
 			DurFmt:      FmtDur(c.DurationMS),
+			DurHM:       FmtDurHM(c.DurationMS),
 			Kind:        c.Kind,
 			IsBreak:     c.Kind == timerpi.KindBreak,
 			TimerKind:   c.TimerKind,

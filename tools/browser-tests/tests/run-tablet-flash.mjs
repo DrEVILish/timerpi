@@ -43,7 +43,7 @@ export async function run(t) {
   t.check('row colour comes after the notes', labels.indexOf('Row colour') > labels.indexOf('Cue notes'));
   const tm = await top('#tp-insp-timerKind'), az = await top('#tp-insp-endAction');
   t.check('Timer and At zero share a line', Math.abs(tm - az) < 2);
-  await pg.check('#tp-insp-alert1Flash');
+  await pg.click('label:has(#tp-insp-alert1Flash)'); // ftl .toggle-btn
   await pg.click('#tp-insp-save');
   await pg.waitForTimeout(900);
   const cue = (await (await api('GET', `/api/shows/${room}`)).json()).cues?.[0]

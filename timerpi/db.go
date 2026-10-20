@@ -1111,13 +1111,16 @@ func (d *DB) CreateMessage(showID int64, text, color string) (Message, error) {
 	return m, nil
 }
 
-// ShowMessage marks a message shown; shownAt <= 0 means "now".
+// ShowMessage puts a message on stage; shownAt <= 0 means "now". One
+// message is on stage at a time: showing one takes down any other, so the
+// operator's list matches the one line the screens show (UX review I9).
 func (d *DB) ShowMessage(showID, id, shownAt int64) error {
 	if shownAt <= 0 {
 		shownAt = nowMS()
 	}
-	_, err := d.Exec(`UPDATE messages SET shown_at = ?, updated_at = ? WHERE show_id = ? AND id = ?`,
-		shownAt, nowMS(), showID, id)
+	_, err := d.Exec(`UPDATE messages SET shown_at = CASE WHEN id = ? THEN ? ELSE 0 END, updated_at = ?
+		WHERE show_id = ? AND (id = ? OR shown_at > 0)`,
+		id, shownAt, nowMS(), showID, id)
 	return err
 }
 

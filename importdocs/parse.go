@@ -348,13 +348,13 @@ func parseColor(v string) (string, error) {
 //	             refused with a hint — it would be 45 hours)
 //	"00:05:00" → h:mm:ss = 5 min (the seconds part may be fractional)
 //	"1m5s"     → mixed units; "2h", "45 min", "1.5s" also work
-//	"65"       → a bare number is SECONDS (decimals allowed: "1.5" = 1.5 s)
+//	"30"       → a bare number is MINUTES (decimals allowed: "1.5" = 90 s),
+//	             like the operator UI (owner, 2026-10-05: bare = minutes)
 //	"90000ms"  → explicit milliseconds
 //	""         → 0, no error (an empty cell means "no value set")
 //
 // Negatives clamp to 0; commas and spaces inside the value are ignored.
-// The ambiguity rule ("90" is seconds, never minutes or an Excel day serial)
-// is documented in NOTES-importdocs.md.
+// A bare number is never an Excel day serial.
 func ParseDurationMS(s string) (int64, error) {
 	s = strings.TrimSpace(strings.TrimPrefix(s, "\ufeff"))
 	if s == "" {
@@ -373,6 +373,9 @@ func ParseDurationMS(s string) (int64, error) {
 	}
 	if strings.Contains(s, ":") {
 		return parseClockTimeMS(s)
+	}
+	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		return capMS(n*60000, s) // bare = minutes
 	}
 	return parseUnitChunksMS(s)
 }
@@ -442,7 +445,7 @@ var durationUnits = map[string]float64{
 }
 
 // parseUnitChunksMS parses a sequence of number+unit chunks: "1h2m3s",
-// "5min", "90" (bare = seconds), "450ms", "1.5s". The whole string must be
+// "5min", "1m30" (a trailing bare chunk = seconds), "450ms", "1.5s". The whole string must be
 // consumed as clean chunks — "banana" or "12zoom" are errors.
 func parseUnitChunksMS(s string) (int64, error) {
 	i := 0
@@ -469,7 +472,7 @@ func parseUnitChunksMS(s string) (int64, error) {
 		mult, ok := durationUnits[unit]
 		if !ok {
 			if unit == "" {
-				mult = 1000 // bare number = seconds
+				mult = 1000 // a trailing bare chunk ("1m30") = seconds
 			} else {
 				return 0, fmt.Errorf("duration unit %q in %q invalid", unit, s)
 			}

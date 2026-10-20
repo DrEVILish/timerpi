@@ -17,11 +17,12 @@ func TestParseDurationMS(t *testing.T) {
 		want int64
 		werr bool
 	}{
-		// Bare numbers are always SECONDS.
-		{"65", 65000, false},
-		{"90", 90000, false},
-		{"1.5", 1500, false},
-		{" 1,200 ", 1200000, false}, // thousands separators ignored
+		// Bare numbers are MINUTES, like the add row and the editor (I2).
+		{"30", 1800000, false},
+		{"90", 5400000, false},
+		{"1.5", 90000, false},
+		{" 1,200 ", 72000000, false}, // thousands separators ignored
+		{"1m30", 90000, false},       // a trailing bare chunk is seconds
 		// Two-part clock = h:mm (the operator UI's rule, REPORT #13).
 		{"0:45", 2700000, false},
 		{"1:30", 5400000, false},
@@ -92,7 +93,7 @@ func TestParseCSV_Basic(t *testing.T) {
 			Notes: "says, hi", Alert1MS: 30000, Alert2MS: 10000,
 			EndAction: "OVERTIME", Kind: "session",
 		},
-		{Label: "Break", DurationMS: 65000}, // removed Hold/AutoContinue columns are ignored
+		{Label: "Break", DurationMS: 3900000}, // bare 65 = 65 min; removed Hold/AutoContinue columns are ignored
 		{Label: "VT", DurationMS: 65000, EndAction: "BLANK", Kind: "break"},
 	}
 	if !reflect.DeepEqual(cues, want) {
@@ -114,7 +115,7 @@ func TestParseCSV_DelimiterSniffing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tab csv: %v", err)
 	}
-	if len(cues) != 1 || cues[0].DurationMS != 90000 || cues[0].Speaker != "Bob" {
+	if len(cues) != 1 || cues[0].DurationMS != 5400000 || cues[0].Speaker != "Bob" {
 		t.Fatalf("tab sniff failed: %#v", cues)
 	}
 }
@@ -204,7 +205,7 @@ func TestParseJSON_ArrayAndWrapping(t *testing.T) {
 
 	// Title/Name synonyms.
 	cues, err = ParseJSON([]byte(`[{"name": "Solo", "time": "90"}]`))
-	if err != nil || len(cues) != 1 || cues[0].Label != "Solo" || cues[0].DurationMS != 90000 {
+	if err != nil || len(cues) != 1 || cues[0].Label != "Solo" || cues[0].DurationMS != 5400000 {
 		t.Fatalf("name/time synonym parse failed: %v %#v", err, cues)
 	}
 }

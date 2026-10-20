@@ -1,30 +1,29 @@
 {{- /* frag-daybar — fragments/daybar.html (see CONTRACT-UI.md §5):
        the ROOT of this fragment is the single self-contained oob element
        carrying the target id (#tp-daybar) — a ws oob swap replaces the
-       whole unit (bar + scale) without nesting wrappers. */ -}}
+       whole unit (bar + scale) without nesting wrappers. The bar is ftl's
+       .timeline-bar (signage.md); timerpi.js keeps the needle, the done /
+       active segments and the bar's aria-label current. */ -}}
 {{define "frag-daybar"}}
 <div id="tp-daybar" class="stack is-gap-2xs">
-  <div class="tp-daybar" data-total-ms="{{if .Schedule}}{{.Schedule.TotalMS}}{{else}}0{{end}}">
-    {{if .Schedule}}{{range .Schedule.Segments}}
-    <div class="tp-daybar-seg{{if .IsBreak}} is-break{{end}}{{if .IsDone}} is-done{{end}}{{if .IsActive}} is-active{{end}}"
-         style="left:{{.Left}};width:{{.Width}}"
+  <div class="timeline-bar" role="img" aria-label="Running order day bar" data-total-ms="{{if .Schedule}}{{.Schedule.TotalMS}}{{else}}0{{end}}">
+    {{if .Schedule}}{{range .Schedule.Segments}}<span class="timeline-seg{{if .IsDone}} is-done{{end}}{{if .IsActive}} is-active{{end}}"{{if .IsBreak}} data-kind="break"{{end}}
+         style="--start:{{.Left}}; --size:{{.Width}}"
          data-start-ms="{{.StartMS}}" data-end-ms="{{.EndMS}}"
-         title="{{.Label}} · {{.Title}}">
-      <span>{{.Label}}</span>
-    </div>
+         title="{{.Label}} · {{.Title}}">{{.Label}}</span>
     {{end}}{{end}}
     {{- /* U1: the needle is only honest once a day is anchored — before
            that its epoch math pins it at 100%. Hidden until then
            (timerpi.js unhides it when runtime.dayStartTS lands). */ -}}
-    <div class="tp-daybar-needle" id="tp-daybar-needle" style="left:0%"{{if not .Schedule.DayStartTS}} hidden{{end}}></div>
+    <span class="timeline-now" id="tp-daybar-needle" style="--at:0%"{{if not .Schedule.DayStartTS}} hidden{{end}}></span>
   </div>
-  <div class="tp-daybar-scale" aria-hidden="true">
+  <div class="timeline-scale">
     {{if .Schedule.DayStartTS}}
-    <span>{{if .Schedule}}{{.Schedule.DayStartFmt}}{{else}}0:00{{end}}</span>
-    <span class="mono">{{if .Schedule}}{{.Schedule.TotalFmt}}{{else}}0:00{{end}} total</span>
-    <span>{{if .Schedule}}{{.Schedule.DayEndFmt}}{{else}}0:00{{end}}</span>
+    <time>{{if .Schedule}}{{.Schedule.DayStartFmt}}{{else}}0:00{{end}}</time>
+    <span>{{if .Schedule}}{{.Schedule.TotalFmt}}{{else}}0:00{{end}} total</span>
+    <time>{{if .Schedule}}{{.Schedule.DayEndFmt}}{{else}}0:00{{end}}</time>
     {{else}}
-    <span class="mono">Day not anchored — offsets from show start · {{if .Schedule}}{{.Schedule.TotalFmt}}{{else}}0:00{{end}} total</span>
+    <span>Day not anchored — times count from the first GO · {{if .Schedule}}{{.Schedule.TotalFmt}}{{else}}0:00{{end}} total</span>
     {{end}}
   </div>
 </div>

@@ -5,10 +5,13 @@
   <div class="stack is-gap-s">
     <div class="stack is-gap-2xs">
       <div class="tp-cue-label" id="tp-cue-label">{{if .Current.Label}}{{.Current.Label}}{{else}}—{{end}}</div>
-      <div class="text-muted" id="tp-cue-speaker">{{if .Current.Speaker}}🎙 {{.Current.Speaker}}{{end}}</div>
+      <div class="text-muted" id="tp-cue-speaker">{{if .Current.Speaker}}{{.Current.Speaker}}{{end}}</div>
     </div>
 
-    <span class="readout tp-clock tp-clock-xl" id="tp-clock" data-state="idle">--:--</span>
+    {{- /* ftl .countdown[data-state] (signage.md): paused shows its glyph,
+         alert2/overtime pulse. Not a live region; state changes are
+         announced in the sibling role=status (timerpi.js). */}}
+    <time class="countdown countdown-xl" id="tp-clock" data-state="idle"></time>
 
     <div class="tp-progress">
       <div class="meter tp-progress-meter" id="tp-meter" style="--meter-level:0%">
@@ -33,6 +36,7 @@
       <input class="slider" type="range" id="tp-rate" min="50" max="200" step="5" value="{{if .Runtime}}{{.Runtime.RatePct}}{{else}}100{{end}}" aria-label="Rate multiplier">
       <span class="readout readout-sm" id="tp-rate-out">×1.00</span>
     </div>
+    <p class="visually-hidden" role="status" id="tp-clock-status"></p>
   </div>
 </section>
 {{end}}

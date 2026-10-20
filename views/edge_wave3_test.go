@@ -58,3 +58,13 @@ func TestFmtAgoBoundaries(t *testing.T) {
 		}
 	}
 }
+
+// I1: the running order shows durations as h:mm, the form its editors read
+// back ("10:00" typed is ten hours, so ten minutes must display "0:10").
+func TestFmtDurHM(t *testing.T) {
+	for ms, want := range map[int64]string{0: "0:00", 600_000: "0:10", 5_400_000: "1:30", 36_000_000: "10:00", 30_000: "0:00:30", 3_605_000: "1:00:05"} {
+		if got := FmtDurHM(ms); got != want {
+			t.Errorf("FmtDurHM(%d) = %q, want %q", ms, got, want)
+		}
+	}
+}

@@ -59,7 +59,7 @@ export async function run(t) {
   await pg.waitForTimeout(600);
   const c1 = (await snap()).cues[0];
   t.check('a Break keeps no hidden speaker', c1.kind === 'break' && !c1.speaker);
-  t.check('row colour shows in the running order', await pg.$eval('#cuelist tbody tr[data-pos="1"]', (r) => r.classList.contains('tp-row-color') && r.style.getPropertyValue('--tp-row-accent').trim() === '#ff4444'));
+  t.check('row colour shows in the running order', await pg.$eval('#cuelist tbody tr[data-pos="1"]', (r) => r.classList.contains('has-row-color') && r.style.getPropertyValue('--row-color').trim() === '#ff4444'));
 
   // "Day starts now" on an anchored day asks in an ftl modal, not confirm().
   let native = false;

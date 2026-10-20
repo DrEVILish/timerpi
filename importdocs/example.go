@@ -94,7 +94,7 @@ func ExampleXLSX() ([]byte, error) {
 		"  0:08:30      (h:mm:ss = 8 min 30 s)",
 		"  45m, 1h30m   (spoken style)",
 		"  1m5s         (spoken style)",
-		"  90           (bares numbers are seconds; 90 = 1:30)",
+		"  30           (a bare number is minutes; 30 = 0:30)",
 		"  90000ms      (explicit milliseconds)",
 		"",
 		"Start is informational only — TimerPi computes starts from durations.",

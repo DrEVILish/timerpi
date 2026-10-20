@@ -1,4 +1,6 @@
-{{- /* frag-messages — fragments/messages.html (see CONTRACT-UI.md) */ -}}
+{{- /* frag-messages — fragments/messages.html (see CONTRACT-UI.md).
+     One message is on stage at a time (UX review I9): Send replaces it, and
+     the list under it is history — newest first, each with Show again. */ -}}
 {{define "frag-messages"}}
 <section class="panel" id="messages-panel">
   <div class="panel-header">Messages
@@ -6,30 +8,26 @@
   </div>
 
   <div class="stack is-gap-s">
-    <div id="tp-live-msg" hidden><div class="alert alert-warning"></div></div>
-
-    <!-- U1: the wrap-up is THE confident stage action — one tap adds AND
-         shows it on every display (addMsg show:true). It left the compose
-         form: a required text field could block the submit, and a tap
-         under stress must never be gated. Red fill = danger semantics
-         (CONTRACT-UI §7: SPEC state colors are caution/WRAP-UP). -->
+    <!-- U1: the wrap-up is THE confident stage action — one tap sends it
+         and puts it on stage. It stays out of the compose form: a required
+         text field must never gate it. -->
     <button class="btn btn-danger tp-wrapup" type="button"
             data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
-            title="Send “PLEASE WRAP UP!” to every display, on stage now" aria-label="Send the wrap-up message to the stage">
-      ⚠ WRAP UP! — show it now
+            title="Put “PLEASE WRAP UP!” on the presenter screens now" aria-label="Send the wrap-up message to the stage">
+      WRAP UP!
     </button>
 
-    <!-- Send puts the message on every presenter display at once (owner,
-         2026-10-20: no "Add"/queue step); Hide takes it down again. -->
+    <!-- Send puts the message on the presenter screens at once (owner,
+         2026-10-20: no "Add"/queue step) and replaces what was there. -->
     <form class="stack is-gap-xs" data-cmd="addMsg">
       <div class="row is-gap-xs tp-msg-send">
-        <input class="input" type="text" name="text" placeholder="Message to stage…" aria-label="Message text" required>
+        <input class="input" type="text" name="text" placeholder="Message…" aria-label="Message text" required autocomplete="off">
         <button class="btn btn-primary" type="submit" data-show="true">Send</button>
       </div>
       <!-- Colour: the shared swatch picker (swatches.js) fills the host and
-           writes the hidden input. Brand #7C3AED is the default; Theme ('')
-           follows the theme; amber/red are the SPEC alert semantics. -->
-      <input type="hidden" id="msg-color" name="color" value="#7C3AED">
+           writes the hidden input; Theme ('') follows the theme, amber/red
+           are the alert semantics. The choice survives Send. -->
+      <input type="hidden" id="msg-color" name="color" value="">
       <div data-swatches-for="msg-color"></div>
     </form>
 
@@ -39,12 +37,12 @@
       <li class="list-item{{if .IsShown}} is-active{{end}}">
         <span class="list-item-title">{{.Text}}</span>
         <span class="list-item-meta">
-          <span>{{if .IsShown}}<span class="status status-warn">ON STAGE</span>{{else}}<span class="status">queued</span>{{end}}</span>
+          <span>{{if .IsShown}}<span class="status status-warn">On stage</span>{{else}}<span class="status">Sent</span>{{end}}</span>
           <span class="cluster is-gap-2xs">
             {{if .IsShown}}
             <button class="btn btn-sm" data-cmd="hideMsg" data-id="{{.ID}}">Hide</button>
             {{else}}
-            <button class="btn btn-sm btn-go" data-cmd="showMsg" data-id="{{.ID}}">Show</button>
+            <button class="btn btn-sm btn-secondary" data-cmd="showMsg" data-id="{{.ID}}" title="Put this message back on stage (replaces the current one)">Show again</button>
             {{end}}
             <button class="btn btn-sm btn-icon btn-ghost" type="button" data-msg-del="{{.ID}}" title="Delete this message" aria-label="Delete message"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
           </span>
@@ -54,11 +52,7 @@
     </ul>
     <button class="btn btn-sm btn-ghost" data-cmd="clearMsgs">Clear all</button>
     {{else}}
-    <div class="empty-state">
-      <span class="empty-state-icon">💬</span>
-      <span class="empty-state-title">No messages</span>
-      <span class="empty-state-hint">One tap on WRAP UP! puts it on every display — or type your own above and Send.</span>
-    </div>
+    <p class="field-hint">Send puts a message on the presenter screens at once; the newest replaces the last.</p>
     {{end}}
   </div>
 </section>

@@ -191,7 +191,8 @@ func TestMessagesCRUD(t *testing.T) {
 	if err != nil || len(msgs) != 2 {
 		t.Fatalf("ListMessages: %+v %v", msgs, err)
 	}
-	if msgs[0].ShownAt == 0 || msgs[1].ShownAt != 5_000 {
+	// One on stage at a time: showing m2 took m1 down (UX review I9).
+	if msgs[0].ShownAt != 0 || msgs[1].ShownAt != 5_000 {
 		t.Fatalf("shown stamps: %+v", msgs)
 	}
 

@@ -174,7 +174,7 @@ func TestParseXLS_BestEffort(t *testing.T) {
 	}
 	want := []timerpi.Cue{
 		{Label: "Keynote", DurationMS: 65000, Speaker: "Amy"},
-		{Label: "Break", DurationMS: 65000},
+		{Label: "Break", DurationMS: 3900000}, // bare = minutes
 	}
 	if !reflect.DeepEqual(cues, want) {
 		t.Fatalf("xls round-trip mismatch\n got: %#v\nwant: %#v", cues, want)

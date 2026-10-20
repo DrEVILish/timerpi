@@ -20,9 +20,9 @@ export async function run(t) {
 
   // Current cue order.
   const order = await pg.$$eval('#tp-now > .stack > *', (n) => n.map((e) =>
-    e.querySelector('#tp-cue-label') ? 'title' : e.id === 'tp-clock' ? 'clock' : e.classList.contains('tp-progress') ? 'progress'
+    e.querySelector('#tp-cue-label') ? 'title' : e.id === 'tp-clock' ? 'clock' : e.id === 'tp-clock-status' ? 'status' : e.classList.contains('tp-progress') ? 'progress'
       : e.classList.contains('tp-adjust-row') ? 'adjust' : e.classList.contains('tp-rate') ? 'rate' : e.className));
-  t.check(`current cue order: ${order.join(', ')}`, order.join(',') === 'title,clock,progress,adjust,rate');
+  t.check(`current cue order: ${order.join(', ')}`, order.join(',') === 'title,clock,progress,adjust,rate,status');
   t.check('no state lamp, chip or vs-plan line', !(await pg.$('#tp-lamp-run, #tp-state-chip, #tp-delta')));
   const adj = await pg.$$eval('.tp-adjust-row [data-adjust]', (n) => n.map((b) => b.textContent.trim()));
   t.check(`adjust buttons: ${adj.join(' ')}`, adj.join(' ') === '−1m −30s +30s +1m +5m');
@@ -71,21 +71,24 @@ export async function run(t) {
   await pg.click('#messages-panel .swatches label.swatch[title="Red"]');
   await pg.click('form[data-cmd="addMsg"] button[type=submit]');
   await pg.waitForTimeout(900);
-  t.check('the colour picker is back after the swap', !!(await pg.$('#messages-panel .swatches input:checked[value="#7C3AED"]')));
+  t.check('the colour picker is back after the swap, keeping the picked colour (I12)', !!(await pg.$('#messages-panel .swatches input:checked[value="#ff4444"]')));
   let list = await items();
-  t.check(`a sent message is on stage (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
+  // UX I9: one message on stage at a time; Send replaces it, the rest is history.
+  t.check(`only the newest message is on stage (${list.join(' / ')})`, list.length === 2 && /^Later On stage/.test(list[0]) && /^On now Sent/.test(list[1]));
   await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="hideMsg"]');
   await pg.waitForTimeout(900);
   list = await items();
-  t.check(`a hidden message stays listed (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /queued/.test(s)));
-  await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="showMsg"]');
+  t.check(`a hidden message stays listed (${list.join(' / ')})`, list.length === 2 && list.every((s) => /Sent/.test(s)));
+  await pg.click('#messages-panel .list-item:has-text("On now") [data-cmd="showMsg"]');
   await pg.waitForTimeout(900);
   list = await items();
-  t.check(`showing it again keeps the list (${list.join(' / ')})`, list.length === 2 && list.some((s) => s.startsWith('Later') && /ON STAGE/.test(s)));
+  t.check(`Show again puts it back, alone (${list.join(' / ')})`, list.length === 2 && /^On now On stage/.test(list[0]) && list.filter((s) => /On stage/.test(s)).length === 1);
+  t.check('the first message has the theme colour', ((await snap()).messages ?? []).find((m) => m.text === 'On now')?.color === '');
   t.check('the badge counts both', (await pg.textContent('#messages-panel .badge')).trim() === '2');
-  const sj = await snap();
-  const cols = Object.fromEntries((sj.messages ?? sj.snapshot?.messages ?? []).map((m) => [m.text, m.color]));
-  t.check(`message colours: Brand by default, Red when picked (${JSON.stringify(cols)})`, cols['On now'] === '#7C3AED' && cols.Later === '#ff4444');
+  await pg.click('#messages-panel .list-item:has-text("Later") [data-cmd="showMsg"]');
+  await pg.waitForTimeout(900);
+  const later = ((await snap()).messages ?? []).map((m) => [m.text, m.color]);
+  t.check(`message colours: theme by default, Red when picked (${JSON.stringify(later)})`, later.length === 1 && later[0][0] === 'Later' && later[0][1] === '#ff4444');
   t.check('footer connection is an ftl .connection, live', await pg.$eval('#conn-label', (e) => e.classList.contains('connection') && e.dataset.state === 'live'));
   await pg.click('[popovertarget="tp-theme-pop"]');
   t.check('Change Theme opens the ftl dropdown popover', await pg.$eval('#tp-theme-pop', (e) => e.matches(':popover-open') && !!e.querySelector('#theme-select option')));

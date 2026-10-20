@@ -18,7 +18,7 @@ export async function run(t) {
   await pg.waitForSelector('#cuelist tbody tr[data-pos="2"]');
 
   const heads = await pg.$$eval('#cuelist thead th', (n) => n.map((th) => th.textContent.replace(/Drag to reorder, |Actions/, '').trim()));
-  t.check(`columns: ${heads.join(' | ')}`, heads.join('|') === '#|Type|Title|Speaker / Where|Duration|Start|End|Timer|At zero|Alert 1|Alert 2|Notes|');
+  t.check(`columns: ${heads.join(' | ')}`, heads.join('|') === 'Reorder|#|Type|Title|Speaker / Where|Duration|Start|End|Timer|At zero|Alert 1|Alert 2|Notes|');
   t.check('no up/down arrows or duplicate icon on rows', !(await pg.$('#cuelist [data-dir], #cuelist [data-cmd="cueDup"]')));
 
   // Add row: every column.
@@ -98,7 +98,11 @@ export async function run(t) {
   const box = await (await pg.$('#cuelist tbody tr[data-pos="4"] td.tp-cue-notes')).boundingBox();
   await pg.dispatchEvent('#cuelist tbody tr[data-pos="4"] td.tp-cue-notes', 'pointerdown', { pointerType: 'touch', clientX: box.x + 5, clientY: box.y + 5, isPrimary: true });
   await pg.waitForTimeout(800);
-  t.check('a long press opens the row menu', await pg.$eval('#tp-row-menu', (m) => m.matches(':popover-open')));
+  // UX I4: the menu opens when the finger lifts, and stays open (opened
+  // while the finger was down, the pointerup light-dismissed it).
+  await pg.dispatchEvent('#cuelist tbody tr[data-pos="4"] td.tp-cue-notes', 'pointerup', { pointerType: 'touch', clientX: box.x + 5, clientY: box.y + 5, isPrimary: true });
+  await pg.waitForTimeout(400);
+  t.check('a long press opens the row menu, and it stays open after the finger lifts', await pg.$eval('#tp-row-menu', (m) => m.matches(':popover-open')));
   await pg.keyboard.press('Escape');
 
   // Breaks have their own accent.

@@ -275,6 +275,8 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
     case 'addMsg': {
       const text = String(args.text || '').slice(0, 300);
       if (!text) return 'ignored';
+      // One message on stage at a time (server ShowMessage parity).
+      if (args.show) for (const m of snap.messages) m.shownAt = 0;
       snap.messages.push({
         id: -(Date.now() % 1e9), text, color: args.color || '',
         shownAt: args.show ? now : 0, // data-show / args.show adds it live immediately
@@ -285,6 +287,7 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
     case 'showMsg': {
       const m = snap.messages.find(m => m.id === args.id) || snap.messages[snap.messages.length - 1];
       if (!m) return 'ignored';
+      for (const o of snap.messages) o.shownAt = 0; // one on stage at a time
       m.shownAt = now;
       snap.updatedAt = bump(snap, now);
       return 'applied';

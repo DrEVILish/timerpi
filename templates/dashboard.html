@@ -34,30 +34,19 @@
           <summary class="panel-header">Import running order</summary>
           <form class="stack is-gap-s"
                 hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
-                hx-target="#import-result" hx-swap="innerHTML">
+                hx-target="#import-result" hx-swap="innerHTML" hx-confirm="replace">
             <div class="field">
               <label class="label" for="import-file">File</label>
               <input class="input" type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json">
-              <span class="field-hint">Drag an .xlsx / .xls / .csv / .json file straight onto this panel.</span>
+              <span class="field-hint">Or drop an .xlsx / .xls / .csv / .json file on this panel. Bare numbers are minutes.</span>
             </div>
-            <div class="row is-gap-s">
-              <div class="field" style="flex:1">
-                <label class="label" for="import-kind">Format</label>
-                <select class="select" id="import-kind" name="kind">
-                  <option value="auto" selected>Auto-detect</option>
-                  <option value="xlsx">.xlsx</option>
-                  <option value="xls">.xls (legacy)</option>
-                  <option value="csv">.csv</option>
-                  <option value="json">.json</option>
-                </select>
-              </div>
-              <div class="field" style="flex:1">
-                <label class="label" for="import-mode">Mode</label>
-                <select class="select" id="import-mode" name="mode">
-                  <option value="replace" selected>Replace all cues</option>
-                  <option value="append">Append</option>
-                </select>
-              </div>
+            <div class="field">
+              <label class="label" for="import-mode">Mode</label>
+              <select class="select" id="import-mode" name="mode">
+                <option value="append" selected>Add to the end</option>
+                <option value="replace">Replace all cues</option>
+              </select>
+              <span class="field-hint">The format is detected from the file. Replace asks first.</span>
             </div>
             <button class="btn btn-primary" type="submit">Import <span class="indicator"></span></button>
           </form>
@@ -70,6 +59,9 @@
            (owner, 2026-10-06): GO on a row restarts that cue. Outside the
            oob-swapped #tp-now, so these buttons are never re-rendered. */}}
       <div class="transport tp-transport-bar">
+        {{- /* Phones: the slim sticky bar shows the time left (timerpi.js
+             paints it with the main clock). */}}
+        <time class="countdown tp-bar-left" id="tp-clock-mini" data-state="idle" aria-hidden="true"></time>
         <button class="btn btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
         <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
         <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
@@ -91,13 +83,18 @@
         {{- /* U39: the add row's fields (in the table's footer) belong to
              this form, which sits outside the swapped #cuelist. */}}
         <form id="tp-add-form" hidden></form>
-        <p class="field-hint tp-phone-only">Long-press a row for all details or to delete it; drag ⠿ to reorder.</p>
         {{- /* U41: right-click / long-press row menu (ftl .context-menu). */}}
         <div class="context-menu is-at-pointer" id="tp-row-menu" popover role="menu" aria-label="Cue actions">
-          <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
           <button class="context-menu-item" type="button" role="menuitem" data-row-act="details">All details…</button>
+          <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
+          <button class="context-menu-item" type="button" role="menuitem" data-row-act="up">Move up <kbd>Alt+↑</kbd></button>
+          <button class="context-menu-item" type="button" role="menuitem" data-row-act="down">Move down <kbd>Alt+↓</kbd></button>
+          <div class="context-menu-divider" role="separator"></div>
           <button class="context-menu-item is-danger" type="button" role="menuitem" data-row-act="del">Delete</button>
         </div>
+        {{- /* Live text for the two-tap delete (ftl .btn.is-armed) and for
+             keyboard moves ("Moved Coffee to position 3"). */}}
+        <p class="visually-hidden" id="tp-del-help" aria-live="polite"></p>
         {{template "frag-cuelist" .}}
         {{- /* C2 layout (owner note "UI layout requires improvement"): the day
                bar lives UNDER the running order — the natural "timeline of the
@@ -112,7 +109,7 @@
               <input class="input input-sm mono" type="text" id="tp-day-begins" size="6"
                      placeholder="09:00" aria-label="Day begins at (HH:MM)" autocomplete="off"
                      value="{{.DayStartHHMM}}">
-              <button class="btn btn-sm btn-ghost" type="submit" title="Persist the scheduled start and anchor today to it">Save</button>
+              <button class="btn btn-sm btn-ghost" type="submit" title="Save the planned start and anchor today to it">Save</button>
             </form>
             <button class="btn btn-sm btn-ghost push" id="tp-day-start" type="button"
                     title="Anchor the day clock to now — the bar starts filling and scheduled times pin to today">
@@ -192,16 +189,18 @@
     <button type="button" class="btn-close" aria-label="Close" data-close></button>
   </div>
   <form id="tp-insp-form" class="stack is-gap-s">
-    <div class="field">
-      <label class="label" for="tp-insp-kind">Type</label>
-      <select class="select" id="tp-insp-kind">
-        <option value="session">Session</option>
-        <option value="break">Break</option>
-      </select>
-    </div>
-    <div class="field">
-      <label class="label" for="tp-insp-label">Title</label>
-      <input class="input" id="tp-insp-label" type="text" autocomplete="off">
+    <div class="row is-gap-s">
+      <div class="field tp-insp-narrow">
+        <label class="label" for="tp-insp-kind">Type</label>
+        <select class="select" id="tp-insp-kind">
+          <option value="session">Session</option>
+          <option value="break">Break</option>
+        </select>
+      </div>
+      <div class="field tp-insp-wide">
+        <label class="label" for="tp-insp-label">Title</label>
+        <input class="input" id="tp-insp-label" type="text" autocomplete="off">
+      </div>
     </div>
     <div class="row is-gap-s">
       <div class="field tp-insp-wide">
@@ -214,7 +213,7 @@
       </div>
       <div class="field tp-insp-narrow">
         <label class="label" for="tp-insp-duration">Duration</label>
-        <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off" placeholder="H:MM" title="H:MM — 30 = 30 min, 30s = seconds">
+        <input class="input mono" id="tp-insp-duration" type="text" size="8" autocomplete="off" placeholder="0:30" title="h:mm — 30 = 30 min, 1:30 = 1 h 30 min, 90s = seconds">
       </div>
     </div>
     <div class="row is-gap-s">
@@ -235,50 +234,41 @@
         </select>
       </div>
     </div>
-    <div class="row is-gap-s is-items-end">
-      <div class="field">
-        <label class="label" for="tp-insp-alert1">Alert 1 (m:ss before zero)</label>
-        <input class="input mono" id="tp-insp-alert1" type="text" size="7" autocomplete="off">
-      </div>
-      <div class="field">
-        <span class="label" id="tp-insp-alert1Color-l">Alert 1 colour</span>
+    {{- /* One alert per line: label, then time · colour · Flash (UI M6). */}}
+    <div class="field">
+      <label class="label" for="tp-insp-alert1">Alert 1 <span class="text-muted">m:ss before zero</span></label>
+      <div class="row is-gap-s is-items-center tp-insp-alert">
+        <input class="input mono" id="tp-insp-alert1" type="text" size="6" autocomplete="off" placeholder="5:00">
         <input type="hidden" id="tp-insp-alert1Color">
+        <span class="visually-hidden" id="tp-insp-alert1Color-l">Alert 1 colour</span>
         <div data-swatches-for="tp-insp-alert1Color" aria-labelledby="tp-insp-alert1Color-l"></div>
+        <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert1Flash">Flash</label>
       </div>
-      <label class="field-row tp-insp-flash">
-        <input type="checkbox" class="checkbox" id="tp-insp-alert1Flash">
-        <span class="label">Flash</span>
-      </label>
     </div>
-    <div class="row is-gap-s is-items-end">
-      <div class="field">
-        <label class="label" for="tp-insp-alert2">Alert 2 (m:ss before zero)</label>
-        <input class="input mono" id="tp-insp-alert2" type="text" size="7" autocomplete="off">
-      </div>
-      <div class="field">
-        <span class="label" id="tp-insp-alert2Color-l">Alert 2 colour</span>
+    <div class="field">
+      <label class="label" for="tp-insp-alert2">Alert 2 <span class="text-muted">m:ss before zero</span></label>
+      <div class="row is-gap-s is-items-center tp-insp-alert">
+        <input class="input mono" id="tp-insp-alert2" type="text" size="6" autocomplete="off" placeholder="1:00">
         <input type="hidden" id="tp-insp-alert2Color">
+        <span class="visually-hidden" id="tp-insp-alert2Color-l">Alert 2 colour</span>
         <div data-swatches-for="tp-insp-alert2Color" aria-labelledby="tp-insp-alert2Color-l"></div>
+        <label class="toggle-btn tp-insp-flash" title="Blink the presenter timer while this alert is on"><input type="checkbox" id="tp-insp-alert2Flash">Flash</label>
       </div>
-      <label class="field-row tp-insp-flash">
-        <input type="checkbox" class="checkbox" id="tp-insp-alert2Flash">
-        <span class="label">Flash</span>
-      </label>
     </div>
     <div class="field">
       <label class="label" for="tp-insp-notes">Cue notes</label>
-      <textarea class="input" id="tp-insp-notes" rows="3" aria-label="Cue notes"></textarea>
+      <textarea class="input" id="tp-insp-notes" rows="2" aria-label="Cue notes"></textarea>
     </div>
     <div class="field tp-insp-rowcolor">
       <span class="label" id="tp-insp-color-l">Row colour</span>
       <input type="hidden" id="tp-insp-color">
       <div data-swatches-for="tp-insp-color" data-default-label="Theme" aria-labelledby="tp-insp-color-l"></div>
     </div>
+    <div class="field-error" id="tp-insp-error" role="alert" hidden></div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn btn-primary" id="tp-insp-save">Save cue <span class="indicator"></span></button>
     </div>
-    <div class="field-error" id="tp-insp-error" role="alert" hidden></div>
   </form>
 </dialog>
 {{end}}

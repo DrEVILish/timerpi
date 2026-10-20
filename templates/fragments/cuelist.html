@@ -2,8 +2,9 @@
 
   STATUS U39–U43 (owner, 2026-10-06): one table. Every cell edits inline
   (double-click, or two taps on touch); the last row adds a cue with the
-  same columns. Rows drag by the handle cell on the left (no arrows);
-  Duplicate lives in the right-click / long-press row menu. Breaks carry
+  same columns. Rows drag by the ftl handle cell on the left (td.drag-handle;
+  its button also takes Alt+Up/Down); Duplicate and Move up/down live in the
+  row menu (right-click, long-press, or the row's ⋯ button on touch). Breaks carry
   their own accent. timerpi.js cueRow() mirrors this markup for offline
   renders — change both together.
 */ -}}
@@ -12,11 +13,12 @@
   <table class="table is-sticky tp-cuetable">
     <thead>
       <tr>
-        <th class="tp-cue-pos" scope="col"><span class="visually-hidden">Drag to reorder, </span>#</th>
+        <th class="drag-handle" scope="col"><span class="visually-hidden">Reorder</span></th>
+        <th class="tp-cue-pos" scope="col">#</th>
         <th class="tp-cue-kind" scope="col">Type</th>
         <th class="tp-cue-title" scope="col">Title</th>
         <th class="tp-cue-who" scope="col">Speaker / Where</th>
-        <th class="tp-cue-dur" scope="col">Duration</th>
+        <th class="tp-cue-dur" scope="col">Dur<span class="tp-wide-only">ation</span></th>
         <th class="tp-cue-start" scope="col">Start</th>
         <th class="tp-cue-end" scope="col">End</th>
         <th class="tp-cue-timer" scope="col">Timer</th>
@@ -29,12 +31,13 @@
     </thead>
     <tbody>
       {{range .Cues}}
-      <tr data-pos="{{.Pos}}" data-cue-id="{{.ID}}" class="{{if .IsBreak}}tp-row-break{{else}}tp-row-session{{end}}{{if .Color}} tp-row-color{{end}}"{{if .Color}} style="--tp-row-accent: {{.Color}}"{{end}}>
-        <td class="tp-cue-pos" title="Drag to reorder · right-click for more"><span class="tp-grip" aria-hidden="true">⠿</span><span class="mono">{{printf "%02d" .Pos}}</span></td>
-        <td class="tp-cue-kind is-editable" data-edit="kind">{{if .IsBreak}}<span class="badge tp-badge-break">Break</span>{{else}}<span class="badge badge-accent">Session</span>{{end}}</td>
-        <td class="tp-cue-title is-editable" data-edit="label"><span class="tp-cue-label">{{.Label}}</span><span class="badge tp-alert-badge" hidden></span>{{range .Tags}} <span class="badge">{{.}}</span>{{end}}</td>
+      <tr data-pos="{{.Pos}}" data-cue-id="{{.ID}}" class="{{if .IsBreak}}tp-row-break has-row-color{{else}}tp-row-session{{if .Color}} has-row-color{{end}}{{end}}"{{if .Color}} style="--row-color: {{.Color}}"{{end}}>
+        <td class="drag-handle"><button type="button" title="Drag to reorder · Alt+↑/↓ moves it" aria-label="Move cue {{printf "%02d" .Pos}} (Alt+Up or Alt+Down)"></button></td>
+        <td class="tp-cue-pos mono">{{printf "%02d" .Pos}}</td>
+        <td class="tp-cue-kind is-editable" data-edit="kind">{{if .IsBreak}}<span class="badge tp-badge-break">Break</span>{{else}}<span class="badge">Session</span>{{end}}</td>
+        <td class="tp-cue-title is-editable" data-edit="label"><span class="tp-cue-label row-title">{{.Label}}</span><span class="tp-row-state visually-hidden"></span><span class="badge tp-alert-badge" hidden></span>{{range .Tags}} <span class="badge">{{.}}</span>{{end}}</td>
         <td class="tp-cue-who is-editable" data-edit="{{if .IsBreak}}location{{else}}speaker{{end}}"><span class="text-truncate" title="{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}">{{if .IsBreak}}{{.Location}}{{else}}{{.Speaker}}{{end}}</span></td>
-        <td class="tp-cue-dur mono is-editable" data-edit="durationMS">{{.DurFmt}}</td>
+        <td class="tp-cue-dur mono is-editable" data-edit="durationMS">{{.DurHM}}</td>
         <td class="tp-cue-start mono" title="{{.StartFmt}}">{{if .StartHM}}{{.StartHM}}{{else}}{{.StartFmt}}{{end}}</td>
         <td class="tp-cue-end mono" title="{{.EndFmt}}">{{if .EndHM}}{{.EndHM}}{{else}}{{.EndFmt}}{{end}}</td>
         <td class="tp-cue-timer is-editable" data-edit="timerKind">{{if eq .TimerKind "COUNTSTOP"}}Count up{{else if eq .TimerKind "CLOCK"}}Clock{{else}}Countdown{{end}}</td>
@@ -44,15 +47,16 @@
         <td class="tp-cue-notes is-editable" data-edit="notes"><span class="text-truncate" title="{{.Notes}}">{{.Notes}}</span></td>
         <td class="tp-cue-rowbtns">
           <div class="btn-group">
-            <button class="btn btn-sm btn-go" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>
+            <button class="btn btn-sm btn-tertiary" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now (restarts it if it is running)" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>
             <button class="btn btn-sm btn-ghost btn-icon" data-cmd="jump" data-pos="{{.Pos}}" data-start="false" title="Cue it up (playhead here, don't start yet)" aria-label="Cue up cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-right"/></svg></button>
             <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="All details (tags, row colour)" aria-label="Edit cue {{printf "%02d" .Pos}} — all details"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-danger" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue" aria-label="Delete cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-danger" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue (tap twice)" aria-label="Delete cue {{printf "%02d" .Pos}}" aria-describedby="tp-del-help"><span class="btn-idle-label"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></span><span class="btn-armed-label">Delete?</span></button>
+            <button class="btn btn-sm btn-icon btn-ghost tp-row-more" type="button" data-row-menu="{{.Pos}}" title="More: duplicate, move, details, delete" aria-label="More for cue {{printf "%02d" .Pos}}" aria-haspopup="menu"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-more-horizontal"/></svg></button>
           </div>
         </td>
       </tr>
       {{else}}
-      <tr class="table-empty"><td colspan="13"><div class="empty-state"><span class="empty-state-title">No cues yet</span><span class="empty-state-hint">Add the first one in the row below, or import a running order.</span></div></td></tr>
+      <tr class="table-empty"><td colspan="15"><div class="empty-state"><span class="empty-state-title">No cues yet</span><span class="empty-state-hint">Add the first one in the row below, or import a running order.</span></div></td></tr>
       {{end}}
     </tbody>
     {{template "cue-add-row"}}
@@ -66,6 +70,7 @@
 {{define "cue-add-row"}}
 <tfoot>
   <tr class="is-editing">
+    <td class="drag-handle"><span></span></td>
     <td class="tp-cue-pos"><span class="mono text-muted">+</span></td>
     <td class="tp-cue-kind">
       <select class="select input-sm" name="kind" form="tp-add-form" aria-label="New cue type">
@@ -75,7 +80,7 @@
     </td>
     <td class="tp-cue-title"><input class="input input-sm" name="label" form="tp-add-form" placeholder="Session title" aria-label="New cue title" required autocomplete="off"></td>
     <td class="tp-cue-who"><input class="input input-sm" name="who" form="tp-add-form" placeholder="Speaker" aria-label="Speaker" maxlength="80" autocomplete="off"></td>
-    <td class="tp-cue-dur"><input class="input input-sm mono" name="mss" form="tp-add-form" placeholder="H:MM" size="5" aria-label="Duration (30 = 30 min, 1:30 = 1 h 30 m, 30s = seconds)" autocomplete="off"></td>
+    <td class="tp-cue-dur"><input class="input input-sm mono" name="mss" form="tp-add-form" placeholder="0:30" size="5" title="h:mm — 30 = 30 min, 1:30 = 1 h 30 min, 90s = seconds" aria-label="Duration, h:mm (30 = 30 min, 1:30 = 1 h 30 min, 30s = seconds)" autocomplete="off"></td>
     <td class="tp-cue-start"></td>
     <td class="tp-cue-end"></td>
     <td class="tp-cue-timer">

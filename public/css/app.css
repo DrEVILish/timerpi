@@ -320,6 +320,18 @@ body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
   body.app > .app-bar > .nav { flex: 1 0 100%; order: 10; }
   body.app > .app-bar .breadcrumbs > .breadcrumb-item:not(.is-current) { display: none; } /* the logo links to the event */
   body.app > .app-bar .tp-bar-clock { margin-inline: auto; }
+  /* Room page (UI M9): one bar row — logo, room name (truncated), clock,
+     theme, Leave. Event Technician is one tap away from the logo's Rooms
+     page, so the room page has the screen for running the room. */
+  body.app[data-page="dashboard"] > .app-bar { flex-wrap: nowrap; }
+  body.app[data-page="dashboard"] > .app-bar > .nav { flex: 1 1 0; order: 0; min-width: 0; }
+  body.app[data-page="dashboard"] > .app-bar > .nav > .nav-item { display: none; }
+  body.app[data-page="dashboard"] > .app-bar .breadcrumbs { min-width: 0; }
+  body.app[data-page="dashboard"] > .app-bar .breadcrumb-item.is-current { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.app[data-page="dashboard"] > .app-bar > .cluster { flex-wrap: nowrap; flex: none; }
+  /* The phone's own status bar has the time of day, and the slim transport
+     bar has the time left, so the room page's bar clock goes here. */
+  body.app[data-page="dashboard"] > .app-bar .tp-bar-clock { display: none; }
 }
 
 /* liquid-glass (E2E #3): the theme floats a 3rem capsule bar over the
