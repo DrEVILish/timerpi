@@ -408,7 +408,7 @@ body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
    sidebar collapses. Theme-side part: reviews/upstream-issues/ftl-e2e-themes.md. */
 html[data-theme="liquid-glass"] { --app-columns: 0 minmax(0, 1fr); --app-gap: .6rem 0; }
 html[data-theme="liquid-glass"] body.app > .app-rail { display: none; }
-html[data-theme="liquid-glass"] body.app > .app-main { grid-row: main; padding: 1.25rem; }
+html[data-theme="liquid-glass"] body.app > .app-main { grid-row: main; margin-top: 0; padding: 1.25rem; } /* the theme pulls main up under its floating bar */
 html[data-theme="liquid-glass"] body.app > .app-bar { position: relative; top: auto; margin: 0; border-top: 0; }
 html[data-theme="liquid-glass"] body.app > .app-bar::before,
 html[data-theme="liquid-glass"] body.app > .app-bar::after { content: none; }
