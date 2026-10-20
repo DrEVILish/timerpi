@@ -181,7 +181,7 @@ function initAdmin() {
     if (r.running && r.paused) return ['Paused', 'status-warn'];
     if (r.running && r.overtime) return ['Overtime', 'status-error'];
     if (r.running) return ['Running', 'status-ok'];
-    return ['Idle', 'text-muted']; // themes paint status-idle as "ready" (green)
+    return ['Idle', 'status-idle']; // neutral in every theme since ftl-themes #71
   }
 
   // Cards are built once per room and patched in place on every poll
