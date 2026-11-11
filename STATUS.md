@@ -53,9 +53,9 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | S1 capture | ✅ | Capture asks name, display type (Audience/Walk-in/Presenter), layout (templates for that type), mounting (rotation) and theme; only into rooms you moderate |
 | S2 layout editor | ✅ | Editor shows the screen's real canvas (rows × 12, landscape or portrait) in its theme |
 | S3 templates per display type | ✅ | 13 templates in a catalog grouped by type, incl. portrait walk-ins (`boards.Templates`) |
-| S4 remote screen management | 🟡 | Per room ✅. No event-wide screens view for the SuperOperator (N3) |
+| S4 remote screen management | ✅ | Per room and event-wide screens view (N3) |
 | S5 offline resilience | 🟡 | Code + tests. Two-machine drill pending (H4) |
-| S6 no chrome on screens | ⚠️ | B5 |
+| S6 no chrome on screens | ✅ | B5 fixed (editor-only chrome), U22 (no header on boards) |
 | S7 rotation | ✅ | Per screen 0/90/180/270, CSS rotation, server-rendered + pushed live (`screen-look` frame) |
 | S8 live event walk-in | ✅ | |
 | S9 per-screen theme + layout, inline rename | ✅ | Screens page: type, layout, theme, mounting apply instantly; double-click/tap renames |
@@ -108,7 +108,7 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | **N5** | ✅ Done 2026-10-05: `to_audience` / `to_presenter`, results follow the targets, phones receive the audience target only, tiles follow `opts.target` | A4, A5 | |
 | **N6** | ✅ Done 2026-10-05: entries with pending/approved/answered/dismissed, upvotes, spotlight, auto-approve; moderator panel rebuilt (`moderate.js`) | A7 | |
 | **N7** | ✅ Done 2026-10-05: `rooms` + `eventschedule` tiles, event map default on the map tile, `/api/shows/:room/walkin` feed | S8 | |
-| **N8** | ✅ Done: htmx 4.0.0 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
+| **N8** | ✅ Done: htmx 4.0.1 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
 | **N9** | ✅ Done 2026-10-05: layout default animation (`anim`/`animMS`) + per-tile override for every content tile, set in the editor; content tiles animate on change | L2, L3 | |
 | **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
 | **N11** | 🟡 Room page reorganised into Run · Audience · Setup tabs (tablet-friendly, wraps); touch targets ≥44 px on coarse pointers on the new pages. A dedicated tablet layout for the Run tab is still open | L6 | |
@@ -248,13 +248,12 @@ Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as 
 
 ### 4.5 Suggested order
 
-1. **B1–B7**: small, safe, and they unblock demos today.
-2. **C2 + N8**: reproducible themes and htmx 4 *before* new UI is written on top of htmx 2.
-3. **N1 + N10 → N2 → N3**: the event model, join flow and SuperOperator. This is the big one; land it in that order.
-4. **N5 → N6**: push targets, then the Q&A wall and spotlight.
-5. **N4 → N7**: display types, rotation and portrait, then the live event walk-in.
-6. **N9, N11**: animation everywhere and the device-class UX pass.
-7. Remaining cleanup, then **H5**, then H1–H4 and H6 on hardware.
+As of 2026-11-11: B1–B7, C1–C4, D2–D5 and N1–N9, N12–N19, N21 are done.
+
+1. **N10** (day-scoped queries) and **N11** (tablet Run layout) — the last spec rows.
+2. **Blocked on hardware**: B8 (LED board), D1 (radio drill), H1–H6 (drills; H5/H6 runbooks still to write).
+3. **Drills**: H4 / S5 (two-machine), S9 load harness (N20).
+4. **Owner-pending**: N18 kiosk mode.
 
 After the 2026-10-06 review: BUGLOG RC1–RC8 come before everything above, and the security (RW1–RW16) and performance (RW53–RW58) warnings come before H5.
 
