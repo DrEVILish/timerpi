@@ -17,7 +17,7 @@
 | Server | Go 1.25, single binary, **gin** for HTTP and **gorilla/websocket** for WS, on **one port**, listening on `0.0.0.0` (default 80) |
 | Storage | **SQLite** via `sqlx` + `mattn/go-sqlite3` (CGO), WAL mode. One file: `<data dir>/timerpi.db` |
 | Templates | Go `html/template`, server-rendered pages and fragments |
-| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 4.0.0** is vendored as `public/src/htmax.min.js` (htmx plus its bundled extensions: ws, sse, preload, …). Reference docs: `docs/reference/htmx4/`. Today it is used lightly (setup, settings, import form); most interactivity is plain JS plus WS frames |
+| Client JS | Vanilla ES modules in `public/src/` with no build step and no framework. **htmx 4.0.1** is vendored as `public/src/htmax.min.js` (htmx plus its bundled extensions: ws, sse, preload, …). Reference docs: `docs/reference/htmx4/`. Today it is used lightly (setup, settings, import form); most interactivity is plain JS plus WS frames |
 | Styling | **ftl-themes**, served at `/ftl/` from `third_party/ftl-themes`. TimerPi adds layout-only CSS in `public/css/timerpi.css` |
 | QR | `skip2/go-qrcode` |
 | Import | `tealeg/xlsx` + `excelize` (XLSX/XLS), CSV, JSON (`importdocs/`) |
