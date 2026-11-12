@@ -653,17 +653,25 @@ func TestCueMoveTargetSlot(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	// clamp guard: to=99 pins to the last slot (documented MoveCue clamp);
-	// from=0 refuses with an err frame (no move). Final pinned order:
+	// clamp guard: to=99 pins to the last slot (documented MoveCue clamp),
+	// so Talk goes back under Welcome; from=0 is refused with an err frame
+	// (no move). The socket's read deadline has passed, so poll the store:
+	// reading it straight away raced the hub and passed on the stale order.
 	send(`{"t":"cmd","action":"cueMove","args":{"pos":1,"to":99}}`)
 	send(`{"t":"cmd","action":"cueMove","args":{"pos":0,"to":2}}`)
-	drain(500 * time.Millisecond)
-	cues, _ = ts.db.ListCues(ts.showID)
-	labels = labels[:0]
-	for _, c := range cues {
-		labels = append(labels, c.Label)
+	order := func() string {
+		cues, _ := ts.db.ListCues(ts.showID)
+		var l []string
+		for _, c := range cues {
+			l = append(l, c.Label)
+		}
+		return strings.Join(l, ",")
 	}
-	if !(len(labels) == 2 && labels[0] == "Talk" && labels[1] == "Welcome") {
-		t.Fatalf("clamp sequence: %v", labels)
+	for deadline := time.Now().Add(3 * time.Second); order() != "Welcome,Talk" && time.Now().Before(deadline); {
+		time.Sleep(25 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond) // let the refused from=0 frame be handled too
+	if got := order(); got != "Welcome,Talk" {
+		t.Fatalf("clamp sequence: %v", got)
 	}
 }
