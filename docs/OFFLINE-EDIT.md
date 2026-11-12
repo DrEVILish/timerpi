@@ -11,7 +11,7 @@ one side's work.
 - While the server link is down, the elected master executes `cueAdd /
   cueEdit / cueDel / cueMove / cueDup` locally in `public/src/engine.js`
   (same semantics as the server's WS `cue.*` commands in `ws/commands.go` +
-  `timerpi/db.go`; see §5 for the deliberate deltas).
+  `timerpi/db_cues.go`; see §5 for the deliberate deltas).
 - Every content-touched cue gets a fresh `updatedAt` on the server-anchored
   clock (`mesh.now()` = `Date.now() + clockOffset`, monotonic
   `max(stamp+1, now)`); the snapshot `updatedAt` bumps as before and the
