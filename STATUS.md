@@ -2,46 +2,30 @@
 
 > **The distance between [docs/PRODUCT.md](docs/PRODUCT.md) (target) and the
 > code (today).** Every row cites a PRODUCT requirement ID. Update this file in
-> the same commit that changes a status.
+> the same commit that changes a status. This file lists what is **open**;
+> finished work is one line in §5 and its detail is in `git log`.
 >
 > Key: ✅ meets spec · 🟡 works with caveats, or unproven on hardware ·
 > ⚠️ partial or buggy · ❌ missing
 >
-> Baseline 2026-10-05, commit `ccd415f`: `go build`, `go vet` and
-> `go test ./...` are green (12 tested packages). Owner answers of 2026-10-05
-> are folded in (PRODUCT §7). Old trackers are in `docs/archive/`.
+> State 2026-11-12: `go build`, `go vet`, `go test ./...` and the 55 browser
+> tests are green; `.github/workflows/ci.yml` runs all four on every push.
 
 ---
 
-## 1. The big shift: today's model vs the spec
-
-| | Today (code) | Spec (PRODUCT) |
-|---|---|---|
-| Top-level object | **Show** = one room, with its own 8-char code | **Event** with one code, containing **rooms** |
-| Grouping rooms | Free-text `zone` label | Rooms belong to an event |
-| SuperOperator | Whoever holds the *device* password; transport + blackout only | Event creator with a *supervisor* password; full admin of the event |
-| Room operator | Anyone with the room's code (+ optional room password) | Moderator: event code → pick room → optional moderator password set by the SuperOperator |
-| Push | One state: `hidden → open → results` (phones + every screen with a poll tile) | Two targets: **Show to Audience** (phones + audience displays) and **Show to Presenter** (DSM) |
-| Q&A | One question on air at a time | Approved **wall** + **spotlight**; dismiss / mark answered |
-| Screens | Named, themed, with a layout | Plus a **display type** (Audience / Walk-in / Presenter) and **rotation** |
-| Days | One running order per show | Single day now; model allows days |
-| htmx | 2.0.11 vendored, lightly used | **htmx 4** vendored |
-
-Most existing machinery carries over: the engine, hub, audience lane, layouts, capture, themes and mesh. The event layer sits **above** today's show and becomes its parent. See ARCHITECTURE §14 for the migration shape.
-
-## 2. Reference event, surface by surface (PRODUCT §5)
+## 1. Reference event, surface by surface (PRODUCT §5)
 
 | # | Surface | Status | Gap |
 |---|---|---|---|
 | 1 | Event walk-in | ✅ | `event` / `event-portrait` templates: "All rooms now" (live now/next per room), event schedule (one column per room), event map, clock. Fed by `/api/shows/:room/walkin` (5 s). The old `/zone/` page is retired (C10) |
 | 2/3 | Room walk-in | ✅ | `room` / `room-portrait` templates; rotation per screen |
 | 4/5 | Room audience display | ✅ | `main` template: one large Audience-item tile (poll/quiz bars, Q&A wall + spotlight, word cloud, ideas) + join QR. Text scaling for big screens comes in the UI pass |
-| 6/7 | Room presenter display | ✅ | `dsm` template; its Audience-item tile follows the Presenter target. Display types (N4) still to do |
-| 8/9 | Room moderator | 🟡 | ✅ Event code → pick room → optional room password. Room-isolated (tested). Dashboard is complete for timing/audience. Tablet pass still to do (**N11**) |
-| 10 | SuperOperator | 🟡 | ✅ `/e/<code>/admin`: live room cards (state, now/next, time left, screens) with GO/Pause/Blackout, blackout all, rooms admin (add, inline rename, reorder, delete, passwords), event settings (name, theme, map, password, delete). Moderates every room. Still to do: event-wide screens view (**N3**) |
+| 6/7 | Room presenter display | ✅ | `dsm` template; its Audience-item tile follows the Presenter target |
+| 8/9 | Room moderator | 🟡 | ✅ Event code → pick room → optional room password. Room-isolated (tested). Dashboard is complete for timing/audience. A dedicated tablet layout for the Run tab is open (**N11**) |
+| 10 | SuperOperator | ✅ | ✅ `/e/<code>/admin`: live room cards (state, now/next, time left, screens) with GO/Pause/Blackout, blackout all, rooms admin (add, inline rename, reorder, delete, passwords), event settings (name, theme, map, password, delete). Moderates every room; event-wide screens view |
 | 11 | Audience devices | ✅ | Rebuilt phone page: vote/change vote, results with your answer and the quiz verdict, ask/ideas with "waiting for review", upvotes, spotlight, word cloud. WS lane with REST fallback |
 
-## 3. Requirements matrix
+## 2. Requirements matrix
 
 | Req | Status | Note |
 |---|---|---|
@@ -68,195 +52,82 @@ Most existing machinery carries over: the engine, hub, audience lane, layouts, c
 | A7 Q&A wall / spotlight / dismiss / answered | ✅ | Plus auto-approve per item |
 | A8 per-item moderation | ✅ | Approve / dismiss per entry; word approval covers identical words |
 | A9 QR join, one vote per device | ✅ | |
-| A10 1,000 per room / 200 on a Pi | 🟡 | Dev container: 1,000 phones, p95 30 ms, 1,000/1,000 join storm; poll broadcasts coalesced (≤4/s per room) so vote bursts do not fan out per vote. Not yet on a Pi or real Wi-Fi (H5) |
-| L1 ftl-themes, default `blue-future` | ✅ | Default already `blue-future`. ftl-themes fetch not reproducible (C2) |
+| A10 1,000 per room / 200 on a Pi | 🟡 | Dev container: 1,000 phones, p95 12 ms, 1,000/1,000 join storm (`TP_LOAD=1 go test ./ws -run TestLoad`); poll broadcasts coalesced (≤4/s per room) so vote bursts do not fan out per vote. Not yet on a Pi or real Wi-Fi (H5) |
+| L1 ftl-themes, default `blue-future` | ✅ | ftl-themes is a submodule pinned to an upstream commit |
 | L2–L3 animation everywhere, operator-set | ✅ | N9 |
 | L4 reduced motion on phones only | ✅ | |
 | L5 viewport sizing | ✅ | Layouts are canvases that fill the screen; tile text scales with the tile (container query units), so 720p/4K/portrait all work |
 | L6 device-class UX (tablet moderator) | 🟡 | N11 |
-| H1–H3 appliance, offline LAN, mesh | 🟡 | Hardware drills pending (H1–H4). UI files not embedded (C9) |
+| H1–H3 appliance, offline LAN, mesh | 🟡 | Built; hardware drills pending (H1–H4, D1) |
 | H4 CuTePi OSC | ✅ | |
 | H5 any browser as screen | ✅ | |
 | M2 day-ready model | 🟡 | `cues.day` and `events.days` exist (always 1). Queries are not day-scoped yet (N10) |
 | htmx 4 vendored | ✅ | N8 |
 
-## 4. Open work
+## 3. Open work
 
-### 4.1 Bugs (fix first: small, independent of the new model)
+Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG.md) (one open: RS37, the JS half).
 
-**Code review 2026-10-06:** 107 more issues (8 critical, 58 warnings, 41 suggestions) are logged with locations, fixes and status in [docs/BUGLOG.md](docs/BUGLOG.md). Fix RC1–RC8 first.
-
-| ID | Bug | Where |
-|---|---|---|
-| **B1** | ✅ Fixed 2026-10-05: there is no appliance password any more; audience and walk-in pages are open by design. | `routes/access.go` |
-| **B2** | ✅ Fixed: quiz requires its answer; it is revealed (index 0 included) only with results. | |
-| **B3** | ✅ Fixed: survey removed (not a product kind); leftover rows deleted at startup. | |
-| **B4** | ✅ Fixed: ideas are entries of their item, shown as a wall with upvotes. | |
-| **B5** | ✅ Fixed: audience tiles render edit chrome only in the editor. | |
-| **B6** | ✅ Fixed 2026-10-05: unknown roles are refused at join, and only `controls` may send commands. | `ws/session.go`, `ws/commands.go` |
-| **B7** | ✅ Moot 2026-10-06: the zone page is retired (C10). | `routes/zone.go` |
-| **B8** | ✅ Fixed 2026-10-06: phones got "vote needs a device id". The live service ran last night's binary but serves `public/` from the working tree, so the new phone script (device id now issued by the server, BUGLOG RW2) met the old server. Rebuilt and restarted; a phone vote is counted again. Root cause is C9 (now urgent). | `bin/timerpi`, C9 |
-
-### 4.2 New work from the spec (in dependency order)
-
-| ID | Work | Spec | Notes |
+| ID | Open | Spec | Notes |
 |---|---|---|---|
-| **N1** | ✅ Done 2026-10-05: `events` table; shows are rooms (`event_id`, `room_pos`, `room_pw` hash); PBKDF2 passwords; HMAC session cookies; orphan shows adopted at startup (zones → one event). Left: one whole-event export file | E1, E3, E4 | |
-| **N2** | ✅ Done 2026-10-05: new home page (join by code / create event / open a screen / recent), event lobby with room sign-in and SuperOperator sign-in. The old setup wizard and connect sheet are retired | E1, E2 | |
-| **N3** | ✅ Done 2026-10-05: SuperOperator dashboard with per-room live cards linking to each room's Run and Screens pages (screens online per room) | E3, S4, T7 | |
-| **N4** | ✅ Done 2026-10-05: screens `kind` + `rotation`; capture and Screens page (`screens.js`) rebuilt; layouts have `rows` + `orientation`; template catalog by type | S1–S3, S7, S9 | |
-| **N5** | ✅ Done 2026-10-05: `to_audience` / `to_presenter`, results follow the targets, phones receive the audience target only, tiles follow `opts.target` | A4, A5 | |
-| **N6** | ✅ Done 2026-10-05: entries with pending/approved/answered/dismissed, upvotes, spotlight, auto-approve; moderator panel rebuilt (`moderate.js`) | A7 | |
-| **N7** | ✅ Done 2026-10-05: `rooms` + `eventschedule` tiles, event map default on the map tile, `/api/shows/:room/walkin` feed | S8 | |
-| **N8** | ✅ Done: htmx 4.0.1 vendored as `public/src/htmax.min.js` (htmx + bundled extensions); 2.0.11 removed; the `htmx:oobAfterSwap` listener is ported. Existing `hx-` sites use no inherited attributes. New UI should prefer htmx 4. Reference: `docs/reference/htmx4/` | H2 | |
-| **N9** | ✅ Done 2026-10-05: layout default animation (`anim`/`animMS`) + per-tile override for every content tile, set in the editor; content tiles animate on change | L2, L3 | |
-| **N10** | 🟡 `cues.day` (default 1) and `events.days` added. Left: day-scope the queries when multi-day UI arrives | M2 | |
-| **N11** | 🟡 Room page reorganised into Run · Audience · Setup tabs (tablet-friendly, wraps); touch targets ≥44 px on coarse pointers on the new pages. A dedicated tablet layout for the Run tab is still open | L6 | |
-| **N12** | ✅ Built 2026-10-07: event end (Event settings, venue local time); screens released at end + 4 h, never while a timer runs; extending the end clears it; delete releases at once; boxes poll `/api/pairing/status`. Test `TestEventEndReleasesScreens`. | H8 | [VENUE-CLOUD.md](docs/VENUE-CLOUD.md) §3 |
-| **N13** | ✅ Built 2026-10-07: 6-digit code on the box's own screen (`/d/box`, changes every 10 min); Pair a box on the event page (cloud or `timerpi.local`); the box gets its screen, key, event and mesh key; signed mDNS (closes BUGLOG RW15); unpaired boxes never lead. Code on the DRM splash waits for the kiosk decision. Tests `TestPairBoxByCode`, `TestSignedAnnouncements`, `TestBoxScreenSelf`. | H3, H7 | §4–5 |
-| **N14** | ✅ Built 2026-10-07: the leading box answers `timerpi.local` (moves on takeover; `timerpi` is a reserved hostname); an unset clock is taken from the primary or the Event Technician's browser at sign-in (`CAP_SYS_TIME`). Test `TestClockHint`. | H3 | §5 |
-| **N15** | ✅ Built 2026-10-07: first box pulls the event from the cloud, members mirror the primary; the primary's link streams its copy (venue wins), registers offline-made events once stable, tunnels remote operators on a stable link, read-only cloud copy otherwise; final copy at release. Test `TestCloudVenueEndToEnd`, `TestEventCopyRoundTrip`. Not tried on hardware. | H6 | §6–7 |
-| **N16** | ✅ Built 2026-10-07: phones stay on the cloud; votes and questions go to the venue over the link; the venue's on-air items come back live; "Audience paused" on phones while the link is down; the room's QR points at the cloud (`cloud_url`). Tests `TestCloudVenueEndToEnd`, `TestAudiencePausedWithoutLink`. | H2, H6 | §6 |
-| **N17** | ✅ Built 2026-10-07: `TIMERPI_ROLE=cloud\|box` (cloud: no mesh, mDNS, DRM, OSC); `/health` reports `version`, `proto`, `role`; mDNS TXT `proto`; boxes ignore peers on another major and flag `updateNeeded` (network page). No prompt on the display and no user action: an older box updates itself at its next boot (owner, 2026-10-07). Open: the same check on the cloud uplink (comes with N15). Tests `TestForeignProtoIgnored`, `TestHealthRoleAndProto`. | H6 | VENUE-CLOUD §9 |
-| **N18** | ✅ Built 2026-10-07, not tried on hardware: installer for Pi OS Lite (Trixie) with the venue mesh (`deploy/box/`: networkd `bat0` + `br0`, `timerpi-mesh` units, udev hotplug, nft LAN filter, Wi-Fi country GB); `timerpi mesh` applies the radio rule. Kiosk part waits for the owner. Tests `meshradio` (`TestPlanRadioRule`, `TestUpJoinsBothRadios`). | H3 | §11 |
-| **N19** | ✅ Built 2026-10-07: network page shows radios and bands, wired or not, other boxes with link quality, peer versions; radio settings (`POST /api/network/mesh`). Open: the two-DHCP-server warning. Test `TestMeshRadioSettings`. | H3 | §11 |
-| **N20** | 🟡 2026-10-07: `make build-amd64`, `deploy/cloud/` (unit, Caddyfile), OPS §8. Open: run the load test on the real container. | H6 | §10 |
-| **N21** | ✅ Built 2026-10-07: boot-time updates (5 min after boot, cloud + mesh peers, ed25519-signed manifests, never mid-timer, rollback after 2 failed starts), an UPDATE button on the box's network page when the boot update didn't happen, `/api/update/*`, `make release`, `tools/release`. Open: generate the release key and commit `update/release.pub` (until then builds never update). Tests `update` package, `TestUpdateServesPublishedBuild`, `TestUpdateButton`. | H6 | §14 |
-| **D1** | Hardware drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532. | H3 | §11.3 |
+| **N10** | Day-scope the queries. `cues.day` (default 1) and `events.days` exist; nothing reads them | M2 | Waits for the multi-day UI (out of scope for v2) |
+| **N11** | A dedicated tablet layout for the Run tab | L6 | The Run tab already fits 1024×768 (U49, U50); decide what more a tablet needs |
+| **N13** | Pairing code on the DRM splash | H7 | Waits for the kiosk decision (N18). The code already shows on `/d/box` |
+| **N17** | Protocol-version check on the cloud uplink | H6 | Boxes already ignore mesh peers on another major |
+| **N18** | Kiosk mode in the box installer | H3 | Owner decision pending. The installer and mesh are built, not tried on hardware |
+| **N19** | Warn when two DHCP servers are on the venue network | H3 | |
+| **N20** | Run the load harness on the real cloud container | H6 | `deploy/cloud/` and OPS §8 are ready |
+| **U26, U27** | Import: match columns by header | T6 | Deferred by the owner (2026-10-06) |
+| **U51** | "Done" rows are position-based: a cue dragged above the running one is struck through | T1 | The snapshot keeps no "has run" record (U50's known limit) |
+| **RS37** | Split `public/src/timerpi.js` (2,193 lines) and `public/src/board.js` (1,860) | | `db.go` is split |
+| **H5b** | A load client that drives a box from another machine | A10 | Today only real phones can load a box over Wi-Fi (HW-DRILLS §4b) |
 
-### 4.2a Owner feedback 2026-10-06 (UI round)
+## 4. Hardware / field proof
 
-Owner's list after trying the build, grouped by area. Wording kept close to the owner's.
-
-**Screens and displays**
-
-| ID | To do |
-|---|---|
-| **U1** | ✅ Done 2026-10-06: on a touch device with an orientation sensor (phones, tablets) screens ignore the Mounted rotation (first paint and live pushes) and follow the device; turning it re-lays the page. Kiosks/TVs keep Mounted. Browser test `device-rotation`. |
-| **U2** | ✅ Done 2026-10-06: no tap/F fullscreen and no hint chip on any screen (ready card included). Browser test `display-no-fullscreen`. |
-| **U3** | ✅ Done 2026-10-06: schedule tiles show `hh:mm  Title - Speaker` (planned start, 24 h, no duration; no time until the day has a start). Browser test `walkin-format`. |
-| **U4** | ✅ Done 2026-10-06: new **Current & next** tile (`nownext`): `Current Session: <title>` / `Next Session: <title>`, each with `Start Time`, `Duration`, `Speaker`. The Room walk-in templates use it; screens already on the old walk-in layout get it by picking the template again. Browser test `walkin-format`. |
-| **U5** | ✅ Done 2026-10-06: screens no longer print the room code ("Session XXXX-XXXX" lines, the title tile's code) or the corner join card with the control-room link. The audience join QR tile stays (that is how phones join). Test `TestScreensShowNoCode`. |
-| **U6** | ✅ Done 2026-10-06: screens print `Room: <name>` when the event has more than one room (titles, stage status, board title tile, walk-in room cards and schedule columns via the feed's `label`), and the bare name otherwise. Tests `TestScreensRoomPrefix`, browser `room-prefix`. |
-| **U7** | ✅ Done 2026-10-06: screens without audience tiles ignore poll updates, and list tiles (schedule, all rooms, event schedule, current & next, messages) only rebuild when what they show changes. That also ends the flicker on the event walk-in's 5 s refresh. Browser test `walkin-ignores-audience` (fails on the old code). |
-| **DR1** | ✅ Done 2026-10-20 (display review, blue-future): long overtime fits (fit.js) and drops tenths; the countdown is ftl `.countdown[data-state]` (pause glyph, muted held/armed, "+" sign, alert pulse, glow in the state colour); stage messages never reach audience/walk-in screens (server + board, Break and Room lobby layouts lose their messages tile); "Next up" uses the live countdown and no longer wraps to cue 1; a typed screen without a layout gets its type's first built-in; a portrait panel at rotation 0 gets the portrait version; no "Server link up" status line on screens; tiles are ftl panels, messages `.lower-third`, Q&A `.ranked-list` with a full-size "Now answering" spotlight and an "Answered" tag, word cloud six tones with a glowing top word, join QR `.qr-card` with its URL, blackout `.splash.is-standby`, ready card "READY TO SET UP"; empty presenter items, maps and speaker tiles give their room to a neighbour; idle audience tiles show Now/Next; break layout counts down to "Back at HH:MM"; brand-purple primary override retired. Tests `TestStageMessagesOnlyToPresenterScreens`, `TestTypeWithoutLayoutGetsDefault`, `TestNoStageMessagesOnAudienceFacingTemplates`, browser `display-review`. |
-| **DR2** | ✅ Done 2026-10-20 (display review round 2, blue-future): one content-fit for every audience tile (`fit.js fitHeight`: a 170-character question with ten options fits the audience display and the DSM at 1080p, 720p and portrait; a short poll grows into a tall portrait tile); a long spotlight fits the DSM and the wall keeps room for one card; the wall says "+N more", keeps answered questions as `.is-answered` cards after the open ones, puts the spotlight in its own `.ranked-list` and shows bare vote counts; word-cloud words keep ~0.25em apart; no "No messages on stage" band: an empty messages tile paints nothing and gives its room away (the editor shows a quiet hint), and absorb is worked out for the whole board (two empty neighbours, a tile that comes back); a room with no cues says "No sessions yet" once; one shared `percents()` for screen and phone (equal counts, equal %); Speaker support gains a countdown and messages; the stage day bar is ftl `.timeline-bar`; next titles wrap to two lines; held reads "due now" and mutes the cue bar; the Break notice reads only during a break; the event walk-in keeps its time column, "you are here" on one line, and gives a missing map's room to the schedule; the READY wordmark is sized as a wide mark. Tests `TestPresenterTemplatesHaveCountdownAndMessages`, browser `audience-tile-fit`, `display-review2`, `display-empty-fit`, `audience-tiles-motion`. |
-
-**Layouts and the Screens page**
-
-| ID | To do |
-|---|---|
-| **U8** | ✅ Done 2026-10-06: the editor is an almost-full-screen modal that opens already editing (one press), with a legend and labelled handles (⠿ move, ◢ resize, ⚙ settings, bin remove; tooltips and accessible names), buttons grouped right, hover outline, and a "Used by N screens" warning. Fullscreen no longer pops (U2). Browser test `layout-editor-flow`. |
-| **U9** | ✅ 2026-10-06: the Layout list on each screen card now offers the room's existing layouts and "Plain timer (no layout)" (applied at once) plus "New from template" (confirm). An unassigned screen no longer shows another layout's name (BUGLOG RW36), and going back to the plain timer or default theme reaches the live TV (RW35). Picking a template and the live TV following already worked in testing; the reported failure may have been the B8 mismatch this afternoon. Browser test `screen-layout-change`. |
-| **U10** | ✅ Done 2026-10-06: built-ins are listed in each screen's Layout list as **[built-in] …** and shown as they are (screens.template); they are never edited. Layouts belong to the event (every room lists them; deleting a room keeps them). The built-ins themselves are to be reworked later (owner). |
-| **U11** | ✅ Done 2026-10-06: Edit layout on a built-in (or the plain timer) asks for a name and what to start from, lists the same-type screens across the event by room (a moderator sees only rooms they moderate), creates the event layout, switches the ticked screens and opens the editor on it. |
-| **U12** | ✅ Done 2026-10-06: Forget is a red X (ftl `btn-danger btn-icon`, close icon) in each screen card's top-right corner, with a confirm that says the screen is released. Browser test `screen-forget`. |
-
-**Running order (Run tab)**
-
-| ID | To do |
-|---|---|
-| **U13** | ✅ Fixed 2026-10-06: while a cue cell was being edited, the client's row check saw the cell empty and rebuilt the table, destroying the input, so the next keys hit the shortcuts (Space = GO, R = reset). The rebuild now waits for the edit; the Screens page skips its redraw while a field is in use. Browser test `keys-while-typing`. |
-| **U14** | ✅ Done 2026-10-06: quick add has a Session/Break switch (Speaker box for sessions, "Where" box for breaks); `cues.location` is edited inline (the Speaker column of a break) and in the details panel; schedules read "Coffee — Great Hall", Current & next shows Location for a break. Browser test `break-location`. |
-| **U15** | ✅ Verified 2026-10-06: dragging a row above the running cue, or dragging the running cue itself, keeps it running with the same anchor (engine fix BUGLOG RC2). Browser test `reorder-running`. |
-| **U16** | ✅ Fixed 2026-10-06: the reset came from U13 (an "r" or space typed into a title reached the shortcuts). Also fixed: the details panel showed 30 minutes as "30:00" and saved it back as 30 hours, and alert/hold fields labelled m:ss were read as h:mm. Durations stay h:mm (2026-10-05 decision); alerts and hold are m:ss. Browser test `edit-running-cue`. |
-
-**Audience**
-
-| ID | To do |
-|---|---|
-| **U17** | ✅ Done 2026-10-06: the Audience tab uses ftl `.table`, `.switch`, `.btn-icon` and `<progress class="progress">`; the phone page and the audience screen tiles use `.panel`, `.empty-state`, `.btn`, `<progress class="progress">`, `.alert`, `.list`. Browser tests `audience-table`, `audience-ftl`. |
-| **U18** | ✅ Done 2026-10-06, reshaped 2026-10-20 (UA1): the Audience tab is an **On air** strip over a **library** table. Library: one row per item: Type, Title / Question (Live lamp / Results / to-review badges), Audience / Presenter Show/Hide toggles (ftl `aria-pressed`), Auto Approve switch, and a ⋯ menu (Edit, Clear responses, Delete). ftl `.table.is-stacked` turns rows into cards on phones. An off-air row with responses opens its tally or queue in a detail row. Browser test `audience-table`. |
-| **U46** | ✅ Done 2026-10-07: audience screen tiles are painted in place (`public/src/audtiles.js`), so nothing jumps. Titles top-aligned. Word cloud: plain words (no badges) rotated within ±90°, run by a physics loop — pulled to the centre, pushed apart so they never overlap, sizes easing, asleep at rest; new words fade in at the border. Wall: sorted by upvotes, spotlight is a thick border on the top card, new questions rise from the bottom, reorders slide, answered goes green then fades and the rest move up into its place. The wall list has no border of its own (cards carry it; ftl card-list request filed as ftl-themes #67). Poll options centred vertically; results grow in when shown. Phones drop dismissed and cleared questions from "Waiting for review" (frame `waiting` ids). One "Scan to take part" (the QR label). Room page: no legacy Open Display link; Audience tab has Clear per item and CSV Export; Run/Screens tabs no longer shift. Browser tests `audience-tiles-motion`, `audience-table`; tests `TestAudienceClearKeepsItem`, `TestAudienceExportCSV`, `TestAudienceWaitingIDs`. |
-| **UA1** | ✅ Done 2026-10-20 (UX review, audience): **on air is separate from the voting phase**: taking an item off air (Hide, a target toggled off, another item pushed) keeps its results and spotlight, and showing it again does not reopen voting; results cannot be hidden again (only Clear responses reopens). The On air strip shows the live Audience and Presenter items as cards with Show results / Take off air / ⋯ and their live tally or moderation queue. Queue: Approve all, Undo toast after Answered / Dismiss, Reopen answered, a Dismissed list with Restore; word clouds keep the cloud list open as removable chips with counts. "Live" is the lit ftl lamp (not error red); no primary buttons in rows. Phone page: the question is plain text, results show count and %, upvotes are square ftl toggles, cloud words ftl tags, and the footer always matches the link state (action feedback clears on any change). Browser tests `audience-onair-flow`, `audience-table`, `audience-phone-e2e`, `stage-message-keeps-item` (state frames keep the on-air items, mesh `_adopt`); Go test `TestOffAirKeepsResultsAndSpotlight`. |
-| **U47** | ✅ Done 2026-10-07: "SuperOperator" / "Supervisor password" read **Event Technician** / **Event Technician Password** everywhere users see them. Footer is sticky and shows Ping and Event ID (no Session). Run tab ≤1100 px is one column: Current cue full width, transport, running order, Messages, Import. Transport has **FLASH** (presenter screens blink the timer, WS `flash`). Add row says **Add Timer** and is as tall as the cue rows. Edit modal: Type first, Title, short Location / Duration labels, Timer + At zero on one line, Flash per alert (`alertFlash1/2`), no Tags, row colour full width under the notes. Tests `TestRoomFooterEventID`, `TestFlashFansOut`, `TestAlertFlashSaved`, browser `run-tablet-flash`. |
-| **R1-setup** | ✅ Done 2026-10-20 (UI/UX review, event and setup pages, blue-future): one primary per panel (room cards, Resume, Open a screen, Add room, Edit layout and preset Apply are secondary); idle room clocks are muted with no glow; the ⋯ room menu is the theme's `icon-more-horizontal` at 2.25rem; room actions patch the Event Technician page (no reload; the Pair form's room list follows); section headings are .85rem labels; card grids are auto-fill, so cards line up; Screens-card selects keep text clear of the chevron; toasts use ftl's anchor under the real app bar (phone two-row bar too); touch: 44px tile controls in the layout editor and 44px small buttons. Waiting screens: live first, newest first, big name, ftl `.connection` lamp, one-tap **Show the timer here** (presenter + Full timer); capture starts on the type's built-in (Audience main / Room walk-in / Full timer). Layout editor: a standard ftl modal (`.modal.is-maximized`, title + close, footer "Changes save automatically" + Done), no developer chrome in the frame, palette grouped (Add a tile / Canvas / Start over, built-ins in an ftl `.dropdown`); a tile dropped on another swaps with it, growing a tile trims the neighbour it grows into, otherwise a plain reason; the phone tile list (X/Y/W/H) shows again. "Change Theme" is **Page theme** (this browser only). Lobby sign-in: label above input + button. Upstream: `reviews/upstream-issues/modal-maximized-dialog.md`; `.otp { overflow: clip }` local workaround for review I15. Tests `TestListWaitingLiveNewestFirst`, `TestFmtAgoBoundaries`, browser `setup-pages-review`. |
-| **R2-ops** | ✅ Done 2026-10-20 (round-2 review, Event Technician / Screens / layout editor / moderator Audience on phones / audience phone): Pair rides on the Screen name row; room/event imports are bordered buttons; the default screen theme saves on change (full-width select); the Event ID's code is the bright part; the room lock is the theme's `icon-lock`; no "Sign in on your phone" on a phone; an imported event says so on its new page; the Event ID shows once (bar, or footer on phones). Screens page: the room page's one-row phone bar, an **Event** tab (phones only, Run and Screens) to the Event Technician, Layout/Theme full width on cards, tiles named as in the palette everywhere (`TILE_LABEL`, ui.js), a captured screen keeps the name the TV shows. Layout editor: readable chrome (13px floor, sprite icons), "Add a tile" is a dropdown at ≤1024px, a refused gesture says why on the tile, the save state floats (no canvas jump); on phones the canvas is a sticky live preview, one tile is selected at a time (tap a tile or its row), only it shows its bar, and only its row opens the X/Y/W/H steppers. Moderator: Undo after Answered/Dismiss also restores the spotlight; quiz editor catches a missing answer ("Tick the correct answer.", `aria-invalid`); phones fold the library while something is on air and show one-card rows. Phone: heartbeat ping every 15 s, a socket silent for 35 s is dropped (REST + reconnect), a send with no network says "Reconnecting…"; GET `/api/audience/:code` returns `mine` so a phone with cleared storage gets its vote back; one upvote mark. Tests `TestMine`, browser `review2-operator-audience`, `audience-onair-flow`, `setup-pages-review`. |
-| **U48** | ✅ Done 2026-10-20 (owner round): tab icon is the clock mark everywhere, with a real 16/32/48 px `favicon.ico` for Safari. Create event starts with **no rooms** (an event without named rooms gets one room and opens straight on its timer). The Event Technician page has **one room list**: the live cards, each with a ⋯ menu (rename, room password, move, duplicate, export, delete). **Sign out** (`POST /e/<code>/signout`) drops only the Event Technician session and lands on the Rooms page. Messages: **Send** shows the message at once (no Add/queue). Home: "Your recent events". Phones: running order shows #, title, duration, start and GO (long-press a row for All details / Delete), the transport sticks to the bottom, nothing overflows at 390 px. The offline engine (`engine.js`) keeps the running cue through reorders, like the server. Tests `TestEventQuickRoomAndSignOut`, `TestMessageFormSends`, `TestFavicon`, browser `event-admin-ftl`, `create-event-once`, `home-page`, `engine-reorder-offline`, `reorder-running`. |
-| **U49** | ✅ Done 2026-10-20 (UI/UX review, Run tab): fits at 1440×900 (left rail scrolls, day bar above the footer), 1024 touch (Type/End/At zero/Notes move to the cue editor, compact Current cue band) and 390 (one-row app bar without the bar clock and Event Technician link, a slim sticky bar: time left · FLASH · BLANK over Prev · GO · Pause · Next; the footer scrolls with the page). One primary per panel: row GOs are `.btn-tertiary`. Durations show as h:mm everywhere in the running order (the form the editors read) and the add row echoes what it understood ("10:00 (10 h)"). CSV/XLSX import: a bare number is minutes. ↑/↓ no longer step cues (scroll keys); ←/→ keep Prev/Next. Long press opens the row menu when the finger lifts; rows have a ⋯ on touch; the menu has Move up/down, and Alt+↑/↓ on the ftl `td.drag-handle` moves a row. ftl `.countdown[data-state]` (state changes announced), `.timeline-bar`, `tr.is-past/is-next/aria-current`, `.btn.is-armed` two-tap delete, `tr.is-drop-before/after`. One stage message at a time (Send and Show again replace it; the list is history) and the colour survives Send. Import adds to the end by default; Replace asks in an ftl modal. Tests `TestFmtDurHM`, `TestParseDurationMS` (bare = minutes), `TestMessagesCRUD` (one on stage), browser `run-page-review`, `room-current-transport`, `running-order-table`. |
-| **U50** | ✅ Done 2026-10-20 (UI/UX review round 2, Run tab and cue editor): inline edit fills its cell instead of widening the table (ftl inputs are `field-sizing: content`); row delete is a quiet ghost bin armed by ftl `.btn.is-armed`, and every delete (two-tap or the row menu) toasts **Undo**; touch rows keep only Go and ⋯ (Cue up, All details, Delete in the menu). Add row: a **Break** toggle (ftl `.toggle-btn`) where the Type column is hidden, and the type goes back to Session after each add. A cue over 4 h asks first (dialog.js) in the add row, the inline editor and the cue editor ("10:00" is 10 h: type 10 or 10m for minutes). Alerts read in units ("5m", "1m 30s"; bare = minutes, m:ss still accepted) and a length with seconds reads "1m 30s", not 0:01:30. Cue editor: the alerts sit side by side with one ftl `.color-dot` each (opens the swatch popover), Notes and Row colour behind an ftl accordion, a sticky footer (Save always in view at 1024×768 and 390×844), fields stack on phones; the "another colour" picker is the last ftl `.swatch` (no bare `<input type=color>`) and a preset equal to the default is not repeated. Import: an ftl `.dropzone` with a Choose file button; the closed panel is just its header. Tablet: the Current cue band is one row (clock beside title, meter, adjust and rate), 4+ rows show at 1024×768. Phone: the Current cue is one compact band too (title and speaker one line each, clock beside meter and rate, adjust under them) and long titles clamp to two lines, so 5 rows show on load; the page is the only scroller (the table header sticks under the tabs), WRAP UP rides the sticky bar (time left · FLASH · WRAP UP · BLANK over Prev · GO · Pause · Next), toasts sit above the bar; the add row fits. The row menu focuses its first item only when opened from the keyboard. ±time buttons and toast say they change the planned length. Known limit: "done" rows are position-based (the snapshot keeps no "has run" record), so a cue dragged above the running one is struck through. Upstream: `reviews/upstream-issues/ftl-modal-sticky-footer.md`. Tests `TestFmtUnits`, `TestFmtDurHM`, browser `run-page-round2`. |
-
-**Home and event pages**
-
-| ID | To do |
-|---|---|
-| **U19** | ✅ Done 2026-10-06: the screen door is "Open a screen here" with an **Open a screen** button and one hint line. |
-| **U20** | ✅ Done 2026-10-06: "Your recent events" (renamed 2026-10-20) sits above the title, only when this browser has one (hidden again when the last is forgotten), each row with **Resume**. |
-| **U21** | ✅ Done 2026-10-06. |
-| **U22** | ✅ Done 2026-10-06. |
-| **U23** | ✅ Done 2026-10-06 ("Join event", "Create event", error text). Browser test `home-page` covers U19–U23. |
-| **U24** | ✅ Done 2026-10-06: event pages and the room page say **Leave event** (`POST /e/<code>/leave` form since 2026-10-08: drops this browser's sessions for that event only); the code at the top is labelled **Event ID**. Test `TestLeaveEventOnlyThisEvent`. |
-
-**Roles and the room page**
-
-| ID | To do |
-|---|---|
-| **U25** | ✅ Done 2026-10-06: moderators get Run and Audience only. Screens, layouts, presets and screen capture need the SuperOperator (API and page). Test `TestModeratorRunAndAudienceOnly`, browser `room-scope`. |
-| **U26** | 🟡 Moderators import a running order from the Run tab (Import panel). Header matching is deferred (owner, 2026-10-06). |
-| **U27** | Deferred with U26's header matching (owner, 2026-10-06). |
-| **U28** | ✅ Done 2026-10-06: the room page's theme picker shows for the SuperOperator only; screen themes are set on the Screens page (SuperOperator). |
-| **U29** | ✅ Done 2026-10-06: no Setup tab. Import → Run (collapsible); Duplicate → SuperOperator dashboard rooms table; presets → Screens page; the old Screens panel (a copy of the Screens page) is gone. |
-
-**Room page tidy (owner, 2026-10-06)**
-
-Decisions: auto-continue, auto-start ("at HH:MM") and Hold after are removed as behaviour too: the engine stops honouring them and imports ignore them (stored values stay unused; midnight/day rollover stays). Reset is removed entirely (no button, no R key; GO on a row restarts it). The inline table columns are: drag handle, #, Type, Title, Speaker / Where, Duration, Start, End, Timer, At zero, Alert 1 + colour, Alert 2 + colour, Notes, row actions. Tags and row colour stay in the details panel.
-
-| ID | To do |
-|---|---|
-| **U30** | ✅ Done 2026-10-06: Alert colours (details panel, add row, row dots) use ftl `.swatches` plus a native colour input. |
-| **U31** | ✅ Done 2026-10-06: Transport above the running order; Stop/Reset and the R key are gone. |
-| **U32** | ✅ Done 2026-10-06: Adjust buttons sit right under the readout. |
-| **U33** | ✅ Done 2026-10-06: The readout scales with the rail (container units); "0:09.4" fits at any width. |
-| **U34** | ✅ Done 2026-10-06: The time of day sits at the top centre of the header bar. |
-| **U35** | ✅ Done 2026-10-06: The key hint line and its popover are gone. |
-| **U36** | ✅ Done 2026-10-06: Filter and undo button gone; Cmd/Ctrl+Z still undoes. |
-| **U37** | ✅ Done 2026-10-06: Left column: Current cue, Messages, Import. |
-| **U38** | ✅ Done 2026-10-06: No Next up in the Current cue pane. |
-| **U39** | ✅ Done 2026-10-06: One table with the agreed columns; every cell edits inline; a footer row adds a cue (typed values survive live updates). |
-| **U40** | ✅ Done 2026-10-06: Rows drag by the grip; no arrows. |
-| **U41** | ✅ Done 2026-10-06: Duplicate is in the right-click / long-press row menu (ftl `.context-menu`). |
-| **U42** | ✅ Done 2026-10-06: Removed as behaviour too: nothing starts by itself, holds move nothing, Normalize drops them on every write. |
-| **U43** | ✅ Done 2026-10-06: Breaks wear the theme's `--accent-2`. |
-| **U44** | ✅ Done 2026-10-06: Forget is ftl's `.btn-close` (the theme's own close button), tinted danger. Browser test `screen-forget`. |
-| **U45** | ✅ Done 2026-10-06: Current cue reads title/speaker, readout, progress bar, then adjust (−1m −30s +30s +1m +5m) and Rate; the state lamp, chip and "vs plan" line are gone. Transport: GO is 25% taller than its neighbours, Prev/Next are bordered ftl buttons, BLANK is `.btn-danger`. Browser test `room-current-transport`. |
-
-### 4.3 Cleanup (hanging leftovers)
-
-| ID | Item |
-|---|---|
-| **C1** | ✅ Done: `TIMERPI_HTTP_PORT` (legacy name still honoured). |
-| **C2** | ✅ Done: ftl-themes is a submodule pinned to an upstream commit. The local `timerpi` theme is shelved (branch `timerpi-theme-local` in the old clone), so it is no longer in the picker. |
-| **C3** | ✅ Done: dead `displayPage`, the stale registration guard, `htmx-ext-ws.js` and the `/frag/shows` comments are removed. (`screen` is a valid join role, so the `mesh.js` check stays.) |
-| **C4** | ✅ Done: one scheme, the `asset` template func with a content-hash path segment (ARCHITECTURE §12). The versioned copies and `bump-assets.sh` are deleted. |
-| **C5** | ✅ Done 2026-10-06: template presets and the factory layout ("Reset layout") come from the server (`/api/board-templates`: `catalog`, `templates`, `default`). |
-| **C6** | ✅ References to files that never existed are removed. Citations of `PLAN §…`, `CONTRACT-UI`, `NOTES-board` resolve via `docs/archive/README.md`. |
-| **C7** | ✅ Done. |
-| **C8** | ✅ `docs/UI-CONTRACT.md`. |
-| **C9** | ✅ Done 2026-10-06: `templates/` and `public/` are embedded in the binary (`-dev` still reads disk). ftl-themes stay on disk (pinned submodule, 48 MB, independent of TimerPi's code). |
-| **C10** | ✅ Done 2026-10-06 (BUGLOG RW7): `/zone/*` redirects home; the zone API and zone maps are gone; room bundles carry the event map (`mapIndex`) and read a legacy `zone`/`zoneMapIndex` only to fill an event without a map. `shows.zone` stays for adopting pre-event databases. |
-
-### 4.4 Hardware / field proof
+Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installer, boot-time updates) is built and tested in software only.
 
 | ID | Drill | Runbook |
 |---|---|---|
 | H1 | Two-Pi LAN mesh | docs/HW-DRILLS.md §1 |
 | H2 | DRM renderer 1080p50 | docs/HW-DRILLS.md §2 |
 | H3 | Pi deploy acceptance | docs/PI-DEPLOY.md |
-| H4 | Two-machine browser P2P offline drill | docs/HW-DRILLS.md §3 |
-| H5 | **Audience load on a Pi 4/5 over real Wi-Fi**: 200 phones (floor), then 1,000. The access point is usually the bottleneck | to write |
-| H6 | Portrait walk-in on a real rotated TV (kiosk Pi + a smart-TV browser) | to write with N4 |
+| H4 | Two-machine browser P2P offline drill (also proves S5) | docs/HW-DRILLS.md §3 |
+| H5 | Audience load on a Pi 4/5: 200 phones (floor), then 1,000; then real phones over the venue Wi-Fi | docs/HW-DRILLS.md §4 |
+| H6 | Portrait walk-in on a real rotated TV (kiosk Pi + a smart-TV browser) | docs/HW-DRILLS.md §5 |
+| D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532 | docs/VENUE-CLOUD.md §11.3 |
 
-### 4.5 Suggested order
+## 5. Done
 
-As of 2026-11-11: B1–B7, C1–C4, D2–D5 and N1–N9, N12–N19, N21 are done.
+One line per ID, so citations in code and commits still resolve. Detail: `git log --grep=<ID>`.
 
-1. **N10** (day-scoped queries) and **N11** (tablet Run layout) — the last spec rows.
-2. **Blocked on hardware**: B8 (LED board), D1 (radio drill), H1–H6 (drills; H5/H6 runbooks still to write).
-3. **Drills**: H4 / S5 (two-machine), S9 load harness (N20).
-4. **Owner-pending**: N18 kiosk mode.
+**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it.
 
-After the 2026-10-06 review: BUGLOG RC1–RC8 come before everything above, and the security (RW1–RW16) and performance (RW53–RW58) warnings come before H5.
+**Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 
-## 5. Open questions
+**Venue and cloud** (software only, see §4). N12 event end releases screens · N13 pairing by 6-digit code, signed mDNS · N14 `timerpi.local` follows the leading box, clock hint · N15 cloud↔venue event copy · N16 phones stay on the cloud · N17 `TIMERPI_ROLE`, protocol version in `/health` and mDNS · N18 box installer and venue mesh · N19 network page radios and peers · N21 boot-time updates; release key embedded 2026-11-12.
 
-None open. VENUE-CLOUD §7 records the sync rules (2026-10-06); confirm the "stable link" time and offline-created events when N15 starts.
+**Screens and displays.** U1 handheld screens follow the device, not Mounted · U2 no fullscreen tap or hint · U3 schedule line format · U4 Current & next tile · U5 no codes on screens · U6 "Room: <name>" when there are several rooms · U7 list tiles rebuild only on change · DR1, DR2 display reviews (content fit, ftl components, empty tiles give their room away).
+
+**Layouts and the Screens page.** U8 layout editor modal · U9 layout list on each screen card · U10 built-ins listed, never edited · U11 editing a built-in makes a named event copy · U12, U44 Forget · R1-setup, R2-ops setup-page and phone reviews.
+
+**Run tab.** U13 typing never reaches the shortcuts · U14 breaks carry a location · U15 reorders keep the running cue · U16 duration and alert units · U30–U41, U43, U45 room page tidy (one inline table, transport above it, swatches, row menu) · U31 no Reset · U42 no auto-continue, auto-start or hold after · U47 Event Technician naming, footer, FLASH · U48 owner round (rooms optional, sign out, one Send) · U49, U50 Run tab reviews (tablet and phone fit, h:mm, undo on delete, cue editor).
+
+**Audience.** U17 ftl components · U18 On air strip over a library · U46 tiles painted in place · UA1 on air is separate from the voting phase.
+
+**Home, event pages, roles.** U19–U24 home and event page wording, Leave event · U25 moderators get Run and Audience only · U28 theme picker for the Event Technician only · U29 no Setup tab.
+
+**Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired.
+
+**Engine.** The browser's offline engine matches the server, held to it by `TestEngineParityWithJS` (2026-11-12).
+
+## 6. Suggested order
+
+1. **Hardware**: H3 (deploy), H1, H2, then H5 and H6; D1 with the mesh. Nothing in §4 has run on a Pi.
+2. **N20**: the load harness on the cloud container, before the first show.
+3. **Owner decision**: N18 kiosk mode (unblocks N13).
+4. **RS37**: split the two large scripts, behind the browser tests.
+5. N11, N17, N19, U51, H5b as they come up. N10 waits for the multi-day UI.
+
+## 7. Open questions
+
+None open. VENUE-CLOUD §7 records the sync rules (2026-10-06).

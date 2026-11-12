@@ -4,7 +4,7 @@
 > `docs/reset-2026-10` at `c8b8936`), one row per issue. This is the
 > working list: when you fix one, set its **Status** to `Fixed <date>`
 > with the commit, and land a test with it (AGENTS.md). New bugs get the
-> next free ID in their severity group. STATUS.md §4.1 points here.
+> next free ID in their severity group. STATUS.md §3 points here.
 
 **IDs:** `RC` = Critical, `RW` = Warning, `RS` = Suggestion. They don't
 collide with the PRODUCT (E, T, S, A, L, H, M) or STATUS (B, N, C, H) IDs.

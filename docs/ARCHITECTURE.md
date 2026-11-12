@@ -229,10 +229,11 @@ template, JS or CSS change.
 
 Runbooks: [OPS.md](OPS.md), [PI-DEPLOY.md](PI-DEPLOY.md), [HW-DRILLS.md](HW-DRILLS.md).
 
-## 14. Target shape: the event model (PRODUCT §3, STATUS §1)
+## 14. The event model as designed (PRODUCT §3)
 
-The direction for STATUS N1–N10, so new code lands in the right place. These
-are not built yet.
+The shape STATUS N1–N9 were built to, kept as the design record. Where the
+code differs, the code and §3 are right: days are `events.days` and
+`cues.day` (N10, not yet read by any query), not an `event_days` table.
 
 **Data**
 
