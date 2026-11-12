@@ -226,7 +226,10 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
     case 'start':
       return startCue(snap, named ? cueRef(snap, args) : (r.activePos ? cue : snap.cues[0]), now);
     case 'go': {
-      if (named) return startCue(snap, cueRef(snap, args), now); // GO on a row
+      if (named) { // GO on a row; on the armed or held cue it is a plain GO (engine.go GoAt)
+        const target = cueRef(snap, args);
+        if (!target || target.pos !== r.activePos || r.running || r.paused) return startCue(snap, target, now);
+      }
       if (!r.activePos) return startCue(snap, snap.cues[0], now);
       // Armed or held at zero: run it (again). Running or paused: the next cue.
       const target = !(r.running || r.paused) ? cue : cueAfter(snap, r.activePos);

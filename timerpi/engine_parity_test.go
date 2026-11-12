@@ -94,6 +94,10 @@ var parityScenarios = []parityScenario{
 		pStep("go", 0), pStep("tick", 599_000), pStep("tick", 2_000), pStep("tick", 60_000),
 		pStep("pause", 0), pStep("resume", 0), pStep("start", 0), pStep("go", 1_000), pStep("tick", 1_000),
 	}},
+	{"go on the row of a held cue runs it again", []parityStep{
+		pStep("go", 0, "pos", 1.0), pStep("tick", 601_000), pStep("go", 1_000, "pos", 1.0), pStep("tick", 1_000),
+		pStep("pause", 0), pStep("go", 1_000, "pos", 1.0), pStep("go", 1_000, "pos", 1.0),
+	}},
 	{"overtime keeps counting", []parityStep{pStep("go", 0, "pos", 2.0), pStep("tick", 1_300_000), pStep("go", 0)}},
 	{"blank freezes at zero", []parityStep{pStep("go", 0, "pos", 4.0), pStep("tick", 61_000), pStep("go", 5_000)}},
 	{"count-up never crosses", []parityStep{pStep("go", 0, "pos", 5.0), pStep("tick", 500_000)}},
@@ -146,12 +150,6 @@ func parityGo(t *testing.T, sc parityScenario) []parityState {
 		switch st.Action {
 		case "tick":
 			_ = e.Tick(clk.Now())
-		case "go":
-			if pos > 0 {
-				_ = e.ApplyCmd("start", st.Args)
-			} else {
-				_ = e.ApplyCmd("go", st.Args)
-			}
 		case "pause":
 			if e.Runtime().Paused {
 				_ = e.ApplyCmd("resume", st.Args)

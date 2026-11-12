@@ -105,7 +105,7 @@ stands while cues still merge per cue.
 Transport (`go`, `start`, `pause`, `resume`, `next`, `prev`, `jump`, `rate`)
 and the zero crossing give the same result offline as on the server: Next and
 Prev arm, cue up arms, GO past the last cue does nothing, a held cue restarts
-only on a plain GO, rate stays within ×0.5–×2 (§8, parity test).
+on GO (plain or on its own row), rate stays within ×0.5–×2 (§8, parity test).
 
 Insert/delete positional shifts do NOT restamp (§3 tie rule). Every applied
 op bumps `snap.updatedAt` and sets `_advancedOffline`.

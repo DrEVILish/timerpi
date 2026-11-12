@@ -3,8 +3,10 @@
 // Load harness (PLAN §11.5, phase 4) — gated behind TP_LOAD=1 so the normal
 // suite stays fast: `TP_LOAD=1 go test ./ws/ -run TestLoad -v`.
 //
-// TestLoadSteadyAudience: N audience phones on the lane, 50 broadcasts/s —
-// p95 delivery latency < 100 ms, ≥99% of frames delivered.
+// TestLoadSteadyAudience: N audience phones on the lane, 50 vote
+// broadcasts/s for 3 s. The hub coalesces those to one per pollBatchWindow,
+// and every one of those must reach ≥99% of the phones with p95 delivery
+// latency < 100 ms.
 // TestLoadJoinStorm: N phones scanning the QR within a few seconds — every
 // join answered, no cap spills, boards unaffected.
 //
@@ -16,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"syscall"
@@ -153,21 +156,25 @@ func TestLoadSteadyAudience(t *testing.T) {
 		c.Close()
 	}
 
-	// ≥99% of frames reached ≥99% of the lane; p95 latency < 100 ms.
+	// The hub sends one frame per pollBatchWindow however many votes arrive
+	// (BroadcastPoll), so that is what each phone must see: all of them bar
+	// one at the edge of the window, on ≥99% of the lane; p95 < 100 ms.
+	want := int(3*time.Second/pollBatchWindow) - 1
 	var all []int64
 	missedClients := 0
 	for i := range conns {
-		if sent > 0 && got[i] < sent*99/100 {
+		if got[i] < want {
 			missedClients++
 		}
 		all = append(all, latencies[i]...)
 	}
 	if missedClients > len(conns)/100 {
-		t.Errorf("%d/%d clients missed >1%% of frames", missedClients, len(conns))
+		t.Errorf("%d/%d clients got fewer than %d frames", missedClients, len(conns), want)
 	}
+	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
 	if len(all) > 1 {
 		p95 := all[len(all)*95/100]
-		t.Logf("audience lane: %d clients, %d frames sent, p95 latency %dms", len(conns), sent, p95)
+		t.Logf("audience lane: %d clients, %d broadcasts asked, ≥%d frames each, p95 latency %dms", len(conns), sent, want, p95)
 		if p95 > 100 {
 			t.Errorf("p95 broadcast latency %dms > 100ms", p95)
 		}

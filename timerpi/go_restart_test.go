@@ -40,3 +40,30 @@ func TestGoRestartsHeldCue(t *testing.T) {
 		t.Fatalf("restarted cue did not hold at zero: %+v", rt)
 	}
 }
+
+// GO on the held cue's own row is the same GO (PRODUCT T2: "GO on a row
+// restarts that cue"); the row button was refused with ErrNoTimeLeft.
+func TestGoOnRowRestartsHeldCue(t *testing.T) {
+	t0 := int64(1_700_000_000_000)
+	e, clk := newTestEngine(t, t0, nil)
+	if err := e.Start(1); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	clk.ms += 600_001
+	if err := e.Tick(clk.Now()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	if err := e.ApplyCmd("go", map[string]any{"pos": float64(1)}); err != nil {
+		t.Fatalf("GO on the held row: %v", err)
+	}
+	if rt := e.Runtime(); rt.ActivePos != 1 || !rt.Running || timerOf(t, e).RemainingMS != 600_000 {
+		t.Fatalf("row GO did not restart cue1: %+v", rt)
+	}
+	// On another row it starts that row, running or not.
+	if err := e.ApplyCmd("go", map[string]any{"pos": float64(3)}); err != nil {
+		t.Fatalf("GO on row 3: %v", err)
+	}
+	if rt := e.Runtime(); rt.ActivePos != 3 || !rt.Running {
+		t.Fatalf("row GO did not start cue3: %+v", rt)
+	}
+}

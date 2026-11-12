@@ -154,7 +154,7 @@ func (h *Hub) command(s *session, action string, rawArgs json.RawMessage, errOf 
 	// --- transport (engine-owned) ---
 	case "go":
 		if argInt(args, "pos") > 0 {
-			h.engDone(s, "start", fmt.Sprintf("pos %d", argInt(args, "pos")), errOf, eng.ApplyCmd("start", args))
+			h.engDone(s, "start", fmt.Sprintf("pos %d", argInt(args, "pos")), errOf, eng.ApplyCmd("go", args))
 		} else {
 			h.engDone(s, "go", "", errOf, eng.ApplyCmd("go", args))
 		}

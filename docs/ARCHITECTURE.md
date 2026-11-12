@@ -118,7 +118,7 @@ go to the home page.
 - Votes do **not** trigger a snapshot fanout. `Hub.BroadcastPoll` sends a small poll-only frame (~150 B) to the audience bucket and the boards.
 - Votes and asks go over REST with rate limits: 300 ms per peer per vote, 3 s per peer per ask, and a 600 votes/s per-show soak limit that answers 429 with Retry-After.
 - A phone's device id (`tp_aud` cookie) is minted lazily on its first vote or ask, budgeted at 2,000 per room per client IP per 10 min (`routes/audience_device.go`): a whole venue behind one NAT IP fits PRODUCT A10's 1,000 phones (`TestAudienceThousandPhonesOneIP`), while a cookie-dropping script stays bounded.
-- Load harness `ws/load_test.go` (run with `TP_LOAD=1`): 1,000 phones, 1,000/1,000 join storm, p95 broadcast 24 ms in the dev container. **Not yet measured on a Pi.**
+- Load harness `ws/load_test.go` (run with `TP_LOAD=1`): 1,000 phones, 1,000/1,000 join storm, p95 broadcast 12 ms in the dev container (2026-11-12). **Not yet measured on a Pi.**
 
 ## 6. Screens, layouts and templates
 

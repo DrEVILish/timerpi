@@ -1,9 +1,9 @@
 # HW-DRILLS — bench runbooks for the hardware-blocked ladder items
 
-One-shot procedures for C1 (two-Pi LAN mesh), C3 (DRM renderer) and the
-C2 P2P re-run. Each drill lists prerequisites, exact commands, expected
+One-shot procedures for C1 (two-Pi LAN mesh), C3 (DRM renderer), the
+C2 P2P re-run, H5 (audience load) and H6 (portrait walk-in). Each drill lists prerequisites, exact commands, expected
 output and timing budgets — run top to bottom, paste the result log
-(§5) back when done so the ladder rows can be closed.
+(§7) back when done so the ladder rows can be closed.
 
 Code facts these drills rely on (all verified in-tree 2026-10-05):
 
@@ -152,18 +152,73 @@ so this drill cannot pass there by construction.
    peer adopts the merged snapshot. PASS: no manual sync kick, both
    tabs converge on identical cue lists.
 
-## 4. What "done" means per ladder row
+## 4. Drill H5 — audience load on a Pi (PRODUCT A10)
+
+Budget ~30 min. Two stages: 4a measures the Pi itself, 4b the venue Wi-Fi.
+Run 4a first; if it fails there is no point filling a room with phones.
+
+### 4a. The harness on the Pi (CPU and memory, no Wi-Fi)
+
+The harness (`ws/load_test.go`) starts its own server and its own fake
+phones in one process, so it needs nothing installed on the Pi.
+
+1. On the build machine:
+   `CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go test -c -o bin/ws-load.test ./ws`
+2. `scp bin/ws-load.test root@<pi>:/tmp/`
+3. On the Pi, with `timerpi.service` running as it would at a show:
+   `ulimit -n 8192; cd /tmp && TP_LOAD=1 TP_LOAD_N=200 ./ws-load.test -test.run TestLoad -test.v`
+   then again with `TP_LOAD_N=1000`.
+4. PASS at each size: both tests pass (every join answered; every phone gets
+   the coalesced frames; p95 latency < 100 ms). Note the p95 and the join
+   storm time. A screen on the same Pi must keep ticking smoothly throughout.
+
+### 4b. Real phones on the venue Wi-Fi
+
+There is no synthetic client that loads a box from another machine (STATUS
+H5), so this stage uses real phones: as many as you can gather, 20 at least.
+
+1. Put a poll on air in one room; every phone scans the room's QR.
+2. Everyone votes within about 5 s, then changes their vote a few times.
+3. PASS: every phone shows the results within 2 s of Show results; no phone
+   shows "Reconnecting…" for more than a moment; the audience screen's bars
+   match the moderator's tally; the moderator's footer ping stays under
+   100 ms.
+4. Note the access point model and how many phones it carried. The access
+   point is usually the limit, not the Pi.
+
+## 5. Drill H6 — portrait walk-in on a rotated TV (PRODUCT S7, S8, L5)
+
+Budget ~15 min. Needs a TV hung portrait, once fed by a kiosk Pi and once
+by its own smart-TV browser (or any PC browser on a portrait monitor).
+
+1. Open `/d/` on the screen. It shows the READY card, readable although the
+   panel is on its side.
+2. On the Event Technician's Screens page capture it as **Walk-in**, layout
+   Event (or Room), Mounted 90° (270° if the TV hangs the other way).
+   PASS: within 2 s the screen shows the portrait version, upright, filling
+   the panel with no scroll bars and no letterboxing.
+3. Read it from 5 m: clock, current and next sessions and the schedule are
+   legible; nothing is clipped at the panel edges.
+4. Start a cue in a room. PASS: "All rooms now" follows within 5 s without a
+   page reload or flicker.
+5. Change Mounted to 0° and back. PASS: the screen follows live each time.
+6. Power-cycle the TV (and the Pi). PASS: it comes back on the same layout
+   and rotation with no one touching it.
+
+## 6. What "done" means per ladder row
 
 | row | close when |
 |---|---|
 | C1 | §1a–1g all PASS; result log pasted; no dual-primary outside overrides |
 | C3 | §2 steps 4+6 PASS at 1920x1080@50; framebuffer alternating confirmed |
 | C2 | §3 steps 2+4+5 PASS with `connected`/`open` channels on a real machine |
+| H5 | §4a PASS at 200 and 1,000; §4b PASS with the phone count and access point noted |
+| H6 | §5 steps 2–6 PASS on a kiosk Pi and on one other browser |
 
-## 5. Result log template (paste back into the session)
+## 7. Result log template (paste back into the session)
 
 ```
-DRILL: C1|C3|C2-P2P   DATE:           BENCH HOST:
+DRILL: C1|C3|C2-P2P|H5|H6   DATE:           BENCH HOST:
 PI(s): <hostname> <model> <os> / panel: <model|none>
 1a primary=A epoch=E_A: PASS|FAIL (output:)
 1b member join + avahi both: PASS|FAIL
@@ -173,5 +228,8 @@ PI(s): <hostname> <model> <os> / panel: <model|none>
 1f name conflict + clear: PASS|FAIL
 C3 TestHW RUN (not skip): PASS|FAIL; mode 1080p50: y/n; live tick: y/n
 C2 channels connected+open: y/n; dark replication peer-follows: y/n; merge toast: y/n
+H5 4a N=200 p95=  ms storm=  s: PASS|FAIL; N=1000 p95=  ms storm=  s: PASS|FAIL
+H5 4b phones=   AP=        results<2s: y/n; reconnects: y/n
+H6 portrait upright+fills: y/n; live follow: y/n; survives power cycle: y/n
 NOTES:
 ```

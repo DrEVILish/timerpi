@@ -225,6 +225,9 @@ func (e *Engine) ApplyCmd(action string, args map[string]any) error {
 	case "prev":
 		return e.Prev()
 	case "go":
+		if pos := argInt(args, "pos"); pos > 0 {
+			return e.GoAt(pos) // GO on a row
+		}
 		return e.Go()
 	case "jump":
 		return e.Jump(argInt(args, "pos"))
@@ -316,6 +319,22 @@ func (e *Engine) Reset() error {
 func (e *Engine) Go() error {
 	err := e.runMutation(e.goLocked)
 	if err == nil { // GO past the last cue must not re-fire the running one (RW24)
+		e.fireStart()
+	}
+	return err
+}
+
+// GoAt is GO on a row: it runs the cue at pos from the top. On the armed or
+// held cue that is a plain GO, so a cue held at zero runs again (PRODUCT
+// T2); Start(pos) alone refused it with ErrNoTimeLeft.
+func (e *Engine) GoAt(pos int64) error {
+	err := e.runMutation(func() error {
+		if pos == e.rt.ActivePos && !e.rt.Running {
+			return e.goLocked()
+		}
+		return e.startLocked(pos)
+	})
+	if err == nil {
 		e.fireStart()
 	}
 	return err
