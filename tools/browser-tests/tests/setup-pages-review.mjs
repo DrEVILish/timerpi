@@ -112,7 +112,7 @@ export async function run(t) {
     pair: [...document.querySelectorAll('#pair-room option')].map((o) => o.textContent) }));
   t.check(`Add room patches the page, no reload (${JSON.stringify(after)})`, after.kept && after.cards === 2 && after.pair.includes('Annex'));
   const primaries = await ad.$$eval('#live-grid .btn-primary', (b) => b.length);
-  t.check(`room cards carry no primary button (${primaries})`, primaries === 0);
+  t.check(`room rows carry no primary button (${primaries})`, primaries === 0);
 
   /* ---- phone: 44px tile controls (#13), toasts clear the bar (#12) ---- */
   const phone = await t.browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, storageState: await ctx.storageState() });

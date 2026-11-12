@@ -1,4 +1,4 @@
-// ftl swaps on the Event Technician page: rooms are the live cards with an
+// ftl swaps on the Event Technician page: rooms are live table rows with an
 // ftl dropdown ⋯ menu (rename etc.), Sign out goes back to the Rooms page, the live footer is an
 // ftl .connection, and the pairing code is an ftl .otp that keeps a pasted
 // "123 456" as six digits.
@@ -15,10 +15,10 @@ export async function run(t) {
   t.check('the live footer is an ftl .connection in state live',
     await pg.$eval('#live-status', (e) => e.classList.contains('connection') && e.dataset.state === 'live'));
 
-  // One room list (2026-10-20): the live card's ⋯ menu renames the room.
+  // One room list (2026-10-20): the live row's ⋯ menu renames the room.
   const card = `#live-grid [data-room="${room}"]`;
   await pg.waitForSelector(`${card} [data-room-menu]`);
-  t.check('the dashboard has one room list (no rooms table)', !(await pg.$('#rooms-body')));
+  t.check('the dashboard has one room list (no second rooms table)', !(await pg.$('#rooms-body')));
   await pg.click(`${card} [data-room-menu]`);
   t.check('the ⋯ menu is an ftl dropdown popover', await pg.$eval('#room-menu', (m) => m.matches('.dropdown:popover-open')));
   t.check('a single room has no Move up/down', await pg.$$eval('#room-menu [data-room-move]', (bs) => bs.every((b) => b.hidden)));
@@ -29,14 +29,14 @@ export async function run(t) {
   await pg.waitForFunction((c) => document.querySelector(c)?.textContent.includes('Main hall'), card, { timeout: 5000 }).catch(() => {});
   const lobby = await (await ctx.request.get(`${t.base}/api/events/${event}`)).json();
   t.check('the new name is stored', lobby.event.rooms[0].name === 'Main hall');
-  t.check('the card shows the new name', await pg.waitForFunction((c) => document.querySelector(c)?.textContent.includes('Main hall'), card).then(() => true, () => false));
+  t.check('the row shows the new name', await pg.waitForFunction((c) => document.querySelector(c)?.textContent.includes('Main hall'), card).then(() => true, () => false));
 
   // Sign out (2026-10-20): back to the event's Rooms page, no longer the Event Technician.
   await Promise.all([pg.waitForURL(`${t.base}/e/${event}`), pg.click('form[action$="/signout"] button')]);
   t.check('sign out lands on the Rooms page with the Event Technician sign-in', !!(await pg.$('#super-login')));
   t.check('the Event Technician session is gone', (await ctx.request.get(`${t.base}/api/events/${event}/live`)).status() === 401);
   await ctx.request.post(`${t.base}/api/events/${event}/login`, { data: { pw: 'test-pw1' }, headers: { Origin: t.base } });
-  await pg.goto(`${t.base}/e/${event}/admin`);
+  await pg.goto(`${t.base}/e/${event}/admin#setup`);
 
   t.check('the pairing code is an ftl .otp', !!(await pg.$('.otp > input#pair-code.otp-input[autocomplete="one-time-code"]')));
   await pg.focus('#pair-code');

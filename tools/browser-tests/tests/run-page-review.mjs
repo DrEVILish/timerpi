@@ -75,9 +75,15 @@ export async function run(t) {
     const o = await overflow(pg);
     t.check(`tablet: the running order fits (page ${o.doc}, table ${o.wrap})`, o.doc <= 0 && o.wrap <= 0);
     t.check('tablet: every row action, ⋯ included, is on screen', await pg.$$eval('#cuelist tbody [data-row-menu]', (n) => n.length > 0 && n.every((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth; })));
-    const dot = await pg.$eval('#cuelist tfoot [data-pick]', (b) => { b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top - 10); return h === b; });
-    t.check('tablet: the alert colour dot has a touch-sized hit area', dot);
+    t.check('tablet: timer and alerts move to the cue editor (the On air column takes a share)', !(await pg.isVisible('#cuelist tfoot [data-pick]')));
     t.check(`tablet: no page errors (${errs.join('; ') || 'none'})`, errs.length === 0);
+    await c.close();
+  }
+  // --- Wide touch screen: the alert dot is a 44 px hit area ------------
+  {
+    const { c, pg } = await open({ viewport: { width: 1920, height: 1000 }, hasTouch: true });
+    const dot = await pg.$eval('#cuelist tfoot [data-pick]', (b) => { b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top - 10); return h === b; });
+    t.check('touch: the alert colour dot has a touch-sized hit area', dot);
     await c.close();
   }
 
@@ -120,7 +126,7 @@ export async function run(t) {
   t.check(`Alt+↓ moves the row down (${order})`, order.startsWith('Doors,Keynote,Coffee,Lightning,Panel'));
   t.check('the live region says where it went', /Moved Panel to position 5/.test(await pg.textContent('#tp-del-help')));
   t.check('focus follows the moved row', await pg.evaluate(() => document.activeElement?.closest('tr')?.dataset.pos === '5'));
-  await pg.click('#cuelist tbody tr[data-pos="5"] td.tp-cue-notes', { button: 'right' });
+  await pg.click('#cuelist tbody tr[data-pos="5"] td.tp-cue-pos', { button: 'right' });
   await pg.click('#tp-row-menu [data-row-act="up"]');
   await pg.waitForTimeout(800);
   order = (await snap()).cues.map((c) => c.label).join(',');
@@ -128,16 +134,15 @@ export async function run(t) {
   const rt = (await snap()).runtime;
   t.check('reordering kept the running cue', rt.activePos === 2 && rt.anchorTS === before.anchorTS);
 
-  // ftl two-tap delete.
-  const del = '#cuelist tbody tr[data-pos="7"] [data-cmd="cueDel"]';
-  await pg.click(del);
-  t.check('the first tap arms the bin (.is-armed, "Delete?")', await pg.$eval(del, (b) => b.classList.contains('is-armed') && getComputedStyle(b.querySelector('.btn-armed-label')).display !== 'none'));
-  await pg.click(del);
+  // Rows are Go · pencil · ⋯ (review 2026-11-12); delete is in the menu.
+  t.check('rows carry no bin or cue-up button', !(await pg.$('#cuelist tbody [data-cmd="cueDel"], #cuelist tbody [data-cmd="jump"]')));
+  await pg.click('#cuelist tbody tr[data-pos="7"] [data-row-menu]');
+  await pg.click('#tp-row-menu [data-row-act="del"]');
   await pg.waitForTimeout(800);
-  t.check('the second tap deletes', (await snap()).cues.length === 6);
+  t.check('Delete in the row menu deletes', (await snap()).cues.length === 6);
 
   // Import: Append by default (bare number = minutes); Replace asks first.
-  await pg.click('.tp-import > summary');
+  await pg.click('[popovertarget="tp-import-drawer"]');
   t.check('Import defaults to adding to the end', (await pg.inputValue('#import-mode')) === 'append');
   await pg.setInputFiles('#import-file', { name: 'more.csv', mimeType: 'text/csv', buffer: Buffer.from('Title,Speaker,Duration\nClosing,Ada,30\n') });
   await pg.click('.tp-import button[type=submit]');
@@ -151,6 +156,17 @@ export async function run(t) {
   await pg.click('dialog.modal[open] .modal-footer .btn-secondary');
   await pg.waitForTimeout(800);
   t.check('Cancel keeps the running order', (await snap()).cues.length === 7);
+  t.check('after Cancel the Import drawer is back', await pg.isVisible('#tp-import-drawer .dropzone'));
+  // Confirmed: the cues are replaced and the result shows in the drawer.
+  await pg.click('.tp-import button[type=submit]');
+  await pg.waitForSelector('dialog.modal[open]');
+  await pg.click('dialog.modal[open] .modal-footer .btn-danger');
+  await pg.waitForTimeout(1200);
+  t.check('Replace replaces the running order', (await snap()).cues.map((c) => c.label).join() === 'Closing');
+  t.check(`the drawer shows the result (${(await pg.textContent('#import-result')).trim()})`, await pg.isVisible('#import-result') && /Imported/.test(await pg.textContent('#import-result')));
+  await pg.keyboard.press('Escape');
+  await api('PUT', `/api/shows/${room}/cues`, CUES);
+  await pg.waitForSelector('#cuelist tbody tr[data-pos="2"]');
 
   // The cue editor fits: its Save button is on screen at 900 px.
   await pg.click('#cuelist tbody tr[data-pos="2"] [data-insp]');

@@ -42,7 +42,8 @@ export async function run(t) {
 
   // --- Desktop 1440×900 -----------------------------------------------
   {
-    const { c, pg, errs } = await open({ viewport: { width: 1440, height: 900 } });
+    // Wide enough for the Type column (the On air column takes a share).
+    const { c, pg, errs } = await open({ viewport: { width: 1920, height: 1000 } });
     const width = () => pg.$eval('#cuelist', (x) => x.scrollWidth);
     const w0 = await width();
     await pg.dblclick('#cuelist tbody tr[data-pos="4"] td.tp-cue-title');
@@ -94,22 +95,21 @@ export async function run(t) {
     t.check('the break was added as a break', (await snap()).cues[6].kind === 'break');
     t.check('the add row is back to Session', (await pg.inputValue('#cuelist tfoot select[name=kind]')) === 'session');
 
-    // Two-tap delete offers Undo (UX N11).
-    const del = '#cuelist tbody tr[data-pos="7"] [data-cmd="cueDel"]';
-    await pg.click(del);
-    await pg.click(del);
+    // The row menu's Delete offers Undo (UX N11).
+    await pg.click('#cuelist tbody tr[data-pos="7"] [data-row-menu]');
+    await pg.click('#tp-row-menu [data-row-act="del"]');
     await pg.waitForTimeout(700);
-    t.check('the second tap deletes', (await snap()).cues.length === 6);
+    t.check('Delete in the row menu deletes', (await snap()).cues.length === 6);
     await pg.click('.toast button:text("Undo")');
     await pg.waitForTimeout(800);
     t.check('Undo in the toast brings the cue back', (await snap()).cues.length === 7);
 
-    // Import: ftl dropzone + button, no native file button (UI #7); closed,
-    // the panel is just its header (UI #6).
-    const imp = await pg.evaluate(() => { const d = document.querySelector('.tp-import'); return { d: d.getBoundingClientRect().height, h: d.querySelector('summary').getBoundingClientRect().height }; });
-    t.check(`the closed Import panel is its header (${Math.round(imp.d)} vs ${Math.round(imp.h)})`, imp.d - imp.h <= 4);
-    await pg.click('.tp-import > summary');
-    t.check('Import uses an ftl dropzone with a Choose file button', !!(await pg.$('.tp-import .dropzone label.btn #import-file[hidden]')));
+    // Import: an ftl drawer (review R2) with a dropzone + button, no native
+    // file button (UI #7); closed until asked for.
+    t.check('Import is closed until asked for', !(await pg.isVisible('#tp-import-drawer')));
+    await pg.click('[popovertarget="tp-import-drawer"]');
+    t.check('Import uses an ftl dropzone with a Choose file button', !!(await pg.$('.tp-import .dropzone label.btn #import-file[hidden]')) && await pg.isVisible('#tp-import-drawer .dropzone'));
+    await pg.keyboard.press('Escape');
 
     // Cue editor: the custom colour is the last ftl swatch (UI #3), alert
     // colours are ftl .color-dot pickers, Save is on screen.

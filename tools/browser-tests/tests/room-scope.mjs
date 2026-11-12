@@ -14,9 +14,9 @@ export async function run(t) {
   t.check(`moderator tabs: ${tabs.join(', ')}`, tabs.join(',') === 'Run,Audience');
   t.check('moderator has no theme picker', !(await mod.$('#theme-select')));
   // Import from the Run tab.
-  await mod.click('details.tp-import > summary');
+  await mod.click('[popovertarget="tp-import-drawer"]');
   await mod.setInputFiles('#import-file', { name: 'day.csv', mimeType: 'text/csv', buffer: Buffer.from('label,duration\nOpening,10\nKeynote,45\n') });
-  await mod.click('details.tp-import button[type=submit]');
+  await mod.click('.tp-import button[type=submit]');
   await mod.waitForTimeout(1500);
   const snap = await (await modCtx.request.get(`${t.base}/api/shows/${room}`)).json();
   t.check(`moderator imported from Run (${snap.cues.map((c) => c.label).join(',')})`, snap.cues.map((c) => c.label).join(',') === 'Opening,Keynote');

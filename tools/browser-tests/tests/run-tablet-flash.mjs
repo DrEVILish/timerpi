@@ -1,5 +1,6 @@
-// 2026-10-07 owner notes: on a tablet the Run tab is one column (Current
-// cue, transport, running order, Messages, Import); the add row matches the
+// 2026-10-07 owner notes, reshaped by the 2026-11-12 review (R2): on a
+// tablet the now band is on top, the transport sticks to the bottom, then the
+// running order with the On air column (Messages) beside it; the add row matches the
 // cue rows and says "Add Timer"; the edit modal starts with Type, has no
 // Tags and puts the row colour last; FLASH blinks presenter timers.
 export const name = 'Run tab on a tablet, edit modal, presenter flash';
@@ -14,15 +15,16 @@ export async function run(t) {
   await pg.goto(`${t.base}/c/${room}`);
   await pg.waitForSelector('#cuelist tfoot');
 
-  const top = (sel) => pg.$eval(sel, (e) => e.getBoundingClientRect().top);
-  const order = ['#tp-now', '.tp-transport-bar', '.tp-runorder', '#messages-panel', '.tp-import'];
-  const tops = [];
-  for (const s of order) tops.push(await top(s));
-  t.check(`tablet order: Current cue, transport, running order, Messages, Import (${tops.map(Math.round).join(', ')})`,
-    tops.every((v, i) => i === 0 || v > tops[i - 1]));
-  const w = await pg.$eval('#tp-now', (e) => e.getBoundingClientRect().width);
-  const full = await pg.$eval('.tp-dash', (e) => e.getBoundingClientRect().width);
-  t.check('Current cue is full width', Math.abs(w - full) < 2);
+  const box = (sel) => pg.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom, w: r.width }; });
+  const now = await box('#tp-now'); const bar = await box('.tp-transport-bar');
+  const run = await box('.tp-runorder'); const msgs = await box('#messages-panel');
+  t.check(`tablet: the now band sits above the running order (${[now.b, run.y].map(Math.round).join(', ')})`, now.b <= run.y + 1);
+  const vh = await pg.evaluate(() => innerHeight);
+  const work = await box('.tp-work');
+  t.check(`tablet: the transport is the bottom bar, with the time left (${Math.round(bar.y)} ≥ ${Math.round(work.b)}, ${Math.round(bar.b)} ≤ ${vh})`, bar.y >= work.b - 1 && bar.b <= vh + 1 && await pg.$eval('.tp-transport-bar #tp-clock-mini', (e) => getComputedStyle(e).display !== 'none'));
+  const adj = await box('.tp-adjust-row');
+  t.check('tablet: the adjust buttons sit inside the now band', adj.r <= now.r + 1);
+  t.check(`tablet: Messages sit in the On air column beside the running order (${Math.round(msgs.x)} ≥ ${Math.round(run.r)})`, msgs.x >= run.r);
 
   const add = pg.locator('#cuelist tfoot button[type=submit]');
   t.check('the add button says "Add Timer"', (await add.textContent()).trim() === 'Add Timer');
@@ -41,6 +43,7 @@ export async function run(t) {
   t.check('Location and Duration have short labels', labels.includes('Location') && labels.includes('Duration'));
   t.check('no Tags field', !labels.some((l) => /tags/i.test(l)) && !(await pg.$('#tp-insp-tags')));
   t.check('row colour comes after the notes', labels.indexOf('Row colour') > labels.indexOf('Cue notes'));
+  const top = (sel) => pg.$eval(sel, (e) => e.getBoundingClientRect().top);
   const tm = await top('#tp-insp-timerKind'), az = await top('#tp-insp-endAction');
   t.check('Timer and At zero share a line', Math.abs(tm - az) < 2);
   await pg.click('label:has(#tp-insp-alert1Flash)'); // ftl .toggle-btn

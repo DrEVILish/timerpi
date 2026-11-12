@@ -129,7 +129,15 @@ func (d *Deps) eventRef(c *gin.Context, showID int64) views.EventRef {
 	if err != nil {
 		return views.EventRef{}
 	}
-	return views.EventRef{Code: ev.Code, Name: ev.Name, IsSuper: d.isSuper(c, ev)}
+	ref := views.EventRef{Code: ev.Code, Name: ev.Name, IsSuper: d.isSuper(c, ev)}
+	if rooms, err := d.Store.ListRooms(ev.ID); err == nil {
+		cookies := cookieMap(c.Request)
+		for _, r := range rooms {
+			ref.Rooms = append(ref.Rooms, views.RoomRef{Code: r.Code, Name: r.Title, Here: r.ID == showID,
+				CanModerate: ref.IsSuper || ModerateFromCookies(d.Store, cookies, r.ID)})
+		}
+	}
+	return ref
 }
 
 // galleryPage is GET /screens/:ident — the operator screens gallery:

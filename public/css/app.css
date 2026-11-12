@@ -29,7 +29,7 @@
    page-wide screen preview). auto-fill keeps empty tracks, so a lone card
    stays card-width and every row lines up with the panels below (review
    #14; a max-inline-size cap left uneven gaps). */
-:is(#room-grid, #live-grid, #tp-gal, #tp-waiting-list) { grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr)); }
+:is(#room-grid, #tp-gal, #tp-waiting-list) { grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr)); }
 /* Pairing code: ftl .otp is overflow:hidden and its input one cell wider
    than the boxes, so the caret after the 6th digit scrolled the first digit
    out of view. UPSTREAM (review I15, core/components/prose.css; fix there:
@@ -110,7 +110,7 @@ body.tp-aud .tp-aud-up[aria-pressed="true"] { --btn-bg: var(--accent); --btn-bg-
 .tp-onair { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: .75rem; padding: .75rem .75rem 0; }
 .tp-air-card { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
 .tp-air-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.tp-air-label, .tp-aud-libtitle { margin: 0; }
+.tp-air-label { margin: 0; }
 .tp-air-q { margin: 0; font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
 .tp-air-ctl { flex-wrap: wrap; align-items: center; }
 .tp-air-ctl .tp-aud-more { margin-inline-start: auto; }
@@ -376,8 +376,6 @@ dialog.modal.is-maximized:modal { height: 100%; }
 /* ios-skeuomorphic sets its dark tab-bar inks (white active tab) on every
    .tabs, so the active Run tab vanished on the light page. */
 html[data-theme="ios-skeuomorphic"] .tp-room-tabs { --tab-fg-active: var(--text); --tab-fg: var(--muted); }
-.tp-aud-layout { display: grid; gap: var(--space-m, 1rem); grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
-@media (max-width: 75rem) { .tp-aud-layout { grid-template-columns: minmax(0, 1fr); } }
 
 /* Audience tab as a table (STATUS U18; ftl .table + .switch, U17). */
 .tp-aud-table th, .tp-aud-table td { vertical-align: middle; }
@@ -479,11 +477,10 @@ html[data-device-orient] #phone-link-btn { display: none; } /* already on the ph
 /* Default theme saves on change; the select gets the row (review #8). */
 #ev-theme-select { flex: 1 1 auto; min-width: 0; padding-inline-end: 2.2em; text-overflow: ellipsis; }
 
-/* Event Technician room cards: the ⋯ menu is a full-size ftl icon button
+/* Event Technician rooms: the ⋯ menu is a full-size ftl icon button
    (review #10; touch gets ftl's 44px --tap-min on top). */
 .tp-room-more { --btn-icon-size: 2.25rem; font-size: 1rem; }
 @media (max-width: 600px) {
-  #live-grid > [data-idle] > .tp-clock { display: none; } /* an idle card stays short on a phone (its "—" says nothing) */
   .tp-hero-logo { display: none; } /* the app bar already shows the logo */
 }
 /* Waiting screens: the name is what you match against the TV. */
@@ -536,7 +533,6 @@ body[data-editing] .b-w-chrome .btn-close { font-size: 14px; }
    then the Audience / Presenter toggles and ⋯), not a six-row label table.
    Auto Approve stays in the item editor. Same breakpoint as ftl's
    .table.is-stacked. */
-.tp-aud-lib > .accordion-panel, .tp-aud-lib > .table-wrap { margin-block-start: .5rem; }
 @media (max-width: 480px) {
   .tp-aud-table.is-stacked > tbody > tr.tp-aud-row:not([hidden]) {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 5rem; align-items: end; /* fixed last column: every card lines up */
@@ -568,4 +564,22 @@ body[data-editing] .b-widget.is-selected { outline: 2px solid var(--accent); out
   .b-ed-row { padding: .3rem .4rem; border-inline-start: 3px solid transparent; cursor: pointer; }
   .b-ed-row.is-selected { border-inline-start-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: default; }
   .b-ed-row.is-selected > .b-ed-name { color: var(--accent-text, var(--accent)); }
+}
+
+/* ---- Event Technician page (/e/<code>/admin): Live · Setup tabs --------
+   Full width with the room page's gutter: .app-main's own padding, no
+   extra .tp-page inset or max-width, so event, room and Screens pages
+   line up. Rooms are an ftl .table.is-stacked (cards at ≤ 480px). */
+body[data-page="event-admin"] .tp-ev-page { max-width: none; padding-inline: 0; padding-block-start: 0; }
+.tp-ev-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }
+.tp-ev-tabs .tab { min-height: 2.6rem; }
+.tp-ev-rooms td { vertical-align: middle; }
+.tp-ev-room { flex-wrap: wrap; }
+.tp-ev-left { white-space: nowrap; }
+@media (min-width: 481px) { .tp-ev-left { font-size: 1.15rem; } } /* stacked cards keep the label size */
+.tp-ev-acts > .cluster { flex-wrap: nowrap; justify-content: flex-end; }
+.tp-ev-menu-sep { margin-block: .3rem; }
+@media (max-width: 480px) {
+  .tp-ev-rooms tr[data-idle] > .tp-ev-left { display: none; } /* an idle room stays short on a phone (its "—" says nothing) */
+  .tp-ev-acts > .cluster { justify-content: flex-start; }
 }

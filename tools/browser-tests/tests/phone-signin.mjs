@@ -22,7 +22,7 @@ export async function run(t) {
   const phoneCtx = await t.browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: IPHONE });
   const phone = await phoneCtx.newPage();
   await phone.goto(url);
-  await phone.waitForSelector('#live-grid .panel', { timeout: 8000 });
+  await phone.waitForSelector('#live-grid tr[data-room]', { timeout: 8000 });
   t.check(`the phone lands on the dashboard (${new URL(phone.url()).pathname})`, new URL(phone.url()).pathname === `/e/${event}/admin`);
   t.check('the code is gone from the address bar', !phone.url().includes('t='));
   if (S) await phone.screenshot({ path: `${S}/phone-admin.png`, fullPage: false });

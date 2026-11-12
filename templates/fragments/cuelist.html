@@ -48,10 +48,8 @@
         <td class="tp-cue-rowbtns">
           <div class="btn-group">
             <button class="btn btn-sm btn-tertiary" data-cmd="go" data-pos="{{.Pos}}" title="GO — start this cue now (restarts it if it is running)" aria-label="GO — start cue {{printf "%02d" .Pos}}">Go</button>
-            <button class="btn btn-sm btn-ghost btn-icon" data-cmd="jump" data-pos="{{.Pos}}" data-start="false" title="Cue it up (playhead here, don't start yet)" aria-label="Cue up cue {{printf "%02d" .Pos}}"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-right"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="All details (tags, row colour)" aria-label="Edit cue {{printf "%02d" .Pos}} — all details"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
-            <button class="btn btn-sm btn-icon btn-ghost" data-cmd="cueDel" data-pos="{{.Pos}}" title="Delete cue (tap twice)" aria-label="Delete cue {{printf "%02d" .Pos}}" aria-describedby="tp-del-help"><span class="btn-idle-label"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-trash"/></svg></span><span class="btn-armed-label">Delete?</span></button>
-            <button class="btn btn-sm btn-icon btn-ghost tp-row-more" type="button" data-row-menu="{{.Pos}}" title="More: duplicate, move, details, delete" aria-label="More for cue {{printf "%02d" .Pos}}" aria-haspopup="menu"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-more-horizontal"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost" data-insp="{{.Pos}}" title="Edit every field of this cue" aria-label="Edit cue {{printf "%02d" .Pos}} — all details"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-edit"/></svg></button>
+            <button class="btn btn-sm btn-icon btn-ghost tp-row-more" type="button" data-row-menu="{{.Pos}}" title="More: cue up, duplicate, move, delete" aria-label="More for cue {{printf "%02d" .Pos}}" aria-haspopup="menu"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-more-horizontal"/></svg></button>
           </div>
         </td>
       </tr>

@@ -139,9 +139,9 @@ export async function run(t) {
   t.check('Screens page footer shows the server link', (await pg.textContent('#conn-label')).includes('Server link up'));
 
   // Event end in the past asks first.
-  await pg.goto(`${t.base}/e/${event}/admin`);
+  await pg.goto(`${t.base}/e/${event}/admin#setup`);
   await pg.fill('#ev-end-input', '2020-01-01T10:00');
-  await pg.click('#ev-end button[type=submit]');
+  await pg.$eval('#ev-end-input', (i) => i.blur()); // saves on leaving the field (Tab walks its segments first)
   await pg.waitForTimeout(300);
   t.check('a past event end asks for confirmation', !!(await pg.$('dialog.modal[open]')));
   await pg.keyboard.press('Escape');

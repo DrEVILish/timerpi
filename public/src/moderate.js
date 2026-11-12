@@ -115,8 +115,8 @@ function render() {
   }
   paintTabBadge(items);
   // Accordions keep the reader's open/closed choice across live renders.
-  const panel = document.getElementById('tp-aud-panel') || host;
-  const opened = new Map([...panel.querySelectorAll('details[data-key]')].map((d) => [d.dataset.key, d.open]));
+  // The on-air cards sit in the "On air now" column, outside the library.
+  const opened = new Map([...document.querySelectorAll('#tp-aud-panel details[data-key], #tp-aud-onair details[data-key]')].map((d) => [d.dataset.key, d.open]));
   renderOnAir(opened);
   if (!items.length) {
     host.replaceChildren(el('div', { class: 'empty-state' },
@@ -126,11 +126,9 @@ function render() {
   }
   const tbody = el('tbody');
   for (const it of [...items].reverse()) tbody.append(...rows(it, opened));
-  // On a phone the library folds away while something is on air: the On
-  // air cards are what the moderator works with (review: a 7,400px page).
-  const fold = matchMedia('(max-width: 600px)').matches && items.some((i) => i.toAudience || i.toPresenter);
-  host.replaceChildren(el('details', { class: 'accordion-item tp-aud-lib', open: opened.has('lib') ? opened.get('lib') : !fold, dataset: { key: 'lib' } },
-    el('summary', { class: 'accordion-trigger tp-aud-libtitle' }, `Library (${items.length})`),
+  // The panel header names the library; the on-air cards have their own
+  // column (review R2), so the table no longer folds away on phones.
+  host.replaceChildren(
     el('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': 'Audience items' },
       el('table', { class: 'table is-stacked tp-aud-table' },
         el('thead', {}, el('tr', {},
@@ -140,7 +138,7 @@ function render() {
           el('th', { scope: 'col', text: 'Presenter' }),
           el('th', { scope: 'col', text: 'Auto Approve' }),
           el('th', { scope: 'col' }, el('span', { class: 'visually-hidden', text: 'Actions' })))),
-        tbody))));
+        tbody)));
 }
 
 /* ---- on air: the live Audience and Presenter items with their controls -- */
@@ -186,12 +184,14 @@ function airCard(it, targets, opened) {
       onclick: (e) => { e.currentTarget.disabled = true; act(`/${it.id}/show`, { target: t, on: false }); },
     }, targets.length > 1 ? `Off ${TARGET[t]}` : 'Take off air'));
   }
-  ctl.append(moreBtn(it));
   return el('article', { class: 'card tp-air-card', dataset: { target: targets.join(' '), id: String(it.id) } },
     el('div', { class: 'tp-air-head' },
       el('h3', { class: 'tp-air-label', text: `On ${where}` }),
       el('span', { class: 'badge', text: KINDS[it.kind] || it.kind }),
-      statusEl(it)),
+      statusEl(it),
+      // ⋯ in the card's head: in the narrow On air column it would take a
+      // row of its own beside the buttons.
+      (() => { const b = moreBtn(it); b.classList.add('push'); return b; })()),
     el('p', { class: 'tp-air-q', text: q }),
     ctl,
     isChoice(it) ? tally(it) : queue(it, opened, `air${it.id}`));

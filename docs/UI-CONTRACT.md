@@ -10,10 +10,10 @@
 |---|---|---|---|
 | `/` home | `home.html` → `home` | `event.js` | Join by code, create event, open a screen, recent events |
 | `/e/:code` lobby | `event.html` → `event` | `event.js` | Room sign-in, SuperOperator sign-in |
-| `/e/:code/admin` | `event.html` → `event-admin` | `event.js` | Live rooms, rooms admin, event settings |
+| `/e/:code/admin` | `event.html` → `event-admin` | `event.js` | Tabs Live · Setup (hash `#setup`). Live: Blackout all / Restore all, one `.table.is-stacked` row per room (state, now, time left, next, screens, Open + ⋯ with GO, Pause, Blackout and the room admin), add room. Setup: pair a box, event settings (save on change; the password keeps Save), event file, delete |
 | access denied | `event.html` → `denied` | — | Rendered by `routes/access.go` |
-| `/c/:room` room | `base.html` → `page-dashboard` (`dashboard.html`) | `timerpi.js` + `moderate.js` + `swatches.js` | Tabs: Run · Audience (hash `#audience`) · Screens link (SuperOperator only). Run: left column Current cue (readout, adjust, state, rate) → Messages → Import; right: transport bar, then the running order table (cells edit inline, footer add row tied to `#tp-add-form`, right-click / long-press row menu `#tp-row-menu`). Time of day sits in the header centre. The theme picker shows for the SuperOperator only. `cuelist.html` and `timerpi.js cueRow()` render the same row: change both |
-| `/screens/:room` | `base.html` → `page-screens` (`screens.html`) | `timerpi.js` → `screens.js` | Screens cards, set-up dialog, layout editor dialog |
+| `/c/:room` room | `base.html` → `page-dashboard` (`dashboard.html`) | `timerpi.js` + `moderate.js` + `swatches.js` | One workspace (2026-11-12): the now band (`#tp-now`: readout, title, meter, adjust, rate) and the transport (Prev · GO · Pause · Next · FLASH · WRAP UP · BLANK) sit above the tabs on every tab; phones stick the transport to the bottom. Tabs: Run · Audience (hash `#audience`) · Screens link (SuperOperator only). Under them the tab's panel (Run: running order with the day bar; Audience: the item library) beside the **On air now** column (`.tp-side`: `#tp-aud-onair` cards, then Messages), which both tabs share. Import and the join QR are ftl drawers (`#tp-import-drawer`, `#tp-share-drawer`). Running order: cells edit inline, footer add row tied to `#tp-add-form`; rows are Go · edit · ⋯ (touch: Go · ⋯); the row menu `#tp-row-menu` (⋯, right-click, long press) holds Cue up, All details, Duplicate, Move, Delete. Columns drop with the table's own width (container `tp-run`); the cue editor has them all. With several rooms the room name in the bar is a switcher (`#tp-room-pop`). `cuelist.html` and `timerpi.js cueRow()` render the same row: change both |
+| `/screens/:room` | `base.html` → `page-screens` (`screens.html`) | `timerpi.js` → `screens.js` | Screens cards, set-up dialog, layout editor dialog; full page width, like the room page |
 | `/d/` ready card | `dready.html` | `waiting.js` | Waits to be captured |
 | `/d/:room` timer | `display.html` | `timerpi.js` | Plain stage timer |
 | `/d/:room?view=next\|daysheet\|clock` | `display_variants.html` | inline module + `engine.js` | |
@@ -47,7 +47,7 @@ JS/CSS URLs always go through `{{asset "/src/x.js"}}` (`views/assets.go`).
 - **Board tiles:** `<section class="b-widget" data-widget="<type>" data-wid="<id>">` with a `.b-w-body`. Edit chrome (`.b-w-chrome`, `.b-w-resize`) renders **only** when `P.Editable`.
 - **Timer ids** (JS-owned text, never server-ticked): `#tp-clock`, `#tp-state-chip`, `#tp-meter`, `#d-clock`, `#d-stage[data-state]`; `data-state` ∈ `idle armed running paused held overtime alert1 alert2`.
 - **oob targets:** `#cuelist`, `#tp-daybar`, `#messages-panel`, `#tp-now`, `#share-panel`, `#d-stage`. Each fragment's root element carries its target id.
-- **Room page:** `[data-tab]` buttons and `[data-panel]` sections (`run`, `audience`, `setup`); `#tp-aud-panel`, `#tp-aud-items`, `#tp-aud-onair`, `#tp-aud-count`, `#tp-aud-tabcount`, `#tp-aud-editor`.
+- **Room page:** `[data-tab]` buttons and `[data-panel]` sections (`run`, `audience`); `.tp-room`, `.tp-work`, `.tp-side`, `.tp-transport-bar`; `#tp-aud-panel`, `#tp-aud-items`, `#tp-aud-onair`, `#tp-aud-count`, `#tp-aud-tabcount`, `#tp-aud-editor`, `#tp-aud-menu`, `#tp-row-menu`, `#tp-import-drawer`, `#tp-share-drawer`, `#tp-room-pop`.
 - **Screens page:** `#tp-screens-page[data-room]`, `#tp-gal`, `#tp-waiting-list`, `#tp-capture`, `#tp-screen-edit`.
 - **Text safety:** all user text reaches the DOM through `textContent` (or `el()`), never `innerHTML`.
 

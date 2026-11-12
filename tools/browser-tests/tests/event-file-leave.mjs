@@ -10,7 +10,7 @@ export async function run(t) {
   const pg = await ctx.newPage();
   const errors = [];
   pg.on('pageerror', (e) => errors.push(e.message));
-  await pg.goto(`${t.base}/e/${event}/admin`);
+  await pg.goto(`${t.base}/e/${event}/admin#setup`);
 
   const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#ev-export')]);
   const file = readFileSync(await dl.path(), 'utf8');

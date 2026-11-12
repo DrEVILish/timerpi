@@ -1,8 +1,10 @@
-// STATUS U31–U38: the room page layout. Transport above the running order
-// (no Stop/Reset), adjust under the readout, the readout fits with tenths,
-// time of day centred in the header, no key hint / filter / undo button /
-// Next up, Messages then Import under the Current cue. Ctrl+Z still undoes.
-export const name = 'room page layout (U31–U38)';
+// STATUS U31–U38 and the 2026-11-12 review (R2): the room page layout.
+// The now band and the transport share the top row (no Stop/Reset), adjust
+// under the readout, the readout fits with tenths, time of day centred in
+// the header, no key hint / filter / undo button / Next up; the "On air
+// now" column (Messages included) sits beside the running order, and Import
+// opens in a drawer. Ctrl+Z still undoes.
+export const name = 'room page layout (U31–U38, R2)';
 
 export async function run(t) {
   const { ctx, H, room } = await t.newEvent();
@@ -16,12 +18,14 @@ export async function run(t) {
   await pg.waitForSelector('#cuelist tbody tr');
   const box = async (sel) => pg.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right, b: r.bottom }; });
 
-  // U31: transport above the running order, five controls, no reset.
+  // U31 + R2: the transport shares the top row with the now band, above
+  // the running order; five controls, no reset.
   const bar = await box('.tp-transport-bar');
   const order = await box('.tp-runorder');
-  t.check('the transport sits above the running order', bar.b <= order.y + 1 && Math.abs(bar.x - order.x) < 2);
+  const band = await box('#tp-now');
+  t.check('the transport sits beside the now band, above the running order', bar.b <= order.y + 1 && bar.x >= band.r && bar.y < band.b);
   const cmds = await pg.$$eval('.tp-transport-bar [data-cmd], .tp-transport-bar #tp-blank', (n) => n.filter((b) => b.offsetParent).map((b) => b.dataset.cmd || b.id));
-  t.check(`transport: ${cmds.join(',')}`, cmds.join(',') === 'prev,go,pause,next,flash,tp-blank');
+  t.check(`transport: ${cmds.join(',')}`, cmds.join(',') === 'prev,go,pause,next,flash,addMsg,tp-blank');
   t.check('no Stop/Reset button anywhere', (await pg.$$('[data-cmd="reset"]')).length === 0);
 
   // U32, revised 2026-10-06: readout, then its progress bar, then adjust.
@@ -42,12 +46,17 @@ export async function run(t) {
   t.check('no undo button', !(await pg.$('#tp-undo')));
   t.check('no Next up in the Current cue pane', !/next up/i.test(await pg.textContent('#tp-now')));
 
-  // U37: Current cue, Messages, Import stacked in the left column.
-  const now = await box('#tp-now');
+  // R2: the On air column (Messages in it) sits beside the running order;
+  // Import is a drawer opened from the running order's header.
+  const side = await box('.tp-side');
   const msgs = await box('#messages-panel');
-  const imp = await box('.tp-import');
-  t.check('Messages sit under the Current cue', Math.abs(msgs.x - now.x) < 2 && msgs.y >= now.b);
-  t.check('Import sits under Messages', Math.abs(imp.x - now.x) < 2 && imp.y >= msgs.b);
+  t.check('the On air column sits right of the running order', side.x >= order.r && Math.abs(side.y - order.y) < 2);
+  t.check('Messages are in the On air column', msgs.x >= side.x - 1 && msgs.r <= side.r + 1);
+  t.check('Import is closed until asked for', !(await pg.isVisible('#tp-import-drawer')));
+  await pg.click('.tp-runorder [popovertarget="tp-import-drawer"]');
+  t.check('the Import button opens the Import drawer', await pg.isVisible('#tp-import-drawer .dropzone'));
+  await pg.keyboard.press('Escape');
+  await pg.evaluate(() => document.activeElement?.blur());
 
   // U33: under 10 s the tenths show and stay inside the pane.
   await pg.keyboard.press(' ');
@@ -55,7 +64,7 @@ export async function run(t) {
   const clock = await box('#tp-clock');
   const nowBox = await box('#tp-now');
   const reading = await pg.textContent('#tp-clock');
-  t.check(`"${reading}" fits inside the Current cue pane (${Math.round(clock.r)} ≤ ${Math.round(nowBox.r)})`, clock.r <= nowBox.r);
+  t.check(`"${reading}" fits inside the now band (${Math.round(clock.r)} ≤ ${Math.round(nowBox.r)})`, clock.r <= nowBox.r);
   // Narrow window: still fits.
   await pg.setViewportSize({ width: 1000, height: 800 });
   await pg.waitForTimeout(300);

@@ -71,7 +71,7 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | ID | Open | Spec | Notes |
 |---|---|---|---|
 | **N10** | Day-scope the queries. `cues.day` (default 1) and `events.days` exist; nothing reads them | M2 | Waits for the multi-day UI (out of scope for v2) |
-| **N11** | A dedicated tablet layout for the Run tab | L6 | The Run tab already fits 1024×768 (U49, U50); decide what more a tablet needs |
+| **N11** | A dedicated tablet layout for the Run tab | L6 | 1024×768 shows the band, transport, On air column and 4+ rows (U49, U50, U53); decide what more a tablet needs |
 | **N13** | Pairing code on the DRM splash | H7 | Waits for the kiosk decision (N18). The code already shows on `/d/box` |
 | **N17** | Protocol-version check on the cloud uplink | H6 | Boxes already ignore mesh peers on another major |
 | **N18** | Kiosk mode in the box installer | H3 | Owner decision pending. The installer and mesh are built, not tried on hardware |
@@ -110,11 +110,11 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 **Layouts and the Screens page.** U8 layout editor modal · U9 layout list on each screen card · U10 built-ins listed, never edited · U11 editing a built-in makes a named event copy · U12, U44 Forget · R1-setup, R2-ops setup-page and phone reviews.
 
-**Run tab.** U13 typing never reaches the shortcuts · U14 breaks carry a location · U15 reorders keep the running cue · U16 duration and alert units · U30–U41, U43, U45 room page tidy (one inline table, transport above it, swatches, row menu) · U31 no Reset · U42 no auto-continue, auto-start or hold after · U47 Event Technician naming, footer, FLASH · U48 owner round (rooms optional, sign out, one Send) · U49, U50 Run tab reviews (tablet and phone fit, h:mm, undo on delete, cue editor).
+**Run tab.** U13 typing never reaches the shortcuts · U14 breaks carry a location · U15 reorders keep the running cue · U16 duration and alert units · U30–U41, U43, U45 room page tidy (one inline table, transport above it, swatches, row menu) · U31 no Reset · U42 no auto-continue, auto-start or hold after · U47 Event Technician naming, footer, FLASH · U48 owner round (rooms optional, sign out, one Send) · U49, U50 Run tab reviews (tablet and phone fit, h:mm, undo on delete, cue editor). · U53 one live workspace: now band and transport (WRAP UP included) on every tab, On air column beside Run and Audience, Import and join QR drawers, rows Go · edit · ⋯ (2026-11-12) · U54 room switcher in the bar.
 
 **Audience.** U17 ftl components · U18 On air strip over a library · U46 tiles painted in place · UA1 on air is separate from the voting phase.
 
-**Home, event pages, roles.** U19–U24 home and event page wording, Leave event · U25 moderators get Run and Audience only · U28 theme picker for the Event Technician only · U29 no Setup tab.
+**Home, event pages, roles.** U19–U24 home and event page wording, Leave event · U25 moderators get Run and Audience only · U28 theme picker for the Event Technician only · U29 no Setup tab · U52 Event Technician page: Live rooms table and Setup tab, settings save on change (password keeps Save).
 
 **Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired.
 

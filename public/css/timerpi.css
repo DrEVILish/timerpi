@@ -17,69 +17,133 @@
 .tp-nav-form { display: contents; }
 
 /* --------------------------------------------------------------------------
-   Dashboard grid: left rail (now) | centre (cue list) | right (panels)
+   Room page (owner 2026-11-12, review R2). One grid:
+     desktop  now band · transport / tabs / work
+     tablet   now band / transport / tabs / work
+     phone    now band / tabs / work / transport (sticky to the bottom)
+   The work area is the tab's panel (Run: running order; Audience: library)
+   beside the "On air now" column, which both tabs share.
    -------------------------------------------------------------------------- */
-.tp-dash {
+.tp-room {
   display: grid;
-  /* U37: left = Current cue, Messages, Import; right = transport + running order. */
-  grid-template-columns: minmax(16rem, 18rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "now transport" "tabs tabs" "work work";
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-s, .75rem) var(--space-m, 1rem);
+  align-items: center;
+  min-block-size: 100%;
+  --tp-tabs-h: 2.75rem; /* the running order's sticky header sits under the tabs */
+}
+.tp-room > * { min-width: 0; }
+.tp-room > #tp-now { grid-area: now; }
+.tp-room > .tp-room-tabs { grid-area: tabs; }
+.tp-room > .tp-work { grid-area: work; align-self: stretch; }
+.tp-room > .tp-transport-bar { grid-area: transport; align-self: stretch; align-items: center; }
+
+.tp-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  grid-template-areas: "main side";
   gap: var(--space-m, 1rem);
   align-items: start;
-  height: 100%;
   min-height: 0;
 }
-.tp-dash > * { min-width: 0; min-height: 0; }
+.tp-work > [data-panel] { grid-area: main; min-width: 0; }
+.tp-work > .tp-side { grid-area: side; min-width: 0; }
+/* The on-air cards stack in the column. */
+.tp-side .tp-onair { grid-template-columns: minmax(0, 1fr); padding: 0; }
+.tp-onair-panel > .panel-header { margin-block-end: var(--space-s, .75rem); }
 
-@media (max-width: 1200px) {
-  .tp-dash { grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr); }
-}
-/* Desktop (UI review M8): the Run tab fits the window. The page stops
-   growing past the viewport; the left rail scrolls on its own and the
-   running order (with the day bar under it) fills the rest, so nothing
-   sits under the sticky footer. */
-@media (min-width: 1101px) {
+/* Run puts Messages first (stage talk goes with timing); Audience puts what
+   is on air first. */
+.tp-side { display: flex; flex-direction: column; }
+.tp-work:has(> .tp-runorder:not([hidden])) .tp-side > #messages-panel { order: -1; }
+/* Positioned, so visually-hidden inputs inside (the swatches) stay within
+   their scroller instead of stretching the page. */
+.tp-work > :is(.tp-runorder, .tp-aud-main, .tp-side) { position: relative; }
+
+/* Desktop: the page fits the window. The running order (with the day bar
+   under it) and the On air column each scroll on their own, so the clock
+   and GO never leave the screen. */
+@media (min-width: 1151px) {
   body.app[data-page="dashboard"] { block-size: 100dvh; }
   body.app[data-page="dashboard"] > .app-main { min-block-size: 0; overflow: auto; }
   body.app[data-page="dashboard"] .tp-room { block-size: 100%; }
-  .tp-room > .tp-dash { flex: 1 1 0; height: auto; }
-  .tp-dash-left { max-block-size: 100%; overflow-y: auto; }
+  .tp-work { block-size: 100%; }
+  .tp-work > :is(.tp-runorder, .tp-aud-main, .tp-side) { max-block-size: 100%; }
+  .tp-work > .tp-side { overflow-y: auto; }
+  .tp-work > .tp-aud-main { overflow-y: auto; }
+  .tp-runorder { display: flex; flex-direction: column; min-height: 0; }
+  .tp-runorder .tp-cuelist-wrap { flex: 1 1 auto; min-height: 12rem; overflow: auto; }
 }
-/* Tablet and below (2026-10-07): one column — Current cue full width,
-   transport under it, then the running order, Messages, Import. */
-@media (max-width: 1100px) {
-  .tp-dash { grid-template-columns: minmax(0, 1fr); height: auto; }
-  .tp-dash > .tp-dash-left, .tp-dash > .tp-dash-main { display: contents; }
-  .tp-dash .tp-now { order: 1; }
-  .tp-dash .tp-transport-bar { order: 2; }
-  .tp-dash .tp-runorder { order: 3; }
-  .tp-dash #messages-panel { order: 4; }
-  .tp-dash .tp-import { order: 5; }
+/* Tablets: the page scrolls, and the transport becomes a one-row bar
+   stuck to the bottom with the time left in it (as on phones), so GO and
+   the clock never scroll away and the band beside it is never crushed. */
+@media (max-width: 1150px) {
+  .tp-room { grid-template-columns: minmax(0, 1fr); grid-template-areas: "now" "tabs" "work" "transport"; grid-template-rows: auto; }
+  .tp-room > .tp-transport-bar { position: sticky; bottom: 0; z-index: 3; align-self: end; flex-wrap: wrap; }
+  .tp-transport-bar .tp-bar-left { display: block; flex: 1 1 auto; min-inline-size: 0; --countdown-size: 1.9rem; font-size: var(--countdown-size); line-height: 1; white-space: nowrap; }
+  body.app[data-page="dashboard"] > .app-status { position: static; }
+  html:has(body[data-page="dashboard"]) { scroll-padding-block-end: 6rem; }
+  body.app[data-page="dashboard"] .toast-region[popover] { top: auto; bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1150px) {
   /* The page scrolls here, so the running order's header sticks under the
      sticky tabs (UX N8): no inner scroller. */
   #cuelist.tp-cuelist-wrap { overflow: clip; --sticky-top: var(--tp-tabs-h); }
-  /* Tablet (UI B3, UX I6): the Current cue is one compact band (clock on
-     the left, adjust and rate on the right) so the running order starts
-     high, and the table keeps what you run a room with: Type, End, At zero
-     and Notes stay in the cue editor, as on phones. */
-  .tp-cuetable :is(.tp-cue-kind, .tp-cue-end, .tp-cue-atzero, .tp-cue-notes) { display: none; }
 }
-@media (min-width: 601px) and (max-width: 1100px) {
-  /* The clock on the left, title, meter, adjust and rate beside it: the
-     band is as tall as the clock, so more rows show (round-2 density). */
-  .tp-now > .stack { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "clock title title" "clock meter meter" "clock adjust rate"; column-gap: var(--space-l, 1.5rem); row-gap: var(--space-xs, .5rem); align-items: center; }
-  .tp-now > .stack > :first-child { grid-area: title; }
-  .tp-now > .stack > #tp-clock { grid-area: clock; }
-  .tp-now > .stack > .tp-progress { grid-area: meter; }
-  .tp-now > .stack > .tp-adjust-row { grid-area: adjust; }
-  .tp-now > .stack > .tp-rate { grid-area: rate; }
-  .tp-now > .stack > #tp-clock-status { position: absolute; }
-  .tp-now > .panel-header { display: none; } /* the band speaks for itself; its aria-label stays */
+/* The running order sizes its columns to the room it gets (the On air
+   column takes a share): a narrower table keeps what you run a room with,
+   and the rest stays in the cue editor (UI B3, UX I6). */
+.tp-runorder { container: tp-run / inline-size; }
+.tp-cuelist-head > .row { align-self: stretch; }
+@container tp-run (max-width: 66rem) {
+  .tp-cuetable :is(.tp-cue-end, .tp-cue-notes, .tp-cue-kind, .tp-cue-atzero) { display: none; }
+  #cuelist tfoot .tp-add-break { display: inline-flex; vertical-align: middle; margin-inline-end: .25rem; padding-inline: .45rem; }
+}
+@container tp-run (max-width: 56rem) {
+  .tp-cuetable .tp-cue-timer { display: none; }
+}
+@container tp-run (max-width: 46rem) {
+  .tp-cuetable :is(.tp-cue-alert1, .tp-cue-alert2) { display: none; }
+}
+/* Narrow tablets and phones: one column; the On air column follows the
+   tab's panel, and leads on the Audience tab (what is live comes first). */
+@media (max-width: 1150px) {
+  .tp-work { grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem); }
+}
+/* Narrow tablets and phones: one column. Run: running order, Messages,
+   On air. Audience: On air, the library, then Messages last. */
+@media (max-width: 900px) {
+  .tp-work { display: flex; flex-direction: column; align-items: stretch; }
+  .tp-work > .tp-side { display: contents; }
+  .tp-work > .tp-runorder { order: 1; }
+  .tp-work .tp-side > #messages-panel, .tp-work:has(> .tp-runorder:not([hidden])) .tp-side > #messages-panel { order: 2; }
+  .tp-work .tp-onair-panel { order: 3; }
+  .tp-work:has(> .tp-aud-main:not([hidden])) .tp-onair-panel { order: 0; }
+  .tp-work > .tp-aud-main { order: 1; }
+  .tp-work:has(> .tp-aud-main:not([hidden])) .tp-side > #messages-panel { order: 4; }
 }
 
-.tp-dash-main { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.tp-dash-main .tp-runorder { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.tp-dash-main .tp-cuelist-wrap { flex: 1 1 auto; min-height: 12rem; overflow: auto; }
-.tp-bar-left, .tp-bar-wrapup { display: none; }
+/* The now band: the clock on the left; title, meter, adjust and rate
+   beside it (one band on every screen wider than a phone). */
+.tp-now { container-type: inline-size; }
+.tp-now > .panel-header { display: none; } /* the band speaks for itself; its aria-label stays */
+.tp-now > .stack { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "clock title title" "clock meter meter" "clock adjust rate"; column-gap: var(--space-l, 1.5rem); row-gap: var(--space-xs, .5rem); align-items: center; }
+.tp-now > .stack > :first-child { grid-area: title; min-width: 0; }
+.tp-now > .stack > :first-child > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-now > .stack > #tp-clock { grid-area: clock; }
+.tp-now > .stack > .tp-progress { grid-area: meter; }
+.tp-now > .stack > .tp-adjust-row { grid-area: adjust; }
+.tp-now > .stack > .tp-rate { grid-area: rate; min-width: 0; }
+.tp-now > .stack > #tp-clock-status { position: absolute; }
+/* A narrow band (desktop beside the transport, small laptops): adjust and
+   rate take a row each instead of sharing one. */
+@container (max-width: 50rem) {
+  .tp-now > .stack { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "clock title" "clock meter" "clock adjust" "clock rate"; }
+}
+
+.tp-bar-left { display: none; }
 .tp-bar-main, .tp-bar-talk { display: contents; }
 /* Transport: ftl buttons with borders (touch screens get no hover, so the
    edge is what shows a button). GO is 25% taller than its neighbours. */
@@ -93,38 +157,27 @@
   min-inline-size: 6.5rem;
 }
 /* Phones (owner 2026-10-20; UI B1, UX I7): a slim bar sticks to the
-   bottom edge, in thumb reach all the way down: time left, FLASH and BLANK
-   on one row, Prev · GO · Pause · Next on the other — every control one tap
-   away, about 100 px instead of 200. The page footer scrolls with the page
-   here, so nothing covers the bar, and scrolling to a field keeps it clear
-   of the bar (scroll-padding). */
+   bottom edge on every tab, in thumb reach all the way down: time left,
+   FLASH, WRAP UP and BLANK on one row, Prev · GO · Pause · Next on the
+   other. The page footer scrolls with the page here, so nothing covers the
+   bar, and scrolling to a field keeps it clear of the bar (scroll-padding). */
 @media (max-width: 600px) {
-  .tp-dash .tp-transport-bar {
-    position: sticky; bottom: 0; z-index: 3; order: 9;
+  .tp-room { grid-template-areas: "now" "tabs" "work" "transport"; }
+  .tp-room > .tp-transport-bar {
+    position: sticky; bottom: 0; z-index: 3; align-self: end;
     --tp-tbtn: 2.75rem;
     display: flex; flex-direction: column; align-items: stretch;
     gap: var(--space-xs, .5rem); padding-block: var(--space-xs, .5rem);
   }
-  /* Row 1: time left · FLASH · WRAP UP · BLANK (UX N9: the wrap-up is one
-     tap away); row 2: Prev · GO · Pause · Next. */
   .tp-transport-bar .tp-bar-talk { display: flex; order: -1; align-items: center; gap: var(--space-xs, .5rem); }
   .tp-transport-bar .tp-bar-main { display: grid; grid-template-columns: var(--tp-tbtn) minmax(0, 1fr) var(--tp-tbtn) var(--tp-tbtn); gap: var(--space-xs, .5rem); }
   .tp-transport-bar .tp-bar-left { display: block; flex: 1 1 auto; min-inline-size: 0; --countdown-size: 1.7rem; font-size: var(--countdown-size); line-height: 1; white-space: nowrap; }
   .tp-transport-bar [data-cmd="go"] { block-size: var(--tp-tbtn); min-inline-size: 0; font-size: 1.2rem; }
-  #messages-panel .tp-wrapup { display: none; } /* the bar's WRAP UP is the one here */
-  /* One compact Current cue band (round-2 follow-up): title and speaker on
-     one line each, the clock beside the meter and rate, adjust under them,
-     so 4–5 running-order rows show on load. */
-  .tp-now > .panel-header { display: none; }
-  .tp-now > .stack { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "title title" "clock meter" "clock rate" "adjust adjust"; column-gap: var(--space-s, .75rem); row-gap: var(--space-2xs, .3rem); align-items: center; }
-  .tp-now > .stack > :first-child { grid-area: title; min-width: 0; }
-  .tp-now > .stack > :first-child > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tp-now > .stack > #tp-clock { grid-area: clock; }
-  .tp-now > .stack > .tp-progress { grid-area: meter; }
-  .tp-now > .stack > .tp-rate { grid-area: rate; min-width: 0; }
+  /* The now band: title and speaker on one line each, the clock beside the
+     meter and rate, adjust under them, so 4–5 rows show on load. */
+  .tp-now > .stack { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "title title" "clock meter" "clock rate" "adjust adjust"; column-gap: var(--space-s, .75rem); row-gap: var(--space-2xs, .3rem); }
   .tp-now > .stack > .tp-rate > .label { display: none; }
-  .tp-now > .stack > .tp-adjust-row { grid-area: adjust; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .tp-now > .stack > #tp-clock-status { position: absolute; }
+  .tp-now > .stack > .tp-adjust-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
   /* Long titles take two lines at most in the running order. */
   #cuelist tbody .tp-cue-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .tp-transport-bar .tp-bar-talk > .btn { display: inline-flex; flex: none; inline-size: auto; min-inline-size: 0; padding-inline: .55rem; justify-content: center; block-size: var(--tp-tbtn); }
@@ -145,29 +198,33 @@
   .tp-cuetable .drag-handle { display: none; }
   .tp-cuetable tbody .tp-cue-pos::before { content: var(--drag-handle-glyph, "\283F") / ""; margin-inline-end: .2rem; color: var(--muted); }
 }
-/* The row's ⋯ (the row menu without a right-click or long press) shows on
-   touch screens and phones; there rows keep only Go and ⋯ — Cue up, All
-   details and Delete live in the menu (UI #15, UX N11). */
-.tp-row-more { display: none; }
+/* Touch screens and phones keep Go and ⋯ per row (UI #15); the editor
+   opens from the menu. */
 @media (pointer: coarse), (max-width: 600px) {
-  .tp-cuetable .tp-row-more { display: inline-flex; }
-  .tp-cuetable .tp-cue-rowbtns :is([data-cmd="jump"], [data-insp], [data-cmd="cueDel"]) { display: none; }
+  .tp-cuetable .tp-cue-rowbtns [data-insp] { display: none; }
 }
-/* The tabs' height: the running order's sticky header sits under them
-   wherever the page scrolls. */
-.tp-room { --tp-tabs-h: 2.75rem; }
-/* Touch and narrow: the Type column is hidden, so the add row's Break
-   toggle stands in for it (UX N5). */
+/* Where the Type column is hidden, the add row's Break toggle stands in
+   for it (UX N5; shown by the container rules above and on phones). */
 .tp-add-break { display: none; }
-@media (max-width: 1100px) {
+@media (max-width: 600px) {
   #cuelist tfoot .tp-add-break { display: inline-flex; vertical-align: middle; margin-inline-end: .25rem; padding-inline: .45rem; }
 }
 .tp-msg-send > .input { flex: 1 1 auto; min-width: 0; }
 
-/* Now panel (left rail). A size container so the readout scales with the
-   rail's width, not the window's (U33: "0:09.4" lost its tenths off the
-   right edge of a narrow rail). */
-.tp-now { display: flex; flex-direction: column; gap: var(--space-s, .75rem); container-type: inline-size; }
+/* Review N1: the room switcher. The room name is a button in the
+   breadcrumbs (it keeps the breadcrumb's look, plus a chevron); the menu
+   lists each room with its state on the right. */
+.app-bar .breadcrumbs .tp-room-switch { display: inline-flex; align-items: center; flex-wrap: nowrap; white-space: nowrap; gap: .3em; font-size: inherit; }
+.tp-room-switch .icon { flex: none; inline-size: .9em; block-size: .9em; }
+.tp-room-pop { min-inline-size: 16rem; }
+.tp-room-pop .dropdown-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-m, 1rem); }
+.tp-room-pop .dropdown-item[aria-current] .tp-rs-name { font-weight: 700; }
+.tp-room-pop .tp-rs-locked .tp-rs-state { color: var(--muted); }
+.tp-room-pop .tp-rs-state { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tp-room-pop .tp-rs-all { border-block-start: 1px solid var(--hairline, var(--border)); }
+/* One page width (review #6): the Screens page uses the room page's full
+   width instead of a centred column. */
+#tp-screens-page.tp-page { max-width: none; padding-inline: 0; padding-block-start: var(--space-m, 1rem); }
 
 /* U34: the time of day sits at the top centre of the header bar. */
 /* When the bar is crowded (a long nav: weyland-yutani's tracked caps,
@@ -205,18 +262,14 @@
 
 .tp-clock-xl { font-size: clamp(4rem, 13vw, 13rem); font-weight: 700; }
 
-/* The current-cue rail (dashboard, frag-current) is a NARROW column: the
-   XL stage scale shatters "00:00" into wrapped lines and pushes the state
-   cluster + meter + cue label below the fold. Give the rail its own
-   ceiling and forbid wrapping — the whole stack must fit one viewport. */
+/* The now band's clock: as big as the band allows without wrapping (the
+   band is a size container, so it scales with the band, not the window). */
 .tp-now .countdown-xl {
-  --countdown-xl-size: min(clamp(3.2rem, 11vh, 7rem), 17cqi);
+  --countdown-xl-size: min(clamp(3.2rem, 9vh, 6rem), 22cqi);
   white-space: nowrap;
   max-width: 100%;
   min-block-size: 1em;
-}
-@media (max-width: 1100px) {
-  .tp-now .countdown-xl { --countdown-xl-size: min(clamp(3rem, 10vw, 4.5rem), 40cqi); }
+  min-inline-size: 3em; /* the band keeps its shape while nothing is on the clock */
 }
 @media (max-width: 600px) {
   .tp-now .countdown-xl { --countdown-xl-size: 2.6rem; }
@@ -441,8 +494,8 @@ body[data-blanked="true"] .tp-blanked { display: flex; }
 
 /* Print: the dashboard is not paper material, but keep the cue list useful */
 @media print {
-  .app-rail, .timeline-bar, .tp-cue-rowbtns { display: none !important; }
-  .tp-dash { display: block; }
+  .app-rail, .timeline-bar, .tp-cue-rowbtns, .tp-transport-bar, .tp-side { display: none !important; }
+  .tp-room, .tp-work { display: block; }
 }
 
 /* ==========================================================================
@@ -734,10 +787,7 @@ body[data-editing] .b-grid { padding-block-end: 10rem; }
    (unreadable at .68rem on a phone bar) hide; the app-bar theme label hides.
    -------------------------------------------------------------------------- */
 @media (max-width: 760px) {
-  .tp-dash-main .panel-header :is(form, .badge.push) { flex-basis: 100%; }
-  .tp-dash-main .panel-header { flex-wrap: wrap; }
   .app-bar .label { display: none; }
-  .tp-dash-main .tp-cuelist-wrap { min-height: 16rem; }
 }
 
 /* --------------------------------------------------------------------------
@@ -924,13 +974,13 @@ body[data-editing] .b-overlap {
    Danger fill is CONTRACT-UI-sanctioned for WRAP-UP semantics; the button
    is one confident band, not a member of the compose cluster. Link row
    with the pending marker? Nothing to link — it is instant. No pulse. */
-.tp-wrapup { inline-size: 100%; justify-content: center; font-weight: 700; }
 
-/* Import: the ftl .dropzone lights while a file is over the panel
-   (timerpi.js); closed, the panel is just its header (UI #6). */
-.tp-import:not([open]) { padding-block-end: 0; }
-.tp-import:not([open]) > .panel-header { margin-block-end: 0; border-block-end-color: transparent; }
+/* Import: a drawer (ftl .drawer[popover]); its .dropzone lights while a
+   file is over it (timerpi.js). */
+.tp-import { inline-size: min(28rem, 100vw); }
 .tp-import-zone { padding: var(--space-m, 1rem); }
+#tp-share-drawer { inline-size: min(22rem, 100vw); }
+:is(.tp-import, #share-panel) > .panel-header { display: flex; align-items: center; gap: var(--space-s, .75rem); }
 
 /* --- U1: the running row reads from across the room ----------------------
    Core's --row-active-bg + first-cell inset marker stay; TWO cheap boosts:
@@ -941,9 +991,8 @@ body[data-editing] .b-overlap {
 
 
 
-/* --- A3: cue filter rides the running-order header ---------------------- */
-.tp-dash-main .panel-header { flex-wrap: wrap; row-gap: .35rem; }
-/* --- current-cue rail: rate row must not wrap in the narrow column ------- */
+.tp-runorder .panel-header { flex-wrap: wrap; row-gap: .35rem; }
+/* --- the now band: the rate row never wraps ------------------------------ */
 .tp-now .tp-rate { align-items: center; }
 .tp-now .tp-rate > .label, .tp-now .tp-rate .readout { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
@@ -1105,7 +1154,6 @@ a.nav-brand img { height: 30px; width: auto; vertical-align: middle; }
 .tp-cuetable .tp-cue-notes .text-truncate { max-width: 4.9em; }
 .tp-cuetable .tp-cue-rowbtns .btn { padding-inline: .2rem; }
 .tp-cuetable .tp-cue-rowbtns [data-cmd="go"] { padding-inline: .55rem; }
-.tp-cuetable .tp-cue-rowbtns .btn.is-armed { inline-size: auto; aspect-ratio: auto; padding-inline: .45rem; border-radius: var(--radius, 4px); }
 .tp-cuetable :is(th, td).drag-handle { padding-inline: 0; }
 
 .tp-cuetable :is(.tp-cue-timer, .tp-cue-atzero, .tp-cue-kind) { white-space: nowrap; }

@@ -8,15 +8,8 @@
   </div>
 
   <div class="stack is-gap-s">
-    <!-- U1: the wrap-up is THE confident stage action — one tap sends it
-         and puts it on stage. It stays out of the compose form: a required
-         text field must never gate it. -->
-    <button class="btn btn-danger tp-wrapup" type="button"
-            data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
-            title="Put “PLEASE WRAP UP!” on the presenter screens now" aria-label="Send the wrap-up message to the stage">
-      WRAP UP!
-    </button>
-
+    {{- /* The one-tap WRAP UP rides the transport, on every tab and size
+         (review 2026-11-12), so it is never scrolled away with this list. */}}
     <!-- Send puts the message on the presenter screens at once (owner,
          2026-10-20: no "Add"/queue step) and replaces what was there. -->
     <form class="stack is-gap-xs" data-cmd="addMsg">
@@ -32,7 +25,9 @@
     </form>
 
     {{if .Messages}}
-    <ul class="list">
+    {{- /* History scrolls in a capped ftl .scroll, so the On air column
+         stays short. */}}
+    <ul class="list scroll" style="--scroll-max: 12rem">
       {{range .Messages}}
       <li class="list-item{{if .IsShown}} is-active{{end}}">
         <span class="list-item-title">{{.Text}}</span>

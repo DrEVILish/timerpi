@@ -6,6 +6,8 @@ export async function run(t) {
   const { ctx, H, room } = await t.newEvent();
   await ctx.request.post(`${t.base}/api/shows/${room}/daystart`, { data: { hhmm: '09:00' }, headers: H });
   const pg = await ctx.newPage();
+  // Wide enough for the Type column (the On air column takes a share).
+  await pg.setViewportSize({ width: 1920, height: 1000 });
   await pg.goto(`${t.base}/c/${room}`);
   const f = (n) => `[form="tp-add-form"][name="${n}"]`;
   await pg.waitForSelector(f('label'));

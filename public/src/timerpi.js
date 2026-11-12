@@ -412,16 +412,10 @@ class ClockUI {
       return b;
     };
     mkBtn('btn-tertiary', `GO — start cue ${ariaPos}`, 'Go', null, { cmd: 'go', pos: String(c.pos) });
-    mkBtn('btn-ghost btn-icon', "Cue it up (playhead here, don't start yet)", null, 'icon-chevron-right', { cmd: 'jump', pos: String(c.pos), start: 'false' });
     mkBtn('btn-icon btn-ghost', `Edit cue ${ariaPos} — all details`, null, 'icon-edit', { insp: String(c.pos) });
-    // ftl two-tap delete: a quiet ghost icon; .btn.is-armed brings the
-    // danger ring and the "Delete?" label (UI #15).
-    const del = mkBtn('btn-icon btn-ghost', `Delete cue ${ariaPos}`, null, null, { cmd: 'cueDel', pos: String(c.pos) });
-    del.setAttribute('aria-describedby', 'tp-del-help');
-    const idle = span('btn-idle-label', '');
-    idle.appendChild(this.icon('icon-trash'));
-    del.append(idle, span('btn-armed-label', 'Delete?'));
-    const more = mkBtn('btn-icon btn-ghost tp-row-more', `More for cue ${ariaPos}`, null, 'icon-more-horizontal', { rowMenu: String(c.pos) });
+    // Cue up, duplicate, move and delete live in the row menu (⋯, right
+    // click or long press), so a row is Go · pencil · ⋯ (review 2026-11-12).
+    const more = mkBtn('btn-icon btn-ghost tp-row-more', `More for cue ${ariaPos}: cue up, duplicate, move, delete`, null, 'icon-more-horizontal', { rowMenu: String(c.pos) });
     more.type = 'button';
     more.setAttribute('aria-haspopup', 'menu');
     btns.appendChild(group);
@@ -815,32 +809,8 @@ function flushAdjust() {
   toast(`Cue ${String(cue.pos).padStart(2, '0')} planned length now ${fmtDurText(dur)} (${durWords(dur)}); later cues move`, 'info');
 }
 
-/**
- * Two-tap delete for the cue table: the first tap ARMS the bin (visual
- * state + rollback in 2.5 s), only a second tap inside that window sends
- * cueDel. No modal maze; a stressed misclick costs nothing.
- */
-function confirmDelete(btn) {
-  const help = $('#tp-del-help');
-  if (btn.classList.contains('is-armed')) {
-    clearTimeout(btn._armer);
-    btn.classList.remove('is-armed');
-    if (help) setText(help, '');
-    return true;
-  }
-  // ftl .btn.is-armed: double ring, "Delete?" label and a 2.5 s sweep;
-  // the live region says what the second tap does (CONTRACT buttons).
-  btn.classList.add('is-armed');
-  if (help) setText(help, `Tap the bin again to delete cue ${String(btn.dataset.pos).padStart(2, '0')}`);
-  btn._armer = setTimeout(() => {
-    btn.classList.remove('is-armed');
-    if (help) setText(help, '');
-  }, 2500);
-  return false;
-}
-
-/** Delete a cue and offer Undo in the toast (UX N11: the touch menu's
-    Delete is instant, and Ctrl+Z has no touch path). */
+/** Delete a cue and offer Undo in the toast: the row menu's Delete is
+    instant (choosing it is the confirmation), and Ctrl+Z has no touch path. */
 function deleteCue(pos) {
   const cue = (clockUI?.snap || mesh?.snap)?.cues?.find((c) => c.pos === pos);
   sendCommand('cueDel', { pos });
@@ -909,8 +879,6 @@ function initCommandButtons() {  document.addEventListener('click', (e) => {
       return;
     }
     const action = btn.dataset.cmd;
-    // U1: destructive deletes need the two-tap arming first.
-    if (action === 'cueDel') { if (confirmDelete(btn)) deleteCue(Number(btn.dataset.pos)); return; }
     const args = {};
     if (btn.dataset.pos) args.pos = Number(btn.dataset.pos);
     if (btn.dataset.start !== undefined) args.start = btn.dataset.start !== 'false';
@@ -1139,6 +1107,40 @@ function initDisplayExtras() {
   };
   ['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, wake, { passive: true }));
   wake();
+}
+
+/* ---------------------------------------------------------- room switch -- */
+
+// Review N1: the room name in the bar opens the event's rooms (ftl
+// .dropdown[popover], server-rendered links). On open, each room gets its
+// state from the event walk-in feed: running with the time left, paused or
+// idle. The feed lists rooms in the same order as the menu.
+function initRoomSwitch() {
+  const pop = $('#tp-room-pop');
+  if (!pop) return;
+  const items = [...pop.querySelectorAll('[data-room-i]')];
+  const btn = $('.tp-room-switch');
+  pop.addEventListener('toggle', async (e) => {
+    btn?.setAttribute('aria-expanded', String(e.newState === 'open'));
+    if (e.newState !== 'open') return;
+    let rooms;
+    try {
+      const r = await fetch(`/api/shows/${encodeURIComponent(pop.dataset.show)}/walkin`, { credentials: 'same-origin' });
+      rooms = (await r.json()).rooms;
+    } catch { return; }
+    if (!Array.isArray(rooms) || rooms.length !== items.length) return;
+    items.forEach((a, i) => {
+      const w = rooms[i];
+      const cell = a.querySelector('.tp-rs-state');
+      if (!cell || a.classList.contains('tp-rs-locked') || w.name !== a.querySelector('.tp-rs-name')?.textContent) return;
+      // A paused cue still reads running (engine), so paused comes first.
+      const [cls, text] = w.paused ? ['status-warn', 'Paused']
+        : w.running && w.remainingMS < 0 ? ['status-error', `Over ${fmtRemaining(-w.remainingMS)}`]
+        : w.running ? ['status-ok', `${fmtRemaining(w.remainingMS)} left`] : ['status-idle', 'Idle'];
+      cell.className = `tp-rs-state status ${cls}`;
+      setText(cell, text);
+    });
+  });
 }
 
 /* ------------------------------------------------------------ room tabs -- */
@@ -1485,6 +1487,7 @@ function initRowMenu() {
     if (!item || !pos || item.disabled) return;
     try { menu.hidePopover(); } catch { /* closed */ }
     const act = item.dataset.rowAct;
+    if (act === 'cue') sendCommand('jump', { pos, start: false });
     if (act === 'dup') sendCommand('cueDup', { pos });
     if (act === 'details') $(`#cuelist [data-insp="${pos}"]`)?.click();
     if (act === 'up' || act === 'down') moveCue(pos, act === 'up' ? -1 : 1);
@@ -2074,8 +2077,13 @@ function initImportDrop() {
     const mode = zone.querySelector('#import-mode')?.value;
     const n = clockUI?.snap?.cues?.length || 0;
     if (mode !== 'replace' || n === 0) { e.detail.issueRequest(); return; }
+    // The modal closes the drawer (popovers give way to a modal); reopen it
+    // so the result (or the form, after Cancel) is in front of the user.
     tpConfirm(`Replace all ${n} cue${n === 1 ? '' : 's'} in this running order with the file's cues?`, { title: 'Replace the running order?', ok: 'Replace', danger: true })
-      .then((ok) => (ok ? e.detail.issueRequest() : e.detail.dropRequest()));
+      .then((ok) => {
+        try { zone.showPopover(); } catch { /* already open */ }
+        if (ok) e.detail.issueRequest(); else e.detail.dropRequest();
+      });
   });
   // The panel takes the drop; the ftl .dropzone inside it lights up.
   const dz = zone.querySelector('.dropzone');
@@ -2084,9 +2092,15 @@ function initImportDrop() {
   input.addEventListener('change', showName);
   const over = (e) => {
     if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
-    if (!zone.open) zone.open = true;
     dz?.classList.add('is-dragover');
   };
+  // A file dragged anywhere over the Run tab opens the Import drawer, so
+  // the drop has somewhere to land.
+  document.addEventListener('dragenter', (e) => {
+    if (!e.dataTransfer?.types?.includes('Files') || zone.matches(':popover-open')) return;
+    if ($('.tp-runorder')?.hidden || document.querySelector('dialog:modal')) return;
+    try { zone.showPopover(); } catch { /* not supported */ }
+  });
   const leave = () => { dz?.classList.remove('is-dragover'); };
   zone.addEventListener('dragover', over);
   zone.addEventListener('dragenter', over);
@@ -2184,6 +2198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (page === 'dashboard') { initInlineEdit(); initRateExtras(); initRateDelegation(); initDayStart(); initDayNotes(); initModerate(showId); initRoomTabs(); initInspector(); initDragReorder(); initAddRow(); initAlertDots(); initRowMenu(); mountMsgSwatches(); }
   if (page === 'display') initDisplayExtras();
+  if (page === 'dashboard' || page === 'screens') initRoomSwitch();
 
   // Offline indicator toggling (display + dashboard)
   setInterval(() => {

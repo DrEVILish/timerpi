@@ -1,165 +1,173 @@
 {{- /*
-  dashboard.html — operator dashboard (page-dashboard), per PLAN §4.
-  Left rail = now panel (frag-current), centre = cue list (frag-cuelist),
-  right = messages (frag-messages) + share (frag-share) + import,
-  bottom = day bar (frag-daybar).
+  dashboard.html — the room page (page-dashboard): now band
+  (frag-current), transport, Run / Audience tabs, the "On air now" column
+  (on-air items + frag-messages), drawers for import and the join QR
+  (frag-share), and the cue and item editors.
 
   Data: .Show, .ShowID, .Current, .Next, .Runtime, .Schedule, .Cues,
         .Messages, .Share, .Peers  — field names in CONTRACT-UI.md
-
-  C2 layout note: the day bar rides BELOW the cue list inside the running-
-  order panel (outside the #cuelist oob swap); the operator page is one
-  tight grid instead of bar strip + orphan space under the table.
 */ -}}
 {{define "page-dashboard"}}
-<div class="stack is-gap-s tp-room" style="min-height:100%">
+{{- /* The room page (owner 2026-11-12, review R2): one live workspace.
+     .tp-room is a grid (layout in timerpi.css "Room page"):
+       desktop  now band · transport / tabs / work
+       tablet   now band / transport / tabs / work
+       phone    now band / tabs / work / transport (sticky to the bottom)
+     The now band and the transport sit outside the tab panels, so the clock
+     and GO are on every tab. The work area is the tab's panel beside the
+     "On air now" column (on-air audience items + stage messages), which
+     both Run and Audience show. The transport is last in the DOM so the
+     phone bar can stick to the bottom of the page. */ -}}
+<div class="tp-room">
+  {{template "frag-current" .}}
   <nav class="tabs tp-room-tabs" role="tablist" aria-label="Room views">
-    <button class="tab is-active" role="tab" data-tab="run" aria-selected="true">Run</button>
-    <button class="tab" role="tab" data-tab="audience" aria-selected="false">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></button>
+    <button class="tab is-active" role="tab" id="tp-tab-run" data-tab="run" aria-selected="true" aria-controls="tp-panel-run">Run</button>
+    <button class="tab" role="tab" id="tp-tab-audience" data-tab="audience" aria-selected="false" aria-controls="tp-aud-panel">Audience <span class="badge" id="tp-aud-tabcount" hidden></span></button>
     {{- /* Moderators work in Run and Audience only; Screens is the
          SuperOperator's (STATUS U25, U29: no Setup tab). */}}
     {{if .Event.IsSuper}}<a class="tab" href="/screens/{{.Show.Code}}">Screens</a>{{end}}
     {{if .Event.IsSuper}}<a class="tab tp-tab-et" href="/e/{{.Event.Code}}/admin" aria-label="Event Technician" title="Event Technician">Event</a>{{end}}{{/* phones: the bar has no room for it (review N10) */}}
   </nav>
-  <div class="tp-dash" data-panel="run">
 
-    {{- /* U37: the left column holds the Current cue, then Messages, then
-         Import; the running order has the rest of the width. */}}
-    <div class="tp-dash-left stack is-gap-s">
-      {{template "frag-current" .}}
-      {{template "frag-messages" .}}
-        <!-- U1: the panel itself is the dropzone (timerpi.js fills #import-file
-             on drop); the hint names the gesture so the affordance is obvious
-             before anything is dragged. -->
-        <details class="panel tp-import">
-          <summary class="panel-header">Import running order</summary>
-          <form class="stack is-gap-s"
-                hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
-                hx-target="#import-result" hx-swap="innerHTML" hx-confirm="replace">
-            {{- /* ftl .dropzone (UI #7): the whole panel takes a drop
-                 (timerpi.js lights the zone); the button opens the picker. */}}
-            <div class="dropzone tp-import-zone">
-              <span id="import-file-name">Drop an .xlsx, .xls, .csv or .json file here</span>
-              <label class="btn btn-sm btn-secondary">Choose file…
-                <input type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json" hidden>
-              </label>
-              <span class="field-hint">Bare numbers are minutes.</span>
-            </div>
-            <div class="field">
-              <label class="label" for="import-mode">Mode</label>
-              <select class="select" id="import-mode" name="mode">
-                <option value="append" selected>Add to the end</option>
-                <option value="replace">Replace all cues</option>
-              </select>
-              <span class="field-hint">The format is detected from the file. Replace asks first.</span>
-            </div>
-            <button class="btn btn-primary" type="submit">Import <span class="indicator"></span></button>
-          </form>
-          <div id="import-result" class="tp-fragment" aria-live="polite"></div>
-        </details>
-    </div>
-
-    <div class="tp-dash-main stack is-gap-s">
-      {{- /* U31: the transport sits above the running order. No Stop/Reset
-           (owner, 2026-10-06): GO on a row restarts that cue. Outside the
-           oob-swapped #tp-now, so these buttons are never re-rendered. */}}
-      <div class="transport tp-transport-bar">
-        {{- /* Two groups so the phone bar can lay them out as two rows (time
-             left · FLASH · WRAP UP · BLANK over Prev · GO · Pause · Next);
-             wider screens see one row (display: contents). */}}
-        <div class="tp-bar-main">
-          <button class="btn btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
-          <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
-          <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
-          <button class="btn btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
-        </div>
-        <div class="tp-bar-talk">
-          {{- /* Phones: the slim sticky bar shows the time left (timerpi.js
-               paints it with the main clock). */}}
-          <time class="countdown tp-bar-left" id="tp-clock-mini" data-state="idle" aria-hidden="true"></time>
-          <button class="btn" data-cmd="flash" type="button" title="Flash the timer on presenter screens" aria-label="Flash the timer on presenter screens">FLASH</button>
-          {{- /* Phones (UX N9): WRAP UP rides the sticky bar, one tap away; the
-               Messages panel keeps its own on wider screens. */}}
-          <button class="btn btn-danger tp-bar-wrapup" type="button"
-                  data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
-                  title="Put “PLEASE WRAP UP!” on the presenter screens now" aria-label="Send the wrap-up message to the stage">WRAP UP</button>
-          <!-- E3: global display blackout — kills every display to STANDBY until
-               released. Pressed state follows snapshot show.blanked. -->
-          <button class="btn btn-danger" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
+  <div class="tp-work">
+    <section class="panel tp-runorder" id="tp-panel-run" data-panel="run" role="tabpanel" aria-labelledby="tp-tab-run">
+      <div class="panel-header tp-cuelist-head">
+        <div class="row is-items-center is-gap-s" style="gap:1rem">
+          <span class="tp-cuelist-title">Running order</span>
+          <span class="badge" id="tp-cue-count">{{len .Cues}} cue{{if ne (len .Cues) 1}}s{{end}}</span>
+          <span class="badge" id="tp-cue-total">Total {{.Schedule.TotalFmt}}</span>
+          {{- /* Import is set-up work: it opens in a drawer (ftl .drawer[popover]). */}}
+          <button class="btn btn-sm push" type="button" popovertarget="tp-import-drawer" title="Add sessions from an .xlsx, .csv or .json file">
+            <svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-upload"/></svg> Import…</button>
         </div>
       </div>
+      {{- /* U39: the add row's fields (in the table's footer) belong to
+           this form, which sits outside the swapped #cuelist. */}}
+      <form id="tp-add-form" hidden></form>
+      <p class="visually-hidden" id="tp-del-help" aria-live="polite"></p>
+      {{template "frag-cuelist" .}}
+      {{- /* The day bar lives under the running order, outside the #cuelist
+           oob swap (only the fragment swaps). */ -}}
+      <div class="stack is-gap-2xs tp-daybar-block">
+        <div class="row is-items-center is-gap-s">
+          <span class="label">Day bar</span>
+          <form id="tp-day-start-form" class="cluster is-gap-2xs">
+            <input class="input input-sm mono" type="text" id="tp-day-begins" size="6"
+                   placeholder="09:00" aria-label="Day begins at (HH:MM)" autocomplete="off"
+                   value="{{.DayStartHHMM}}">
+            <button class="btn btn-sm btn-ghost" type="submit" title="Save the planned start and anchor today to it">Save</button>
+          </form>
+          <button class="btn btn-sm btn-ghost push" id="tp-day-start" type="button"
+                  title="Anchor the day clock to now — the bar starts filling and scheduled times pin to today">
+            Day starts now</button>
+        </div>
+        {{template "frag-daybar" .}}
+      </div>
+    </section>
 
-      <section class="panel tp-runorder">
-        <div class="panel-header tp-cuelist-head">
-          <div class="row is-items-center is-gap-s" style="gap:1rem">
-            <span class="tp-cuelist-title">Running order</span>
-            <span class="badge" id="tp-cue-count">{{len .Cues}} cue{{if ne (len .Cues) 1}}s{{end}}</span>
-            <span class="badge" id="tp-cue-total">Total {{.Schedule.TotalFmt}}</span>
-          </div>
-        </div>
-        {{- /* U39: the add row's fields (in the table's footer) belong to
-             this form, which sits outside the swapped #cuelist. */}}
-        <form id="tp-add-form" hidden></form>
-        {{- /* U41: right-click / long-press row menu (ftl .context-menu). */}}
-        <div class="context-menu is-at-pointer" id="tp-row-menu" popover role="menu" aria-label="Cue actions">
-          <button class="context-menu-item" type="button" role="menuitem" data-row-act="details">All details…</button>
-          <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
-          <button class="context-menu-item" type="button" role="menuitem" data-row-act="up">Move up <kbd>Alt+↑</kbd></button>
-          <button class="context-menu-item" type="button" role="menuitem" data-row-act="down">Move down <kbd>Alt+↓</kbd></button>
-          <div class="context-menu-divider" role="separator"></div>
-          <button class="context-menu-item is-danger" type="button" role="menuitem" data-row-act="del">Delete</button>
-        </div>
-        {{- /* Live text for the two-tap delete (ftl .btn.is-armed) and for
-             keyboard moves ("Moved Coffee to position 3"). */}}
-        <p class="visually-hidden" id="tp-del-help" aria-live="polite"></p>
-        {{template "frag-cuelist" .}}
-        {{- /* C2 layout (owner note "UI layout requires improvement"): the day
-               bar lives UNDER the running order — the natural "timeline of the
-               day" is a glance below the cue columns, and the dead space under
-               a short cue list starts earning its pixels. This whole block is
-               OUTSIDE the #cuelist oob swap (only the fragment swaps); the
-               anchor controls (A6/B4) keep their document-level handling. */ -}}
-        <div class="stack is-gap-2xs tp-daybar-block">
-          <div class="row is-items-center is-gap-s">
-            <span class="label">Day bar</span>
-            <form id="tp-day-start-form" class="cluster is-gap-2xs">
-              <input class="input input-sm mono" type="text" id="tp-day-begins" size="6"
-                     placeholder="09:00" aria-label="Day begins at (HH:MM)" autocomplete="off"
-                     value="{{.DayStartHHMM}}">
-              <button class="btn btn-sm btn-ghost" type="submit" title="Save the planned start and anchor today to it">Save</button>
-            </form>
-            <button class="btn btn-sm btn-ghost push" id="tp-day-start" type="button"
-                    title="Anchor the day clock to now — the bar starts filling and scheduled times pin to today">
-              Day starts now</button>
-          </div>
-          {{template "frag-daybar" .}}
-        </div>
+    <!-- Audience interaction (PRODUCT §4.4): the library of items. Items are
+         created hidden, then shown to the Audience (phones + audience
+         screens) and/or the Presenter (DSM). Rendered by /src/moderate.js. -->
+    <section class="panel tp-aud-main" id="tp-aud-panel" data-panel="audience" role="tabpanel" aria-labelledby="tp-tab-audience" hidden>
+      <div class="panel-header">Audience library <span class="badge" id="tp-aud-count">0</span>
+        <button class="btn btn-sm push" type="button" popovertarget="tp-share-drawer" title="The QR code and link phones use to join this room">
+          <svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-qr-code"/></svg> Join QR</button>
+        <a class="btn btn-sm" id="tp-aud-export" href="/api/shows/{{.Show.Code}}/polls/export" download title="Download every item's votes and submissions as a CSV file"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Export</a>
+        <button class="btn btn-sm btn-primary" type="button" id="tp-aud-new">+ New item</button></div>
+      <div id="tp-aud-items" class="stack is-gap-s"></div>
+    </section>
+
+    {{- /* "On air now": what the room's screens and phones show, on Run and
+         Audience alike, so a moderator never switches tabs mid-talk. */}}
+    <aside class="tp-side stack is-gap-s" aria-label="On air now">
+      <section class="panel tp-onair-panel">
+        <div class="panel-header">On air now</div>
+        <div class="tp-onair" id="tp-aud-onair" aria-label="On air"></div>
       </section>
+      {{template "frag-messages" .}}
+    </aside>
+  </div>
+
+  {{- /* U31: the transport. No Stop/Reset (owner, 2026-10-06): GO on a row
+       restarts that cue. Outside every oob swap, so these buttons are
+       never re-rendered. */}}
+  <div class="transport tp-transport-bar" role="group" aria-label="Transport">
+    {{- /* Two groups so the phone bar can lay them out as two rows (time
+         left · FLASH · WRAP UP · BLANK over Prev · GO · Pause · Next);
+         wider screens see one row (display: contents). */}}
+    <div class="tp-bar-main">
+      <button class="btn btn-icon" data-cmd="prev" title="Previous cue (←)" aria-label="Previous cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-back"/></svg></button>
+      <button class="btn btn-go" data-cmd="go" title="GO — start next cue (Space)" aria-label="GO — start next cue">GO</button>
+      <button class="btn btn-icon" data-cmd="pause" title="Pause / resume (P)" aria-label="Pause / resume"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-pause"/></svg></button>
+      <button class="btn btn-icon" data-cmd="next" title="Next cue (→)" aria-label="Next cue"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-player-skip-forward"/></svg></button>
+    </div>
+    <div class="tp-bar-talk">
+      {{- /* Phones: the slim sticky bar shows the time left (timerpi.js
+           paints it with the main clock). */}}
+      <time class="countdown tp-bar-left" id="tp-clock-mini" data-state="idle" aria-hidden="true"></time>
+      <button class="btn" data-cmd="flash" type="button" title="Flash the timer on presenter screens" aria-label="Flash the timer on presenter screens">FLASH</button>
+      {{- /* WRAP UP (UX N9): the one-tap stage message, on every tab. */}}
+      <button class="btn btn-danger tp-bar-wrapup" type="button"
+              data-cmd="addMsg" data-text="PLEASE WRAP UP!" data-color="#ff4444" data-show="true"
+              title="Put “PLEASE WRAP UP!” on the presenter screens now" aria-label="Send the wrap-up message to the stage">WRAP UP</button>
+      <!-- E3: global display blackout — kills every display to STANDBY until
+           released. Pressed state follows snapshot show.blanked. -->
+      <button class="btn btn-danger" id="tp-blank" type="button" title="Blank all displays (blackout)" aria-label="Blank all displays" aria-pressed="false">BLANK</button>
     </div>
   </div>
-
-  <div class="tp-aud-layout" data-panel="audience" hidden>
-      <!-- Audience interaction (PRODUCT §4.4): items are created hidden,
-           then shown to the Audience (phones + audience screens) and/or
-           the Presenter (DSM). Rendered by /src/moderate.js. -->
-      <section class="panel tp-aud-main" id="tp-aud-panel">
-        <div class="panel-header">Audience <span class="badge" id="tp-aud-count">0</span>
-          <a class="btn btn-sm push" id="tp-aud-export" href="/api/shows/{{.Show.Code}}/polls/export" download title="Download every item's votes and submissions as a CSV file"><svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-download"/></svg> Export</a>
-          <button class="btn btn-sm btn-primary" type="button" id="tp-aud-new">+ New item</button></div>
-        <div class="tp-onair" id="tp-aud-onair" aria-label="On air"></div>
-        <div id="tp-aud-items" class="stack is-gap-s"></div>
-        <div class="dropdown" id="tp-aud-menu" popover role="menu" aria-label="Item actions">
-          <button class="dropdown-item" type="button" role="menuitem" data-aud-act="edit">Edit…</button>
-          <button class="dropdown-item" type="button" role="menuitem" data-aud-act="clear">Clear responses…</button>
-          <button class="dropdown-item text-danger" type="button" role="menuitem" data-aud-act="delete">Delete…</button>
-        </div>
-      </section>
-      <aside class="stack">
-      {{template "frag-share" .}}
-      </aside>
-  </div>
-
 </div>
+
+{{- /* U41: right-click / long-press / ⋯ row menu (ftl .context-menu). The
+     row keeps Go, the editor's pencil and ⋯; cue up and delete live here. */}}
+<div class="context-menu is-at-pointer" id="tp-row-menu" popover role="menu" aria-label="Cue actions">
+  <button class="context-menu-item" type="button" role="menuitem" data-row-act="cue">Cue up <span class="text-muted">(don't start)</span></button>
+  <button class="context-menu-item" type="button" role="menuitem" data-row-act="details">All details…</button>
+  <button class="context-menu-item" type="button" role="menuitem" data-row-act="dup">Duplicate</button>
+  <button class="context-menu-item" type="button" role="menuitem" data-row-act="up">Move up <kbd>Alt+↑</kbd></button>
+  <button class="context-menu-item" type="button" role="menuitem" data-row-act="down">Move down <kbd>Alt+↓</kbd></button>
+  <div class="context-menu-divider" role="separator"></div>
+  <button class="context-menu-item is-danger" type="button" role="menuitem" data-row-act="del">Delete</button>
+</div>
+{{- /* The library's per-item ⋯ menu. At page level: a popover inside a
+     hidden tab panel could not show. */}}
+<div class="dropdown" id="tp-aud-menu" popover role="menu" aria-label="Item actions">
+  <button class="dropdown-item" type="button" role="menuitem" data-aud-act="edit">Edit…</button>
+  <button class="dropdown-item" type="button" role="menuitem" data-aud-act="clear">Clear responses…</button>
+  <button class="dropdown-item text-danger" type="button" role="menuitem" data-aud-act="delete">Delete…</button>
+</div>
+
+{{- /* Set-up work opens in ftl drawers (popover): Esc or a click outside
+     closes them. */}}
+<aside class="drawer tp-import" id="tp-import-drawer" popover aria-labelledby="tp-import-title">
+  <div class="panel-header"><span id="tp-import-title">Import running order</span>
+    <button type="button" class="btn-close push" aria-label="Close" popovertarget="tp-import-drawer" popovertargetaction="hide"></button></div>
+  <form class="stack is-gap-s"
+        hx-post="{{if .Show.Code}}/api/shows/{{.Show.Code}}/import{{end}}" hx-encoding="multipart/form-data"
+        hx-target="#import-result" hx-swap="innerHTML" hx-confirm="replace">
+    {{- /* ftl .dropzone (UI #7): the whole drawer takes a drop (timerpi.js
+         lights the zone); the button opens the picker. */}}
+    <div class="dropzone tp-import-zone">
+      <span id="import-file-name">Drop an .xlsx, .xls, .csv or .json file here</span>
+      <label class="btn btn-sm btn-secondary">Choose file…
+        <input type="file" id="import-file" name="file" accept=".xlsx,.xls,.csv,.json" hidden>
+      </label>
+      <span class="field-hint">Bare numbers are minutes.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="import-mode">Mode</label>
+      <select class="select" id="import-mode" name="mode">
+        <option value="append" selected>Add to the end</option>
+        <option value="replace">Replace all cues</option>
+      </select>
+      <span class="field-hint">The format is detected from the file. Replace asks first.</span>
+    </div>
+    <button class="btn btn-primary" type="submit">Import <span class="indicator"></span></button>
+  </form>
+  <div id="import-result" class="tp-fragment" aria-live="polite"></div>
+</aside>
+<aside class="drawer" id="tp-share-drawer" popover aria-label="Audience join">
+  {{template "frag-share" .}}
+</aside>
 
 {{- /* B1: the cue INSPECTOR — one <dialog>, per-show modal over the grid.
    timerpi.js initInspector() fills it from the snapshot and commits ONE

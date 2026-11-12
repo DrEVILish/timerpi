@@ -1,9 +1,10 @@
-{{- /* frag-share — the room's sharing panel: the audience join QR + link
-     (phones scan it), and a link that opens one of this room's screens.
+{{- /* frag-share — the room's join drawer (dashboard #tp-share-drawer): the
+     audience join QR + link (phones scan it) and a phone preview.
      Room passwords are set by the SuperOperator (event admin page). */ -}}
 {{define "frag-share"}}
-<section class="panel" id="share-panel">
-  <div class="panel-header">Audience join</div>
+<section id="share-panel">
+  <div class="panel-header">Audience join
+    <button type="button" class="btn-close push" aria-label="Close" popovertarget="tp-share-drawer" popovertargetaction="hide"></button></div>
   <div class="stack is-gap-s">
     <img id="share-qr" alt="Audience join QR code" width="160" height="160"
          {{if .Share.Code}}data-show="{{.Share.Code}}" data-path="/a/" data-base="{{.Share.AudienceBase}}"

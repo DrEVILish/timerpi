@@ -101,17 +101,24 @@
 {{template "event-bar" .}}
 <aside class="app-rail" aria-hidden="true"></aside>
 <main class="app-main">
-  <div class="tp-page stack is-gap-l">
+  <div class="tp-page tp-ev-page stack is-gap-m">
+    {{- /* Two tabs (owner 2026-11-12): Live (the rooms table and transport)
+         and Setup (pair, settings, file, delete). The tab is the URL hash. */}}
+    <nav class="tabs tp-ev-tabs" role="tablist" aria-label="Event Technician views">
+      <button class="tab is-active" type="button" role="tab" id="ev-tab-live" data-tab="live" aria-selected="true" aria-controls="ev-panel-live">Live</button>
+      <button class="tab" type="button" role="tab" id="ev-tab-setup" data-tab="setup" aria-selected="false" aria-controls="ev-panel-setup">Setup</button>
+    </nav>
     {{if not .Event.HasSuperPW}}
-    <div class="alert alert-warning" role="status">This event has no Event Technician Password yet — anyone with the event code can open this page. Set one under <a href="#settings">Event settings</a>.</div>
+    <div class="alert alert-warning" role="status">This event has no Event Technician Password yet — anyone with the event code can open this page. Set one under <a href="#setup">Setup</a>.</div>
     {{end}}
     {{if .Event.AtVenue}}
     <div class="alert alert-info" role="status">This event is running at the venue. While the venue is connected, everything here works on the venue's copy; if the link drops, this page shows the last copy and changes pause until it is back.</div>
     {{end}}
 
-    {{- /* One room list (owner 2026-10-20): live cards, each with a ⋯ menu
-         for rename, password, order, duplicate, export and delete. */}}
-    <section class="stack is-gap-s" aria-labelledby="live-h">
+    {{- /* One room list (owner 2026-10-20), now one table row per room with
+         Open and a ⋯ menu for transport, rename, password, order,
+         duplicate, export and delete. */}}
+    <section class="stack is-gap-s" id="ev-panel-live" data-panel="live" role="tabpanel" aria-labelledby="ev-tab-live">
       <div class="row is-items-center is-gap-s is-wrap">
         <h2 id="live-h" class="tp-section-title">Rooms</h2>
         <div class="cluster push">
@@ -120,8 +127,13 @@
           <button class="btn" data-verb-all="unblank" title="Bring every room's screens back">Restore all</button>
         </div>
       </div>
-      <div class="grid" style="--grid-min: min(17rem, 100%)" id="live-grid" aria-live="polite">
-        <div class="empty-state is-loading" aria-busy="true"><span class="empty-state-title">Loading rooms…</span></div>
+      <div class="table-wrap">
+        <table class="table is-stacked tp-ev-rooms">
+          <thead><tr><th scope="col">Room</th><th scope="col">Now</th><th scope="col">Time left</th><th scope="col">Next</th><th scope="col">Screens</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody id="live-grid" aria-live="polite">
+            <tr class="table-empty"><td colspan="6"><div class="empty-state is-loading" aria-busy="true"><span class="empty-state-title">Loading rooms…</span></div></td></tr>
+          </tbody>
+        </table>
       </div>
       <div class="row is-gap-s is-wrap is-items-center">
         <form id="room-add" class="row is-gap-xs tp-room-add">
@@ -135,6 +147,11 @@
       </div>
       <p class="field-hint">One room is all a quick timer needs. Each room has one moderator; a room password is optional.</p>
       <div class="dropdown" id="room-menu" popover role="menu" aria-label="Room actions">
+        <a class="dropdown-item" role="menuitem" data-room-screens href="#">Screens</a>
+        <button class="dropdown-item" type="button" role="menuitem" data-act="go" title="Start the next session">GO</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-act="pause">Pause</button>
+        <button class="dropdown-item" type="button" role="menuitem" data-act="blank">Blackout</button>
+        <hr class="divider tp-ev-menu-sep">
         <button class="dropdown-item" type="button" role="menuitem" data-room-rename>Rename…</button>
         <button class="dropdown-item" type="button" role="menuitem" data-room-pw>Room password…</button>
         <button class="dropdown-item" type="button" role="menuitem" data-room-pw-clear>Remove room password</button>
@@ -146,6 +163,7 @@
       </div>
     </section>
 
+    <div class="stack is-gap-l" id="ev-panel-setup" data-panel="setup" role="tabpanel" aria-labelledby="ev-tab-setup" hidden>
     <section class="panel" id="pair" aria-labelledby="pair-h">
       <div class="panel-header" id="pair-h">Pair a box</div>
       <p class="field-hint">A TimerPi box that isn't paired shows a 6-digit code on its screen. Type it here to make that box one of this event's screens.</p>
@@ -168,12 +186,15 @@
       </form>
     </section>
 
+    {{- /* Settings save as you change them, like the Screens page (owner
+         2026-11-12); only the password keeps a Save button. */}}
     <section class="panel" id="settings" aria-labelledby="settings-h">
       <div class="panel-header" id="settings-h">Event settings</div>
-      <div class="grid" style="--grid-min: 20rem">
+      <div class="grid" style="--grid-min: min(20rem, 100%)">
         <form id="ev-rename" class="field">
           <label class="label" for="ev-name-input">Event name</label>
-          <div class="row is-gap-xs"><input class="input" id="ev-name-input" value="{{.Event.Name}}" maxlength="80" required><button class="btn" type="submit">Save</button></div>
+          <input class="input" id="ev-name-input" value="{{.Event.Name}}" maxlength="80" required>
+          <span class="field-hint">Saved when you press Enter or leave the field.</span>
         </form>
         <form id="ev-theme" class="field">
           <label class="label" for="ev-theme-select">Default screen theme</label>
@@ -196,8 +217,8 @@
         </div>
         <form id="ev-end" class="field" data-ends-at="{{.Event.EndsAt}}">
           <label class="label" for="ev-end-input">Event ends</label>
-          <div class="row is-gap-xs"><input class="input" id="ev-end-input" type="datetime-local"><button class="btn" type="submit">Save</button></div>
-          <span class="field-hint">Venue local time. Screens and boxes are released 4 hours later (never while a timer runs). Leave empty for no end.</span>
+          <input class="input" id="ev-end-input" type="datetime-local">
+          <span class="field-hint">Saved when you leave the field. Venue local time. Screens and boxes are released 4 hours later (never while a timer runs). Leave empty for no end.</span>
         </form>
         <form id="ev-pw" class="field">
           <label class="label" for="ev-pw-new">{{if .Event.HasSuperPW}}Change Event Technician Password{{else}}Set Event Technician Password{{end}}</label>
@@ -225,6 +246,7 @@
         <button class="btn btn-danger push" id="ev-delete">Delete this event…</button>
       </div>
     </section>
+    </div>
   </div>
 {{if .Event.HasSuperPW}}
 <dialog class="modal modal-sm" id="phone-link" aria-labelledby="phone-link-h">

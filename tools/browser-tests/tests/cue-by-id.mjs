@@ -18,10 +18,9 @@ export async function run(t) {
   await pg.waitForFunction(() => document.querySelectorAll('#cuelist tbody tr[data-cue-id]').length === 3);
   const ids = await pg.$$eval('#cuelist tbody tr[data-cue-id]', (trs) => trs.map((tr) => Number(tr.dataset.cueId)));
 
-  // Two-tap delete on row 2 (Panel).
-  const del = pg.locator('#cuelist tbody tr[data-pos="2"] [data-cmd="cueDel"]');
-  await del.click();
-  await del.click();
+  // Delete row 2 (Panel) from its row menu.
+  await pg.click('#cuelist tbody tr[data-pos="2"] [data-row-menu]');
+  await pg.click('#tp-row-menu [data-row-act="del"]');
   await pg.waitForFunction(() => document.querySelectorAll('#cuelist tbody tr[data-cue-id]').length === 2);
   const sent = await pg.evaluate(() => window.__sent.map((s) => JSON.parse(s)).filter((m) => m.action === 'cueDel'));
   t.check(`cueDel carries the row's cue id (${JSON.stringify(sent[0]?.args)})`, sent[0]?.args?.id === ids[1]);

@@ -73,10 +73,26 @@
   <nav class="nav">
     <span class="breadcrumbs">
       {{if .Event.Code}}<a class="breadcrumb-item" href="/e/{{.Event.Code}}" title="All rooms of this event">{{.Event.Name}}</a>{{end}}
+      {{- /* Review N1: with several rooms the room name opens a switcher
+           (ftl .dropdown[popover]) that keeps the view: Run goes to Run,
+           Screens to Screens. timerpi.js adds each room's state on open. */}}
+      {{if gt (len .Event.Rooms) 1}}
+      <button class="btn btn-ghost breadcrumb-item is-current tp-bar-title tp-room-switch" type="button" popovertarget="tp-room-pop" aria-expanded="false" title="Switch room">{{.Show.Title}}<svg class="icon" aria-hidden="true"><use href="/ftl/dist/icons/xbmc.svg#icon-chevron-down"/></svg></button>
+      {{else}}
       <a class="breadcrumb-item is-current tp-bar-title" href="/c/{{.Show.Code}}" title="This room's dashboard"{{if eq .Page "dashboard"}} aria-current="page"{{end}}>{{.Show.Title}}</a>
+      {{end}}
     </span>
     {{if .Event.IsSuper}}<a class="nav-item" href="/e/{{.Event.Code}}/admin">Event Technician</a>{{end}}
   </nav>
+  {{if gt (len .Event.Rooms) 1}}
+  {{- /* A list of links (Tab moves through them), not an ARIA menu. A room
+       this browser can't moderate links to the event's Rooms page, where
+       it can sign in, instead of a "Moderator access needed" dead end. */}}
+  <nav class="dropdown tp-room-pop" id="tp-room-pop" popover aria-label="Switch room" data-show="{{.Show.Code}}">
+    {{range $i, $r := .Event.Rooms}}<a class="dropdown-item{{if not $r.CanModerate}} tp-rs-locked{{end}}" href="{{if not $r.CanModerate}}/e/{{$.Event.Code}}{{else if eq $.Page "screens"}}/screens/{{$r.Code}}{{else}}/c/{{$r.Code}}{{end}}"{{if $r.Here}} aria-current="page"{{end}} data-room-i="{{$i}}"><span class="tp-rs-name">{{$r.Name}}</span><span class="tp-rs-state">{{if not $r.CanModerate}}Sign in{{end}}</span></a>
+    {{end}}<a class="dropdown-item tp-rs-all" href="/e/{{.Event.Code}}{{if .Event.IsSuper}}/admin{{end}}">{{if .Event.IsSuper}}Event Technician{{else}}All rooms{{end}}</a>
+  </nav>
+  {{end}}
   {{if or (eq .Page "dashboard") (eq .Page "screens")}}{{/* U34: time of day, top centre */}}<span class="readout readout-sm mono tp-bar-clock" id="tp-tod" title="Time of day">--:--:--</span>{{end}}
   <div class="cluster push">
     {{if .Event.IsSuper}}{{/* themes: SuperOperator only (STATUS U28) */}}

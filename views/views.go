@@ -178,6 +178,20 @@ type EventRef struct {
 	Code    string
 	Name    string
 	IsSuper bool // this browser is the event's SuperOperator
+	// Rooms is the event's rooms in order, for the header's room switcher
+	// (review N1). Names only reach people who already hold the event:
+	// the room page needs the event's sign-in.
+	Rooms []RoomRef
+}
+
+// RoomRef is one room in the room switcher.
+type RoomRef struct {
+	Code string
+	Name string
+	Here bool // the page's own room
+	// CanModerate: this browser may open the room (Event Technician, or
+	// signed in to it); otherwise the switcher sends it to sign in.
+	CanModerate bool
 }
 
 // CodeFmt is the Event ID as people read it (XXXX-XXXX).

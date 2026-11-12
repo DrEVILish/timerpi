@@ -24,7 +24,7 @@ export async function run(t) {
   const pg = await ctx.newPage();
   watch(pg);
   await pg.setViewportSize({ width: 1440, height: 900 });
-  await pg.goto(`${t.base}/e/${event}/admin`);
+  await pg.goto(`${t.base}/e/${event}/admin#setup`);
   const pb = await pg.$eval('#pair-form button[type=submit]', (b) => b.getBoundingClientRect());
   const pi = await pg.$eval('#pair-name', (b) => b.getBoundingClientRect());
   t.check(`Pair rides on the Screen name row (button ${Math.round(pb.top)}-${Math.round(pb.bottom)}, input ${Math.round(pi.top)}-${Math.round(pi.bottom)})`,
@@ -159,7 +159,7 @@ export async function run(t) {
   // Importing an event file lands on the new event's page, which says so.
   const file = join(mkdtempSync(join(tmpdir(), 'tp-ev-')), 'event.json');
   writeFileSync(file, await (await api('GET', `/api/events/${event}/export`)).body());
-  await pg.goto(`${t.base}/e/${event}/admin`);
+  await pg.goto(`${t.base}/e/${event}/admin#setup`);
   await pg.setInputFiles('#ev-import', file);
   await pg.fill('dialog.modal[open] input', 'import-pw1');
   await Promise.all([pg.waitForURL((u) => !u.pathname.startsWith(`/e/${event}/`), { timeout: 8000 }).catch(() => {}),

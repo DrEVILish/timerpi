@@ -15,6 +15,8 @@ export async function run(t) {
   const errs = [];
   pg.on('pageerror', (e) => errs.push(e.message));
   await pg.setViewportSize({ width: 1440, height: 900 });
+  // The full column set needs a wide screen: the On air column takes a share (review R2).
+  await pg.setViewportSize({ width: 1920, height: 1000 });
   await pg.goto(`${t.base}/c/${room}`);
   await pg.waitForSelector('#cuelist tbody tr[data-pos="2"]');
 

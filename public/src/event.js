@@ -155,12 +155,38 @@ function themeIcon(name) {
   return svg;
 }
 
+// Live · Setup. The choice lives in the URL hash (#setup) so a reload or a
+// link lands on the same tab; the room page's tabs work the same way.
+function initAdminTabs() {
+  const tabs = [...document.querySelectorAll('.tp-ev-tabs [data-tab]')];
+  const show = (name) => {
+    if (document.getElementById(name)?.closest('[data-panel="setup"]')) name = 'setup'; // old #settings, #pair links
+    if (!tabs.some((t) => t.dataset.tab === name)) name = 'live';
+    for (const t of tabs) {
+      const on = t.dataset.tab === name;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', String(on));
+    }
+    for (const p of document.querySelectorAll('main [data-panel]')) p.hidden = p.dataset.panel !== name;
+  };
+  for (const t of tabs) {
+    t.addEventListener('click', () => {
+      history.replaceState(null, '', t.dataset.tab === 'live' ? location.pathname + location.search : `#${t.dataset.tab}`);
+      show(t.dataset.tab);
+    });
+  }
+  const fromHash = () => show(location.hash.slice(1) || 'live');
+  fromHash();
+  addEventListener('hashchange', fromHash); // the "Set one under Setup" link
+}
+
 function initAdmin() {
   rememberEvent(EV, body.dataset.eventName);
   if (new URLSearchParams(location.search).has('imported')) {
     toast(`Imported as a new event: ${body.dataset.eventName} (Event ID ${fmtCode(EV)})`, 'success');
     history.replaceState(null, '', location.pathname + location.hash);
   }
+  initAdminTabs();
   const grid = document.getElementById('live-grid');
   const status = document.getElementById('live-status');
   let rooms = [];
@@ -179,14 +205,18 @@ function initAdmin() {
       return false;
     }
   };
-  // verb disables its button until the request settles, so a double-click
-  // on GO can't advance two sessions (BUGLOG RW44).
+  // One request per room and verb at a time, so a double-click on GO can't
+  // advance two sessions (BUGLOG RW44).
+  const busy = new Set();
   const verb = async (v, room, btn) => {
-    if (btn?.disabled) return;
+    const key = `${room}:${v}`;
+    if (busy.has(key) || btn?.disabled) return;
+    busy.add(key);
     if (btn) btn.disabled = true;
     try {
       await run(() => api('POST', `/api/events/${EV}/verb`, { verb: v, room }));
     } finally {
+      busy.delete(key);
       if (btn) btn.disabled = false;
     }
   };
@@ -199,54 +229,41 @@ function initAdmin() {
     return ['Idle', 'status-idle']; // neutral in every theme since ftl-themes #71
   }
 
-  // Cards are built once per room and patched in place on every poll
+  // Rows are built once per room and patched in place on every poll
   // (BUGLOG RW44: rebuilding them every 2 s lost keyboard focus and
   // dropped clicks that straddled a re-render).
-  const cards = new Map(); // room code → { card, parts }
-  const empty = el('div', { class: 'empty-state' },
-    el('span', { class: 'empty-state-title', text: 'No rooms yet.' }), el('span', { class: 'empty-state-hint', text: 'Add one below.' }));
+  const cards = new Map(); // room code → { card: <tr>, parts }
+  const empty = el('tr', { class: 'table-empty' }, el('td', { colspan: 6 }, el('div', { class: 'empty-state' },
+    el('span', { class: 'empty-state-title', text: 'No rooms yet.' }), el('span', { class: 'empty-state-hint', text: 'Add one below.' }))));
+  const td = (label, props = {}, ...kids) => el('td', { ...props, dataset: { label, ...props.dataset } }, ...kids);
 
   function buildCard(code) {
-    const room = () => rooms.find((x) => x.code === code) || {};
     const parts = {
       name: el('span', { title: 'Double-click to rename' }),
       lock: el('span', { class: 'tp-room-lock', title: 'This room has a moderator password', role: 'img', 'aria-label': 'Has a room password' }, themeIcon('lock')),
-      status: el('span', { class: 'status push' }),
-      // .tp-clock[data-state]: idle is muted with no glow (review #5: glow
-      // means live), paused/overtime take the room page's colours.
-      clock: el('div', { class: 'readout readout-lg tp-clock', dataset: { remaining: '1', state: 'idle' } }),
-      now: el('dd'),
-      next: el('dd'),
-      screens: el('dd'),
+      status: el('span', { class: 'status' }),
+      // .tp-clock[data-state]: idle is muted, paused/overtime take the room
+      // page's colours.
+      clock: td('Time left', { class: 'mono tp-clock tp-ev-left', dataset: { state: 'idle' } }),
+      now: td('Now'),
+      next: td('Next'),
+      screens: td('Screens'),
     };
-    parts.go = el('button', { class: 'btn btn-sm', type: 'button', title: 'Start the next session', dataset: { act: 'go' } }, 'GO');
-    parts.go.addEventListener('click', () => verb('go', code, parts.go));
-    parts.pause = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'pause' } });
-    parts.pause.addEventListener('click', () => verb(room().paused ? 'resume' : 'pause', code, parts.pause));
-    parts.blank = el('button', { class: 'btn btn-sm', type: 'button', dataset: { act: 'blank' } });
-    parts.blank.addEventListener('click', () => verb(room().blanked ? 'unblank' : 'blank', code, parts.blank));
     parts.name.addEventListener('dblclick', () => renameRoom(code));
     // The theme's own "more" icon at full icon-button size (review #10: a
     // 10px text glyph was nearly invisible).
     const more = el('button', {
-      class: 'btn btn-ghost btn-icon tp-room-more', type: 'button', title: 'Rename, password, order, duplicate, export, delete',
-      'aria-label': `Room actions`, 'aria-haspopup': 'menu', dataset: { roomMenu: code },
+      class: 'btn btn-ghost btn-icon tp-room-more', type: 'button', title: 'Screens, GO, pause, blackout, rename, password, order, duplicate, export, delete',
+      'aria-label': 'Room actions', 'aria-haspopup': 'menu', dataset: { roomMenu: code },
     });
     more.appendChild(themeIcon('more-horizontal'));
     more.addEventListener('click', () => openRoomMenu(code, more));
-    const card = el('article', { class: 'panel stack is-gap-xs', dataset: { room: code } },
-      el('div', { class: 'panel-header cluster' }, parts.name, parts.lock, parts.status, more),
-      parts.clock,
-      el('dl', { class: 'props' },
-        el('dt', { text: 'Now' }), parts.now,
-        el('dt', { text: 'Next' }), parts.next,
-        el('dt', { text: 'Screens' }), parts.screens,
-      ),
-      el('div', { class: 'cluster is-gap-2xs' },
-        el('a', { class: 'btn btn-sm btn-secondary', href: `/c/${code}` }, 'Open room'), // one primary per panel: none on a card (review #4)
-        el('a', { class: 'btn btn-sm', href: `/screens/${code}` }, 'Screens'),
-        parts.go, parts.pause, parts.blank,
-      ),
+    const card = el('tr', { dataset: { room: code } },
+      td('Room', {}, el('div', { class: 'cluster is-gap-2xs tp-ev-room' }, parts.name, parts.lock, parts.status)),
+      parts.now, parts.clock, parts.next, parts.screens,
+      td('', { class: 'tp-ev-acts' }, el('div', { class: 'cluster is-gap-2xs' },
+        el('a', { class: 'btn btn-sm btn-secondary', href: `/c/${code}` }, 'Open'), // no primary in a row (review #4)
+        more)),
     );
     return { card, parts };
   }
@@ -259,7 +276,7 @@ function initAdmin() {
       return;
     }
     empty.remove();
-    grid.querySelector('.empty-state.is-loading')?.remove();
+    grid.querySelector('.table-empty')?.remove();
     const live = new Set(rooms.map((r) => r.code));
     for (const [code, { card }] of cards) {
       if (!live.has(code)) { card.remove(); cards.delete(code); }
@@ -272,18 +289,17 @@ function initAdmin() {
       setText(parts.name, r.name);
       parts.lock.hidden = !r.hasPassword;
       setText(parts.status, label);
-      parts.status.className = `status ${cls} push`;
+      parts.status.className = `status ${cls}`;
       setText(parts.clock, r.running ? fmtClock(r.remainingMS) : '—');
       parts.clock.dataset.state = !r.running ? 'idle' : r.paused ? 'paused' : r.overtime ? 'overtime' : 'running';
       card.toggleAttribute('data-idle', !r.running);
       setText(parts.now, r.activeLabel || '—');
       setText(parts.next, r.nextLabel || '—');
-      setText(parts.screens, String(r.screens));
-      parts.pause.hidden = !r.running;
-      setText(parts.pause, r.paused ? 'Resume' : 'Pause');
-      setText(parts.blank, r.blanked ? 'Restore' : 'Blackout');
-      parts.blank.classList.toggle('btn-danger', !r.blanked);
-      // Move a card only when it is out of place: moving a node drops focus.
+      // A running room nobody can see is worth a glance.
+      const dark = r.running && !r.screens;
+      setText(parts.screens, dark ? '0 — no screens' : String(r.screens));
+      parts.screens.classList.toggle('text-warning', dark);
+      // Move a row only when it is out of place: moving a node drops focus.
       if (grid.children[i] !== card) grid.insertBefore(card, grid.children[i] || null);
     });
     syncPairRooms();
@@ -368,6 +384,18 @@ function initAdmin() {
     menu.querySelector('[data-room-move="-1"]').hidden = i <= 0;
     menu.querySelector('[data-room-move="1"]').hidden = i < 0 || i >= rooms.length - 1;
     menu.querySelector('[data-room-export]').href = `/api/shows/${code}/file`;
+    menu.querySelector('[data-room-screens]').href = `/screens/${code}`;
+    const r = rooms[i] || {};
+    // The verb is fixed when the menu opens, so what it says is what it
+    // sends even if a poll lands before the click (review #12).
+    const pause = menu.querySelector('[data-act="pause"]');
+    pause.hidden = !r.running;
+    pause.textContent = r.paused ? 'Resume' : 'Pause';
+    pause.dataset.verb = r.paused ? 'resume' : 'pause';
+    const blank = menu.querySelector('[data-act="blank"]');
+    blank.textContent = r.blanked ? 'Restore' : 'Blackout';
+    blank.dataset.verb = r.blanked ? 'unblank' : 'blank';
+    blank.classList.toggle('text-danger', !r.blanked);
     try { menu.showPopover({ source: btn }); } catch { menu.showPopover(); }
   }
   menu?.addEventListener('click', async (e) => {
@@ -376,7 +404,9 @@ function initAdmin() {
     const room = menuRoom;
     const name = roomName(room);
     menu.hidePopover();
-    if (item.matches('[data-room-export]')) return; // the link downloads
+    if (item.matches('[data-room-export], [data-room-screens]')) return; // links
+    if (item.dataset.act === 'go') return verb('go', room);
+    if (item.dataset.act === 'pause' || item.dataset.act === 'blank') return verb(item.dataset.verb, room);
     if (item.matches('[data-room-rename]')) return renameRoom(room);
     if (item.matches('[data-room-pw]')) {
       const res = await tpPrompt(`Moderators of "${name}" will need this password.`, '', {
@@ -448,10 +478,26 @@ function initAdmin() {
   });
 
   // Settings
-  document.getElementById('ev-rename')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    run(() => api('PATCH', `/api/events/${EV}`, { name: document.getElementById('ev-name-input').value }), 'Event renamed').then((ok) => ok && reload());
-  });
+  // Event name saves on Enter or when the field is left (one saving model
+  // with the Screens page); the bar's title follows without a reload.
+  const nameIn = document.getElementById('ev-name-input');
+  let savedName = nameIn?.value ?? '';
+  const saveName = async () => {
+    const name = nameIn.value;
+    if (name === savedName) return;
+    const prev = savedName;
+    savedName = name; // Enter then blur sends once
+    // Refused (an empty name): the field goes back to the saved name.
+    if (!(await run(() => api('PATCH', `/api/events/${EV}`, { name }), 'Event name saved'))) { savedName = prev; nameIn.value = prev; }
+    else {
+      document.title = document.title.replace(prev.trim(), name.trim());
+      body.dataset.eventName = name.trim();
+      for (const t of document.querySelectorAll('.tp-bar-title')) t.textContent = name.trim();
+      rememberEvent(EV, name.trim());
+    }
+  };
+  document.getElementById('ev-rename')?.addEventListener('submit', (e) => { e.preventDefault(); saveName(); });
+  nameIn?.addEventListener('change', saveName);
   document.getElementById('ev-theme-select')?.addEventListener('change', (e) => e.target.form.requestSubmit());
   document.getElementById('ev-theme')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -527,13 +573,23 @@ function initAdmin() {
       const p = (n) => String(n).padStart(2, '0');
       endInput.value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
     }
-    endForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    // Saved when the field is left (or Enter): datetime-local fires change
+    // on every segment typed, and a half-typed year would ask "in the past?".
+    let savedEnd = endInput.value;
+    const saveEnd = async () => {
+      if (endInput.value === savedEnd) return;
+      const prev = savedEnd;
+      savedEnd = endInput.value; // the confirm dialog's blur must not ask twice
       const v = endInput.value ? new Date(endInput.value).getTime() : 0;
       // A past end releases the screens and boxes within hours — ask first.
-      if (v && v < Date.now() && !(await tpConfirm('That time has already passed: screens and boxes are released 4 hours after the end (never while a timer runs). Save it anyway?', { title: 'Event end in the past?', ok: 'Save anyway', danger: true }))) return;
-      run(() => api('PATCH', `/api/events/${EV}`, { endsAt: v }), v ? 'Event end saved' : 'Event end cleared');
-    });
+      if (v && v < Date.now() && !(await tpConfirm('That time has already passed: screens and boxes are released 4 hours after the end (never while a timer runs). Save it anyway?', { title: 'Event end in the past?', ok: 'Save anyway', danger: true }))) {
+        endInput.value = savedEnd = prev;
+        return;
+      }
+      if (!(await run(() => api('PATCH', `/api/events/${EV}`, { endsAt: v }), v ? 'Event end saved' : 'Event end cleared'))) savedEnd = prev;
+    };
+    endForm.addEventListener('submit', (e) => { e.preventDefault(); saveEnd(); });
+    endInput.addEventListener('blur', saveEnd);
   }
   document.getElementById('ev-pw')?.addEventListener('submit', (e) => {
     e.preventDefault();
