@@ -152,34 +152,64 @@ export function clockView(snap, now) {
 
 /* -------------------------------------------------------------- commands -- */
 
-function findNextArmed(snap) {
-  const r = snap.runtime;
-  if (r.activePos) {
-    const cue = activeCue(snap);
-    if (cue && !(r.running || r.paused)) return cue; // armed current
-    const after = cueAfter(snap, r.activePos);
-    if (after) return after;
-    return cue;
-  }
-  return snap.cues[0] || null;
+/** Positions before/after pos in run order (0 = none). Parity with
+ *  engine.go neighborsOf. */
+function setNeighbours(snap, pos) {
+  snap.runtime.prevPos = cueBefore(snap, pos)?.pos || 0;
+  snap.runtime.nextPos = cueAfter(snap, pos)?.pos || 0;
 }
 
+/** A countdown cue frozen at zero by the tick (HOLD). */
+function isHeld(snap, cue) {
+  const r = snap.runtime;
+  return cue.timerKind === 'COUNTDOWN' && cue.endAction === 'HOLD' && cue.durationMS > 0
+    && r.activePos === cue.pos && !r.running && !r.paused && (r.pausedElapsedMS || 0) >= cue.durationMS;
+}
+
+/** Run `cue` from now (engine.go startLocked). */
 function beginCue(snap, cue, now) {
   const r = snap.runtime;
-  r.prevPos = r.activePos;
   r.activePos = cue.pos;
-  r.nextPos = cueAfter(snap, cue.pos)?.pos || 0;
+  setNeighbours(snap, cue.pos);
   r.anchorTS = now;
   r.pausedElapsedMS = 0;
   r.running = true;
   r.paused = false;
   r.blank = false;
-  if (!r.dayStartTS) r.dayStartTS = now;
+  // No day start set: the day starts now, placed so this cue is on plan.
+  if (!r.dayStartTS) {
+    const row = computeSchedule(snap).rows.find((x) => x.pos === cue.pos);
+    r.dayStartTS = now - (row ? row.startMS : 0);
+  }
 }
 
+/** Put the playhead on `cue` without starting it (engine.go jumpLocked). */
+function armCue(snap, cue) {
+  const r = snap.runtime;
+  r.activePos = cue.pos;
+  setNeighbours(snap, cue.pos);
+  r.running = false;
+  r.paused = false;
+  r.anchorTS = 0;
+  r.pausedElapsedMS = 0;
+  r.blank = false;
+}
+
+/** Explicit start of one cue: a cue held at zero refuses (GO restarts it). */
+function startCue(snap, cue, now) {
+  if (!cue || isHeld(snap, cue)) return 'ignored';
+  beginCue(snap, cue, now);
+  return 'applied';
+}
+
+const isTrue = (v) => v === true || v === 'true' || v === '1' || (typeof v === 'number' && v !== 0);
+
 /**
- * Apply a control command to the snapshot in place (master-executes the same
- * rules as the Go engine). Returns 'applied' | 'ignored'.
+ * Apply a control command to the snapshot in place. The Go engine
+ * (timerpi/engine.go, reached through ws/commands.go) is the authority; this
+ * must give the same result for the same commands, and
+ * timerpi/engine_parity_test.go runs both to prove it. Change them together.
+ * Returns 'applied' | 'ignored'.
  * Actions: start | pause | resume | reset | next | prev | go | jump | rate
  *          addMsg | showMsg | hideMsg | clearMsgs
  *          cueAdd | cueEdit | cueDel | cueMove | cueDup (offline master only —
@@ -190,17 +220,17 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
   if (!snap) return 'ignored';
   const r = snap.runtime;
   const cue = activeCue(snap);
+  const named = args.pos || args.id;
 
   switch (action) {
-    case 'start': {
-      const target = (args.pos || args.id) ? cueRef(snap, args) : (cue || findNextArmed(snap));
-      if (!target) return 'ignored';
-      beginCue(snap, target, now);
-      return 'applied';
-    }
+    case 'start':
+      return startCue(snap, named ? cueRef(snap, args) : (r.activePos ? cue : snap.cues[0]), now);
     case 'go': {
-      const target = (args.pos || args.id) ? cueRef(snap, args) : findNextArmed(snap);
-      if (!target) return 'ignored';
+      if (named) return startCue(snap, cueRef(snap, args), now); // GO on a row
+      if (!r.activePos) return startCue(snap, snap.cues[0], now);
+      // Armed or held at zero: run it (again). Running or paused: the next cue.
+      const target = !(r.running || r.paused) ? cue : cueAfter(snap, r.activePos);
+      if (!target) return 'ignored'; // past the last cue: never re-fire the running one
       beginCue(snap, target, now);
       return 'applied';
     }
@@ -216,7 +246,7 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
         return 'applied';
       }
       if (!r.running) return 'ignored';
-      r.pausedElapsedMS = (now - r.anchorTS) * (r.rate || 1) + (r.pausedElapsedMS || 0);
+      r.pausedElapsedMS = Math.trunc((now - r.anchorTS) * (r.rate || 1)) + (r.pausedElapsedMS || 0);
       r.running = false;
       r.paused = true;
       return 'applied';
@@ -233,40 +263,33 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
       if (!cue) return 'ignored';
       r.running = false;
       r.paused = false;
+      r.anchorTS = 0;
       r.pausedElapsedMS = 0;
       r.blank = false;
       return 'applied';
     }
-    case 'next': {
-      const target = cueAfter(snap, r.activePos) || cue;
+    case 'next':
+    case 'prev': { // arm the neighbour; at either end, stay
+      const target = !r.activePos ? snap.cues[0]
+        : action === 'next' ? cueAfter(snap, r.activePos) : cueBefore(snap, r.activePos);
       if (!target) return 'ignored';
-      beginCue(snap, target, now);
+      armCue(snap, target);
       return 'applied';
     }
-    case 'prev': {
-      const target = cueBefore(snap, r.activePos);
-      if (!target) return 'ignored';
-      beginCue(snap, target, now);
-      return 'applied';
-    }
-    case 'jump': {
+    case 'jump': { // cue up: arm without starting, unless start is asked for
       const target = cueRef(snap, args);
       if (!target) return 'ignored';
-      if (args.start === false) { // arm without starting
-        r.prevPos = r.activePos; r.activePos = target.pos;
-        r.nextPos = cueAfter(snap, target.pos)?.pos || 0;
-        r.running = false; r.paused = false; r.pausedElapsedMS = 0; r.blank = false;
-      } else {
-        beginCue(snap, target, now);
-      }
+      if (isTrue(args.start)) return startCue(snap, target, now);
+      armCue(snap, target);
       return 'applied';
     }
     case 'rate': {
-      const rate = Number(args.rate);
-      if (!Number.isFinite(rate) || rate <= 0) return 'ignored';
-      if (r.running && cue) {
+      let rate = Number(args.rate);
+      if (!(rate > 0)) return 'ignored';
+      rate = Math.min(2, Math.max(0.5, rate)); // the x0.5–x2 contract (ClampRate)
+      if (r.running && !r.paused && r.anchorTS > 0) {
         // Re-anchor: absorb scaled elapsed since the last anchor; schedule untouched.
-        r.pausedElapsedMS = (now - r.anchorTS) * r.rate + (r.pausedElapsedMS || 0);
+        r.pausedElapsedMS = Math.trunc((now - r.anchorTS) * (r.rate || 1)) + (r.pausedElapsedMS || 0);
         r.anchorTS = now;
       }
       r.rate = rate;
@@ -522,8 +545,7 @@ function bump(snap, now) {
  * Parity with timerpi/engine.go Tick: only RUNNING, UNPAUSED COUNTDOWN cues
  * cross. On crossing: OVERTIME keeps counting up (no change); HOLD and BLANK
  * both freeze at PausedElapsedMS == durationMS with running=false (HOLD then
- * renders 00:00 HELD, BLANK renders blank); an auto-continuing HOLD cue
- * starts the next cue instead.
+ * renders 00:00 HELD, BLANK renders blank).
  * Returns true when the snapshot changed (caller must broadcast + sync).
  */
 export function tickZeroCrossing(snap, now = Date.now()) {
@@ -534,12 +556,9 @@ export function tickZeroCrossing(snap, now = Date.now()) {
   if (rem > 0) return false;
 
   if (cue.endAction === 'OVERTIME') return false;
-  if (cue.autoContinue && cue.endAction === 'HOLD') {
-    const next = cueAfter(snap, cue.pos);
-    if (next) { beginCue(snap, next, now); snap.updatedAt = bump(snap, now); return true; }
-  }
+  // No auto-continue: the operator starts the next cue (STATUS U42).
   if (cue.endAction !== 'HOLD' && cue.endAction !== 'BLANK') return false; // unknown action: mirror go (no freeze)
-  // HOLD (no next / no autoContinue) and BLANK: freeze the countdown at zero
+  // HOLD and BLANK: freeze the countdown at zero
   // — running=false + elapsed == duration reads back as remaining 0
   // everywhere (engine.go EndHold/EndBlank branch; Paused stays false).
   snap.runtime.running = false;

@@ -1,0 +1,32 @@
+# The checks AGENTS.md §3 asks for before every push, run on every push too.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # ftl-themes: pages and browser tests need it
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./... # the engine parity test needs node (preinstalled)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/browser-tests/package-lock.json
+      - name: Browser tests
+        working-directory: tools/browser-tests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          node run.mjs

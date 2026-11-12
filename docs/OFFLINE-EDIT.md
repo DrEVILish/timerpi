@@ -102,6 +102,11 @@ stands while cues still merge per cue.
 | cueMove | pos + dir up\|down; edge = no-op success | same swap; edge = `ignored` (avoids a pointless sync); BOTH swapped rows stamped |
 | cueDup | copy inserted directly after | same; fresh temp id; copy stamped |
 
+Transport (`go`, `start`, `pause`, `resume`, `next`, `prev`, `jump`, `rate`)
+and the zero crossing give the same result offline as on the server: Next and
+Prev arm, cue up arms, GO past the last cue does nothing, a held cue restarts
+only on a plain GO, rate stays within ×0.5–×2 (§8, parity test).
+
 Insert/delete positional shifts do NOT restamp (§3 tie rule). Every applied
 op bumps `snap.updatedAt` and sets `_advancedOffline`.
 
@@ -151,10 +156,11 @@ op bumps `snap.updatedAt` and sets `_advancedOffline`.
 - `go test ./timerpi/ ./routes/ -count=1` (merge unit tests + sync handler
   tests: diverged edits, tombstone delete, own-ops-only, legacy stale +
   legacy fallback).
-- `/tmp/offline-harness/offline_engine.test.mjs` — `node --test` parity
-  spot-checks for `engine.js` (repo has no JS runner; the harness copies
-  `public/src/engine.js` verbatim beside a `{"type":"module"}` package.json;
-  re-copy after editing).
+- `TestEngineParityWithJS` (`timerpi/engine_parity_test.go`) runs one set of
+  scenarios (transport, zero crossings, rate, reorders, deletes) through the
+  server engine and through `public/src/engine.js` under node, and compares
+  the state after every step. Add a scenario there when either engine
+  changes. It skips when node is not installed; CI has it.
 - Throwaway-port live probe: two divergent cue sets → merged snapshot
   (never against `:80` data), then `systemctl restart timerpi` + `:80`
   smoke curls. (The original evidence log was not kept in the repo.)
