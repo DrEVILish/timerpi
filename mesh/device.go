@@ -10,8 +10,9 @@
 // Authority selection is epoch-ordered: the epoch is the epoch-milliseconds
 // at the moment a device first CLAIMED, persisted in SQLite
 // (mesh_state.claimed_epoch), so it survives restarts. SMALLER epoch = came
-// first = wins. Seeing a primary with a higher epoch than our claimed one →
-// we KEEP primary; seeing one with a LOWER epoch → we yield to member. Two
+// first = wins among active primaries. A restarting box follows a healthy
+// primary and mirrors its event before any later takeover. An active primary
+// keeps authority over a higher epoch and yields to a lower epoch. Two
 // devices claiming simultaneously converge deterministically on the next
 // poll (epoch-ms collisions are vanishingly unlikely and self-heal).
 //
@@ -519,11 +520,8 @@ func (dev *Device) decideLocked() State {
 	switch dev.state {
 	case StateIdle:
 		if best != nil && bestOK {
-			// Someone else already holds authority. We keep primary only
-			// when our own (persisted) claim is senior to their announce.
-			if dev.claimedEpoch > 0 && seniorThan(dev.claimedEpoch, dev.hostname, dev.opts.Port, bestEpoch, bestHost, best.Port) {
-				return StatePrimary // we came first; the other will yield
-			}
+			// A running primary may have accepted edits while we were down.
+			// Rejoin as a member and mirror it; an old epoch is not fresh data.
 			return StateMember
 		}
 		if now.Sub(dev.startedAt) >= DefaultGraceWindow {
@@ -606,7 +604,7 @@ func (dev *Device) takeoverLocked() func() {
 
 // claimLocked assigns (once) and persists our authority epoch: epoch-ms at
 // the moment of first claim. Already-persisted epochs are kept — a restart
-// must not re-enter a race it already won/lost.
+// keeps the same split-brain tie-breaker when it next becomes primary.
 func (dev *Device) claimLocked() {
 	if dev.claimedEpoch > 0 {
 		return

@@ -317,10 +317,11 @@ func TestYieldsToLowerEpochPrimary(t *testing.T) {
 }
 
 func TestKeepsPrimaryWhenOurEpochOlder(t *testing.T) {
-	// Our persisted epoch (500) is OLDER than the new primary's (900) — we
-	// came first, we keep primary and it will yield.
+	// We are already active and our epoch (500) is older than the
+	// competing primary's (900): split-brain healing keeps our authority.
 	kit := newKit(t, func(o *Options) { o.DBPath = filepath.Join(t.TempDir(), "timerpi.db") })
 	kit.dev.claimedEpoch = 500
+	kit.waitFor(t, StatePrimary, nil)
 
 	if st := kit.evaluate(t, []mdns.Peer{peer("pi-late", "primary", 900, "192.168.1.11")}); st != StatePrimary {
 		t.Fatalf("want keep primary, got %s", st)
@@ -336,6 +337,7 @@ func TestEpochTieHostnameTiebreak(t *testing.T) {
 	// epoch + equal host = our own announce seen back).
 	kit := newKit(t, nil)
 	kit.dev.claimedEpoch = 1000
+	kit.waitFor(t, StatePrimary, nil)
 
 	if st := kit.evaluate(t, []mdns.Peer{peer("pi-alpha", "primary", 1000, "192.168.1.12")}); st != StateMember {
 		t.Fatalf("equal epoch, smaller remote host → we yield, got %s", st)
@@ -343,6 +345,7 @@ func TestEpochTieHostnameTiebreak(t *testing.T) {
 
 	kit2 := newKit(t, nil)
 	kit2.dev.claimedEpoch = 1000
+	kit2.waitFor(t, StatePrimary, nil)
 	if st := kit2.evaluate(t, []mdns.Peer{
 		peer("pi-zulu", "primary", 1000, "192.168.1.13"),
 	}); st != StatePrimary {

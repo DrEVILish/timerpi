@@ -12,7 +12,7 @@ Code facts these drills rely on (all verified in-tree 2026-10-05):
   harvest timeout 3 s.
 - Seniority: `claimedEpoch` (ms of FIRST claim, persisted in SQLite
   `mesh_state`) never re-stamps — smaller epoch wins, across restarts
-  and takeovers. Ties break by hostname, then port.
+  and takeovers. Ties break by hostname, then port. A restarting box follows an existing healthy primary regardless of its stored epoch; seniority resolves competing active primaries.
 - Observability: `GET /api/network` → `{role, epoch, peers[]}`,
   `POST /api/network/role {"force":"auto|primary|member"}`,
   `POST /api/network/hostname {"name":…}`, `GET /frag/network` live panel.
@@ -94,14 +94,16 @@ shorten the waits, late joins are the #1 false failure.
     `takeover: harvested show <id> from stage-left (<n> bytes)`
     (or `promoting blind` if A died mid-harvest — still a PASS for
     authority, note it in the log).
-12. B's dashboard serves the show (open `http://stage-right.local/`).
+12. B's dashboard serves the show (open `http://stage-right.local/`). Add a uniquely named cue on B while A is stopped and verify it is saved.
 
-### 1e. Reunion: seniority returns authority to A, no split-brain
+### 1e. Reunion: the returning box catches up, no split-brain
 
 13. `ssh root@stage-left 'systemctl start timerpi'`; wait 20 s.
-14. A → `"role":"primary"`, epoch == E_A (unchanged — claims never
-    re-stamp). B → `"role":"display"` (split-brain heal: B saw A's
-    senior claim and yielded).
+14. A → `"role":"display"`, epoch == E_A (unchanged). B stays
+    `"role":"primary"`. Within the mirror interval A must contain the cue
+    added on B; it must not erase that edit by reclaiming authority.
+    After confirming catch-up, stop B and verify A can take over with the
+    edit intact; restart B and verify one primary remains.
 15. PASS requires exactly ONE primary across both `/api/network`
     outputs. If both ever claim primary outside a force override,
     that is a bug — capture both outputs + journals.
