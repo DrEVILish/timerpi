@@ -34,6 +34,9 @@ JS/CSS URLs always go through `{{asset "/src/x.js"}}` (`views/assets.go`).
 | `theme.js` | `applyTheme()`, `applyIconTheme()`, `initClientLog()` |
 | `mesh.js` | `Mesh` (WS + P2P), `screenName()` |
 | `engine.js` | Client-parity countdown/schedule math |
+| `layout-edit.js` | `editTile()`, canvas geometry helpers |
+| `layout-document.js` | `LayoutDocument` (selected version, replacement, save, rollback) |
+| `display-session.js` | `createDisplaySession()` (screen identity and shared display frames) |
 
 ## 3. CSS
 

@@ -8,7 +8,7 @@
 > Key: ✅ meets spec · 🟡 works with caveats, or unproven on hardware ·
 > ⚠️ partial or buggy · ❌ missing
 >
-> State 2026-11-15: `go build`, `go vet`, `go test ./...` and the 58 browser
+> State 2026-11-15: `go build`, `go vet`, `go test ./...` and the 59 browser
 > tests are green; `.github/workflows/ci.yml` runs all four on every push.
 
 ---
@@ -79,7 +79,7 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | **N20** | Run the load harness on the real cloud container | H6 | `deploy/cloud/` and OPS §8 are ready |
 | **U26, U27** | Import: match columns by header | T6 | Deferred by the owner (2026-10-06) |
 | **U51** | "Done" rows are position-based: a cue dragged above the running one is struck through | T1 | The snapshot keeps no "has run" record (U50's known limit) |
-| **RS37** | Deepen the room/display scripts behind tested behavior | S2 | `db.go` is split; layout geometry now has a DOM-free edit module shared by pointer, phone, keyboard and alignment. Document/version/save state and the remaining room/display logic still need review |
+| **RS37** | Review the remaining room/rendering responsibilities before further extraction | S2 | `db.go`, layout geometry/document state and the shared display lifecycle are separated behind behavior tests (C11–C13). Further work must concentrate real behavior, not split files by line count |
 | **H5b** | A load client that drives a box from another machine | A10 | Today only real phones can load a box over Wi-Fi (HW-DRILLS §4b) |
 
 ## 4. Hardware / field proof
@@ -100,7 +100,7 @@ Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installe
 
 One line per ID, so citations in code and commits still resolve. Detail: `git log --grep=<ID>`.
 
-**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions · B12 layout alignment uses the same collision rules as other edits · B14 failed screen assignments leave the prior look and waiting claim intact.
+**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions · B12 layout alignment uses the same collision rules as other edits · B13 layout saves stay ordered and acknowledge only the sent document · B14 failed screen assignments leave the prior look and waiting claim intact.
 
 **Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 
@@ -116,7 +116,7 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 **Home, event pages, roles.** U19–U24 home and event page wording, Leave event · U25 moderators get Run and Audience only · U28 theme picker for the Event Technician only · U29 no Setup tab · U52 Event Technician page: Live rooms table and Setup tab, settings save on change (password keeps Save).
 
-**Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired · C12 atomic screen assignment module (S4).
+**Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired · C11 layout document/version/save-state module (S2) · C12 atomic screen assignment module (S4) · C13 shared display lifecycle module (S5).
 
 **Engine.** The browser's offline engine matches the server, held to it by `TestEngineParityWithJS` (2026-11-12).
 
@@ -125,7 +125,7 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 1. **Hardware**: H3 (deploy), H1, H2, then H5 and H6; D1 with the mesh. Nothing in §4 has run on a Pi.
 2. **N20**: the load harness on the cloud container, before the first show.
 3. **Owner decision**: N18 kiosk mode (unblocks N13).
-4. **RS37**: split the two large scripts, behind the browser tests.
+4. **RS37**: review remaining room/rendering responsibilities, behind the browser tests.
 5. N11, N17, N19, U51, H5b as they come up. N10 waits for the multi-day UI.
 
 ## 7. Open questions

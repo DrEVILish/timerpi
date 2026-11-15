@@ -28,14 +28,16 @@ import {
   activeCue, cueAfter, elapsedMS, remainingMS, isOvertime, alertState,
   clockView, computeSchedule, fmtDuration, fmtRemaining, fmtTimeOfDay,
 } from './engine.js';
-import { Mesh, screenName } from './mesh.js';
-import { applyTheme, loadThemeVersion, initClientLog } from './theme.js';
+import { Mesh } from './mesh.js';
+import { createDisplaySession } from './display-session.js';
+import { loadThemeVersion, initClientLog } from './theme.js';
 import { api, setText, tileLabel, spriteIcon } from './ui.js';
 import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 import { paintAudience, clearAudience } from './audtiles.js';
 import { fitWidth } from './fit.js';
 import { canvasRows, clampTile, overlaps, editTile } from './layout-edit.js';
+import { LayoutDocument } from './layout-document.js';
 
 loadThemeVersion();
 
@@ -76,27 +78,14 @@ const grid = $('#b-grid');
 // version on screen (html[data-layout-orient]). Geometry edits mutate it
 // + tile styles; a save writes both versions.
 const shownOrient = document.documentElement.dataset.layoutOrient === 'portrait' ? 'portrait' : 'landscape';
-let doc = { v: 1, widgets: [] };
+let initialLayout = { v: 1, widgets: [] };
 try {
   const raw = $('#b-layout');
-  if (raw) doc = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
+  if (raw) initialLayout = JSON.parse(raw.textContent || '{"v":1,"widgets":[]}');
 } catch { /* corrupt embed: render-only, editor stays inert */ }
-let layout = doc;
-function pickVersion() {
-  layout = (doc.orientation || 'landscape') === shownOrient ? doc : (doc.alt || doc);
-}
-pickVersion();
-// setVersion replaces the version on screen (template, reset).
-function setVersion(v) {
-  v = { ...v, orientation: shownOrient };
-  delete v.alt;
-  if (layout === doc) doc = { ...v, alt: doc.alt };
-  else doc.alt = v;
-  pickVersion();
-}
-// lastSaved is the document the server last accepted: a structural change
-// that fails to save rolls back to it instead of reloading (BUGLOG RW43).
-let lastSaved = structuredClone(doc);
+const draft = new LayoutDocument(initialLayout, shownOrient, (layout) =>
+  api('PUT', `/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, { layout }));
+let layout = draft.layout;
 
 // Palette defaults for newly added tiles (mirror of the Go registry).
 const TILE_DEFAULTS = {
@@ -161,29 +150,34 @@ let leaving = false; // a screen-board navigation is under way
 
 function initMesh() {
   if (!code) return;
+  const displaySession = createDisplaySession({ editable, preview: previewMode, onNavigate: () => { leaving = true; } });
   mesh = new Mesh({
     showId: code,
     role: 'display',
     // F1: boards self-register a stable screen name (operator assigns
     // theme/board from the dashboard's Screens panel); the gallery's
     // preview iframe edits without registering.
-    screen: previewMode ? '' : screenName(),
+    screen: displaySession.screen,
     onSnapshot: onMeshSnapshot,
     onStatusChange: updateLink,
     onFrame: (m) => {
+      const shared = displaySession.handle(m, mesh);
+      if (shared === 'message') {
+        if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
+        return;
+      }
+      if (shared === 'runtime') {
+        snap = mesh.snap;
+        if (sched && sched.dayStartTS !== (mesh.snap.runtime.dayStartTS || 0)) sched = null;
+        renderStatic();
+        return;
+      }
+      if (shared) return;
       switch (m.t) {
         case 'schedule':
           if (m.rows) {
             sched = { rows: m.rows, totalMS: m.totalMS || 0, dayStartTS: m.dayStartTS || 0 };
             renderStatic();
-          }
-          break;
-        case 'screen-look':
-          if (!editable) {
-            // A phone/tablet follows its own orientation (U1): Mounted is ignored.
-            if (m.rotation && !document.documentElement.dataset.deviceOrient) document.documentElement.dataset.rotate = String(m.rotation);
-            else delete document.documentElement.dataset.rotate;
-            if (m.kind) body.dataset.kind = m.kind;
           }
           break;
         case 'flash':
@@ -203,48 +197,7 @@ function initMesh() {
             if ((snap === mesh.snap || !snap) && hasAudienceTile()) { snap = mesh.snap; renderStatic(); }
           }
           break;
-        case 'message':
-          if (m.message && mesh.snap) {
-            const list = mesh.snap.messages.filter((x) => x.id !== m.message.id);
-            if (m.message.shownAt || m.message.text) list.push(m.message);
-            mesh.snap.messages = list;
-            mesh.snap.updatedAt = Math.max(mesh.snap.updatedAt, m.updatedAt || 0) + 1;
-            if (snap === mesh.snap || !snap) { snap = mesh.snap; renderStatic(); }
-          }
-          break;
-        case 'timer':
-        case 'cue':
-          if (m.runtime && mesh.snap && (m.updatedAt ?? 0) >= mesh.snap.updatedAt) {
-            Object.assign(mesh.snap.runtime, m.runtime);
-            mesh.snap.updatedAt = m.updatedAt ?? mesh.snap.updatedAt;
-            if (m.serverTime) mesh.clockOffset = m.serverTime - Date.now();
-            snap = mesh.snap;
-            if (sched && sched.dayStartTS !== (mesh.snap.runtime.dayStartTS || 0)) sched = null;
-            renderStatic();
-          }
-          break;
         default:
-          // C2 (2026-10-04): the board page's mesh is THIS module's — the
-          // operator-pushed theme swap lands here (bundle + attr + icons via
-          // theme.js; policy REVIEW-2 R6). Everything else (oob/targets for
-          // dashboard surfaces, peers/signal) is mesh-internal or belongs to
-          // pages we are not on.
-          if (m.t === 'display' && m.theme && m.theme !== document.documentElement.getAttribute('data-theme')) {
-            applyTheme(m.theme);
-          }
-          // F1: the operator re-assigned this screen's board — navigate
-          // (locked screens only; an open editor must not lose its draft).
-          // boardId > 0 = an event layout; else template = a built-in
-          // shown directly (U10); neither = "plain timer" (RW35).
-          if (m.t === 'screen-board' && !editable) {
-            const u = new URL(location.href);
-            const want = Number(m.boardId) || 0;
-            const tpl = want > 0 ? '' : (m.template || '');
-            if (want > 0) { u.searchParams.set('view', 'board'); u.searchParams.set('board', String(want)); u.searchParams.delete('tpl'); }
-            else if (tpl) { u.searchParams.set('view', 'board'); u.searchParams.set('tpl', tpl); u.searchParams.delete('board'); }
-            else { u.searchParams.delete('view'); u.searchParams.delete('board'); u.searchParams.delete('tpl'); }
-            if (u.toString() !== location.href) { leaving = true; location.replace(u.toString()); }
-          }
           // A layout was edited or deleted: tiles are server-rendered, so a
           // locked screen showing it reloads (coalesced: autosave PUTs come
           // in bursts while someone edits).
@@ -991,18 +944,8 @@ async function saveNow() {
   clearTimeout(saveTimer);
   saveState('Saving…');
   try {
-    // Both versions go up together; landscape is the primary.
-    const anim = layout.anim || 'fade';
-    const animMS = Number(layout.animMS) || 400;
-    const cur = { v: 1, rows: canvasRows(layout), orientation: shownOrient, widgets: layout.widgets };
-    const o = layout === doc ? doc.alt : doc;
-    const other = o && o.widgets?.length ? { v: 1, rows: o.rows, orientation: shownOrient === 'portrait' ? 'landscape' : 'portrait', widgets: o.widgets } : null;
-    const body = shownOrient === 'landscape' || !other
-      ? { ...cur, anim, animMS, ...(other ? { alt: other } : {}) }
-      : { ...other, anim, animMS, alt: cur };
-    await api('PUT', `/api/shows/${encodeURIComponent(code)}/boards/${encodeURIComponent(boardId)}`, { layout: body });
-    saveState(`Saved ${fmtTimeOfDay(Date.now())}`);
-    lastSaved = structuredClone(doc);
+    await draft.save();
+    saveState(draft.saving ? 'Saving…' : `Saved ${fmtTimeOfDay(Date.now())}`);
     return true;
   } catch (e) {
     saveState(`Save failed: ${e.message}`);
@@ -1504,8 +1447,7 @@ function freeSpot(w, h) {
 // layout back to what the server holds (BUGLOG RW43).
 async function reloadEditing() {
   if (!(await saveNow())) {
-    doc = structuredClone(lastSaved);
-    pickVersion();
+    layout = draft.rollback();
     return false;
   }
   try { sessionStorage.setItem('b-editing', '1'); } catch { /* private mode */ }
@@ -1678,8 +1620,7 @@ function wireCompose() {
     if (!t) return;
     presetList.hidePopover?.();
     if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
-    doc = structuredClone(t.layout); // a built-in brings both versions
-    pickVersion();
+    layout = draft.replace(t.layout); // a built-in brings both versions
     await reloadEditing(); // server re-renders tiles, then we relock into edit
   });
 
@@ -1726,7 +1667,7 @@ function wireCompose() {
     try {
       const j = await api('GET', '/api/board-templates');
       if (!j.default?.widgets?.length) throw new Error('no default layout');
-      setVersion(j.default);
+      layout = draft.replaceVersion(j.default);
     } catch (err) {
       saveState(`Reset failed: ${err.message}`);
       return;

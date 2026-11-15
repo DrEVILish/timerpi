@@ -12,7 +12,8 @@
  * (serverTime - Date.now()) and paints on requestAnimationFrame.
  */
 
-import { Mesh, screenName } from './mesh.js';
+import { Mesh } from './mesh.js';
+import { createDisplaySession } from './display-session.js';
 import {
   clockView, activeCue, cueAfter, remainingMS, elapsedMS, fmtRemaining,
   fmtDuration, fmtTimeOfDay, fmtCode, computeSchedule,
@@ -584,12 +585,13 @@ let prevOnline = null; // last known server-link state, for transition toasts
 
 function initMesh(showId, role, page) {
   clockUI = new ClockUI(page);
+  const displaySession = createDisplaySession({ role });
   mesh = new Mesh({
     showId,
     role,
     // F1: display tabs self-register a stable screen name (URL ?screen=,
     // else localStorage, else generated). Controls never carry one.
-    screen: role === 'controls' ? '' : screenName(),
+    screen: displaySession.screen,
     onSnapshot: (fresh) => {
       clockUI.setSnapshot(mesh.snap);
       updateSharePanel(mesh.snap);
@@ -599,6 +601,10 @@ function initMesh(showId, role, page) {
     onFrame: (m) => {
       // DEBUG SEAM (drills): mirror the live mesh for page-level inspection.
       try { window.__tpmesh = mesh; } catch { /* */ }
+      const shared = displaySession.handle(m, mesh);
+      if (shared === 'message') clockUI?.renderMessage();
+      if (shared === 'runtime') clockUI?.setSnapshot(mesh.snap);
+      if (shared) return;
       switch (m.t) {
         case 'oob':
           applyOOB(m);
@@ -606,67 +612,9 @@ function initMesh(showId, role, page) {
         case 'schedule':
           clockUI?.setSchedule(m);
           break;
-        case 'message': {
-          if (mesh.snap && m.message) {
-            const list = mesh.snap.messages.filter(x => x.id !== m.message.id);
-            if (m.message.shownAt || m.message.text) list.push(m.message);
-            mesh.snap.messages = list;
-            mesh.snap.updatedAt = Math.max(mesh.snap.updatedAt, m.updatedAt || 0) + 1;
-            clockUI?.renderMessage();
-          }
-          break;
-        }
         case 'polls':
         case 'poll':
           moderateRefresh();
-          break;
-        case 'screen-look':
-          // A screen's rotation (portrait poster screens), pushed live.
-          if (document.body.dataset.role === 'display') {
-            // A phone/tablet follows its own orientation (U1): Mounted is ignored.
-            if (m.rotation && !document.documentElement.dataset.deviceOrient) document.documentElement.dataset.rotate = String(m.rotation);
-            else delete document.documentElement.dataset.rotate;
-          }
-          break;
-        case 'display':
-          if (m.theme && m.theme !== document.documentElement.getAttribute('data-theme')) {
-            // Swap the bundle too, not just the attribute — dist bundles are
-            // per-theme token blocks (REVIEW-2 R6); no persistence: the
-            // operator's push must not overwrite the display's local pick.
-            applyTheme(m.theme);
-          }
-          break;
-        case 'screen-board':
-          // F1: the operator re-assigned this screen's Layout. Display
-          // pages navigate: stage → the assigned board's view; board view
-          // → the new board; boardId 0 → back to the stage. (An open
-          // layout editor keeps its draft, per the board.js rule.)
-          if (document.body.dataset.role === 'display' && !/edit=1/.test(location.search)) {
-            const u = new URL(location.href);
-            if (m.boardId > 0) {
-              u.searchParams.set('view', 'board');
-              u.searchParams.set('board', String(m.boardId));
-              u.searchParams.delete('tpl');
-            } else if (m.template) { // a built-in shown directly (U10)
-              u.searchParams.set('view', 'board');
-              u.searchParams.set('tpl', m.template);
-              u.searchParams.delete('board');
-            } else {
-              u.searchParams.delete('view');
-              u.searchParams.delete('board');
-              u.searchParams.delete('tpl');
-            }
-            if (u.toString() !== location.href) location.replace(u.toString());
-          }
-          break;
-        case 'timer':
-        case 'cue':
-          if (m.runtime && mesh.snap && (m.updatedAt ?? 0) >= mesh.snap.updatedAt) {
-            Object.assign(mesh.snap.runtime, m.runtime);
-            mesh.snap.updatedAt = m.updatedAt ?? mesh.snap.updatedAt;
-            if (m.serverTime) mesh.clockOffset = m.serverTime - Date.now();
-            clockUI?.setSnapshot(mesh.snap);
-          }
           break;
         default: break;
       }

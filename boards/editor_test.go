@@ -10,7 +10,7 @@ func TestLayoutEditsWithJS(t *testing.T) {
 	if err != nil {
 		t.Skip("node is not installed")
 	}
-	if out, err := exec.Command(node, "--test", "testdata/layout_edit.mjs").CombinedOutput(); err != nil {
+	if out, err := exec.Command(node, "--test", "testdata/layout_edit.mjs", "testdata/layout_document.mjs").CombinedOutput(); err != nil {
 		t.Fatalf("layout edits: %v\n%s", err, out)
 	}
 }
