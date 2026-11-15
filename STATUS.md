@@ -71,7 +71,7 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | ID | Open | Spec | Notes |
 |---|---|---|---|
 | **N10** | Day-scope the queries. `cues.day` (default 1) and `events.days` exist; nothing reads them | M2 | Waits for the multi-day UI (out of scope for v2) |
-| **N11** | A dedicated tablet layout for the Run tab | L6 | 1024×768 shows the band, transport, On air column and 4+ rows (U49, U50, U53); decide what more a tablet needs |
+| **N11** | A dedicated tablet layout for the Run tab | L6 | 1024×768 shows the band, transport, On air column and 4+ rows (U49, U50, U53). [Optional component-backed UI critique](reviews/ui-critique.md) proposes improvements; no design changes approved |
 | **N13** | Pairing code on the DRM splash | H7 | Waits for the kiosk decision (N18). The code already shows on `/d/box` |
 | **N17** | Protocol-version check on the cloud uplink | H6 | Boxes already ignore mesh peers on another major |
 | **N18** | Kiosk mode in the box installer | H3 | Owner decision pending. The installer and mesh are built, not tried on hardware |
