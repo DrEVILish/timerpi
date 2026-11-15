@@ -52,7 +52,7 @@
 | A7 Q&A wall / spotlight / dismiss / answered | ✅ | Plus auto-approve per item |
 | A8 per-item moderation | ✅ | Approve / dismiss per entry; word approval covers identical words |
 | A9 QR join, one vote per device | ✅ | |
-| A10 1,000 per room / 200 on a Pi | 🟡 | Both physical Pis passed native and external wired 200/1,000-client probes. Wireless 200 passed; wireless 1,000 failed operator latency. Physical phones/AP and sustained-load qualification remain (H5); evidence: HW-DRILLS §7 |
+| A10 1,000 per room / 200 on a Pi | 🟡 | Both physical Pis passed native and external wired 200/1,000-client probes. Wireless 200 passed; wireless 1,000 failed operator latency. Separate 500-client/500 ms follow-up failed all three wireless bursts and its wired control. Physical phones/AP and sustained-load qualification remain (H5); evidence: HW-DRILLS §7 |
 | L1 ftl-themes, default `blue-future` | ✅ | ftl-themes is a submodule pinned to an upstream commit |
 | L2–L3 animation everywhere, operator-set | ✅ | N9 |
 | L4 reduced motion on phones only | ✅ | |
@@ -91,7 +91,7 @@ The 2026-11-15 controlled two-Pi session ran real application, transport, recove
 | H2 | 🟡 Native KMS probe passed real 1080p50/200 changed frames; live appliance-display workflow remains unqualified | docs/HW-DRILLS.md §2 |
 | H3 | 🟡 Isolated ARM64 deployment/restarts passed; permanent installer, bridged network, reboot and boot/update rollback acceptance remain | docs/PI-DEPLOY.md |
 | H4 | 🟡 Real RTC/visible countdown/offline edits/automatic merge passed; two-host/power-failure drill remains (S5) | docs/HW-DRILLS.md §3 |
-| H5 | 🟡 Native and wired 200/1,000-client probes passed on both Pis; wireless 200 passed, wireless 1,000 operator latency failed; venue phones/AP and soak remain | docs/HW-DRILLS.md §4 |
+| H5 | 🟡 Native and wired 200/1,000-client probes passed on both Pis; wireless 200 passed, wireless 1,000 operator latency failed; separate 500-client/500 ms experiment and wired control failed; venue phones/AP and soak remain | docs/HW-DRILLS.md §4 |
 | H6 | Portrait walk-in on a real rotated TV (kiosk Pi + a smart-TV browser) | docs/HW-DRILLS.md §5 |
 | D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532; temporary channel13/legacy IBSS/rollback verified; permanent shared profile, bridged LAN, 5 GHz/USB, busy RF and 1532-MTU proof remain | docs/VENUE-CLOUD.md §11.3; docs/HW-DRILLS.md §0 |
 

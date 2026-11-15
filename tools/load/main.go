@@ -29,6 +29,7 @@ import (
 )
 
 type report struct {
+	OperatorLimitMS float64 `json:"operator_limit_ms"`
 	Clients         int     `json:"clients"`
 	Joined          int     `json:"joined"`
 	Disconnected    int     `json:"disconnected"`
@@ -66,7 +67,12 @@ func main() {
 	n := flag.Int("clients", 200, "audience clients (200 floor, 1000 target)")
 	event := flag.String("event", "", "owner-supplied disposable event; creates/deletes only a new load room")
 	passwordFile := flag.String("password-file", "", "private file containing supplied event password")
+	operatorLimit := flag.Duration("operator-p95", 250*time.Millisecond, "maximum verified operator p95 (experimental overrides are recorded in JSON)")
 	flag.Parse()
+	if *operatorLimit <= 0 {
+		fmt.Fprintln(os.Stderr, "operator-p95 must be positive")
+		os.Exit(1)
+	}
 	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(signals, 90*time.Second)
@@ -95,8 +101,9 @@ func main() {
 	}
 	r, err := probe(ctx, *base, *n, access...)
 	if err == nil {
-		err = assess(r)
+		err = assess(r, *operatorLimit)
 	}
+	r.OperatorLimitMS = float64(*operatorLimit) / float64(time.Millisecond)
 	r.Pass = err == nil
 	_ = json.NewEncoder(os.Stdout).Encode(r)
 	if err != nil {
@@ -439,7 +446,10 @@ func p95(values []float64) float64 {
 	sort.Float64s(values)
 	return values[int(math.Ceil(float64(len(values))*.95))-1]
 }
-func assess(r report) error {
+func assess(r report, operatorLimit time.Duration) error {
+	if operatorLimit <= 0 {
+		return errors.New("operator gate must be positive")
+	}
 	if r.Clients < 1 || r.Joined != r.Clients || r.Disconnected != 0 || r.JoinMS > 30000 {
 		return errors.New("join target failed")
 	}
@@ -449,8 +459,8 @@ func assess(r report) error {
 	if r.Delivered*100 < r.Clients*99 || r.DeliveryP95MS <= 0 || r.DeliveryP95MS > 1000 {
 		return errors.New("fanout target failed (99% delivery, p95 <=1000ms)")
 	}
-	if r.OperatorSamples < 2 || r.OperatorErrors != 0 || r.OperatorP95MS > 250 {
-		return errors.New("operator target failed (verified pause/resume, p95 <=250ms)")
+	if r.OperatorSamples < 2 || r.OperatorErrors != 0 || r.OperatorP95MS > float64(operatorLimit)/float64(time.Millisecond) {
+		return fmt.Errorf("operator target failed (verified pause/resume, p95 <=%s)", operatorLimit)
 	}
 	if !r.Cleaned {
 		return errors.New("disposable event cleanup failed")

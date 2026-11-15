@@ -29,7 +29,8 @@ It never accepts an existing room code. Normal exit and handled
 SIGINT/SIGTERM delete its own fixture (event or room); a killed process or
 failed connection may leave that disposable fixture behind. Use an isolated test instance.
 
-JSON reports join duration, join/disconnect counts, HTTP vote count and p95,
+JSON records the operator threshold and reports join duration,
+join/disconnect counts, HTTP vote count and p95,
 verified server vote total, audience fanout coverage/p95, operator command
 count/errors/p95, cleanup, and `pass`. Event codes, passwords and cookies are
 not logged. A nonzero exit means the probe failed, including failed cleanup.
@@ -39,6 +40,10 @@ and counted, at least 99% receive the marker, marker p95 at most 1 second,
 and verified operator-command p95 at most 250 ms without errors. Fanout
 latency includes the API request and production poll batching; it uses only
 the load host's monotonic clock, requiring no clock synchronization.
+
+For a separately labelled experiment, `-clients 500 -operator-p95 500ms`
+uses a 500 ms operator gate. The default remains 250 ms; an experimental pass
+does not qualify the default gate or change product requirements.
 
 This exercises actual networking and the deployed application. Running the
 load host over Ethernet proves server capacity, not 200 physical phones or

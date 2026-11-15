@@ -90,7 +90,7 @@ func TestProbeExercisesRealServer(t *testing.T) {
 	if report.Joined != n || report.Votes != n || report.FinalTotal != n || report.Delivered != n || report.OperatorSamples < 2 || !report.Cleaned {
 		t.Fatalf("incomplete proof: %+v", report)
 	}
-	if err := assess(report); err != nil {
+	if err := assess(report, 250*time.Millisecond); err != nil {
 		t.Fatalf("real probe thresholds: %v; %+v", err, report)
 	}
 
@@ -105,7 +105,7 @@ func TestProbeExercisesRealServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("existing event probe: %v", err)
 	}
-	if err := assess(existingReport); err != nil {
+	if err := assess(existingReport, 250*time.Millisecond); err != nil {
 		t.Fatalf("existing event probe thresholds: %v %+v", err, existingReport)
 	}
 	var lobby struct {
@@ -125,7 +125,7 @@ func TestProbeExercisesRealServer(t *testing.T) {
 
 func TestAssessmentRejectsMissingEvidence(t *testing.T) {
 	good := report{Clients: 100, Joined: 100, Votes: 100, FinalTotal: 100, Delivered: 100, DeliveryP95MS: 200, OperatorSamples: 4, OperatorP95MS: 20, Cleaned: true}
-	if err := assess(good); err != nil {
+	if err := assess(good, 250*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	for _, alter := range []func(*report){
@@ -137,12 +137,31 @@ func TestAssessmentRejectsMissingEvidence(t *testing.T) {
 	} {
 		r := good
 		alter(&r)
-		if err := assess(r); err == nil {
+		if err := assess(r, 250*time.Millisecond); err == nil {
 			t.Fatalf("missing evidence accepted: %+v", r)
 		}
 	}
 	good.Delivered = 99
-	if err := assess(good); err != nil {
+	if err := assess(good, 250*time.Millisecond); err != nil {
 		t.Fatalf("99%% gate rejected: %v", err)
+	}
+}
+
+func TestExperimentalOperatorGate(t *testing.T) {
+	r := report{Clients: 500, Joined: 500, Votes: 500, FinalTotal: 500, Delivered: 500, DeliveryP95MS: 200, OperatorSamples: 4, OperatorP95MS: 500, Cleaned: true}
+	if err := assess(r, 500*time.Millisecond); err != nil {
+		t.Fatalf("500ms boundary rejected: %v", err)
+	}
+	if err := assess(r, 250*time.Millisecond); err == nil {
+		t.Fatal("default gate silently relaxed")
+	}
+	r.OperatorP95MS = 500.001
+	if err := assess(r, 500*time.Millisecond); err == nil {
+		t.Fatal("over-limit latency accepted")
+	}
+	for _, limit := range []time.Duration{0, -time.Millisecond} {
+		if err := assess(r, limit); err == nil {
+			t.Fatal("invalid gate accepted")
+		}
 	}
 }

@@ -306,6 +306,41 @@ was unchanged and the session was closed. The valid rerun delivered all
 1,000-client wireless path as qualified. This is a burst, not a sustained soak;
 there were no 200/1,000 physical phones or venue AP in this session.
 
+### 500-client / 500 ms follow-up
+
+A separate owner-requested network-only session began at 16:52:14 UTC.
+The same tested ARM64 application ran with fresh disposable, unpaired event
+fixtures on port 18080; displays stayed off and .73 CuTePi playback kept
+running. .55 follower was paused by CuTePi at 16:55:00.022 UTC. The path was
+bench host → dedicated .73 SSH relay → bat0 → .55, temporary
+`timerpi`/GB/channel 13, with Ethernet peer API/mDNS filtered. After initial
+radio convergence, both directions passed 5/5 bat0 pings. The dedicated relay
+session had 8,192 FDs; no daemon setting changed. Go/browser validation also
+ran on the bench host during this session; this is not an isolated client-host
+performance benchmark or a direct comparison with the earlier paired fixtures.
+
+The experimental operator gate was **500 ms**, explicitly recorded by
+`-clients 500 -operator-p95 500ms`. All other gates stayed unchanged, including
+fanout p95 ≤1,000 ms. The default operator gate remains 250 ms.
+
+| Path / run | Join | Vote p95 | Fanout p95 | Operator p95 | Result |
+|---|---:|---:|---:|---:|---|
+| Wireless 1 | 1,060 ms | 844.850 ms | 391.111 ms | 1,298.597 ms | FAIL operator |
+| Wireless 2 | 1,040 ms | 2,390.954 ms | 3,285.603 ms | 2,673.078 ms | FAIL operator and fanout |
+| Wireless 3 | 862 ms | 763.171 ms | 305.728 ms | 1,123.006 ms | FAIL operator |
+| Same-session wired control / .55 | 262 ms | 586.798 ms | 682.017 ms | 569.997 ms | FAIL operator |
+
+Every run joined all 500 clients, accepted and counted all 500 votes,
+delivered all 500 updates, had zero disconnects/operator errors, and cleaned
+its disposable room. Wireless runs had 6/5/7 operator samples; the wired run
+had 8. These are short bursts, not soak tests. **500 clients at 500 ms are
+not qualified by this experiment.** The wired control also failed, so these
+measurements do not isolate radio congestion as the cause. Earlier 250 ms
+results are unchanged. Network/controller rollback was verified and handed
+back at 16:57:09 UTC. CuTePi verified the original follower restored at
+16:58:59.842 UTC; TimerPi removed only its temporary files/units and released
+the slot at 16:59:29 UTC. .73 playback stayed running throughout.
+
 ### Reproduce and remaining gates
 
 - External load: `go run ./tools/load -base http://<test-pi>:18080 -clients 200`
