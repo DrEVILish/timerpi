@@ -18,6 +18,7 @@
 #
 # Flags:
 #   --src DIR        source tree with bin/, timerpi*.service, public/img/
+#                    and deploy/box/ (unless --no-mesh)
 #                    (default: the repo dir this script lives in)
 #   --boot-dir DIR   firmware dir containing cmdline.txt
 #                    (default: try /boot/firmware, then /boot)
@@ -61,6 +62,12 @@ run() { # run DESC cmd...
   local desc="$1"; shift
   if (( DRY_RUN )); then log "DRY-RUN  ${desc}"; return 0; fi
   "$@"
+}
+
+# Staging may already be the installed tree (including native binary names).
+install_asset() { # MODE SRC DEST
+  local mode="$1" src="$2" dst="$3"
+  if [[ "$src" -ef "$dst" ]]; then chmod "$mode" "$dst"; else install -m "$mode" "$src" "$dst"; fi
 }
 
 if [[ $EUID -ne 0 && "${PREFIX:-/}" == "/" ]]; then
@@ -133,18 +140,18 @@ run "set app directory permissions" chmod 0755 "$OPT_DIR" 2>/dev/null || true
 run "set data directory permissions" chmod 0755 "$VAR_DIR" 2>/dev/null || true
 
 # ---- 2. Binaries, units, splash asset ----------------------------------
-run "install timerpi binary"      install -m 0755 "$TIMERPI_BIN" "$OPT_DIR/bin/timerpi"
-run "install splash-draw binary"  install -m 0755 "$SPLASH_BIN"  "$OPT_DIR/bin/splash-draw"
-run "install timerpi-512.png"     install -m 0644 "$SRC/public/img/timerpi-512.png" "$OPT_DIR/public/img/timerpi-512.png"
+run "install timerpi binary"      install_asset 0755 "$TIMERPI_BIN" "$OPT_DIR/bin/timerpi"
+run "install splash-draw binary"  install_asset 0755 "$SPLASH_BIN"  "$OPT_DIR/bin/splash-draw"
+run "install timerpi-512.png"     install_asset 0644 "$SRC/public/img/timerpi-512.png" "$OPT_DIR/public/img/timerpi-512.png"
 
 run "ensure $UNIT_DIR"           mkdir -p "$UNIT_DIR"
-run "install timerpi.service"           install -m 0644 "$SRC/timerpi.service" "$UNIT_DIR/timerpi.service"
-run "install timerpi-splash.service"    install -m 0644 "$SRC/timerpi-splash.service" "$UNIT_DIR/timerpi-splash.service"
+run "install timerpi.service"           install_asset 0644 "$SRC/timerpi.service" "$UNIT_DIR/timerpi.service"
+run "install timerpi-splash.service"    install_asset 0644 "$SRC/timerpi-splash.service" "$UNIT_DIR/timerpi-splash.service"
 
 # The signed manifest beside the binary lets other boxes update from this
 # one (boot-time updates, VENUE-CLOUD §14).
 if [[ -f "$TIMERPI_BIN.manifest.json" ]]; then
-  run "install timerpi.manifest.json" install -m 0644 "$TIMERPI_BIN.manifest.json" "$OPT_DIR/bin/timerpi.manifest.json"
+  run "install timerpi.manifest.json" install_asset 0644 "$TIMERPI_BIN.manifest.json" "$OPT_DIR/bin/timerpi.manifest.json"
 else
   log "NOTE: no $TIMERPI_BIN.manifest.json — this box won't serve its build to others (unsigned build)"
 fi
@@ -166,19 +173,19 @@ if (( MESH )); then
   NET_DIR="$PREFIX/etc/systemd/network"
   run "ensure $NET_DIR"                 mkdir -p "$NET_DIR"
   for f in "$MESH_SRC"/network/*; do
-    run "install network/$(basename "$f")" install -m 0644 "$f" "$NET_DIR/$(basename "$f")"
+    run "install network/$(basename "$f")" install_asset 0644 "$f" "$NET_DIR/$(basename "$f")"
   done
   for f in "$MESH_SRC"/systemd/*; do
-    run "install $(basename "$f")"      install -m 0644 "$f" "$UNIT_DIR/$(basename "$f")"
+    run "install $(basename "$f")"      install_asset 0644 "$f" "$UNIT_DIR/$(basename "$f")"
   done
   run "ensure udev rules dir"           mkdir -p "$PREFIX/etc/udev/rules.d"
-  run "install 90-timerpi-mesh.rules"   install -m 0644 "$MESH_SRC/90-timerpi-mesh.rules" "$PREFIX/etc/udev/rules.d/90-timerpi-mesh.rules"
+  run "install 90-timerpi-mesh.rules"   install_asset 0644 "$MESH_SRC/90-timerpi-mesh.rules" "$PREFIX/etc/udev/rules.d/90-timerpi-mesh.rules"
   run "ensure modules-load.d"           mkdir -p "$PREFIX/etc/modules-load.d"
-  run "install modules-load.d/batman-adv.conf" install -m 0644 "$MESH_SRC/batman-adv.conf" "$PREFIX/etc/modules-load.d/batman-adv.conf"
+  run "install modules-load.d/batman-adv.conf" install_asset 0644 "$MESH_SRC/batman-adv.conf" "$PREFIX/etc/modules-load.d/batman-adv.conf"
   run "ensure NetworkManager conf.d"    mkdir -p "$PREFIX/etc/NetworkManager/conf.d"
-  run "install NetworkManager unmanaged list" install -m 0644 "$MESH_SRC/90-timerpi-mesh.nm.conf" "$PREFIX/etc/NetworkManager/conf.d/90-timerpi-mesh.conf"
+  run "install NetworkManager unmanaged list" install_asset 0644 "$MESH_SRC/90-timerpi-mesh.nm.conf" "$PREFIX/etc/NetworkManager/conf.d/90-timerpi-mesh.conf"
   run "ensure $OPT_DIR/deploy/box"      mkdir -p "$OPT_DIR/deploy/box"
-  run "install mesh-filter.nft"         install -m 0644 "$MESH_SRC/mesh-filter.nft" "$OPT_DIR/deploy/box/mesh-filter.nft"
+  run "install mesh-filter.nft"         install_asset 0644 "$MESH_SRC/mesh-filter.nft" "$OPT_DIR/deploy/box/mesh-filter.nft"
   # Wi-Fi stays blocked (rfkill) until a country is set.
   if [[ "$PREFIX" == "/" ]]; then
     if command -v raspi-config >/dev/null 2>&1; then

@@ -33,12 +33,13 @@ Copy over the things `scripts/install-pi.sh` expects to find in `--src`
 (defaults to the repo the script lives in):
 
 ```sh
-ssh root@<pi> mkdir -p /opt/timerpi
+ssh root@<pi> mkdir -p /opt/timerpi/bin /opt/timerpi/public/img /opt/timerpi/deploy
 scp bin/timerpi-arm64 root@<pi>:/opt/timerpi/bin/timerpi-arm64
 scp bin/splash-draw-arm64 root@<pi>:/opt/timerpi/bin/splash-draw-arm64
 scp timerpi.service timerpi-splash.service root@<pi>:/opt/timerpi/
 scp public/img/timerpi-512.png root@<pi>:/opt/timerpi/public/img/
 scp -r scripts root@<pi>:/opt/timerpi/
+scp -r deploy/box root@<pi>:/opt/timerpi/deploy/
 # Pages and browser files (templates/, public/) are embedded in the binary
 # (STATUS C9). Only the ftl-themes tree is read from disk:
 ssh root@<pi> mkdir -p /opt/timerpi/third_party
@@ -47,7 +48,13 @@ scp -r third_party/ftl-themes root@<pi>:/opt/timerpi/third_party/
 ssh root@<pi> 'cd /opt/timerpi && ./scripts/install-pi.sh --hostname stage-left'
 ```
 
-The installer is idempotent (safe to re-run):
+The installer supports staging directly in `/opt/timerpi` and is safe to
+re-run: assets already at their destination keep their content and receive
+the required permissions. `--no-mesh` skips the mesh installation and its
+network changes. The default mesh install needs the complete `deploy/box`
+payload staged above.
+
+The installer:
 
 1. creates `/opt/timerpi` (app home) and `/var/lib/timerpi` (SQLite DB +
    `config.json`, which the app creates on first boot);

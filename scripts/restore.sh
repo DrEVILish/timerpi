@@ -106,16 +106,25 @@ watch_health() {
 
 # 3. Stop → rollback copy → swap.
 stop_srv || true
-say "rollback copy: $DB → $DB.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
+PRE="$DB.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)-$$"
+say "rollback copy: $DB → $PRE"
 if [ -f "$DB" ]; then
-  cp -f "$DB" "$DB.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)" || die "cannot copy the current db aside — aborting, nothing changed"
+  cp -f "$DB" "$PRE" || die "cannot copy the current db aside — aborting, nothing changed"
 fi
 
+CONFIG_CHANGED=0
+CONFIG_EXISTED=0
 if [ "$WITH_CONFIG" -eq 1 ]; then
-  NEWCONF="${BACKUP%.db.gz}.config.json"
+  NEWCONF="${BACKUP%.gz}"
+  NEWCONF="${NEWCONF%.db}.config.json"
   if [ -f "$NEWCONF" ]; then
-    cp -f "$CONF" "$CONF.pre-restore" 2>/dev/null
-    cp -f "$NEWCONF" "$CONF"
+    if [ -f "$CONF" ]; then
+      cp -f "$CONF" "$WORK/config.json" || die "cannot save current config"
+      cp -f "$CONF" "$CONF.pre-restore" || die "cannot save config rollback copy"
+      CONFIG_EXISTED=1
+    fi
+    cp -f "$NEWCONF" "$CONF" || die "cannot install config sidecar"
+    CONFIG_CHANGED=1
     say "config restored from sidecar: $NEWCONF (previous saved as $CONF.pre-restore)"
   else
     say "--with-config requested but no sidecar next to the backup — current config kept"
@@ -143,12 +152,26 @@ if start_srv; then
 fi
 
 say "FAILING — rolling back to the pre-restore copy"
-PRE="$(ls -1t "$DATA_DIR"/timerpi.db.pre-restore.* 2>/dev/null | head -1)"
-if [ -n "$PRE" ]; then
-  cp -f "$PRE" "$DB.roll.new" && mv -f "$DB.roll.new" "$DB" && chmod 0640 "$DB"
-  say "rolled back: $PRE"
+# The failed restored instance may still hold the restored inode and WAL open.
+stop_srv
+rm -f "$DB-wal" "$DB-shm"
+if [ ! -f "$PRE" ]; then
+  die "no pre-restore database exists — service left stopped; inspect $DB"
 fi
-start_srv
-if watch_health; then say "rollback verified — service healthy again (database state = pre-restore)"; fi
+cp -f "$PRE" "$DB.roll.new" && mv -f "$DB.roll.new" "$DB" && chmod 0640 "$DB" \
+  || die "rollback swap failed — service left stopped; rollback copy: $PRE"
+say "rolled back: $PRE"
+if [ "$CONFIG_CHANGED" -eq 1 ]; then
+  if [ "$CONFIG_EXISTED" -eq 1 ]; then
+    cp -f "$WORK/config.json" "$CONF" || die "config rollback failed — service left stopped"
+  else
+    rm -f "$CONF" || die "cannot remove restored config — service left stopped"
+  fi
+fi
+if start_srv && watch_health; then
+  say "rollback verified — service healthy again (database state = pre-restore)"
+else
+  say "rollback database restored but service health could not be verified"
+fi
 rm -rf "$WORK"
 exit 1

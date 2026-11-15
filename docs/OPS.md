@@ -101,15 +101,17 @@ deploy-side in `update.stamp`, as above.
 * Preferred path needs `sqlite3`; the Pi image ideally ships it, else
   `apt install sqlite3` (runbook: one-time). python3 fallback is
   automatic and equally safe; the plain-cp path prints a big warning and
-  tags its output `*.note` — treat it as unverified until a real tool is
-  installed.
+  tags its output with a visible `<ts>.note` beside `<ts>.db.gz` — treat
+  it as unverified until a real tool is installed.
 * Every snapshot is gated on the SQLite header (`SQLite format 3`).
 * `restore.sh` re-runs `PRAGMA integrity_check` on any candidate backup
   before stopping the service — a failed integrity check aborts WITHOUT
   touching anything.
-* File layout per snapshot: `<ts>.db.gz` + `<ts>.config.json` (config is
+* File layout per snapshot: `<ts>.db.gz` + `<ts>.config.json`, with
+  `<ts>.note` on best-effort copies. Warning files have the same restricted
+  permissions as the archive and rotate with it. Config is
   always included; restore of db does **not** overwrite config by
-  default — pass `--with-config` for both).
+  default — pass `--with-config` for both.
 
 ## 5. Restore (`scripts/restore.sh`)
 
@@ -125,8 +127,11 @@ scripts/restore.sh /var/lib/timerpi/backups/<ts>.db.gz --force
 
 The script **refuses** the live data dir without `--force`. Real-mode
 sequence: integrity gate → stop service → rollback copy
-(`timerpi.db.pre-restore.<ts>`) → swap → start → 30 s `/health` watch →
-roll back and re-verify on failure. Deterministic, same steps every time.
+(`timerpi.db.pre-restore.<ts>-<pid>`) → swap → start → 30 s `/health` watch →
+on failure stop the restored instance again, remove its WAL/SHM, restore
+the exact pre-restore copy and any config replaced by `--with-config`, then
+start and re-verify. A healthy rollback still exits nonzero because the
+requested restore failed.
 
 ## 6. systemd timer pilots (`systemd/` dir in the repo — NOT repo root)
 

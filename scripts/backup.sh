@@ -7,7 +7,7 @@
 #   2. python3 stdlib       → sqlite3.Connection.backup() — same guarantee,
 #      zero extra packages (python3 is preinstalled on bookworm).
 #   3. Neither             → plain cp of db + wal + shm, clearly marked
-#      best-effort in the filename-side *.note (WAL caveat, docs/OPS.md §5).
+#      best-effort in the filename-side *.note (WAL caveat, docs/OPS.md §4).
 # Every artifact is integrity-gated: the SQLite header must read
 # "SQLite format 3\0" (15 useful bytes: 'SQLite format ' + '3').
 #
@@ -68,27 +68,33 @@ PY
     for ext in -wal -shm; do
       [ -f "$src$ext" ] && cp -f "$src$ext" "$dst$ext"
     done
-    echo "best-effort copy; install sqlite3 or python3 for a real snapshot" > "$dst.note"
-    return 0
+    echo "best-effort copy; install sqlite3 or python3 for a real snapshot" > "$dst.note" || return 1
+    echo "[backup] WARNING: best-effort copy; see the archive .note before restoring" >&2
   fi
-  [ -n "$(head -c 15 "$dst" 2>/dev/null | grep -c 'SQLite format 3')" ] \
+  head -c 15 "$dst" 2>/dev/null | grep -q 'SQLite format 3' \
     || { rm -f "$dst"; return 1; }
   return 0
 }
 
 TMP="$BK/.tmp-$TS.db"
-rm -f "$TMP" "$TMP-wal" "$TMP-shm"
+OUT="$BK/$TS.db.gz"
+cleanup() { rm -f "$TMP" "$TMP-wal" "$TMP-shm" "$TMP.note" "$OUT.tmp"; }
+trap cleanup EXIT
+cleanup
 say "data dir: $DATA_DIR  (db $(du -h "$DB" | cut -f1) — hot, service untouched)"
 if ! snap_db "$DB" "$TMP"; then
   rm -f "$TMP" "$TMP-wal" "$TMP-shm"
   die "snapshot failed (snapshot tool errored) — service left running, nothing written"
 fi
 
-OUT="$BK/$TS.db.gz"
 gzip -c "$TMP" > "$OUT.tmp" && [ -s "$OUT.tmp" ] \
   || { rm -f "$OUT.tmp" "$TMP" "$TMP-wal" "$TMP-shm"; die "gzip produced nothing — aborting before rotation"; }
-chmod 0640 "$OUT.tmp"
-mv -f "$OUT.tmp" "$OUT"    # atomic-enough: same dir, same fs
+chmod 0640 "$OUT.tmp" || die "cannot set backup permissions"
+mv -f "$OUT.tmp" "$OUT" || die "cannot publish backup archive"
+if [ -f "$TMP.note" ]; then
+  chmod 0640 "$TMP.note" && mv -f "$TMP.note" "$BK/$TS.note" \
+    || { rm -f "$OUT"; die "cannot publish best-effort warning"; }
+fi
 rm -f "$TMP" "$TMP-wal" "$TMP-shm"
 say "wrote: $OUT ($(du -h "$OUT" | cut -f1))"
 
