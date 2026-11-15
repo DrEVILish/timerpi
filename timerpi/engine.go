@@ -12,10 +12,16 @@ import (
 // broadcasts the new Snapshot to subscribers (the ws hub fans them out).
 // The engine imports nothing but stdlib: it is IO-free apart from the
 // injected deps, so it stays unit-testable with a fake clock.
+type updateAdmission struct {
+	sync.Mutex
+	pending bool
+}
+
 type Engine struct {
-	mu   sync.Mutex
-	deps EngineDeps
-	rt   Runtime
+	admission *updateAdmission
+	mu        sync.Mutex
+	deps      EngineDeps
+	rt        Runtime
 
 	subs    map[int64]func(Snapshot) // change callbacks (pubsub), id → fn
 	nextSub int64
@@ -48,8 +54,10 @@ type Engine struct {
 	retired bool
 }
 
-// ErrEngineRetired: the engine was replaced; the caller should fetch the
-// current one from the registry.
+// ErrUpdatePending refuses timer commands between install admission and restart.
+var ErrUpdatePending = errors.New("timerpi: update installing, try again after restart")
+
+// ErrEngineRetired: the engine was replaced; fetch the current one from the registry.
 var ErrEngineRetired = errors.New("timerpi: engine replaced, try again")
 
 // Retire stops this engine from saving runtime state; ticks become no-ops.
@@ -485,6 +493,13 @@ func (e *Engine) now() int64 { return e.deps.Now() }
 
 // runMutation runs a mutation under the lock, then persists + emits.
 func (e *Engine) runMutation(mut func() error) error {
+	if e.admission != nil {
+		e.admission.Lock()
+		defer e.admission.Unlock()
+		if e.admission.pending {
+			return ErrUpdatePending
+		}
+	}
 	e.mu.Lock()
 	if err := mut(); err != nil {
 		e.mu.Unlock()
@@ -906,9 +921,10 @@ func startOfDay(now int64) int64 {
 
 // Engines lazily builds and caches one Engine per show over a *DB.
 type Engines struct {
-	mu     sync.Mutex
-	db     *DB
-	byShow map[int64]*Engine
+	admission updateAdmission
+	mu        sync.Mutex
+	db        *DB
+	byShow    map[int64]*Engine
 	// OnStart is the outbound media hook (oscbridge, proposal #8): fire a
 	// peer (CuTePi via QLab-OSC) when a cue starts running. Wire once at
 	// boot, before any engine exists.
@@ -951,8 +967,32 @@ func (r *Engines) Get(showID int64) (*Engine, error) {
 			_ = e.SetDayStart(ts)
 		}
 	}
+	e.admission = &r.admission
 	r.byShow[showID] = e
 	return e, nil
+}
+
+// ReserveUpdate excludes timer mutations until restart. Cancel releases a failed install.
+func (r *Engines) ReserveUpdate() (cancel func(), err error) {
+	r.admission.Lock()
+	defer r.admission.Unlock()
+	if r.admission.pending {
+		return nil, ErrUpdatePending
+	}
+	if r.AnyRunning() {
+		return nil, errors.New("a timer is running")
+	}
+	// Recovered or copied shows may not have a loaded engine yet.
+	var running int
+	if err := r.db.Get(&running, `SELECT COUNT(*) FROM runtime_state WHERE running = 1 AND paused = 0`); err != nil {
+		return nil, err
+	}
+	if running != 0 {
+		return nil, errors.New("a timer is running")
+	}
+	r.admission.pending = true
+	var once sync.Once
+	return func() { once.Do(func() { r.admission.Lock(); r.admission.pending = false; r.admission.Unlock() }) }, nil
 }
 
 // AnyRunning reports whether a timer is running in any loaded show (the

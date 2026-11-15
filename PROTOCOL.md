@@ -140,7 +140,7 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 |---|---|
 | `GET /api/theme` · `POST /api/theme` (box) | Box default theme (+ installed list from `ftl-themes/dist`) |
 | `GET /api/network` · `POST /api/network/hostname\|role` · `GET /frag/network` | box. Device identity / mesh (identity carries `proto`, `updateNeeded`; peers carry `proto`, `foreign`) |
-| `GET /api/network/update` · `POST /api/network/update` | box. The UPDATE button: `{current, available, source, updating}`; POST installs the newest signed build now (409 while a timer runs or an install is under way, 404 when nothing is newer) and restarts |
+| `GET /api/network/update` · `POST /api/network/update` | box. The UPDATE button: `{current, available, source, updating}`; POST installs the newest signed build now (409 while a timer runs or an install is under way, 404 when nothing is newer) and restarts. Admission is checked after download; successful admission excludes timer commands until restart, and failures release it. `updating` also covers boot-time installs |
 | `POST /api/network/mesh {country, ch24, ch5}` | box. Venue mesh radio: two-letter country, 2.4 GHz 1–13, 5 GHz 36/40/44/48; applied at the next boot |
 
 mDNS (`_timerpi._tcp`) TXT: `host role ver epoch boot proto event sig`. A paired box sends `event` and `sig` (HMAC-SHA256 with the event mesh key over host, role, epoch, proto, event, boot; first 32 hex); only same-event signed peers count; an unpaired box announces role `unpaired`. The leading box also answers `timerpi.local`. A box ignores peers whose `proto` differs from its own (v2 boxes send none) for the election and takeover; a peer with a higher `proto` sets `updateNeeded`.

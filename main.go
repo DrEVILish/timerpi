@@ -160,6 +160,7 @@ func run() int {
 		checker = &update.Checker{
 			Self: self, Current: buildinfo.Version, Arch: runtime.GOARCH, Key: update.PublicKey(),
 			Busy:    engines.AnyRunning,
+			Reserve: engines.ReserveUpdate,
 			Uptime:  update.Uptime,
 			Restart: func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) },
 		}

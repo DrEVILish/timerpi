@@ -9,15 +9,14 @@ package routes
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
-)
 
-// updating stops a second press from starting another install.
-var updating atomic.Bool
+	"timerpi/update"
+)
 
 func networkUpdater(c *gin.Context) (*NetworkDeps, bool) {
 	nd := networkDeps.Load()
@@ -40,7 +39,7 @@ func networkUpdateCheck(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
 	src, m, found := nd.Updater.Find(ctx)
-	out := gin.H{"ok": true, "current": nd.Updater.Current, "available": "", "updating": updating.Load()}
+	out := gin.H{"ok": true, "current": nd.Updater.Current, "available": "", "updating": nd.Updater.Installing()}
 	if found {
 		out["available"], out["source"] = m.Version, src
 	}
@@ -53,25 +52,27 @@ func networkUpdateApply(c *gin.Context) {
 		return
 	}
 	u := nd.Updater
-	if u.Busy != nil && u.Busy() {
-		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "a timer is running; update once it has stopped"})
+	if u.Installing() {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": update.ErrInstalling.Error()})
 		return
 	}
-	if !updating.CompareAndSwap(false, true) {
-		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "an update is already being installed"})
+	if u.Busy != nil && u.Busy() {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "a timer is running; update once it has stopped"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	src, m, found := u.Find(ctx)
 	if !found {
-		updating.Store(false)
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "no newer build found"})
 		return
 	}
 	if err := u.Apply(ctx, src, m); err != nil {
-		updating.Store(false)
-		c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+		status := http.StatusBadGateway
+		if errors.Is(err, update.ErrBusy) || errors.Is(err, update.ErrInstalling) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "installed": m.Version})

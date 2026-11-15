@@ -35,6 +35,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"timerpi/buildinfo"
@@ -121,20 +122,28 @@ func fileExists(p string) bool {
 
 // ---------------------------------------------------------------- check --
 
-// Checker runs the boot-time check.
+// Admission errors are shared by the boot check and the UPDATE button.
+var (
+	ErrBusy       = errors.New("a timer is running; update once it has stopped")
+	ErrInstalling = errors.New("an update is already being installed")
+)
+
+// Checker runs the boot-time check and the manual updater.
 type Checker struct {
-	Self    string                          // path of the running binary
-	Current string                          // running version (buildinfo.Version)
-	Arch    string                          // runtime.GOARCH
-	Key     ed25519.PublicKey               // release key; nil = disabled
-	Sources func() []string                 // base URLs: the cloud, then mesh peers
-	Busy    func() bool                     // a timer is running: don't swap now
-	Uptime  func() time.Duration            // time since the machine booted
-	Restart func()                          // ask the process to restart
-	Client  *http.Client                    // nil → 10 s timeout client
-	Every   time.Duration                   // poll interval inside the window (20 s)
-	Logf    func(string, ...any)            // nil → log.Printf
-	Install func(Manifest, io.Reader) error // nil → c.install (tests swap)
+	applying atomic.Bool
+	Self     string                            // path of the running binary
+	Current  string                            // running version (buildinfo.Version)
+	Arch     string                            // runtime.GOARCH
+	Key      ed25519.PublicKey                 // release key; nil = disabled
+	Sources  func() []string                   // base URLs: the cloud, then mesh peers
+	Reserve  func() (cancel func(), err error) // atomically excludes timer commands until restart; cancel on failure
+	Busy     func() bool                       // a timer is running: don't swap now
+	Uptime   func() time.Duration              // time since the machine booted
+	Restart  func()                            // ask the process to restart
+	Client   *http.Client                      // nil → 10 s timeout client
+	Every    time.Duration                     // poll interval inside the window (20 s)
+	Logf     func(string, ...any)              // nil → log.Printf
+	Install  func(Manifest, io.Reader) error   // tests replace the final swap
 }
 
 // Run looks for updates until the boot window closes, installs the newest
@@ -220,7 +229,15 @@ func (c *Checker) Find(ctx context.Context) (string, Manifest, bool) {
 }
 
 // Apply downloads build m from src and installs it (the caller restarts).
-func (c *Checker) Apply(ctx context.Context, src string, m Manifest) error {
+func (c *Checker) Apply(ctx context.Context, src string, m Manifest) (err error) {
+	if !c.applying.CompareAndSwap(false, true) {
+		return ErrInstalling
+	}
+	defer func() {
+		if err != nil {
+			c.applying.Store(false)
+		}
+	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src+"/api/update/binary?arch="+c.Arch, nil)
 	if err != nil {
 		return err
@@ -235,22 +252,60 @@ func (c *Checker) Apply(ctx context.Context, src string, m Manifest) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
 	}
-	install := c.Install
-	if install == nil {
-		install = c.install
-	}
-	return install(m, resp.Body)
+	return c.install(m, resp.Body)
 }
 
-// install writes the download beside the running binary, checks size and
-// hash against the signed manifest, and swaps it in (old one → .prev).
-func (c *Checker) install(m Manifest, body io.Reader) error {
-	dir := filepath.Dir(c.Self)
-	tmp, err := os.CreateTemp(dir, ".timerpi-new-*")
+// Installing stays true through the restart window after a successful swap.
+func (c *Checker) Installing() bool { return c.applying.Load() }
+
+// install stages and verifies the download before reserving the final swap.
+func (c *Checker) install(m Manifest, body io.Reader) (err error) {
+	staged, err := c.prepare(m, body)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer os.Remove(staged)
+	defer os.Remove(ManifestPath(staged))
+	if c.Busy != nil && c.Busy() {
+		return ErrBusy
+	}
+	if c.Reserve != nil {
+		cancel, reserveErr := c.Reserve()
+		if reserveErr != nil {
+			return fmt.Errorf("%w: %v", ErrBusy, reserveErr)
+		}
+		defer func() {
+			if err != nil {
+				cancel()
+			}
+		}()
+	}
+	if c.Install == nil {
+		return Swap(c.Self, staged)
+	}
+	verified, err := os.Open(staged)
+	if err != nil {
+		return err
+	}
+	defer verified.Close()
+	return c.Install(m, verified)
+}
+
+func (c *Checker) prepare(m Manifest, body io.Reader) (name string, err error) {
+	dir := ""
+	if c.Self != "" {
+		dir = filepath.Dir(c.Self)
+	}
+	tmp, err := os.CreateTemp(dir, ".timerpi-new-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(tmp.Name())
+			os.Remove(ManifestPath(tmp.Name()))
+		}
+	}()
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(body, m.Size+1))
 	if err == nil {
@@ -260,20 +315,19 @@ func (c *Checker) install(m Manifest, body io.Reader) error {
 		err = cerr
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if n != m.Size || hex.EncodeToString(h.Sum(nil)) != m.SHA256 {
-		return errors.New("download doesn't match the signed manifest")
+		return "", errors.New("download doesn't match the signed manifest")
 	}
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	mb, _ := json.MarshalIndent(m, "", "  ")
 	if err := os.WriteFile(ManifestPath(tmp.Name()), mb, 0o644); err != nil {
-		return err
+		return "", err
 	}
-	defer os.Remove(ManifestPath(tmp.Name()))
-	return Swap(c.Self, tmp.Name())
+	return tmp.Name(), nil
 }
 
 // Swap installs newBin as bin, keeping the old binary (and manifest) as

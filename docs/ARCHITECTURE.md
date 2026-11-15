@@ -102,6 +102,7 @@ go to the home page.
 - A rate change re-anchors the countdown and never alters the planned schedule.
 - `ComputeSchedule` / `ComputeScheduleRuntime` give planned and actual start/end and over/under for every row.
 - The `OnStart` hook fires on every successful hand start (GO, Start). The OSC bridge uses it.
+- **Update admission.** Boot and manual updates share one installation guard. The updater stages and verifies the download first, then `Engines.ReserveUpdate` atomically checks loaded and persisted runtimes and excludes timer commands until restart. A failed install releases the reservation. Downloads leave timer controls available.
 
 ## 5. Realtime: the WS hub
 

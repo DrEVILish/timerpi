@@ -28,16 +28,20 @@ func TestUpdateButton(t *testing.T) {
 	h := sha256.Sum256(bin)
 	m := update.Manifest{Version: "3.1.0", Arch: "arm64", SHA256: hex.EncodeToString(h[:]), Size: int64(len(bin))}
 	m.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(sk, m.SignedBytes()))
+	var busyDuringDownload atomic.Bool
+	var busy, restarted atomic.Bool
 	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/manifest") {
 			_ = json.NewEncoder(w).Encode(m)
 		} else {
+			if busyDuringDownload.Load() {
+				busy.Store(true)
+			}
 			_, _ = w.Write(bin)
 		}
 	}))
 	defer src.Close()
 
-	var busy, restarted atomic.Bool
 	var installed []byte
 	sources := []string{}
 	u := &update.Checker{
@@ -78,6 +82,12 @@ func TestUpdateButton(t *testing.T) {
 		t.Fatalf("installed under a running timer: %d %v", code, out)
 	}
 	busy.Store(false)
+	busyDuringDownload.Store(true)
+	if code, out := call("POST"); code != http.StatusConflict || installed != nil || restarted.Load() {
+		t.Fatalf("installed after GO during download: %d %v", code, out)
+	}
+	busyDuringDownload.Store(false)
+	busy.Store(false)
 	if code, out := call("POST"); code != http.StatusOK || out["installed"] != "3.1.0" || string(installed) != string(bin) {
 		t.Fatalf("UPDATE: %d %v (%q)", code, out, installed)
 	}
@@ -90,5 +100,4 @@ func TestUpdateButton(t *testing.T) {
 	if code, _ := call("POST"); code != http.StatusConflict {
 		t.Fatalf("a second press started another install: %d", code)
 	}
-	updating.Store(false)
 }
