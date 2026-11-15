@@ -100,7 +100,7 @@ Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installe
 
 One line per ID, so citations in code and commits still resolve. Detail: `git log --grep=<ID>`.
 
-**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions · B12 layout alignment uses the same collision rules as other edits.
+**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions · B12 layout alignment uses the same collision rules as other edits · B14 failed screen assignments leave the prior look and waiting claim intact.
 
 **Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 
@@ -116,7 +116,7 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 **Home, event pages, roles.** U19–U24 home and event page wording, Leave event · U25 moderators get Run and Audience only · U28 theme picker for the Event Technician only · U29 no Setup tab · U52 Event Technician page: Live rooms table and Setup tab, settings save on change (password keeps Save).
 
-**Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired.
+**Cleanup.** C1 `TIMERPI_HTTP_PORT` · C2 ftl-themes submodule · C3 dead code · C4 content-hash asset URLs · C5 templates from the server · C6–C8 doc references, `docs/UI-CONTRACT.md` · C9 UI embedded in the binary · C10 zones retired · C12 atomic screen assignment module (S4).
 
 **Engine.** The browser's offline engine matches the server, held to it by `TestEngineParityWithJS` (2026-11-12).
 

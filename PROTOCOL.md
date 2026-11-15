@@ -101,6 +101,13 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST /api/waiting/register {name,host,token,code?,handheld?}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>`. A box registers with its pairing `code`; once paired, its `mine` also carries `pairing:{event, eventName, meshKey, endsAt, room}` (boxes only) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Event Technician session (moderators 401); capture needs the room's Event Technician. `GET` → `{waiting:[{id, name, host, lastSeen, seenAgo, live, handheld}]}`, live screens (polled in the last 15 s) first, newest first; silent rows age out after 10 min. On a box every waiting screen is listed; on the cloud only screens that registered from the caller's own client IP (others answer 404; they pair by code). A screen already captured into another room → 409 |
 
+Screen assignment writes (configuration, template selection, capture, matching,
+preset restore and named-layout assignment) persist one screen's complete look
+atomically. Capture commits the waiting-screen claim with that look. Live
+steering follows a successful write. Matching and preset restore retain
+per-screen partial success; they are not event-wide transactions. Route and
+frame shapes are unchanged.
+
 ### Audience interactions (`routes/audience.go`, model in `timerpi/polls.go`)
 Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets: **audience** (phones + audience screens) and **presenter** (DSM). One item per target per room. Submissions (questions, words, ideas) are entries under their item.
 

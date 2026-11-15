@@ -25,9 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,14 +33,6 @@ import (
 	"timerpi/timerpi"
 	"timerpi/views"
 )
-
-var screenThemeRe = regexp.MustCompile(`^[a-z0-9_-]{0,40}$`)
-
-// screenThemeOK: "" (event default) or a theme slug — never ftl's
-// core/tokens layers, which are not themes (REPORT #18).
-func screenThemeOK(t string) bool {
-	return screenThemeRe.MatchString(t) && t != "core" && t != "tokens"
-}
 
 // screenSessionView is one live tab (the gallery/panel disconnect button).
 type screenSessionView struct {
@@ -273,16 +263,6 @@ func (d *Deps) notifyControls(id int64) {
 	}
 }
 
-// boardKnown reports whether bid names a board of this show (assignments
-// must not strand a locked TV on a 404 ?board= page).
-func (d *Deps) boardKnown(showID, bid int64) bool {
-	if bid <= 0 {
-		return bid == 0
-	}
-	_, err := boards.GetBoard(d.Store.DB, showID, bid)
-	return err == nil
-}
-
 // GET /api/shows/:ident/screens — the operator panel view (show-gated).
 func (d *Deps) apiScreens(c *gin.Context) {
 	id, ok := d.requireSuperOfShow(c)
@@ -336,61 +316,16 @@ func (d *Deps) apiScreenConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, theme?, boardId?, kind?, rotation?}"})
 		return
 	}
-	name := timerpi.SanitizeScreenName(body.Name)
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+	assigned, err := d.assignScreen(id, body.Name, screenAssignment{
+		Theme: &body.Theme, BoardID: &body.BoardID, Room: &body.Room,
+		Kind: body.Kind, Rotation: body.Rotation,
+	})
+	if err != nil {
+		screenAssignmentError(c, err)
 		return
 	}
-	if !screenThemeOK(body.Theme) {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
-		return
-	}
-	if body.BoardID < 0 || !d.boardKnown(id, body.BoardID) {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
-		return
-	}
-	// Check every field before writing any (BUGLOG RW42): a bad rotation
-	// used to answer 400 with the theme/board/room already saved.
-	look := body.Kind != nil || body.Rotation != nil
-	var kind string
-	var rot int
-	if look {
-		cur, _ := d.Store.GetScreenByName(id, name)
-		kind, rot = cur.Kind, cur.Rotation
-		if body.Kind != nil {
-			kind = *body.Kind
-		}
-		if body.Rotation != nil {
-			rot = *body.Rotation
-		}
-		if !timerpi.ValidScreenKind(kind) {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown display type " + strconv.Quote(kind)})
-			return
-		}
-		if !timerpi.ValidRotation(rot) {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "rotation must be 0, 90, 180 or 270"})
-			return
-		}
-	}
-	if err := d.Store.SetScreenConfig(id, name, body.Theme, body.BoardID, body.Room); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	if look {
-		if err := d.Store.SetScreenLook(id, name, kind, rot); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": strings.TrimPrefix(err.Error(), "timerpi: ")})
-			return
-		}
-		// A built-in layout follows the type: a walk-in layout never stays
-		// on a presenter screen, and a screen with no layout gets its type's
-		// first one, so an Audience screen shows what is pushed to it.
-		// (Mounting only picks its version.)
-		if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.BoardID == 0 && (cur.Template != "" || kind != "") {
-			if fit := boards.FitTemplate(cur.Template, kind); fit != cur.Template {
-				_ = d.Store.SetScreenTemplate(id, name, fit)
-			}
-		}
-	}
+	name := assigned.Name
+
 	d.pushScreen(id, name)
 	d.notifyControls(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -430,13 +365,10 @@ func (d *Deps) apiScreenMatch(c *gin.Context) {
 		if r.Name == from {
 			continue
 		}
-		err := d.Store.SetScreenConfig(id, r.Name, src.Theme, src.BoardID, r.Room)
-		if err == nil && src.BoardID == 0 {
-			err = d.Store.SetScreenTemplate(id, r.Name, src.Template)
-		}
-		if err == nil {
-			err = d.Store.SetScreenLook(id, r.Name, src.Kind, r.Rotation)
-		}
+		_, err := d.assignScreen(id, r.Name, screenAssignment{
+			Mode: copyScreenLook, Theme: &src.Theme, BoardID: &src.BoardID, Room: &r.Room,
+			Template: &src.Template, Kind: &src.Kind, Rotation: &r.Rotation,
+		})
 		if err != nil {
 			failed++
 			continue
@@ -677,31 +609,14 @@ func (d *Deps) apiPresetApply(c *gin.Context) {
 	}
 	applied := 0
 	for _, sc := range pd.Screens {
-		name := timerpi.SanitizeScreenName(sc.Name)
-		if name == "" || !screenThemeOK(sc.Theme) ||
-			sc.BoardID < 0 || !d.boardKnown(id, sc.BoardID) {
-			continue // entries from another show's file never land here
+		assigned, err := d.assignScreen(id, sc.Name, screenAssignment{
+			Mode: restoreScreenPreset, Theme: &sc.Theme, BoardID: &sc.BoardID,
+			Template: sc.Template, Kind: sc.Kind, Rotation: sc.Rotation,
+		})
+		if err != nil {
+			continue // retain the preset's per-screen partial-success contract
 		}
-		// A preset carries looks, not rooms: keep each screen's room
-		// (BUGLOG RW41; it used to be wiped to "").
-		room := ""
-		if cur, cerr := d.Store.GetScreenByName(id, name); cerr == nil {
-			room = cur.Room
-		}
-		if err := d.Store.SetScreenConfig(id, name, sc.Theme, sc.BoardID, room); err != nil {
-			continue
-		}
-		if sc.Template != nil && sc.BoardID == 0 {
-			if *sc.Template == "" {
-				_ = d.Store.SetScreenTemplate(id, name, "")
-			} else if k, known := templateKey(*sc.Template); known {
-				_ = d.Store.SetScreenTemplate(id, name, k)
-			}
-		}
-		if sc.Kind != nil && sc.Rotation != nil && timerpi.ValidScreenKind(*sc.Kind) && timerpi.ValidRotation(*sc.Rotation) {
-			_ = d.Store.SetScreenLook(id, name, *sc.Kind, *sc.Rotation)
-		}
-		d.pushScreen(id, name)
+		d.pushScreen(id, assigned.Name)
 		applied++
 	}
 	d.notifyControls(id)
@@ -804,16 +719,6 @@ func (d *Deps) apiPresetImport(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"ok": true, "id": p.ID, "name": p.Name})
 }
 
-// templateKey normalises a built-in key; ok=false when unknown.
-func templateKey(raw string) (string, bool) {
-	k := strings.ToLower(strings.TrimSpace(raw))
-	if cur, old := boards.LegacyTemplateKeys()[k]; old {
-		k = cur // "room-portrait" and friends: one key holds both versions now
-	}
-	_, ok := boards.TemplateLayouts()[k]
-	return k, ok
-}
-
 // templateName is a built-in's display name, "[built-in] Room walk-in".
 func templateName(key string) string {
 	for _, t := range boards.Templates() {
@@ -842,31 +747,15 @@ func (d *Deps) apiScreenTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "body must be {name, template}"})
 		return
 	}
-	name := timerpi.SanitizeScreenName(body.Name)
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad screen name"})
+	assigned, err := d.assignScreen(id, body.Name, screenAssignment{
+		Mode: selectScreenTemplate, Template: &body.Template,
+	})
+	if err != nil {
+		screenAssignmentError(c, err)
 		return
 	}
-	key := ""
-	if strings.TrimSpace(body.Template) != "" {
-		k, known := templateKey(body.Template)
-		if !known {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
-			return
-		}
-		key = k
-	}
-	if err := d.Store.SetScreenTemplate(id, name, key); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return
-	}
-	if cur, err := d.Store.GetScreenByName(id, name); err == nil && cur.Kind == "" {
-		for _, t := range boards.Templates() {
-			if t.Key == key {
-				_ = d.Store.SetScreenLook(id, name, t.Kind, cur.Rotation)
-			}
-		}
-	}
+	name, key := assigned.Name, assigned.Template
+
 	d.pushScreen(id, name)
 	d.notifyControls(id)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "template": key})

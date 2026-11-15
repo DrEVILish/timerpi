@@ -19,7 +19,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"timerpi/boards"
 	"timerpi/timerpi"
 	"timerpi/views"
 )
@@ -249,52 +248,22 @@ func (d *Deps) captureWaiting(c *gin.Context, id int64, body captureBody) (strin
 	if name == "" {
 		name = w.Name
 	}
-	if !screenThemeOK(body.Theme) {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "bad theme name"})
-		return "", "", false
-	}
 	boardID := body.BoardID
-	tplKey := ""
-	if tpl := strings.TrimSpace(body.Template); tpl != "" {
-		k, known := templateKey(tpl)
-		if !known {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown template"})
-			return "", "", false
-		}
-		tplKey, boardID = k, 0 // the screen shows the built-in directly (U10)
+	var template *string
+	if strings.TrimSpace(body.Template) != "" {
+		template, boardID = &body.Template, 0
 	}
-	if boardID < 0 || !d.boardKnown(sid, boardID) {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "unknown board"})
+	assigned, err := d.assignScreen(sid, name, screenAssignment{
+		Mode: captureScreen, Theme: &body.Theme, BoardID: &boardID, Room: &body.Room,
+		Template: template, Kind: &body.Kind, Rotation: &body.Rotation,
+		WaitingID: id, WaitingCode: sh.Code,
+	})
+	if err != nil {
+		screenAssignmentError(c, err)
 		return "", "", false
 	}
-	// Take the waiting row first (RW38): a second operator capturing the
-	// same screen loses here, before writing any config of its own.
-	if err := d.Store.AssignWaiting(id, sh.Code, name); err != nil {
-		status := http.StatusInternalServerError
-		msg := err.Error()
-		if errors.Is(err, sql.ErrNoRows) {
-			status, msg = http.StatusConflict, "someone else just set this screen up"
-		}
-		c.JSON(status, gin.H{"ok": false, "error": msg})
-		return "", "", false
-	}
-	if err := d.Store.SetScreenConfig(sid, name, body.Theme, boardID, body.Room); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return "", "", false
-	}
-	if err := d.Store.SetScreenLook(sid, name, body.Kind, body.Rotation); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-		return "", "", false
-	}
-	if tplKey == "" && boardID == 0 && body.Kind != "" {
-		tplKey = boards.FitTemplate("", body.Kind) // a typed screen never lands on the plain timer
-	}
-	if tplKey != "" {
-		if err := d.Store.SetScreenTemplate(sid, name, tplKey); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-			return "", "", false
-		}
-	}
+	name = assigned.Name
+
 	d.notifyControls(sid)
 	return sh.Code, name, true
 }

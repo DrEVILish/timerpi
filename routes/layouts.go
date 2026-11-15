@@ -152,8 +152,7 @@ func (d *Deps) apiLayoutCopy(c *gin.Context) {
 	}
 	touched := map[int64]bool{id: true}
 	for _, t := range targets {
-		cur, _ := d.Store.GetScreenByName(t.room.ID, t.name)
-		if err := d.Store.SetScreenConfig(t.room.ID, t.name, cur.Theme, b.ID, cur.Room); err != nil {
+		if _, err := d.assignScreen(t.room.ID, t.name, screenAssignment{BoardID: &b.ID}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
