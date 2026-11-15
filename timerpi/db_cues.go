@@ -262,7 +262,7 @@ func (d *DB) ReorderCues(showID int64, cueIDs []int64) error {
 	// order (the documented "unknown IDs are ignored" contract).
 	ids := make([]int64, 0, len(cueIDs))
 	for _, id := range cueIDs {
-		if known[id] {
+		if known[id] && !want[id] {
 			want[id] = true
 			ids = append(ids, id)
 		}
