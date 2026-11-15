@@ -5,6 +5,12 @@ import { editTile, canvasRows } from '../../public/src/layout-edit.js';
 const tile = (id, x, y, w = 6, h = 4) => ({ id, type: 'notice', x, y, w, h });
 const board = (...widgets) => ({ rows: 8, widgets });
 
+test('tile height stays within the server limit even on a tall canvas', () => {
+  const layout = { rows: 48, widgets: [tile('a', 0, 0, 6, 12)] };
+  assert.deepEqual(editTile(layout, 'a', { h: 13 }), []);
+  assert.equal(layout.widgets[0].h, 12);
+});
+
 test('moving onto one tile swaps both without replacing their data', () => {
   const a = tile('a', 0, 0), b = tile('b', 6, 0);
   const layout = board(a, b);

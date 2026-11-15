@@ -9,7 +9,7 @@ export function clampTile(layout, tile) {
   tile.x = Math.max(0, Math.min(11, tile.x | 0));
   tile.w = Math.max(1, Math.min(12, tile.w | 0));
   if (tile.x + tile.w > 12) tile.w = 12 - tile.x;
-  tile.h = Math.max(1, Math.min(rows, tile.h | 0));
+  tile.h = Math.max(1, Math.min(rows, 12, tile.h | 0)); // boards.MaxH
   tile.y = Math.max(0, Math.min(rows - tile.h, tile.y | 0));
   return tile;
 }
