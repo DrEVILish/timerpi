@@ -345,7 +345,7 @@ func (d *Deps) importShowFile(raw []byte, fallbackTitle string, eventID int64) (
 
 // restoreBundlePolls recreates a room's interactions (parents before
 // children, as exported), the spotlight and the votes.
-func (d *Deps) restoreBundlePolls(showID int64, polls []showFilePoll, votes []showFileVote) {
+func (d *Deps) restoreBundlePolls(showID int64, polls []showFilePoll, votes []showFileVote) error {
 	// Polls: export ids are the bundle's list positions (1..N, parents
 	// before children), so each child's parent re-keys inline as it
 	// lands; votes ride the same mapping afterwards.
@@ -354,6 +354,9 @@ func (d *Deps) restoreBundlePolls(showID int64, polls []showFilePoll, votes []sh
 		parent := int64(0)
 		if p.Parent != 0 {
 			parent = pollX[p.Parent] // parents precede children
+			if parent == 0 {
+				return fmt.Errorf("interaction: unknown parent %d", p.Parent)
+			}
 		}
 		np, cerr := d.Store.CreatePollRaw(timerpi.Poll{
 			ShowID: showID, Kind: p.Kind, Question: p.Question,
@@ -361,19 +364,26 @@ func (d *Deps) restoreBundlePolls(showID int64, polls []showFilePoll, votes []sh
 			Parent: parent, Author: p.Author, Ts: p.Ts,
 			ToAudience: p.ToAudience, ToPresenter: p.ToPresenter, AutoApprove: p.AutoApprove,
 		})
-		if cerr == nil {
-			pollX[int64(slot+1)] = np.ID
+		if cerr != nil {
+			return fmt.Errorf("interaction: %w", cerr)
 		}
+		pollX[int64(slot+1)] = np.ID
 	}
 	for slot, p := range polls {
-		if p.Spot > 0 && pollX[p.Spot] > 0 {
+		if p.Spot > 0 {
+			if pollX[p.Spot] == 0 {
+				return fmt.Errorf("spotlight: unknown interaction %d", p.Spot)
+			}
 			if err := d.Store.SetPollSpotRaw(pollX[int64(slot+1)], pollX[p.Spot]); err != nil {
-				log.Printf("routes: import spotlight: %v", err)
+				return fmt.Errorf("spotlight: %w", err)
 			}
 		}
+	}
+	if err := d.restoreBundleVotes(pollX, votes); err != nil {
+		return err
 	}
 	if d.Hub != nil {
 		d.Hub.BroadcastPoll(showID)
 	}
-	d.restoreBundleVotes(pollX, votes)
+	return nil
 }

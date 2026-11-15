@@ -133,6 +133,8 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
 | `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
 
+**Whole-event copy (version 1).** `rooms[].blanked` carries each room's blackout (defaults to false for older copies). An absent or null `map` clears the destination map. Imports reject invalid references and commit the whole replacement together; an error preserves the previous event and its active engines. State and audience publications follow commit.
+
 **PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden = never shown yet \| open \| results; independent of the targets), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[], round}`. `round` (omitted while 0) counts "Clear responses" on the item; phones key their remembered vote, upvotes and sent entries by item id + round, so a cleared item starts fresh. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
 
 ### Box, assets, OSC

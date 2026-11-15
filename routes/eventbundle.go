@@ -61,6 +61,7 @@ type eventBundleRoom struct {
 	RoomPW   string              `json:"roomPW"` // the stored hash
 	Notes    string              `json:"notes"`
 	DayStart string              `json:"dayStart"`
+	Blanked  bool                `json:"blanked"`
 	Runtime  timerpi.Runtime     `json:"runtime"`
 	Cues     []timerpi.Cue       `json:"cues"`
 	Messages []timerpi.Message   `json:"messages"`
@@ -107,7 +108,7 @@ func (d *Deps) ExportEvent(eventID int64) ([]byte, error) {
 	}
 	var boardX map[int64]int64
 	for i, r := range rooms {
-		room := eventBundleRoom{Code: r.Code, Title: r.Title, Pos: r.RoomPos, RoomPW: r.RoomPW, Notes: r.Notes, DayStart: r.DayStart}
+		room := eventBundleRoom{Code: r.Code, Title: r.Title, Pos: r.RoomPos, RoomPW: r.RoomPW, Notes: r.Notes, DayStart: r.DayStart, Blanked: r.Blanked}
 		if room.Cues, err = d.Store.ListCues(r.ID); err != nil {
 			return nil, err
 		}
@@ -147,26 +148,97 @@ func (d *Deps) ImportEvent(raw []byte) (timerpi.Event, error) {
 	if b.Version != eventBundleVersion {
 		return timerpi.Event{}, fmt.Errorf("unsupported event copy version %d", b.Version)
 	}
+	if err := validateEventCopy(b); err != nil {
+		return timerpi.Event{}, err
+	}
+	var ev timerpi.Event
+	var removed, changed []int64
+	write := func() ([]int64, error) {
+		err := d.Store.WriteTransaction(func(store *timerpi.DB) error {
+			copyDeps := &Deps{Store: store}
+			var err error
+			ev, removed, changed, err = copyDeps.importEvent(b)
+			return err
+		})
+		return append(append([]int64{}, removed...), changed...), err
+	}
+	var err error
+	if d.Engines != nil {
+		err = d.Engines.ReplaceShows(write)
+	} else {
+		_, err = write()
+	}
+	if err != nil {
+		return timerpi.Event{}, err
+	}
+	for _, id := range removed {
+		d.forgetRoom(id)
+	}
+	for _, id := range changed {
+		d.notifyShow(id)
+		if d.Hub != nil {
+			d.Hub.BroadcastPoll(id)
+		}
+	}
+	return ev, nil
+}
+
+// validateEventCopy checks identities before replacing any rows.
+func validateEventCopy(b eventBundle) error {
+	if !timerpi.ValidCode(timerpi.NormalizeCode(b.Event.Code)) {
+		return fmt.Errorf("bad event code")
+	}
+	rooms := map[string]bool{}
+	for _, r := range b.Rooms {
+		code := timerpi.NormalizeCode(r.Code)
+		if !timerpi.ValidCode(code) || rooms[code] {
+			return fmt.Errorf("bad or duplicate room code %q", r.Code)
+		}
+		rooms[code] = true
+	}
+	layouts := map[int64]bool{}
+	for _, bd := range b.Boards {
+		if bd.ID <= 0 || layouts[bd.ID] {
+			return fmt.Errorf("bad or duplicate layout id %d", bd.ID)
+		}
+		if bd.Room != "" && !rooms[timerpi.NormalizeCode(bd.Room)] {
+			return fmt.Errorf("unknown layout room %q", bd.Room)
+		}
+		layouts[bd.ID] = true
+	}
+	for _, r := range b.Rooms {
+		for _, screen := range r.Screens {
+			if screen.BoardID != 0 && !layouts[screen.BoardID] {
+				return fmt.Errorf("screen %s: unknown layout %d", screen.Name, screen.BoardID)
+			}
+		}
+	}
+	return nil
+}
+
+// importEvent runs against a private transaction view; it never publishes.
+func (d *Deps) importEvent(b eventBundle) (timerpi.Event, []int64, []int64, error) {
+	var removed, changed []int64
 	ev, ok := d.Store.ResolveEvent(b.Event.Code)
 	if !ok {
 		var err error
 		if ev, err = d.Store.CreateEventWithCode(b.Event.Code, b.Event.Name, b.Event.SuperHash); err != nil {
-			return timerpi.Event{}, err
+			return timerpi.Event{}, nil, nil, err
 		}
 	}
 	if err := d.Store.UpdateEventCopy(ev.ID, b.Event.Name, b.Event.SuperHash, b.Event.Theme, b.Event.EndsAt); err != nil {
-		return timerpi.Event{}, err
+		return timerpi.Event{}, nil, nil, err
 	}
 	existing, err := d.Store.ListRooms(ev.ID)
 	if err != nil {
-		return timerpi.Event{}, err
+		return timerpi.Event{}, nil, nil, err
 	}
 	byCode := map[string]timerpi.Show{}
 	for _, r := range existing {
 		byCode[r.Code] = r
 	}
 	if err := d.Store.ClearEventBoards(ev.ID); err != nil {
-		return timerpi.Event{}, err
+		return timerpi.Event{}, nil, nil, err
 	}
 	ids := map[string]int64{}
 	keep := map[int64]bool{}
@@ -174,7 +246,7 @@ func (d *Deps) ImportEvent(raw []byte) (timerpi.Event, error) {
 		sh, ok := byCode[timerpi.NormalizeCode(r.Code)]
 		if !ok {
 			if sh, err = d.Store.CreateRoomWithCode(ev.ID, r.Code, r.Title); err != nil {
-				return timerpi.Event{}, err
+				return timerpi.Event{}, nil, nil, err
 			}
 		}
 		ids[sh.Code] = sh.ID
@@ -183,9 +255,9 @@ func (d *Deps) ImportEvent(raw []byte) (timerpi.Event, error) {
 	for _, r := range existing {
 		if !keep[r.ID] {
 			if err := d.Store.DeleteShow(r.ID); err != nil {
-				return timerpi.Event{}, err
+				return timerpi.Event{}, nil, nil, err
 			}
-			d.forgetRoom(r.ID)
+			removed = append(removed, r.ID)
 		}
 	}
 	boardX := map[int64]int64{}
@@ -194,33 +266,50 @@ func (d *Deps) ImportEvent(raw []byte) (timerpi.Event, error) {
 		if owner == 0 && len(b.Rooms) > 0 {
 			owner = ids[timerpi.NormalizeCode(b.Rooms[0].Code)]
 		}
-		if nb, berr := boards.CreateBoard(d.Store.DB, owner, bd.Name, string(bd.Layout)); berr == nil {
-			boardX[bd.ID] = nb.ID
+		nb, berr := boards.CreateBoard(d.Store, owner, bd.Name, string(bd.Layout))
+		if berr != nil {
+			return timerpi.Event{}, nil, nil, fmt.Errorf("layout %s: %w", bd.Name, berr)
 		}
+		boardX[bd.ID] = nb.ID
 	}
 	for _, r := range b.Rooms {
 		id := ids[timerpi.NormalizeCode(r.Code)]
+		changed = append(changed, id)
 		if err := d.fillRoomCopy(id, r, boardX); err != nil {
-			return timerpi.Event{}, fmt.Errorf("room %s: %w", r.Code, err)
+			return timerpi.Event{}, nil, nil, fmt.Errorf("room %s: %w", r.Code, err)
 		}
 	}
+	mapID := int64(0)
 	if b.Map != nil {
-		if data, derr := dataURLBytes(b.Map.Data); derr == nil {
-			if mime, ok := sniffImage(data); ok {
-				if cur, cerr := d.Store.GetAsset(ev.MapAsset); cerr != nil || string(cur.Bytes) != string(data) {
-					if na, aerr := d.Store.CreateAsset(ev.ID, b.Map.Name, mime, data); aerr == nil {
-						_ = d.Store.SetEventMap(ev.ID, na.ID)
-					}
-				}
+		data, err := dataURLBytes(b.Map.Data)
+		if err != nil {
+			return timerpi.Event{}, nil, nil, fmt.Errorf("map: %w", err)
+		}
+		mime, ok := sniffImage(data)
+		if !ok {
+			return timerpi.Event{}, nil, nil, fmt.Errorf("map: unsupported image")
+		}
+		cur, err := d.Store.GetAsset(ev.MapAsset)
+		if err == nil && string(cur.Bytes) == string(data) {
+			mapID = cur.ID
+		} else {
+			na, err := d.Store.CreateAsset(ev.ID, b.Map.Name, mime, data)
+			if err != nil {
+				return timerpi.Event{}, nil, nil, err
 			}
+			mapID = na.ID
 		}
 	}
-	return d.Store.GetEvent(ev.ID)
+	if err := d.Store.SetEventMap(ev.ID, mapID); err != nil {
+		return timerpi.Event{}, nil, nil, err
+	}
+	ev, err = d.Store.GetEvent(ev.ID)
+	return ev, removed, changed, err
 }
 
 // fillRoomCopy replaces one room's content with the copy's.
 func (d *Deps) fillRoomCopy(id int64, r eventBundleRoom, boardX map[int64]int64) error {
-	if err := d.Store.UpdateRoomCopy(id, r.Title, r.Pos, r.RoomPW, r.Notes, r.DayStart); err != nil {
+	if err := d.Store.UpdateRoomCopy(id, r.Title, r.Pos, r.RoomPW, r.Notes, r.DayStart, r.Blanked); err != nil {
 		return err
 	}
 	if err := d.Store.ClearRoomContent(id); err != nil {
@@ -230,15 +319,6 @@ func (d *Deps) fillRoomCopy(id int64, r eventBundleRoom, boardX map[int64]int64)
 		Screens: r.Screens, Presets: r.Presets, Runtime: r.Runtime}
 	if err := d.restoreRoom(id, rc, boardX); err != nil {
 		return err
-	}
-	// The cached engine still holds the old running order: reload it, and
-	// tell connected pages.
-	if d.Engines != nil {
-		d.Engines.Drop(id)
-	}
-	d.notifyShow(id)
-	if d.Hub != nil {
-		d.Hub.BroadcastPoll(id)
 	}
 	return nil
 }

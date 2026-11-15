@@ -317,11 +317,21 @@ func (d *DB) AppendCues(showID int64, cues []Cue) error {
 // Cues keep their given order; Pos is renumbered 1..N. Runs in one tx.
 func (d *DB) ReplaceCues(showID int64, cues []Cue) error {
 	defer d.cuesChanged(showID)
+	if d.tx != nil {
+		return replaceCues(d.tx, showID, cues)
+	}
 	tx, err := d.Beginx()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := replaceCues(tx, showID, cues); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceCues(tx *sqlx.Tx, showID int64, cues []Cue) error {
 	if _, err := tx.Exec(`DELETE FROM cues WHERE show_id = ?`, showID); err != nil {
 		return err
 	}
@@ -353,7 +363,7 @@ func (d *DB) ReplaceCues(showID int64, cues []Cue) error {
 	if err := bumpStamp(tx, showID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // cueIDsOrdered lists cue ids in current Pos order (must run in a tx).

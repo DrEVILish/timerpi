@@ -14,6 +14,7 @@ import (
 // truth (PLAN §1): shows, cues, messages, settings kv and per-show runtime.
 type DB struct {
 	*sqlx.DB
+	tx   *sqlx.Tx // private transaction view; never shared with live readers
 	air  airCache // on-air interaction per room (polls.go OnAirNow)
 	cueG cueGens  // per-show cue write generation (engine cue cache, RW55)
 

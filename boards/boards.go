@@ -739,9 +739,15 @@ func ListBoards(db *sqlx.DB, showID int64) ([]Board, error) {
 	return out, err
 }
 
+// Store is the database or an event-copy transaction.
+type Store interface {
+	Exec(string, ...any) (sql.Result, error)
+	Get(any, string, ...any) error
+}
+
 // GetBoard fetches one layout of showID's event; sql.ErrNoRows when
 // missing (callers 404).
-func GetBoard(db *sqlx.DB, showID, bid int64) (Board, error) {
+func GetBoard(db Store, showID, bid int64) (Board, error) {
 	var b Board
 	err := db.Get(&b, `SELECT * FROM display_boards WHERE (`+sameEvent+`) AND id = ?`, showID, showID, bid)
 	if err != nil && err != sql.ErrNoRows {
@@ -752,7 +758,7 @@ func GetBoard(db *sqlx.DB, showID, bid int64) (Board, error) {
 
 // CreateBoard inserts a board; an empty layout seeds the factory default.
 // Names are trimmed, capped at 64 chars, and must be non-empty.
-func CreateBoard(db *sqlx.DB, showID int64, name, layoutRaw string) (Board, error) {
+func CreateBoard(db Store, showID int64, name, layoutRaw string) (Board, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Board{}, fmt.Errorf("boards: name must not be empty")

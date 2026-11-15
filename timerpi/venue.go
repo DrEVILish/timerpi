@@ -148,9 +148,9 @@ func (d *DB) CreateRoomWithCode(eventID int64, code, title string) (Show, error)
 
 // UpdateRoomCopy sets a copied room's own fields (the password is the
 // stored hash, copied as is).
-func (d *DB) UpdateRoomCopy(id int64, title string, pos int64, roomPWHash, notes, dayStart string) error {
-	_, err := d.Exec(`UPDATE shows SET title = ?, room_pos = ?, room_pw = ?, notes = ?, day_start = ?, updated_at = ? WHERE id = ?`,
-		ClipRunes(title, MaxNameLen), pos, roomPWHash, notes, dayStart, nowMS(), id)
+func (d *DB) UpdateRoomCopy(id int64, title string, pos int64, roomPWHash, notes, dayStart string, blanked bool) error {
+	_, err := d.Exec(`UPDATE shows SET title = ?, room_pos = ?, room_pw = ?, notes = ?, day_start = ?, blanked = ?, updated_at = ? WHERE id = ?`,
+		ClipRunes(title, MaxNameLen), pos, roomPWHash, notes, dayStart, b2i(blanked), nowMS(), id)
 	return err
 }
 

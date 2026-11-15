@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"timerpi/boards"
@@ -123,34 +122,44 @@ func (d *Deps) restoreRoom(id int64, rc roomContent, boardX map[int64]int64) err
 	for _, m := range rc.Messages {
 		nm, err := d.Store.CreateMessage(id, m.Text, m.Color)
 		if err != nil {
-			continue
+			return fmt.Errorf("message: %w", err)
 		}
 		if m.ShownAt > 0 {
 			if err := d.Store.ShowMessage(id, nm.ID, m.ShownAt); err != nil {
-				log.Printf("routes: restore message shown state: %v", err)
+				return fmt.Errorf("message shown state: %w", err)
 			}
 		}
 	}
-	if len(rc.Polls) > 0 {
-		d.restoreBundlePolls(id, rc.Polls, rc.Votes)
+	if len(rc.Polls) > 0 || len(rc.Votes) > 0 {
+		if err := d.restoreBundlePolls(id, rc.Polls, rc.Votes); err != nil {
+			return err
+		}
 	}
 	for _, s := range rc.Screens {
-		if err := d.Store.SetScreenConfig(id, s.Name, s.Theme, boardX[s.BoardID], s.Room); err != nil {
-			log.Printf("routes: restore screen %s: %v", s.Name, err)
-			continue
+		if s.BoardID != 0 && boardX[s.BoardID] == 0 {
+			return fmt.Errorf("screen %s: unknown layout %d", s.Name, s.BoardID)
 		}
-		_ = d.Store.SetScreenLook(id, s.Name, s.Kind, s.Rotation) // show files carry none: ""/0 is a fresh row's default
+		if err := d.Store.SetScreenConfig(id, s.Name, s.Theme, boardX[s.BoardID], s.Room); err != nil {
+			return fmt.Errorf("screen %s: %w", s.Name, err)
+		}
+		if err := d.Store.SetScreenLook(id, s.Name, s.Kind, s.Rotation); err != nil {
+			return err
+		}
 		if s.Template != "" {
-			_ = d.Store.SetScreenTemplate(id, s.Name, s.Template)
+			if err := d.Store.SetScreenTemplate(id, s.Name, s.Template); err != nil {
+				return err
+			}
 		}
 		if s.Key != "" {
-			_ = d.Store.SetScreenKey(id, s.Name, s.Key)
+			if err := d.Store.SetScreenKey(id, s.Name, s.Key); err != nil {
+				return err
+			}
 		}
 	}
 	for _, p := range rc.Presets {
 		if len(p.Data) > 0 && string(p.Data) != "null" {
 			if _, err := d.Store.SavePreset(id, p.Name, string(p.Data)); err != nil {
-				log.Printf("routes: restore preset: %v", err)
+				return fmt.Errorf("preset: %w", err)
 			}
 		}
 	}
@@ -167,14 +176,17 @@ func (d *Deps) restoreRoom(id int64, rc roomContent, boardX map[int64]int64) err
 
 // restoreBundleVotes attaches vote rows via the export-slot → db-id map
 // the import loop built (DB UNIQUE absorbs a double import).
-func (d *Deps) restoreBundleVotes(pollX map[int64]int64, votes []showFileVote) {
+func (d *Deps) restoreBundleVotes(pollX map[int64]int64, votes []showFileVote) error {
 	for _, v := range votes {
-		if dbID, ok := pollX[v.PollID]; ok && dbID > 0 {
-			if err := d.Store.VoteRaw(dbID, v.Peer, v.Choice, v.Ts); err != nil {
-				log.Printf("routes: import vote: %v", err) // RS25
-			}
+		dbID := pollX[v.PollID]
+		if dbID == 0 {
+			return fmt.Errorf("vote: unknown interaction %d", v.PollID)
+		}
+		if err := d.Store.VoteRaw(dbID, v.Peer, v.Choice, v.Ts); err != nil {
+			return fmt.Errorf("vote: %w", err)
 		}
 	}
+	return nil
 }
 
 // dataURL encodes asset bytes as an inline data URL.
