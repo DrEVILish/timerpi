@@ -38,7 +38,7 @@
 | S2 layout editor | ✅ | Editor shows the screen's real canvas (rows × 12, landscape or portrait) in its theme |
 | S3 templates per display type | ✅ | 13 templates in a catalog grouped by type, incl. portrait walk-ins (`boards.Templates`) |
 | S4 remote screen management | ✅ | Per room and event-wide screens view (N3) |
-| S5 offline resilience | 🟡 | Code + tests. Two-machine drill pending (H4) |
+| S5 offline resilience | 🟡 | Real RTC/offline/automatic merge verified against a Pi using two browser processes; two-host/power-failure drill remains (H4) |
 | S6 no chrome on screens | ✅ | B5 fixed (editor-only chrome), U22 (no header on boards) |
 | S7 rotation | ✅ | Per screen 0/90/180/270, CSS rotation, server-rendered + pushed live (`screen-look` frame) |
 | S8 live event walk-in | ✅ | |
@@ -52,13 +52,13 @@
 | A7 Q&A wall / spotlight / dismiss / answered | ✅ | Plus auto-approve per item |
 | A8 per-item moderation | ✅ | Approve / dismiss per entry; word approval covers identical words |
 | A9 QR join, one vote per device | ✅ | |
-| A10 1,000 per room / 200 on a Pi | 🟡 | Dev container: 1,000 phones, p95 12 ms, 1,000/1,000 join storm (`TP_LOAD=1 go test ./ws -run TestLoad`); poll broadcasts coalesced (≤4/s per room) so vote bursts do not fan out per vote. Not yet on a Pi or real Wi-Fi (H5) |
+| A10 1,000 per room / 200 on a Pi | 🟡 | Both physical Pis passed native and external wired 200/1,000-client probes. Wireless 200 passed; wireless 1,000 failed operator latency. Physical phones/AP and sustained-load qualification remain (H5); evidence: HW-DRILLS §7 |
 | L1 ftl-themes, default `blue-future` | ✅ | ftl-themes is a submodule pinned to an upstream commit |
 | L2–L3 animation everywhere, operator-set | ✅ | N9 |
 | L4 reduced motion on phones only | ✅ | |
 | L5 viewport sizing | ✅ | Layouts are canvases that fill the screen; tile text scales with the tile (container query units), so 720p/4K/portrait all work |
 | L6 device-class UX (tablet moderator) | 🟡 | N11 |
-| H1–H3 appliance, offline LAN, mesh | 🟡 | Built; hardware drills pending (H1–H4, D1) |
+| H1–H3 appliance, offline LAN, mesh | 🟡 | Real ARM64 app, signed discovery/copy/takeover and native KMS tested; permanent bridged installation/boot and remaining field checks are open (H1–H4, D1) |
 | H4 CuTePi OSC | ✅ | |
 | H5 any browser as screen | ✅ | |
 | M2 day-ready model | 🟡 | `cues.day` and `events.days` exist (always 1). Queries are not day-scoped yet (N10) |
@@ -80,21 +80,20 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | **U26, U27** | Import: match columns by header | T6 | Deferred by the owner (2026-10-06) |
 | **U51** | "Done" rows are position-based: a cue dragged above the running one is struck through | T1 | The snapshot keeps no "has run" record (U50's known limit) |
 | **RS37** | Review the remaining room/rendering responsibilities before further extraction | S2 | `db.go`, layout geometry/document state and the shared display lifecycle are separated behind behavior tests (C11–C13). Further work must concentrate real behavior, not split files by line count |
-| **H5b** | A load client that drives a box from another machine | A10 | Today only real phones can load a box over Wi-Fi (HW-DRILLS §4b) |
 
 ## 4. Hardware / field proof
 
-Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installer, boot-time updates) is built and tested in software only.
+The 2026-11-15 controlled two-Pi session ran real application, transport, recovery, load and native KMS checks. Exact scope, failures and passing measurements are in docs/HW-DRILLS.md §7. Unexecuted gates remain open; this is not a permanent appliance deployment or full wireless qualification.
 
 | ID | Drill | Runbook |
 |---|---|---|
-| H1 | Two-Pi LAN mesh; owner authorised both Pis (2026-11-15). Shared profile, rollback and disruptive slot still need agreement with CuTePi | docs/HW-DRILLS.md §0–§1 |
-| H2 | DRM renderer 1080p50 | docs/HW-DRILLS.md §2 |
-| H3 | Pi deploy acceptance | docs/PI-DEPLOY.md |
-| H4 | Two-machine browser P2P offline drill (also proves S5) | docs/HW-DRILLS.md §3 |
-| H5 | Audience load on a Pi 4/5: 200 phones (floor), then 1,000; then real phones over the venue Wi-Fi | docs/HW-DRILLS.md §4 |
+| H1 | 🟡 Signed pairing, copy, blackout, mesh-only takeover/reunion passed; fast-restart/name-conflict cases remain. Shared session released after restoration | docs/HW-DRILLS.md §0–§1 |
+| H2 | 🟡 Native KMS probe passed real 1080p50/200 changed frames; live appliance-display workflow remains unqualified | docs/HW-DRILLS.md §2 |
+| H3 | 🟡 Isolated ARM64 deployment/restarts passed; permanent installer, bridged network, reboot and boot/update rollback acceptance remain | docs/PI-DEPLOY.md |
+| H4 | 🟡 Real RTC/visible countdown/offline edits/automatic merge passed; two-host/power-failure drill remains (S5) | docs/HW-DRILLS.md §3 |
+| H5 | 🟡 Native and wired 200/1,000-client probes passed on both Pis; wireless 200 passed, wireless 1,000 operator latency failed; venue phones/AP and soak remain | docs/HW-DRILLS.md §4 |
 | H6 | Portrait walk-in on a real rotated TV (kiosk Pi + a smart-TV browser) | docs/HW-DRILLS.md §5 |
-| D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532; shared CuTePi/TimerPi network profile and rollback must be agreed first | docs/VENUE-CLOUD.md §11.3; docs/HW-DRILLS.md §0 |
+| D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532; temporary channel13/legacy IBSS/rollback verified; permanent shared profile, bridged LAN, 5 GHz/USB, busy RF and 1532-MTU proof remain | docs/VENUE-CLOUD.md §11.3; docs/HW-DRILLS.md §0 |
 
 ## 5. Done
 
@@ -104,7 +103,7 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 **Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 
-**Venue and cloud** (software only, see §4). N12 event end releases screens · N13 pairing by 6-digit code, signed mDNS · N14 `timerpi.local` follows the leading box, clock hint · N15 cloud↔venue event copy · N16 phones stay on the cloud · N17 `TIMERPI_ROLE`, protocol version in `/health` and mDNS · N18 box installer and venue mesh · N19 network page radios and peers · N21 boot-time updates; release key embedded 2026-11-12.
+**Venue and cloud** (qualification scope in §4). N12 event end releases screens · N13 pairing by 6-digit code, signed mDNS · N14 `timerpi.local` follows the leading box, clock hint · N15 cloud↔venue event copy · N16 phones stay on the cloud · N17 `TIMERPI_ROLE`, protocol version in `/health` and mDNS · N18 box installer and venue mesh · N19 network page radios and peers · N21 boot-time updates; release key embedded 2026-11-12 · H5b external audience load probe and real-Pi browser offline harness.
 
 **Screens and displays.** U1 handheld screens follow the device, not Mounted · U2 no fullscreen tap or hint · U3 schedule line format · U4 Current & next tile · U5 no codes on screens · U6 "Room: <name>" when there are several rooms · U7 list tiles rebuild only on change · DR1, DR2 display reviews (content fit, ftl components, empty tiles give their room away).
 
@@ -122,11 +121,11 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 ## 6. Suggested order
 
-1. **Hardware**: H3 (deploy), H1, H2, then H5 and H6; D1 with the mesh. Nothing in §4 has run on a Pi.
+1. **Hardware**: H3 (deploy), H1, H2, then H5 and H6; D1 with the mesh. Selected checks have passed on Pis; remaining gates are explicit in §4 and HW-DRILLS §7.
 2. **N20**: the load harness on the cloud container, before the first show.
 3. **Owner decision**: N18 kiosk mode (unblocks N13).
 4. **RS37**: review remaining room/rendering responsibilities, behind the browser tests.
-5. N11, N17, N19, U51, H5b as they come up. N10 waits for the multi-day UI.
+5. N11, N17, N19 and U51 as they come up. N10 waits for the multi-day UI.
 
 ## 7. Open questions
 

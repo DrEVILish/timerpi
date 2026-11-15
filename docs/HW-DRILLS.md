@@ -5,7 +5,7 @@ C2 P2P re-run, H5 (audience load) and H6 (portrait walk-in). Each drill lists pr
 output and timing budgets — run top to bottom, paste the result log
 (§7) back when done so the ladder rows can be closed.
 
-Code facts these drills rely on (all verified in-tree 2026-10-05):
+Current device-mesh tunables (latest bench evidence is in §7):
 
 - Device mesh tunables (`mesh/device.go`): poll 5 s, browse window 3 s,
   claim grace 10 s, takeover after 8 s silence, peers-fresh window 30 s,
@@ -120,7 +120,7 @@ shorten the waits, late joins are the #1 false failure.
 
 19. `POST /api/network/role {"force":"auto"}` on BOTH Pis (never leave
     an override: two forced primaries split-brain by design, see
-    `mesh/device.go` decideLocked + `docs/MESH.md` trust note).
+    `mesh/device.go` (`decideLocked`)).
 
 ## 2. Drill C3 — DRM renderer hardware run (closes ladder C3)
 
@@ -200,8 +200,7 @@ phones in one process, so it needs nothing installed on the Pi.
 
 ### 4b. Real phones on the venue Wi-Fi
 
-There is no synthetic client that loads a box from another machine (STATUS
-H5), so this stage uses real phones: as many as you can gather, 20 at least.
+The external `tools/load` probe measures the real server from another host. It does not replace phone/AP airtime qualification. This stage uses real phones: as many as you can gather, 20 at least.
 
 1. Put a poll on air in one room; every phone scans the room's QR.
 2. Everyone votes within about 5 s, then changes their vote a few times.
@@ -241,21 +240,83 @@ by its own smart-TV browser (or any PC browser on a portrait monitor).
 | H5 | §4a PASS at 200 and 1,000; §4b PASS with the phone count and access point noted |
 | H6 | §5 steps 2–6 PASS on a kiosk Pi and on one other browser |
 
-## 7. Result log template (paste back into the session)
+## 7. Current qualification evidence — 2026-11-15
 
-```
-DRILL: C1|C3|C2-P2P|H5|H6   DATE:           BENCH HOST:
-PI(s): <hostname> <model> <os> / panel: <model|none>
-1a primary=A epoch=E_A: PASS|FAIL (output:)
-1b member join + avahi both: PASS|FAIL
-1c fast restart no flap: PASS|FAIL
-1d takeover harvest line: PASS|FAIL (blind? y/n)
-1e reunion single primary: PASS|FAIL (epochs A= B= )
-1f name conflict + clear: PASS|FAIL
-C3 TestHW RUN (not skip): PASS|FAIL; mode 1080p50: y/n; live tick: y/n
-C2 channels connected+open: y/n; dark replication peer-follows: y/n; merge toast: y/n
-H5 4a N=200 p95=  ms storm=  s: PASS|FAIL; N=1000 p95=  ms storm=  s: PASS|FAIL
-H5 4b phones=   AP=        results<2s: y/n; reconnects: y/n
-H6 portrait upright+fills: y/n; live follow: y/n; survives power cycle: y/n
-NOTES:
-```
+Controlled shared-Pi session: 15:16:39–16:15:02 UTC. Inventory, original
+workloads and verified restoration are maintained in the [shared allocation
+record](https://github.com/DrEVILish/CuTePi/blob/main/docs/SHARED_PI_ALLOCATION.md).
+TimerPi used disposable data, port 18080, headless services and cross-built
+ARM64 binaries. No reboot or permanent installer/network conversion occurred.
+
+
+Tested artifacts (local `bin/`, not a signed production release):
+
+- `timerpi-arm64`: SHA-256 `371084a430b5aa49786759fddada3dd09d6e648b4789f1715c8bd307d9fc2408`
+- `drm-hw-arm64.test`: SHA-256 `3c38226a3dc041220ce835df083debc901ed75dd93ffa0a39b4af9896d6e11e0`
+
+### Functional and recovery checks
+
+| Check | Result and scope |
+|---|---|
+| Application on both physical Pis | PASS: health, two-room creation, cues, start/pause/resume and stage messages |
+| Pairing and replication | PASS: actual signed discovery, official pairing and two-room copy over Ethernet |
+| Forced BATMAN path | PASS: temporary `timerpi`, GB/channel 13/20 MHz; Ethernet mDNS and peer API traffic filtered while SSH remained available. Both directions: 20/20 bat0 pings, zero loss; actual TCP, signed discovery, event edits and blackout copy passed |
+| Takeover | PASS: first Ethernet takeover 10.66 s; final mesh-only takeover 13.04 s, with event retained |
+| Reunion | Original run FAILED: restarting old primary erased a replacement edit. Corrected build PASS: returning box remained member and retained the edit; its later takeover retained it and accepted writes in 12.03 s |
+| Member writes | PASS: physical member rejected a local mutation with HTTP 409 and primary target; the authoritative copy remained unchanged |
+| Browser offline/reconnect | PASS: two independent Chromium processes connected real RTC/data channels to a Pi-hosted event. Both lost all HTTP/WS access; offline cue/GO/message reached the visible display, countdown changed 10:00→9:57, and reconnect automatically committed changes. Both clients were on CT108; this was browser-side partition, not two physical browser hosts or a Pi power failure |
+| Native KMS | Initial EFAULT/no-mode failures exposed ABI bugs and an incorrect skip. Corrected real card run PASS: 1920×1080@50 Hz, 200 changed frames in 9.339 s. No framebuffer/production native-app boot acceptance is implied |
+| Shared hardware restoration | PASS: network baselines restored, test filters/timers/processes/files removed. CuTePi independently restored original .73 playback at actual 1080p60 with original show/binary/unit, and exact .55 follower service/env/cwd. Reserved slot released |
+
+Radio setup now retries legacy fixed-frequency IBSS when HT20 fails on these
+built-in drivers. Both hard interfaces remained at MTU 1500; successful 1532-MTU,
+5 GHz/USB, busy-venue RF and bridged-Ethernet deployment are not proven here.
+
+### Native Pi load harness
+
+`ws-load-arm64.test`, running on each Pi (local synthetic clients and server):
+
+| Pi | Clients | Delivery p95 | Join storm | Result |
+|---|---:|---:|---:|---|
+| .73 | 200 | 6 ms | 2.16 s | PASS |
+| .55 | 200 | 7 ms | 2.17 s | PASS |
+| .73 | 1,000 | 18 ms | 10.633 s | PASS |
+| .55 | 1,000 | 20 ms | 10.754 s | PASS |
+
+### External deployed-server probe
+
+`tools/load` creates/removes only its disposable fixture. Every passing run
+joined all clients, accepted/counts every vote, delivered the marker to all
+clients and had no disconnects. Operator commands were verified during voting.
+
+| Path / server | Clients | Join | Fanout p95 | Operator p95 | Result |
+|---|---:|---:|---:|---:|---|
+| Wired / .73 | 200 | 106 ms | 83.547 ms | 5.778 ms | PASS |
+| Wired / .55 | 200 | 110 ms | 81.931 ms | 3.512 ms | PASS |
+| Wired / .73 | 1,000 | 514 ms | 238.727 ms | 7.702 ms | PASS |
+| Wired / .55 | 1,000 | 533 ms | 244.907 ms | 151.169 ms | PASS |
+| IBSS via .73 SSH relay / .55 | 200 | 404 ms | 298.050 ms | 61.061 ms | PASS |
+| IBSS via .73 SSH relay / .55 | 1,000 | 1,617 ms | 329.293 ms | 1,378.198 ms | **NOT QUALIFIED**: operator gate is 250 ms |
+
+The first 1,000-client relay attempt hit its dedicated sshd session's 1,024-FD
+limit and is not a valid server-capacity measurement. Only that test session's
+limit was raised to 8,192 for the tabled rerun; the SSH service configuration
+was unchanged and the session was closed. The valid rerun delivered all
+1,000 votes/updates but failed the operator latency gate. Do not describe the
+1,000-client wireless path as qualified. This is a burst, not a sustained soak;
+there were no 200/1,000 physical phones or venue AP in this session.
+
+### Reproduce and remaining gates
+
+- External load: `go run ./tools/load -base http://<test-pi>:18080 -clients 200`
+  then `-clients 1000`. For an already-paired disposable event, add `-event`
+  and `-password-file` as documented in `tools/load/README.md`.
+- Real RTC check from `tools/browser-tests/`:
+  `CHROMIUM_PATH=/usr/bin/chromium node hardware-offline.mjs http://<test-pi>:18080 result.json private-state.json`.
+  For an already-paired box, the private state is `{ "password":"<test-password>", "73":{"event":"<code>"} }`, keyed by the last hostname component (`55` for the other bench Pi). The script signs in and creates/deletes only its own room. Without that argument it creates/deletes a disposable event. Keep this credential file private. Run browsers on the bench machine, never install a browser on a shared playback Pi.
+- Repeat the full H1 fast-restart/name-conflict cases, permanent bridged
+  installer/boot/update/rollback acceptance, two-host client partition,
+  venue-phone/AP airtime, sustained load, 5 GHz/USB/busy-channel and physical
+  portrait-TV/power-cycle checks before claiming those gates complete.
+- Member mirroring remains asynchronous (30 s interval). These checks do not
+  establish synchronous zero-loss failover or partition-safe consensus.
