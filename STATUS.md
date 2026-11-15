@@ -88,13 +88,13 @@ Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installe
 
 | ID | Drill | Runbook |
 |---|---|---|
-| H1 | Two-Pi LAN mesh | docs/HW-DRILLS.md §1 |
+| H1 | Two-Pi LAN mesh; needs a second allocated Pi and an agreed disruptive slot with CuTePi | docs/HW-DRILLS.md §0–§1 |
 | H2 | DRM renderer 1080p50 | docs/HW-DRILLS.md §2 |
 | H3 | Pi deploy acceptance | docs/PI-DEPLOY.md |
 | H4 | Two-machine browser P2P offline drill (also proves S5) | docs/HW-DRILLS.md §3 |
 | H5 | Audience load on a Pi 4/5: 200 phones (floor), then 1,000; then real phones over the venue Wi-Fi | docs/HW-DRILLS.md §4 |
 | H6 | Portrait walk-in on a real rotated TV (kiosk Pi + a smart-TV browser) | docs/HW-DRILLS.md §5 |
-| D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532 | docs/VENUE-CLOUD.md §11.3 |
+| D1 | Radio drills: built-in radio limits, channel 13 next to a busy venue Wi-Fi, 5 GHz IBSS on channel 36, venue LAN filter, MTU 1532; shared CuTePi/TimerPi network profile and rollback must be agreed first | docs/VENUE-CLOUD.md §11.3; docs/HW-DRILLS.md §0 |
 
 ## 5. Done
 

@@ -22,13 +22,38 @@ Code facts these drills rely on (all verified in-tree 2026-10-05):
 
 ## 0. Bench prerequisites (all drills)
 
-- [ ] Two Raspberry Pi 4/5, 64-bit Pi OS bookworm, each flashed per
+- [ ] Two Raspberry Pi 4/5, 64-bit Pi OS Lite Trixie, each flashed per
       `docs/PI-DEPLOY.md` §§1–2 (distinct `--hostname`, e.g.
       `stage-left` / `stage-right`), on the SAME LAN as the bench machine.
 - [ ] HDMI panel on at least one Pi (C3 needs it; C1/C2 don't).
 - [ ] Bench machine with `avahi-browse` (or Bonjour), `curl`, and a
       Chromium/Firefox with devtools (C2).
 - [ ] Both Pis reachable: `curl http://<name>.local/health` → `{"ok":true,…}`.
+
+### Shared Pis (CuTePi and TimerPi)
+
+Before changing shared hardware, agree all of the following with the CuTePi
+playback owner:
+
+- Two named Pis and an explicit disruptive test slot. A reachable host is
+  not an allocated spare. Read-only inventory does not authorize conversion.
+- One network configuration writer (TimerPi); CuTePi retains playback,
+  deployment and DRM ownership. Do not start both mesh controllers.
+- A shared radio/addressing profile. CuTePi's current unbridged mesh and
+  TimerPi's bridged mesh differ; resolve that decision before applying either
+  installer. PRODUCT's existing radio decisions remain in force until changed
+  by the owner.
+- A wired management path that remains reachable, a saved network/service
+  configuration, and a tested rollback procedure before changing radios,
+  bridges, routes or network managers.
+- Separate transport proof from application sync: first establish mesh
+  reachability, then run signed discovery, event-copy and takeover checks.
+  A BATMAN-adv link alone does not prove event synchronization or recovery.
+
+Keep the shared device inventory with the CuTePi allocation record, rather
+than duplicating host addresses and playback service state here. Never run
+the TimerPi installer, install tools, restart playback, open DRM devices or
+reconfigure a shared Pi outside its agreed slot.
 
 ## 1. Drill C1 — two-Pi LAN mesh (closes ladder C1)
 
