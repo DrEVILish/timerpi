@@ -798,29 +798,40 @@ func EnsureDefaultBoard(db *sqlx.DB, showID int64) (Board, error) {
 
 // RenameBoard updates the board name (non-empty, capped).
 func RenameBoard(db *sqlx.DB, showID, bid int64, name string) (Board, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return Board{}, fmt.Errorf("boards: name must not be empty")
-	}
-	if len(name) > 64 {
-		name = timerpi.ClipUTF8(name, 64)
-	}
-	if _, err := db.Exec(`UPDATE display_boards SET name = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
-		name, nowMS(), showID, showID, bid); err != nil {
-		return Board{}, fmt.Errorf("boards: rename: %w", err)
-	}
-	return GetBoard(db, showID, bid)
+	return UpdateBoard(db, showID, bid, &name, nil)
 }
 
 // StoreLayout validates + stores a new layout document.
 func StoreLayout(db *sqlx.DB, showID, bid int64, layoutRaw string) (Board, error) {
-	l, err := ValidateLayout(layoutRaw)
-	if err != nil {
-		return Board{}, err
+	return UpdateBoard(db, showID, bid, nil, &layoutRaw)
+}
+
+// UpdateBoard validates every supplied field before writing name and layout
+// together. Nil fields keep their stored values without a read/write race.
+func UpdateBoard(db *sqlx.DB, showID, bid int64, name, layoutRaw *string) (Board, error) {
+	if name == nil && layoutRaw == nil {
+		return GetBoard(db, showID, bid)
 	}
-	if _, err := db.Exec(`UPDATE display_boards SET layout_json = ?, updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
-		MarshalLayout(l), nowMS(), showID, showID, bid); err != nil {
-		return Board{}, fmt.Errorf("boards: store layout: %w", err)
+	if name != nil {
+		value := strings.TrimSpace(*name)
+		if value == "" {
+			return Board{}, fmt.Errorf("boards: name must not be empty")
+		}
+		value = timerpi.ClipUTF8(value, 64)
+		name = &value
+	}
+	if layoutRaw != nil {
+		layout, err := ValidateLayout(*layoutRaw)
+		if err != nil {
+			return Board{}, err
+		}
+		value := MarshalLayout(layout)
+		layoutRaw = &value
+	}
+	if _, err := db.Exec(`UPDATE display_boards SET name = COALESCE(?, name),
+		layout_json = COALESCE(?, layout_json), updated_at = ? WHERE (`+sameEvent+`) AND id = ?`,
+		name, layoutRaw, nowMS(), showID, showID, bid); err != nil {
+		return Board{}, fmt.Errorf("boards: update: %w", err)
 	}
 	return GetBoard(db, showID, bid)
 }

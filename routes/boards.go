@@ -163,19 +163,15 @@ func (d *Deps) apiBoardsUpdate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if body.Name != nil {
-		b, err = boards.RenameBoard(d.Store.DB, id, bid, *body.Name)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	}
+	var layout *string
 	if len(body.Layout) > 0 {
-		b, err = boards.StoreLayout(d.Store.DB, id, bid, string(body.Layout))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+		value := string(body.Layout)
+		layout = &value
+	}
+	b, err = boards.UpdateBoard(d.Store.DB, id, bid, body.Name, layout)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	d.notifyShow(id) // fan out: editors + open boards re-adopt
 	// Tiles are server-rendered: every live screen showing this layout
