@@ -200,6 +200,8 @@ Per-cue commands address the cue by `id` (the row the operator acted on); a gone
 | `showMsg` · `hideMsg` | `{id}` — `showMsg` replaces whatever was on stage |
 | `clearMsgs` | — |
 
+Showing a deleted, unknown or another room's message ID is a no-op; it keeps the room's current stage message.
+
 ## 4. Snapshot shape (abridged)
 ```json
 {"updatedAt":0,"serverTime":0,

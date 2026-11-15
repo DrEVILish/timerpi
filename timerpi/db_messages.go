@@ -43,8 +43,9 @@ func (d *DB) ShowMessage(showID, id, shownAt int64) error {
 		shownAt = nowMS()
 	}
 	_, err := d.Exec(`UPDATE messages SET shown_at = CASE WHEN id = ? THEN ? ELSE 0 END, updated_at = ?
-		WHERE show_id = ? AND (id = ? OR shown_at > 0)`,
-		id, shownAt, nowMS(), showID, id)
+		WHERE show_id = ? AND (id = ? OR shown_at > 0)
+		AND EXISTS (SELECT 1 FROM messages WHERE show_id = ? AND id = ?)`,
+		id, shownAt, nowMS(), showID, id, showID, id)
 	return err
 }
 
