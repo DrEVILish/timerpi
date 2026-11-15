@@ -233,6 +233,8 @@ template, JS or CSS change.
 | Cloud | `make build-amd64`, `deploy/cloud/timerpi.service` (`TIMERPI_ROLE=cloud`: no mesh, mDNS, DRM, OSC) behind Caddy. [OPS.md](OPS.md) §8 |
 | Screens | Any browser in kiosk mode pointed at `/d/`. The Pi's own HDMI can instead run the native DRM countdown (`TIMERPI_DISPLAY`) |
 
+The native KMS backend uses bounded two-pass resource/connector queries, clears capacities for unused pointer arrays, and pins supplied buffers through ioctl calls. Opted-in hardware tests require a connected 1920×1080@50 Hz chain and 200 changed frames; device/open/mode/presentation errors fail qualification.
+
 Runbooks: [OPS.md](OPS.md), [PI-DEPLOY.md](PI-DEPLOY.md), [HW-DRILLS.md](HW-DRILLS.md).
 
 ## 14. The event model as designed (PRODUCT §3)

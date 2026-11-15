@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"syscall"
 	"time"
 	"unsafe"
@@ -84,7 +85,7 @@ const (
 	eventFlipComplete = 0x02 // DRM_EVENT_FLIP_COMPLETE
 
 	connDisconnected = 1
-	connConnected    = 2
+	connConnected    = 1
 	connUnknown      = 3
 
 	connectorHDMIA = 11
@@ -169,6 +170,7 @@ type dumbBuffer struct {
 
 // KMSBackend presents on the HDMI output via KMS dumb buffers.
 type KMSBackend struct {
+	query  func(uintptr, unsafe.Pointer) error // optional enumeration ioctl for contract tests
 	card   *os.File
 	w, h   int
 	bufs   [2]dumbBuffer
@@ -304,58 +306,86 @@ type resources struct {
 	crtcIDs, connectorIDs []uint32
 }
 
+func (b *KMSBackend) queryIOCTL(req uintptr, arg unsafe.Pointer) error {
+	if b.query != nil {
+		return b.query(req, arg)
+	}
+	return ioctlPtr(b.card, req, arg)
+}
+
 func (b *KMSBackend) resources() (*resources, error) {
-	var res drmModeCardRes
-	if err := ioctlPtr(b.card, uintptr(ioctlModeGetResources), unsafe.Pointer(&res)); err != nil {
-		return nil, fmt.Errorf("GETRESOURCES: %w", err)
+	for attempt := 0; attempt < 3; attempt++ {
+		var res drmModeCardRes
+		if err := b.queryIOCTL(uintptr(ioctlModeGetResources), unsafe.Pointer(&res)); err != nil {
+			return nil, fmt.Errorf("GETRESOURCES: %w", err)
+		}
+		if res.CountCrtc == 0 || res.CountConn == 0 {
+			return nil, fmt.Errorf("GETRESOURCES: %d crtc / %d connectors is empty", res.CountCrtc, res.CountConn)
+		}
+		crtcs := make([]uint32, res.CountCrtc)
+		conns := make([]uint32, res.CountConn)
+		var pins runtime.Pinner
+		pins.Pin(&crtcs[0])
+		pins.Pin(&conns[0])
+		res.CrtcPtr = uint64(uintptr(unsafe.Pointer(&crtcs[0])))
+		res.ConnPtr = uint64(uintptr(unsafe.Pointer(&conns[0])))
+		// Counts are input capacities: unused arrays have no backing pointer.
+		res.CountFB, res.CountEnc = 0, 0
+		err := b.queryIOCTL(uintptr(ioctlModeGetResources), unsafe.Pointer(&res))
+		pins.Unpin()
+		runtime.KeepAlive(crtcs)
+		runtime.KeepAlive(conns)
+		if err != nil {
+			return nil, fmt.Errorf("GETRESOURCES(2): %w", err)
+		}
+		if int(res.CountCrtc) > len(crtcs) || int(res.CountConn) > len(conns) {
+			continue
+		}
+		return &resources{crtcIDs: crtcs[:res.CountCrtc], connectorIDs: conns[:res.CountConn]}, nil
 	}
-	if res.CountCrtc == 0 || res.CountConn == 0 {
-		return nil, fmt.Errorf("GETRESOURCES: %d crtc / %d connectors is empty",
-			res.CountCrtc, res.CountConn)
-	}
-	crtcs := make([]uint32, res.CountCrtc)
-	conns := make([]uint32, res.CountConn)
-	res.CrtcPtr = uint64(uintptr(unsafe.Pointer(&crtcs[0])))
-	res.ConnPtr = uint64(uintptr(unsafe.Pointer(&conns[0])))
-	if err := ioctlPtr(b.card, uintptr(ioctlModeGetResources), unsafe.Pointer(&res)); err != nil {
-		return nil, fmt.Errorf("GETRESOURCES(2): %w", err)
-	}
-	return &resources{crtcIDs: crtcs, connectorIDs: conns}, nil
+	return nil, fmt.Errorf("GETRESOURCES: topology kept changing")
 }
 
 func (b *KMSBackend) connector(id uint32) (*connData, error) {
-	var c drmModeGetConnector
-	c.ConnectorID = id
-	if err := ioctlPtr(b.card, uintptr(ioctlModeGetConnector), unsafe.Pointer(&c)); err != nil {
-		return nil, fmt.Errorf("GETCONNECTOR: %w", err)
-	}
-	// Two-pass: counts first, then the arrays (encoders + modes).
-	encoders := make([]uint32, c.CountEncoders)
-	modes := make([]drmModeModeInfo, c.CountModes)
-	if c.CountEncoders > 0 {
-		c.EncodersPtr = uint64(uintptr(unsafe.Pointer(&encoders[0])))
-	}
-	if c.CountModes > 0 {
+	for attempt := 0; attempt < 3; attempt++ {
+		c := drmModeGetConnector{ConnectorID: id}
+		if err := b.queryIOCTL(uintptr(ioctlModeGetConnector), unsafe.Pointer(&c)); err != nil {
+			return nil, fmt.Errorf("GETCONNECTOR: %w", err)
+		}
+		if c.CountModes == 0 {
+			return nil, fmt.Errorf("no modes")
+		}
+		encoders := make([]uint32, c.CountEncoders)
+		modes := make([]drmModeModeInfo, c.CountModes)
+		var pins runtime.Pinner
+		if len(encoders) > 0 {
+			pins.Pin(&encoders[0])
+			c.EncodersPtr = uint64(uintptr(unsafe.Pointer(&encoders[0])))
+		}
+		pins.Pin(&modes[0])
 		c.ModesPtr = uint64(uintptr(unsafe.Pointer(&modes[0])))
+		c.CountProps = 0
+		err := b.queryIOCTL(uintptr(ioctlModeGetConnector), unsafe.Pointer(&c))
+		pins.Unpin()
+		runtime.KeepAlive(encoders)
+		runtime.KeepAlive(modes)
+		if err != nil {
+			return nil, fmt.Errorf("GETCONNECTOR(2): %w", err)
+		}
+		if int(c.CountEncoders) > len(encoders) || int(c.CountModes) > len(modes) {
+			continue
+		}
+		if c.CountModes == 0 {
+			return nil, fmt.Errorf("no modes")
+		}
+		modes = modes[:c.CountModes]
+		encoders = encoders[:c.CountEncoders]
+		return &connData{drmModeGetConnector: &drmModeGetConnector{
+			ConnectorID: c.ConnectorID, ConnectorType: c.ConnectorType, ConnectorTypeID: c.ConnectorTypeID,
+			Connection: c.Connection, EncoderID: c.EncoderID, CountEncoders: c.CountEncoders,
+		}, mode: modes[modeIndex(&c, modes)], encoders: encoders}, nil
 	}
-	if err := ioctlPtr(b.card, uintptr(ioctlModeGetConnector), unsafe.Pointer(&c)); err != nil {
-		return nil, fmt.Errorf("GETCONNECTOR(2): %w", err)
-	}
-	if c.CountModes == 0 {
-		return nil, fmt.Errorf("no modes")
-	}
-	return &connData{
-		drmModeGetConnector: &drmModeGetConnector{
-			ConnectorID:     c.ConnectorID,
-			ConnectorType:   c.ConnectorType,
-			ConnectorTypeID: c.ConnectorTypeID,
-			Connection:      c.Connection,
-			EncoderID:       c.EncoderID,
-			CountEncoders:   c.CountEncoders,
-		},
-		mode:     modes[modeIndex(&c, modes)],
-		encoders: encoders,
-	}, nil
+	return nil, fmt.Errorf("GETCONNECTOR: topology kept changing")
 }
 
 // entry point picks the 1920×1080@50 mode, then 1080 preferred, then

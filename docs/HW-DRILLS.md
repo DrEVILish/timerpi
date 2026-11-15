@@ -124,9 +124,7 @@ shorten the waits, late joins are the #1 false failure.
 
 ## 2. Drill C3 — DRM renderer hardware run (closes ladder C3)
 
-Budget ~10 min. Needs the panel attached to the Pi under test and a Go
-toolchain + checkout ON that Pi (`go test` must run where `/dev/dri`
-lives — cross-compiled binaries cannot run the HW test).
+Budget ~10 min. Needs the panel attached to the Pi under test and a cross-compiled ARM64 test binary on that Pi. The binary, rather than a build-container test, must run where `/dev/dri` lives. No Go installation on the Pi is required.
 
 1. `grep video= /boot/firmware/cmdline.txt` → contains
    `video=HDMI-A-1:1920x1080@50e` (PI-DEPLOY §2 pins this).
@@ -135,11 +133,12 @@ lives — cross-compiled binaries cannot run the HW test).
    `systemctl stop timerpi` (splash already exited; nothing else may
    hold `/dev/dri/card0` — a stray `drm_info` run breaks this the
    same way).
-4. `cd /opt/timerpi && TIMERPI_HW_TEST=1 go test ./drm/ -run TestHW -v`
-   → drives ~200 animated frames through the real card (and fb0);
-   skips cleanly are a FAIL here — on this hardware it must RUN.
-5. `drm_info` (if installed): mode `1920x1080` @ 50 Hz, our two dumb
-   framebuffers alternating `FB_ID`s per presented frame.
+4. Cross-build on the build machine:
+   `CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go test -c -o bin/drm-hw-arm64.test ./drm`. Stage it in the agreed test directory.
+   On the released display, select its connected card and run
+   `TIMERPI_HW_TEST=1 DRM_CARD=/dev/dri/cardN ./drm-hw-arm64.test -test.run "^TestHWDirectKMS$" -test.v -test.timeout 45s`.
+   It must present 200 changed frames at 1920×1080@50 Hz. An opted-in open, mode or presentation failure is a failure, not a skip.
+5. Record the test's actual mode, changed-frame count and elapsed time. Do not poll DRM debug state during measurement. Before returning display ownership, confirm the test exited and no test process retains a primary-card handle.
 6. `systemctl start timerpi` → top-right wall clock ticks once per
    second; start any countdown and watch the seconds digit advance.
 7. Expected log line on wrong-mode fallback (informational, not a

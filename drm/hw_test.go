@@ -1,13 +1,12 @@
 //go:build linux
 
 // hw_test.go — the REAL device integration helper. It is
-// skip-guarded: on a machine without /dev/dri (like this build
-// container) or without TIMERPI_HW_TEST=1 the test body returns
-// immediately. On the Pi run:
+// tests skip unless TIMERPI_HW_TEST=1. Once enabled, missing hardware or
+// failed rendering is a test failure. On the Pi run:
 //
 //	TIMERPI_HW_TEST=1 go test ./drm/ -run TestHW -v
 //
-// and it drives the actual card/fbdev for ~200 frames so visual
+// and it requires the actual card/fbdev to present 200 frames so visual
 // verification can happen on the panel (see README's checklist).
 package drm
 
@@ -117,52 +116,57 @@ func TestUapiIoctlNumbers(t *testing.T) {
 	}
 }
 
-func hwGate(t *testing.T) (bool, time.Duration) {
+func hwGate(t *testing.T) {
 	t.Helper()
 	if os.Getenv("TIMERPI_HW_TEST") != "1" {
-		return false, 0
+		t.Skip("not on the target: TIMERPI_HW_TEST unset")
 	}
 	if !hasCard() {
-		t.Skip("TIMERPI_HW_TEST=1 but no usable /dev/dri card here")
+		t.Fatal("TIMERPI_HW_TEST=1 but no usable /dev/dri card here")
 	}
-	return true, 2 * time.Second
 }
 
 // TestHWDirectKMS drives the real KMS chain with an animated view (a
 // moving progress sweep and a ticking seconds digit) directly through
-// the backend, skipping when no device exists.
+// the backend. Explicit hardware qualification requires 1080p50.
 func TestHWDirectKMS(t *testing.T) {
 	hwGate(t)
 	b := NewKMSBackend()
 	if err := b.Open(); err != nil {
-		t.Skipf("KMS open failed here (expected if another master holds the card): %v", err)
+		t.Fatalf("KMS open failed: %v", err)
 	}
 	defer b.Close()
 	w, h := b.Size()
-	t.Logf("KMS opened %dx%d", w, h)
-	if w != LayoutW || h != LayoutH {
-		t.Logf("WARNING: panel is %dx%d, renderer draws %dx%d — expect clipping", w, h, LayoutW, LayoutH)
+	t.Logf("KMS opened %dx%d @ %d Hz, mode %q", w, h, b.mode.VRefresh, modeName(b.mode))
+	if w != LayoutW || h != LayoutH || b.mode.VRefresh != 50 {
+		t.Fatalf("hardware qualification requires %dx%d @ 50 Hz, got %dx%d @ %d Hz", LayoutW, LayoutH, w, h, b.mode.VRefresh)
 	}
 	hwLoop(t, b)
 }
 
-// hwLoop renders ~200 animated frames through the given backend.
+// hwLoop requires 200 changed frames; the deadline turns stalls into failures.
 func hwLoop(t *testing.T, b Backend) {
 	t.Helper()
-	deadline := time.Now().Add(4 * time.Second)
-	n := 0
-	for n < 200 && time.Now().Before(deadline) {
-		nowMS := time.Now().UnixMilli()
-		p := fixedProvider(clockishView(n, nowMS))
-		c := NewClock(b, p)
-		if _, err := c.Frame(nowMS); err != nil {
-			t.Errorf("present %d: %v", n, err)
-			return
+	start := time.Now()
+	p := &fakeProvider{}
+	for n := 0; n < 200; n++ {
+		p.views = append(p.views, clockishView(n, start.UnixMilli()+int64(n)*20))
+	}
+	c := NewClock(b, p)
+	for n := 0; n < 200; n++ {
+		if time.Since(start) > 25*time.Second {
+			t.Fatalf("only presented %d/200 frames in %s", n, time.Since(start))
+		}
+		changed, err := c.Frame(time.Now().UnixMilli())
+		if err != nil {
+			t.Fatalf("present %d: %v", n, err)
+		}
+		if !changed {
+			t.Fatalf("animated frame%d was not presented", n)
 		}
 		time.Sleep(20 * time.Millisecond)
-		n++
 	}
-	t.Logf("presented %d frames through %T", n, b)
+	t.Logf("presented 200 changed frames through %T in %s", b, time.Since(start))
 }
 
 // TestHWDirectFB drives the fbdev backend the same way.
@@ -171,11 +175,11 @@ func TestHWDirectFB(t *testing.T) {
 		t.Skip("not on the target: TIMERPI_HW_TEST unset")
 	}
 	if _, err := os.Stat(fbDevice()); err != nil {
-		t.Skipf("no %s here (container)", fbDevice())
+		t.Fatalf("no %s for requested hardware test", fbDevice())
 	}
 	b := NewFBBackend()
 	if err := b.Open(); err != nil {
-		t.Skipf("fbdev open failed: %v", err)
+		t.Fatalf("fbdev open failed: %v", err)
 	}
 	defer b.Close()
 	hwLoop(t, b)
