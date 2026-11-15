@@ -88,7 +88,7 @@ Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installe
 
 | ID | Drill | Runbook |
 |---|---|---|
-| H1 | Two-Pi LAN mesh; needs a second allocated Pi and an agreed disruptive slot with CuTePi | docs/HW-DRILLS.md §0–§1 |
+| H1 | Two-Pi LAN mesh; owner authorised both Pis (2026-11-15). Shared profile, rollback and disruptive slot still need agreement with CuTePi | docs/HW-DRILLS.md §0–§1 |
 | H2 | DRM renderer 1080p50 | docs/HW-DRILLS.md §2 |
 | H3 | Pi deploy acceptance | docs/PI-DEPLOY.md |
 | H4 | Two-machine browser P2P offline drill (also proves S5) | docs/HW-DRILLS.md §3 |
