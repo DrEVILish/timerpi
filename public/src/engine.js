@@ -240,9 +240,6 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
     case 'pause': {
       if (!cue) return 'ignored';
       if (r.paused) { // toggle: resume
-        // Never resume a cue frozen at zero (held): it must GO forward, not
-        // drain its stale remainder (parity with the hub's held-pause rule).
-        if ((r.pausedElapsedMS || 0) >= (cue.durationMS || 0) && cue.durationMS > 0) return 'ignored';
         r.anchorTS = now;
         r.running = true;
         r.paused = false;
@@ -256,7 +253,6 @@ export function applyCommand(snap, action, args = {}, now = Date.now()) {
     }
     case 'resume': {
       if (!r.paused || !cue) return 'ignored';
-      if ((r.pausedElapsedMS || 0) >= (cue.durationMS || 0) && cue.durationMS > 0) return 'ignored'; // held
       r.anchorTS = now;
       r.running = true;
       r.paused = false;

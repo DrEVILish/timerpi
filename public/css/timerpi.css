@@ -544,25 +544,12 @@ body[data-blanked="true"] .tp-blanked { display: flex; }
 }
 .tp-display-status .mono { color: var(--text); }
 
-/* --------------------------------------------------------------------------
-   Fix-3[O8]: contract-required prefers-reduced-motion gate. Core gates its own
-   animations internally; app ones must too. Existing dead selector
-   `.tp-clock[data-motion="reduced"] .tp-clock` lives in the base block —
-   whoever deletes it per P3 must keep the two [data-motion] lines below until
-   this block is judged sufficient.
-   Fix-1 pulse note: the only app pulse is tp-overtime-pulse on
-   .tp-clock[data-state="overtime"|"alert2"] (timerpi.css:75–83). If Fix-1 adds
-   another (needle, lamp, day-bar), append its selectors here and keep it
-   referenced from the .tp-pulse / element it lives on — do not create a new
-   media block.
-   -------------------------------------------------------------------------- */
+/* Screens always animate; phones honour their OS motion preference. */
 @media (prefers-reduced-motion: reduce) {
-  .tp-clock[data-state="overtime"],
-  .tp-clock[data-state="alert2"] {
+  html:not([data-motion="always"]) .tp-clock[data-state="overtime"],
+  html:not([data-motion="always"]) .tp-clock[data-state="alert2"] {
     animation: none !important;
   }
-  [data-motion="reduced"] .tp-clock[data-state="overtime"],
-  [data-motion="reduced"] .tp-clock[data-state="alert2"] { animation: none; }
 }
 
 /* ==========================================================================

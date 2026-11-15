@@ -73,6 +73,12 @@ func takesSubmissions(kind string) bool {
 }
 
 func (d *DB) migratePolls() error {
+	tx, err := d.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	legacyTargets := false
 	cols := []struct{ name, ddl string }{
 		{"to_audience", "INTEGER NOT NULL DEFAULT 0"},
 		{"to_presenter", "INTEGER NOT NULL DEFAULT 0"},
@@ -81,20 +87,27 @@ func (d *DB) migratePolls() error {
 		{"round", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, nc := range cols {
-		_, err := d.Exec(fmt.Sprintf(`ALTER TABLE polls ADD COLUMN %s %s;`, nc.name, nc.ddl))
+		_, err := tx.Exec(fmt.Sprintf(`ALTER TABLE polls ADD COLUMN %s %s;`, nc.name, nc.ddl))
 		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("timerpi: adding polls.%s: %w", nc.name, err)
 		}
+		if nc.name == "to_audience" && err == nil {
+			legacyTargets = true
+		}
 	}
 	// Legacy rows: an item that was on air (open/results) under the old
-	// single-target model was on the audience target.
-	_, err := d.Exec(`UPDATE polls SET to_audience = 1 WHERE parent = 0 AND state IN ('open','results') AND to_audience = 0 AND to_presenter = 0`)
-	if err != nil {
-		return err
+	// single-target model was on the audience target. Convert only while
+	// adding that target, so later restarts never publish hidden items.
+	if legacyTargets {
+		if _, err := tx.Exec(`UPDATE polls SET to_audience = 1 WHERE parent = 0 AND state IN ('open','results') AND to_audience = 0 AND to_presenter = 0`); err != nil {
+			return err
+		}
 	}
 	// Survey was never usable and is not a product kind: drop leftovers.
-	_, err = d.Exec(`DELETE FROM polls WHERE kind = 'survey'`)
-	return err
+	if _, err := tx.Exec(`DELETE FROM polls WHERE kind = 'survey'`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Vote is one device's recorded choice (bundle round-trip).

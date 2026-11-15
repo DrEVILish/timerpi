@@ -91,6 +91,21 @@ export async function run(t) {
   // 5. "in" follows the live countdown, also while paused.
   {
     const page = await (await t.browser.newContext({ viewport: { width: 1920, height: 1080 } })).newPage();
+    // Pin a fractional second that used to round differently in these two labels.
+    await page.routeWebSocket(/\/ws/, (ws) => {
+      const server = ws.connectToServer();
+      server.onMessage((message) => {
+        if (typeof message === 'string') {
+          const frame = JSON.parse(message);
+          if (frame.snapshot?.runtime.paused) {
+            frame.snapshot.runtime.pausedElapsedMS = 119050;
+            message = JSON.stringify(frame);
+          }
+        }
+        ws.send(message);
+      });
+      ws.onMessage((message) => server.send(message));
+    });
     await page.goto(dsm);
     await post('/cmd/pause', {});
     await page.waitForTimeout(1500);

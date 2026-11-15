@@ -1,9 +1,104 @@
 package timerpi
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestHiddenInteractionStaysHiddenAfterRestart(t *testing.T) {
+	for _, results := range []bool{false, true} {
+		t.Run(map[bool]string{false: "open", true: "results"}[results], func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "timerpi.db")
+			d, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			show := mustCreateShow(t, d, "Private questions")
+			p := mustItem(t, d, show.ID, KindQA, "Presenter only", "[]", -1)
+			if err := d.ShowTo(show.ID, p.ID, TargetPresenter, true); err != nil {
+				t.Fatal(err)
+			}
+			if results {
+				if err := d.SetResults(show.ID, p.ID, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := d.HidePoll(show.ID, p.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				d, err = Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				on, err := d.OnAirNow(show.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if on.Audience != nil || on.Presenter != nil {
+					t.Errorf("restart published hidden interaction: %+v", on)
+				}
+				if err := d.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestLegacyInteractionTargetsMigrateOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timerpi.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	show := mustCreateShow(t, d, "Legacy")
+	p := mustItem(t, d, show.ID, KindPoll, "Already on air", `["Yes","No"]`, -1)
+	if _, err := d.Exec(`UPDATE polls SET state='open' WHERE id=?`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"to_audience", "to_presenter"} {
+		if _, err := d.Exec(`ALTER TABLE polls DROP COLUMN ` + column); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetPoll(show.ID, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.ToAudience || got.ToPresenter {
+		t.Fatalf("legacy item did not migrate to audience: %+v", got)
+	}
+	if err := d.HidePoll(show.ID, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	got, err = d.GetPoll(show.ID, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ToAudience || got.ToPresenter {
+		t.Fatalf("legacy conversion ran again after Hide: %+v", got)
+	}
+}
 
 func mustItem(t *testing.T, d *DB, showID int64, kind, q, opts string, correct int64) Poll {
 	t.Helper()

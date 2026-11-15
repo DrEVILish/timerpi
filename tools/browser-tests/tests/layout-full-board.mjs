@@ -37,7 +37,19 @@ export async function run(t) {
   const def = (await (await ctx.request.get(`${t.base}/api/board-templates`)).json()).default;
   await pg.reload();
   await pg.waitForSelector('#b-reset', { state: 'attached' });
+  // Both layout replacement confirmations use the same ftl modal chrome.
+  await pg.waitForSelector('#b-preset-list [data-preset]', { state: 'attached' });
+  await pg.$eval('#b-preset-list [data-preset]', (b) => b.click());
+  await pg.waitForSelector('dialog.modal[open]');
+  t.check('replace confirmation has its title and close button', await pg.locator('dialog.modal[open] .modal-header').count() === 1
+    && (await pg.textContent('dialog.modal[open] .modal-header')).includes('Replace layout?')
+    && await pg.locator('dialog.modal[open] .modal-header .btn-close[data-close]').count() === 1);
+  await pg.click('dialog.modal[open] .modal-footer [data-close]');
   await pg.$eval('#b-reset', (b) => b.click());
+  await pg.waitForSelector('dialog.modal[open]');
+  t.check('reset confirmation has its title and close button', await pg.locator('dialog.modal[open] .modal-header').count() === 1
+    && (await pg.textContent('dialog.modal[open] .modal-header')).includes('Reset layout?')
+    && await pg.locator('dialog.modal[open] .modal-header .btn-close[data-close]').count() === 1);
   await pg.click('dialog.modal .modal-footer .btn-danger');
   await pg.waitForTimeout(1500);
   const after = await layoutOf();

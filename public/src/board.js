@@ -915,8 +915,8 @@ function tick() {
         setText($('.b-js-nextstart', tile), at ? hhmm(at) : '');
         if (el) el.hidden = !at;
         if (at) {
-          const left = Math.floor((at - now) / 1000) * 1000; // whole seconds, like the countdown's digits
-          setText(el, due ? 'due now' : left >= 0 ? `in ${fmtDuration(left)}` : `${fmtDuration(-left)} late`);
+          const left = at - now;
+          setText(el, due ? 'due now' : left >= 0 ? `in ${fmtClock(left, '0')}` : `${fmtClock(-left, '0')} late`);
         }
         break;
       }
@@ -1619,7 +1619,7 @@ function wireCompose() {
     const t = catalog.find((x) => x.key === btn.dataset.preset);
     if (!t) return;
     presetList.hidePopover?.();
-    if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { ok: 'Replace', danger: true }))) return;
+    if (!(await tpConfirm(`Replace this layout with "${t.name}"? Your current tiles are replaced.`, { title: 'Replace layout?', ok: 'Replace', danger: true }))) return;
     layout = draft.replace(t.layout); // a built-in brings both versions
     await reloadEditing(); // server re-renders tiles, then we relock into edit
   });
@@ -1661,7 +1661,7 @@ function wireCompose() {
   });
 
   $('#b-reset')?.addEventListener('click', async () => {
-    if (!(await tpConfirm('Reset this board to the factory layout?', { ok: 'Reset', danger: true }))) return;
+    if (!(await tpConfirm('Reset this board to the factory layout?', { title: 'Reset layout?', ok: 'Reset', danger: true }))) return;
     // The factory layout comes from the server (boards.DefaultLayout), so
     // it never drifts from Go (STATUS C5).
     try {

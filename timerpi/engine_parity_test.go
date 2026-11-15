@@ -99,6 +99,14 @@ var parityScenarios = []parityScenario{
 		pStep("pause", 0), pStep("go", 1_000, "pos", 1.0), pStep("go", 1_000, "pos", 1.0),
 	}},
 	{"overtime keeps counting", []parityStep{pStep("go", 0, "pos", 2.0), pStep("tick", 1_300_000), pStep("go", 0)}},
+	{"overtime resumes after zero with either transport command", []parityStep{
+		pStep("go", 0, "pos", 2.0), pStep("tick", 1_300_000), pStep("pause", 0),
+		pStep("pause", 5_000), pStep("tick", 1_000), pStep("pause", 0), pStep("resume", 5_000), pStep("tick", 1_000),
+	}},
+	{"count-up resumes past its nominal duration with either command", []parityStep{
+		pStep("go", 0, "pos", 5.0), pStep("tick", 500_000), pStep("pause", 0),
+		pStep("pause", 5_000), pStep("tick", 1_000), pStep("pause", 0), pStep("resume", 5_000), pStep("tick", 1_000),
+	}},
 	{"blank freezes at zero", []parityStep{pStep("go", 0, "pos", 4.0), pStep("tick", 61_000), pStep("go", 5_000)}},
 	{"count-up never crosses", []parityStep{pStep("go", 0, "pos", 5.0), pStep("tick", 500_000)}},
 	{"the day starts so the first cue run is on plan", []parityStep{pStep("go", 0, "pos", 3.0), pStep("go", 1_000)}},
