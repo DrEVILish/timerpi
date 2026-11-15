@@ -8,7 +8,7 @@
 > Key: ✅ meets spec · 🟡 works with caveats, or unproven on hardware ·
 > ⚠️ partial or buggy · ❌ missing
 >
-> State 2026-11-12: `go build`, `go vet`, `go test ./...` and the 55 browser
+> State 2026-11-15: `go build`, `go vet`, `go test ./...` and the 58 browser
 > tests are green; `.github/workflows/ci.yml` runs all four on every push.
 
 ---
@@ -79,7 +79,7 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | **N20** | Run the load harness on the real cloud container | H6 | `deploy/cloud/` and OPS §8 are ready |
 | **U26, U27** | Import: match columns by header | T6 | Deferred by the owner (2026-10-06) |
 | **U51** | "Done" rows are position-based: a cue dragged above the running one is struck through | T1 | The snapshot keeps no "has run" record (U50's known limit) |
-| **RS37** | Split `public/src/timerpi.js` (2,193 lines) and `public/src/board.js` (1,860) | | `db.go` is split |
+| **RS37** | Deepen the room/display scripts behind tested behavior | S2 | `db.go` is split; layout geometry now has a DOM-free edit module shared by pointer, phone, keyboard and alignment. Document/version/save state and the remaining room/display logic still need review |
 | **H5b** | A load client that drives a box from another machine | A10 | Today only real phones can load a box over Wi-Fi (HW-DRILLS §4b) |
 
 ## 4. Hardware / field proof
@@ -100,7 +100,7 @@ Everything in VENUE-CLOUD §9–§14 (cloud↔venue sync, pairing, mesh installe
 
 One line per ID, so citations in code and commits still resolve. Detail: `git log --grep=<ID>`.
 
-**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions.
+**Bugs.** B1 no appliance password · B2 quiz answer hidden until results · B3 survey removed · B4 ideas are entries of their item · B5 edit chrome only in the editor · B6 unknown roles refused, only `controls` sends commands · B7 zone page retired · B8 stale binary against new scripts (root cause C9) · B9 GO on a held cue's row restarts it · B10 stale Show message actions keep the current stage message · B11 repeated reorder IDs preserve dense cue positions · B12 layout alignment uses the same collision rules as other edits.
 
 **Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 

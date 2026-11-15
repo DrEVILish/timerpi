@@ -35,6 +35,7 @@ import { applyWaiting } from './waiting.js';
 import { tpConfirm, tpPrompt } from './dialog.js';
 import { paintAudience, clearAudience } from './audtiles.js';
 import { fitWidth } from './fit.js';
+import { canvasRows, clampTile, overlaps, editTile } from './layout-edit.js';
 
 loadThemeVersion();
 
@@ -993,7 +994,7 @@ async function saveNow() {
     // Both versions go up together; landscape is the primary.
     const anim = layout.anim || 'fade';
     const animMS = Number(layout.animMS) || 400;
-    const cur = { v: 1, rows: canvasRows(), orientation: shownOrient, widgets: layout.widgets };
+    const cur = { v: 1, rows: canvasRows(layout), orientation: shownOrient, widgets: layout.widgets };
     const o = layout === doc ? doc.alt : doc;
     const other = o && o.widgets?.length ? { v: 1, rows: o.rows, orientation: shownOrient === 'portrait' ? 'landscape' : 'portrait', widgets: o.widgets } : null;
     const body = shownOrient === 'landscape' || !other
@@ -1009,34 +1010,6 @@ async function saveNow() {
   }
 }
 
-// Client-side mirror of the server clamp (server re-validates on PUT).
-// The canvas: 12 columns × rows (layout.rows; never fewer than the tiles
-// need). Tiles stay inside it.
-function canvasRows() {
-  const ext = (layout.widgets || []).reduce((n, w) => Math.max(n, (w.y | 0) + (w.h | 0)), 0);
-  return Math.max(1, Math.min(48, Math.max(layout.rows | 0 || (layout.orientation === 'portrait' ? 16 : 8), ext)));
-}
-
-function clampTile(t) {
-  const rows = Math.max(1, layout.rows | 0 || canvasRows());
-  t.x = Math.max(0, Math.min(11, t.x | 0));
-  t.w = Math.max(1, Math.min(12, t.w | 0));
-  if (t.x + t.w > 12) t.w = 12 - t.x;
-  t.h = Math.max(1, Math.min(rows, t.h | 0));
-  t.y = Math.max(0, Math.min(rows - t.h, t.y | 0));
-  return t;
-}
-
-function overlaps(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-// makeRoom(w, orig): w was just moved or resized from orig. Built-in
-// layouts fill the whole canvas, so "never overlap" refused every gesture
-// (review I13). Now a move onto one tile swaps the two when that tile fits
-// where w was, and a resize trims the neighbours it grows into (right or
-// down). Returns false when neither works; the caller then reverts w.
-// Mutates and re-places the neighbours it changes.
 const NO_ROOM = 'No room there: drop on a tile to swap places, or make a neighbour smaller first';
 // refuse(tile): a gesture that can't land reverts with a nudge and the
 // reason ON the tile, where the operator is looking (review N12).
@@ -1055,28 +1028,11 @@ function refuse(tile, msg = NO_ROOM) {
   tile._refuseT = setTimeout(() => { tile.classList.remove('b-overlap'); note.remove(); }, 3000);
 }
 
-function makeRoom(w, orig) {
-  const others = (layout.widgets || []).filter((o) => o.id !== w.id);
-  const hits = others.filter((o) => overlaps(w, o));
-  if (!hits.length) return true;
-  let plan = null; // [[tile, new geometry]]
-  if (w.w === orig.w && w.h === orig.h) {
-    const o = hits[0];
-    const g = { x: orig.x, y: orig.y, w: o.w, h: o.h };
-    const fits = g.x + g.w <= 12 && g.y + g.h <= canvasRows();
-    if (hits.length === 1 && fits && !overlaps(g, w) && others.every((x) => x === o || !overlaps(g, x))) plan = [[o, g]];
-  } else {
-    plan = [];
-    for (const o of hits) {
-      const g = { x: o.x, y: o.y, w: o.w, h: o.h };
-      if (w.x + w.w > orig.x + orig.w && o.x >= orig.x + orig.w) { const nx = w.x + w.w; g.w -= nx - g.x; g.x = nx; }
-      else if (w.y + w.h > orig.y + orig.h && o.y >= orig.y + orig.h) { const ny = w.y + w.h; g.h -= ny - g.y; g.y = ny; }
-      if (g.w < 1 || g.h < 1 || overlaps(g, w)) { plan = null; break; }
-      plan.push([o, g]);
-    }
-  }
-  if (!plan) return false;
-  for (const [o, g] of plan) { Object.assign(o, g); applyGeometry(o.id); }
+function commitGeometry(wid, change) {
+  const changed = editTile(layout, wid, change);
+  if (changed === null) { applyGeometry(wid); return false; }
+  for (const id of changed) applyGeometry(id);
+  if (changed.length) scheduleSave();
   return true;
 }
 
@@ -1138,7 +1094,7 @@ function gridMetrics() {
   const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
   const gapX = parseFloat(cs.columnGap) || 0;
   const gapY = parseFloat(cs.rowGap) || 0;
-  const rows = canvasRows();
+  const rows = canvasRows(layout);
   return {
     colW: (grid.clientWidth - padX + gapX) / 12,
     rowPitch: (grid.clientHeight - padY + gapY) / rows,
@@ -1189,7 +1145,7 @@ function dragTile(tile, wid, startEvent, mode) {
       w.w = orig.w + dc;
       w.h = orig.h + dr;
     }
-    clampTile(w);
+    clampTile(layout, w);
     applyGeometry(w.id);
     showGhost(w);
   };
@@ -1199,18 +1155,10 @@ function dragTile(tile, wid, startEvent, mode) {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
     window.removeEventListener('pointercancel', up);
-    clampTile(w);
-    lastTouched = { id: wid, w: { ...w } }; // arrow keys nudge from here
-    // A drop on other tiles swaps or trims them (makeRoom); when that can't
-    // work the gesture reverts with a nudge on the tile, visible at the
-    // pointer, and the reason in the toolbar.
-    if (!makeRoom(w, orig)) {
-      Object.assign(w, orig);
-      applyGeometry(w.id);
-      refuse(tile);
-      return;
-    }
-    if (w.x !== orig.x || w.y !== orig.y || w.w !== orig.w || w.h !== orig.h) scheduleSave();
+    const change = { ...w };
+    Object.assign(w, orig); // pointer movement was a preview, not an accepted edit
+    if (!commitGeometry(wid, change)) refuse(tile);
+    lastTouched = { id: wid, w: { ...w } };
   };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -1222,8 +1170,8 @@ function dragTile(tile, wid, startEvent, mode) {
  * drag/resize needs precision a phone finger doesn't have at 4.5rem rows ×
  * 12 cols. Below 760 px, while editing, the #b-editor panel lists every
  * tile with X/Y (move) and W/H (resize) steppers — the SAME widget
- * documents as the grid, so clampTile/applyGeometry/scheduleSave overlap
- * rules (and autosave) run identically for both gesture paths. Desktop
+ * documents as the grid, so commitGeometry applies the same overlap
+ * rules (and autosave) for every input path. Desktop
  * tiers never display it (CSS keeps it at display:none) — the grid remains
  * the tool there.
  */
@@ -1252,16 +1200,7 @@ function buildEditorList(editing) {
     b.addEventListener('click', () => {
       const w = widgetOf(wid);
       if (!w) return;
-      const orig = { ...w };
-      w[field] = (w[field] | 0) + delta;
-      clampTile(w);
-      if (!makeRoom(w, orig)) {
-        Object.assign(w, orig);
-        applyGeometry(wid);
-        saveState(NO_ROOM);
-        return;
-      }
-      if (orig[field] !== w[field]) { applyGeometry(wid); scheduleSave(); }
+      if (!commitGeometry(wid, { [field]: (w[field] | 0) + delta })) saveState(NO_ROOM);
     });
     return b;
   };
@@ -1586,20 +1525,15 @@ function wireKeys() {
     e.preventDefault();
     const w = widgetOf(lastTouched.id);
     if (!w) { lastTouched = null; return; }
-    const orig = { ...w };
-    if (e.shiftKey) { w.w = Math.max(1, w.w + d[0]); w.h = Math.max(1, w.h + d[1]); }
-    else { w.x += d[0]; w.y += d[1]; }
-    clampTile(w);
-    applyGeometry(w.id);
+    const change = e.shiftKey
+      ? { w: Math.max(1, w.w + d[0]), h: Math.max(1, w.h + d[1]) }
+      : { x: w.x + d[0], y: w.y + d[1] };
     const tile = document.getElementById('b-w-' + lastTouched.id);
-    if (!makeRoom(w, orig)) {
-      Object.assign(w, orig);
-      applyGeometry(w.id);
+    if (!commitGeometry(w.id, change)) {
       refuse(tile);
       return;
     }
     lastTouched.w = { ...w };
-    scheduleSave();
   });
 }
 
@@ -1671,10 +1605,7 @@ function wireCompose() {
     if (al) {
       const w = widgetOf(tile.dataset.wid);
       if (w) {
-        w.x = al.dataset.align === 'left' ? 0 : 12 - w.w;
-        clampTile(w);
-        applyGeometry(w.id);
-        scheduleSave();
+        if (!commitGeometry(w.id, { x: al.dataset.align === 'left' ? 0 : 12 - w.w })) refuse(tile);
       }
       return;
     }
@@ -1756,7 +1687,7 @@ function wireCompose() {
   // landscape and a portrait version; the switch saves this one and opens
   // the other (owner 2026-10-07).
   const rowsIn = $('#b-rows');
-  if (rowsIn) rowsIn.value = String(canvasRows());
+  if (rowsIn) rowsIn.value = String(canvasRows(layout));
   for (const b of document.querySelectorAll('#b-orient [data-orient]')) {
     b.classList.toggle('is-active', b.dataset.orient === shownOrient);
     b.setAttribute('aria-pressed', String(b.dataset.orient === shownOrient));
