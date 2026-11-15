@@ -119,6 +119,7 @@ func TestParsers(t *testing.T) {
 }
 
 type fakeRunner struct {
+	onRun func(string) error
 	out   map[string]string
 	fail  map[string]bool
 	links map[string]string
@@ -129,6 +130,11 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	cmd := strings.Join(append([]string{name}, args...), " ")
 	f.ran = append(f.ran, cmd)
+	if f.onRun != nil {
+		if err := f.onRun(cmd); err != nil {
+			return "", err
+		}
+	}
 	for k := range f.fail {
 		if strings.HasPrefix(cmd, k) {
 			return "", fmt.Errorf("%s: refused", cmd)
@@ -158,6 +164,7 @@ func TestUpJoinsBothRadios(t *testing.T) {
 		"iw dev wlan0 ibss join timerpi 5180 HT20 fixed-freq",
 		"iw dev wlan1 ibss join timerpi 2472 HT20 fixed-freq",
 		"ip link set dev wlan0 master bat0",
+		"iw dev wlan0 set power_save off",
 		"ip link set dev wlan1 master bat0",
 		"batctl meshif bat0 gw_mode server",
 	} {
@@ -185,5 +192,88 @@ func TestUpReportsFailedLeg(t *testing.T) {
 	}
 	if st.Gateway != "client" {
 		t.Errorf("unwired box is a %q", st.Gateway)
+	}
+}
+
+// Failed HT joins can leave firmware in a partial state; retry from IBSS setup.
+func TestJoinFallsBackWithoutHT20(t *testing.T) {
+	r := &fakeRunner{fail: map[string]bool{"iw dev wlan0 ibss join timerpi 2472 HT20": true}}
+	err := join(r, Leg{Iface: "wlan0", Freq: 2472})
+	if err != nil {
+		t.Fatalf("legacy join refused: %v", err)
+	}
+	calls := strings.Join(r.ran, "\n")
+	if !strings.Contains(calls, "iw dev wlan0 ibss join timerpi 2472 fixed-freq") || strings.Count(calls, "iw dev wlan0 set type ibss") != 2 {
+		t.Fatalf("HT refusal did not reset and retry without HT20:\n%s", calls)
+	}
+	if r.ran[len(r.ran)-1] != "ip link set dev wlan0 master bat0" {
+		t.Fatalf("joined leg not attached: %v", r.ran)
+	}
+}
+
+func TestJoinReportsBothModesFailing(t *testing.T) {
+	r := &fakeRunner{fail: map[string]bool{"iw dev wlan0 ibss join": true}}
+	err := join(r, Leg{Iface: "wlan0", Freq: 2472})
+	if err == nil || !strings.Contains(err.Error(), "HT20") || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("lost join errors: %v", err)
+	}
+	for _, c := range r.ran {
+		if c == "ip link set dev wlan0 master bat0" {
+			t.Fatal("failed radio attached to mesh")
+		}
+	}
+}
+
+func TestJoinSetupFailureDoesNotTryLegacy(t *testing.T) {
+	r := &fakeRunner{fail: map[string]bool{"iw dev wlan0 set type": true}}
+	if err := join(r, Leg{Iface: "wlan0", Freq: 2472}); err == nil {
+		t.Fatal("ignored IBSS setup failure")
+	}
+	for _, c := range r.ran {
+		if strings.Contains(c, "ibss join") {
+			t.Fatalf("join attempted after setup failed: %v", r.ran)
+		}
+	}
+}
+
+func TestJoinKeepsWorkingHT20(t *testing.T) {
+	r := &fakeRunner{}
+	if err := join(r, Leg{Iface: "wlan0", Freq: 2472}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range r.ran {
+		if c == "iw dev wlan0 ibss join timerpi 2472 fixed-freq" {
+			t.Fatal("retried a successful HT20 join")
+		}
+	}
+}
+
+func TestJoinDoesNotRetryAfterResetFails(t *testing.T) {
+	r := &fakeRunner{fail: map[string]bool{"iw dev wlan0 ibss join timerpi 2472 HT20": true}}
+	setups := 0
+	r.onRun = func(cmd string) error {
+		if cmd == "iw dev wlan0 set type ibss" {
+			setups++
+			if setups == 2 {
+				return fmt.Errorf("reset refused")
+			}
+		}
+		return nil
+	}
+	err := join(r, Leg{Iface: "wlan0", Freq: 2472})
+	if err == nil || !strings.Contains(err.Error(), "reset refused") || !strings.Contains(err.Error(), "HT20") {
+		t.Fatalf("lost failed reset: %v", err)
+	}
+	for _, c := range r.ran {
+		if c == "iw dev wlan0 ibss join timerpi 2472 fixed-freq" || c == "ip link set dev wlan0 master bat0" {
+			t.Fatalf("used radio after reset failed: %v", r.ran)
+		}
+	}
+}
+
+func TestJoinAllowsUnsupportedPowerControl(t *testing.T) {
+	r := &fakeRunner{fail: map[string]bool{"iw dev wlan0 set power_save": true}}
+	if err := join(r, Leg{Iface: "wlan0", Freq: 2472}); err != nil {
+		t.Fatalf("working join lost to optional power control: %v", err)
 	}
 }

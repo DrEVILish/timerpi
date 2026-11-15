@@ -43,13 +43,11 @@ func runMesh(args []string) int {
 	for _, n := range st.Notes {
 		log.Printf("timerpi mesh: %s", n)
 	}
-	if err := meshradio.Save(meshradio.StatusFile, st); err != nil {
-		log.Printf("timerpi mesh: %v", err)
+	saveErr := meshradio.Save(meshradio.StatusFile, st)
+	if saveErr != nil {
+		log.Printf("timerpi mesh: %v", saveErr)
 	}
-	if len(st.Legs) == 0 {
-		return 1
-	}
-	return 0
+	return meshApplyExitCode(st, saveErr)
 }
 
 // updateSources lists where the boot-time updater looks: the cloud first,
@@ -70,4 +68,16 @@ func updateSources(dev *mesh.Device) []string {
 		}
 	}
 	return out
+}
+
+func meshApplyExitCode(st meshradio.Status, saveErr error) int {
+	if saveErr != nil {
+		return 1
+	}
+	for _, leg := range st.Legs {
+		if leg.Error == "" {
+			return 0
+		}
+	}
+	return 1
 }

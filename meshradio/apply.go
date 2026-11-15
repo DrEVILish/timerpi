@@ -110,18 +110,34 @@ func Up(r Runner, country string, ch24, ch5 int) Status {
 
 // join puts one radio in ad-hoc mode on its frequency and adds it to bat0.
 func join(r Runner, l Leg) error {
+	_, _ = r.Run("iw", "dev", l.Iface, "ibss", "leave") // not joined yet is fine
+	if err := prepareIBSS(r, l); err != nil {
+		return err
+	}
+	if _, htErr := r.Run("iw", "dev", l.Iface, "ibss", "join", ESSID, fmt.Sprint(l.Freq), "HT20", "fixed-freq"); htErr != nil {
+		// Some IBSS drivers reject HT20 and leave the interface partially configured.
+		if err := prepareIBSS(r, l); err != nil {
+			return fmt.Errorf("HT20 join: %v; reset for legacy join: %w", htErr, err)
+		}
+		if _, err := r.Run("iw", "dev", l.Iface, "ibss", "join", ESSID, fmt.Sprint(l.Freq), "fixed-freq"); err != nil {
+			return fmt.Errorf("HT20 join: %v; legacy join: %w", htErr, err)
+		}
+	}
+	// Power saving delays mesh packets; drivers without this control can still join.
+	_, _ = r.Run("iw", "dev", l.Iface, "set", "power_save", "off")
+	_, err := r.Run("ip", "link", "set", "dev", l.Iface, "master", Mesh)
+	return err
+}
+
+func prepareIBSS(r Runner, l Leg) error {
 	steps := [][]string{
 		{"ip", "link", "set", "dev", l.Iface, "down"},
 		{"iw", "dev", l.Iface, "set", "type", "ibss"},
 		{"ip", "link", "set", "dev", l.Iface, "up"},
-		{"iw", "dev", l.Iface, "ibss", "join", ESSID, fmt.Sprint(l.Freq), "HT20", "fixed-freq"},
-		{"ip", "link", "set", "dev", l.Iface, "master", Mesh},
 	}
-	_, _ = r.Run("iw", "dev", l.Iface, "ibss", "leave") // not joined yet is fine
 	for i, s := range steps {
 		if i == 2 {
-			// Room for batman-adv's header so bat0 keeps a 1500 MTU; chips
-			// that refuse it fall back to batman-adv fragmentation.
+			// Drivers that refuse room for the batman header use batman fragmentation.
 			_, _ = r.Run("ip", "link", "set", "dev", l.Iface, "mtu", "1532")
 		}
 		if _, err := r.Run(s[0], s[1:]...); err != nil {
