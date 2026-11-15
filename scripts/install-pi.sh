@@ -129,8 +129,8 @@ log "TimerPi install:  src=$SRC  prefix=$PREFIX"
 # ---- 1. Directories ----------------------------------------------------
 run "create $OPT_DIR (app home)"  mkdir -p "$OPT_DIR/bin" "$OPT_DIR/public/img"
 run "create $VAR_DIR (data home)" mkdir -p "$VAR_DIR"
-chmod 0755 "$OPT_DIR" 2>/dev/null || true
-chmod 0755 "$VAR_DIR" 2>/dev/null || true
+run "set app directory permissions" chmod 0755 "$OPT_DIR" 2>/dev/null || true
+run "set data directory permissions" chmod 0755 "$VAR_DIR" 2>/dev/null || true
 
 # ---- 2. Binaries, units, splash asset ----------------------------------
 run "install timerpi binary"      install -m 0755 "$TIMERPI_BIN" "$OPT_DIR/bin/timerpi"
