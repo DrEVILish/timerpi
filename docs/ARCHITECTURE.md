@@ -64,6 +64,14 @@ audience URLs. The alphabet is Crockford base32 without I, L, O or U,
 and input is typo-tolerant. Codes are the only public address; numeric IDs
 return 404 everywhere.
 
+File-backed WAL databases use one write connection and a separate pool of at
+most four query-only read connections (`timerpi/db.go`, B35). `Get`/`Select`
+use that pool so audience writes do not occupy the operator read path.
+A `WriteTransaction` view reads its own transaction instead; commit remains
+the visibility boundary. Non-WAL/in-memory databases keep one connection.
+`DB.Close` closes both pools. Journal, synchronization and busy-timeout
+settings are unchanged.
+
 SQLite tables (in `timerpi/db.go` unless noted):
 
 | Table | Holds |

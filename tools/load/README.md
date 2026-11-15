@@ -45,6 +45,13 @@ For a separately labelled experiment, `-clients 500 -operator-p95 500ms`
 uses a 500 ms operator gate. The default remains 250 ms; an experimental pass
 does not qualify the default gate or change product requirements.
 
+For the intended venue topology, clients reach the serving Pi over Ethernet;
+BATMAN carries inter-Pi synchronization. A client burst through an SSH/BATMAN
+relay is a different experiment. Wait for the serving box to be the stable
+primary before starting a probe; HTTP 409 during an election is a readiness
+failure, not a latency result. Keep builds, browsers and profilers off the
+load host during timed runs. Label instrumented runs separately.
+
 This exercises actual networking and the deployed application. Running the
 load host over Ethernet proves server capacity, not 200 physical phones or
 Wi-Fi airtime. It is a join/vote burst with a measured fanout under load, not

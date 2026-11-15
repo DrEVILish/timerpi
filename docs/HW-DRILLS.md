@@ -341,6 +341,71 @@ back at 16:57:09 UTC. CuTePi verified the original follower restored at
 16:58:59.842 UTC; TimerPi removed only its temporary files/units and released
 the slot at 16:59:29 UTC. .73 playback stayed running throughout.
 
+### Ethernet-client diagnosis and B35
+
+Owner clarification: clients reach the main Pi over **Ethernet**; BATMAN is
+for inter-Pi sync. The earlier wireless-client experiments remain recorded
+but do not model the intended client path.
+
+A fresh isolated .55 session ran 19:18:05–19:31:17 UTC, with follower paused by
+CuTePi at 19:20:00.050 UTC. Direct Ethernet :18080, display off, existing ext4
+microSD data under the disposable `/tmp` directory, same load generator at
+400 votes/s. .73 was never accessed, and no network/controller/radio/filter,
+DRM, package or permanent deployment changes occurred. No browser suite ran
+during the timed loads; it started only after the final Pi app was stopped.
+
+The first attempt hit HTTP 409 during initial election and is invalid as a
+capacity measurement. Later runs verified stable primary readiness first.
+Three clean original-build 500-client runs passed (operator p95
+74.437/32.486/120.774 ms). Original-build 1,000-client runs showed an
+intermittent failure: 132.682 ms passed, then 1,303.900 ms operator and
+1,145.422 ms fanout failed. A third run overlapped strace and is diagnostic
+only. Profiling-enabled runs are likewise excluded from qualification.
+
+A development-only loopback pprof server and targeted strace diagnosed the
+waits; neither is shipped. Block profiles showed operator authorization
+reads waiting for the sole SQLite connection. CPU samples included costly
+password setup/login, and mutex samples also showed connection-teardown
+logging contention; these are not proof that the request workload needs a
+language rewrite. The test `TestReadsContinueDuringUncommittedWrite` failed
+on the original code: a live read could not finish while a writer held its
+transaction. B35 adds a four-connection query-only read pool to WAL databases,
+keeps one writer, and preserves transaction-local reads and commit visibility.
+It does not change durability or move data to RAM. Regression tests cover
+read isolation, transaction visibility, query-only enforcement and both
+pools closing. This follows [SQLite WAL concurrency](https://www.sqlite.org/wal.html).
+
+Baseline reversal on the original build also passed all three 1,000-client
+runs (operator p95 111.602/105.202/143.218 ms; joins 529/497/474 ms).
+Thus timing does **not** establish a robust operator speedup multiplier or
+prove every earlier outlier had this cause. It does establish that the
+read-behind-write regression is fixed; final joins were generally quicker.
+
+Final normal ARM64 build, no pprof or strace, original **250 ms** gate:
+
+| Clients / run | Join | Vote p95 | Fanout p95 | Operator p95 | Result |
+|---|---:|---:|---:|---:|---|
+| 500 / 1 | 160 ms | 6.319 ms | 303.363 ms | 65.134 ms | PASS |
+| 500 / 2 | 158 ms | 88.081 ms | 55.644 ms | 112.700 ms | PASS |
+| 500 / 3 | 169 ms | 102.617 ms | 44.632 ms | 136.996 ms | PASS |
+| 1,000 / 1 | 416 ms | 88.355 ms | 233.846 ms | 149.240 ms | PASS |
+| 1,000 / 2 | 335 ms | 87.802 ms | 85.543 ms | 114.331 ms | PASS |
+| 1,000 / 3 | 326 ms | 104.315 ms | 113.316 ms | 139.771 ms | PASS |
+
+Every final run joined every client, counted every vote, delivered every
+update, had zero disconnects/operator errors and removed its disposable
+room. Final build SHA-256:
+`64353ee863d04fc55dee2d3b0e8b33cc6fce642fecc57533170346c2d16e9fa5`.
+Original diagnostic-capable build (profiling disabled for baseline/reversal):
+`e8e31ba0360c9257d151ab901e453d6d55bd051a9fc1d2b4513ceef4e55f326a`.
+
+All test processes/profilers/listeners were stopped at 19:29:50 UTC. CuTePi
+verified the original follower restored at 19:30:54.508 UTC; only TimerPi
+temporary files/units were removed and the slot released at 19:31:17 UTC.
+These are short standalone-primary bursts, not an endurance/venue-phone
+qualification or simultaneous BATMAN-sync capacity proof. The remaining
+field/release gates below stay open.
+
 ### Reproduce and remaining gates
 
 - External load: `go run ./tools/load -base http://<test-pi>:18080 -clients 200`

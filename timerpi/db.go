@@ -1,6 +1,7 @@
 package timerpi
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,9 +15,10 @@ import (
 // truth (PLAN §1): shows, cues, messages, settings kv and per-show runtime.
 type DB struct {
 	*sqlx.DB
-	tx   *sqlx.Tx // private transaction view; never shared with live readers
-	air  airCache // on-air interaction per room (polls.go OnAirNow)
-	cueG cueGens  // per-show cue write generation (engine cue cache, RW55)
+	readers *sqlx.DB // WAL readers never occupy the single writer connection
+	tx      *sqlx.Tx // private transaction view; never shared with live readers
+	air     airCache // on-air interaction per room (polls.go OnAirNow)
+	cueG    cueGens  // per-show cue write generation (engine cue cache, RW55)
 
 	secretMu sync.Mutex
 	secret   []byte // session signing key, cached (SessionSecret, RS3)
@@ -78,8 +80,7 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("timerpi: opening db at %q: %w", path, err)
 	}
-	// The app serialises on one pooled connection: SQLite only benefits from
-	// extra write connections and they just raise busy contention.
+	// Keep one writer; WAL readers use their own query-only pool.
 	raw.SetMaxOpenConns(1)
 	// Unsafe: a column the structs don't know yet (a newer migration, an
 	// older binary on a newer file) is skipped instead of failing every
@@ -89,7 +90,36 @@ func Open(path string) (*DB, error) {
 		raw.Close()
 		return nil, err
 	}
+	var journal string
+	if err := d.Get(&journal, "PRAGMA journal_mode"); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	if journal == "wal" {
+		readers, err := sqlx.Open("sqlite3", dsn+"&_query_only=true")
+		if err != nil {
+			raw.Close()
+			return nil, err
+		}
+		readers.SetMaxOpenConns(4)
+		readers.SetMaxIdleConns(4)
+		if err := readers.Ping(); err != nil {
+			readers.Close()
+			raw.Close()
+			return nil, err
+		}
+		d.readers = readers.Unsafe()
+	}
 	return d, nil
+}
+
+// Close releases both pools; transaction views must not close their owner.
+func (d *DB) Close() error {
+	var readErr error
+	if d.readers != nil {
+		readErr = d.readers.Close()
+	}
+	return errors.Join(readErr, d.DB.Close())
 }
 
 // nowMS is the DB layer's clock (epoch ms). Kept here so save-stamps work

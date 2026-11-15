@@ -38,12 +38,18 @@ func (d *DB) Get(dest any, query string, args ...any) error {
 	if d.tx != nil {
 		return d.tx.Get(dest, query, args...)
 	}
+	if d.readers != nil {
+		return d.readers.Get(dest, query, args...)
+	}
 	return d.DB.Get(dest, query, args...)
 }
 
 func (d *DB) Select(dest any, query string, args ...any) error {
 	if d.tx != nil {
 		return d.tx.Select(dest, query, args...)
+	}
+	if d.readers != nil {
+		return d.readers.Select(dest, query, args...)
 	}
 	return d.DB.Select(dest, query, args...)
 }
