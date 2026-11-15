@@ -68,6 +68,8 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET /api/events/:code/export` | super. The whole event as one file (`kind:"timerpi-event"`: rooms, cues, messages, polls + votes, screens, presets, layouts, map, theme). No event code, password hashes or screen keys |
 | `POST /api/events/import` (multipart `file`, `password`; or JSON `{file, password}`) | open, budgeted like `POST /api/events`. The event file becomes a NEW event with new codes and this password; rooms come without passwords. Sets the supervisor session → `{code, codeFmt, admin}` |
 
+**Box replica writes.** A paired box with discovery enabled rejects replicated event/room/audience/asset/capture mutations while it is a member or still electing: HTTP 409 `{ok:false, primary, error}`. `primary` is the current primary URL, or empty during election. Reads, sign-in, box settings, waiting registration and telemetry remain available. WebSocket commands return their normal error frame; OSC mutations are refused. Internal signed mirroring is unaffected.
+
 ### Rooms (shows)
 | Method & path | Notes |
 |---|---|

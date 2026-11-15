@@ -78,6 +78,8 @@ type Deps struct {
 	// the event this box is attached to; nil on the cloud (pairing.go).
 	BoxSelf  func() any
 	BoxEvent func() string
+	// BoxWriteTarget reports the paired box's current writer; nil leaves standalone behavior unchanged.
+	BoxWriteTarget func() (primary string, writable bool)
 	// ClockHint offers a trusted time (the Event Technician's browser at
 	// sign-in) to a box whose clock was never set.
 	ClockHint func(time.Time)
@@ -127,7 +129,7 @@ func New(d *Deps) *gin.Engine {
 	// asset references forever. Static file mounts re-set the same header
 	// themselves (registerStatic/registerFTL).
 	r.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-cache"); c.Next() })
-	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), d.accessGate(), d.venueGate())
+	r.Use(gin.Recovery(), bodyCeiling(), OriginGuard(), d.accessGate(), d.memberWriteGuard(), d.venueGate())
 
 	registerFTL(r) // /ftl/ — vendored ftl-themes (theme picker fonts)
 	registerHealth(r, d)

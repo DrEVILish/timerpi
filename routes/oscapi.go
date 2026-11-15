@@ -104,6 +104,10 @@ func (d *Deps) oscDispatch(m oscbridge.Message) {
 		log.Printf("osc: unknown show code %q", code)
 		return
 	}
+	if err := d.CommandGate(id); err != nil {
+		log.Printf("osc: %s refused: %v", verb, err)
+		return
+	}
 	args := map[string]any{}
 	if pos > 0 {
 		args["pos"] = pos

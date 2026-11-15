@@ -238,16 +238,25 @@ func run() int {
 		ReloadTmpl: *devTmpl,
 		Public:     public,
 	}
+	if !cloud {
+		deps.BoxWriteTarget = func() (string, bool) {
+			if meshYB == nil || agent.Pairing().Event == "" {
+				return "", true
+			}
+			identity, _ := meshYB.Status()
+			return identity.PrimaryAddr, identity.State == mesh.StatePrimary
+		}
+	}
 	g := routes.New(deps)
 	relCtx, relCancel := context.WithCancel(context.Background())
 	defer relCancel()
 	deps.StartReleaser(relCtx) // events end: screens released at end + 4 h
+	hub.SetCommandGate(deps.CommandGate)
 	if cloud {
 		// A venue event's audience comes from its venue; its operators go
 		// through the link; its copy here takes no commands (link.go).
 		hub.SetPollsFunc(deps.WrapPolls(db.OnAirNow))
 		hub.SetTunnel(deps.Tunnel)
-		hub.SetCommandGate(deps.CommandGate)
 	} else {
 		agent.Srv, agent.Handler, agent.Mesh = deps, g, meshYB
 		deps.BoxSelf = func() any { return agent.Self() }

@@ -44,7 +44,7 @@ func (h *Hub) SetTunnel(fn Tunnel) {
 	h.venue.mu.Unlock()
 }
 
-// SetCommandGate installs the cloud's command gate.
+// SetCommandGate installs the event-writer gate.
 func (h *Hub) SetCommandGate(fn func(showID int64) error) {
 	h.venue.mu.Lock()
 	h.venue.gate = fn

@@ -419,9 +419,12 @@ func (d *Deps) WrapPolls(base func(int64) (timerpi.OnAir, error)) func(int64) (t
 	}
 }
 
-// CommandGate refuses commands on the cloud's copy of a venue event (the
-// stable-link path never reaches the cloud hub: it is tunnelled).
+// CommandGate keeps member replicas and the cloud's venue copy read-only.
+// Stable cloud links tunnel commands before they reach the cloud hub.
 func (d *Deps) CommandGate(showID int64) error {
+	if _, err := d.memberWriteError(); err != nil {
+		return err
+	}
 	if _, ok := d.venueEventOf(showID); ok {
 		return errors.New("This event is running at the venue. Changes are paused until the link to the venue is back.")
 	}
