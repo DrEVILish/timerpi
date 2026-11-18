@@ -70,6 +70,14 @@ func requireLinkProto(c *gin.Context) bool {
 	return false
 }
 
+func (d *Deps) requireCloudLink(c *gin.Context) bool {
+	if !d.isCloud() {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
+		return false
+	}
+	return requireLinkProto(c)
+}
+
 // LinkAuth signs a link request (venue side).
 func LinkAuth(key []byte, purpose, event string, now time.Time) string {
 	ts := strconv.FormatInt(now.Unix(), 10)
@@ -202,11 +210,7 @@ func registerLink(r gin.IRouter, d *Deps) {
 
 // The venue can retry its final export after unpairing or restarting.
 func (d *Deps) apiLinkFinal(c *gin.Context) {
-	if !d.isCloud() {
-		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
-		return
-	}
-	if !requireLinkProto(c) {
+	if !d.requireCloudLink(c) {
 		return
 	}
 	ev, ok := d.Store.ResolveEvent(c.Query("event"))
@@ -254,11 +258,7 @@ func (d *Deps) apiLinkBundle(c *gin.Context) {
 // made without internet (rule 6). Signed with the key it claims; an event
 // the cloud already knows under another key is refused.
 func (d *Deps) apiLinkRegister(c *gin.Context) {
-	if !d.isCloud() {
-		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
-		return
-	}
-	if !requireLinkProto(c) {
+	if !d.requireCloudLink(c) {
 		return
 	}
 	var body struct {
@@ -293,11 +293,7 @@ func (d *Deps) apiLinkRegister(c *gin.Context) {
 
 // GET /api/link?event=CODE — the venue primary's WebSocket.
 func (d *Deps) apiLink(c *gin.Context) {
-	if !d.isCloud() {
-		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
-		return
-	}
-	if !requireLinkProto(c) {
+	if !d.requireCloudLink(c) {
 		return
 	}
 	ev, ok := d.Store.ResolveEvent(c.Query("event"))
@@ -327,6 +323,11 @@ func (d *Deps) apiLink(c *gin.Context) {
 	conn.SetReadLimit(64 << 20) // event copies carry the venue map
 	l := &venueLink{event: ev, conn: conn, since: time.Now(), done: make(chan struct{}),
 		pending: map[int64]chan LinkFrame{}, streams: map[int64]*websocket.Conn{}, air: map[int64]*timerpi.PollView{}}
+	d.serveVenueLink(l)
+}
+
+func (d *Deps) serveVenueLink(l *venueLink) {
+	ev, conn := l.event, l.conn
 	reg := d.linkRegistry()
 	reg.mu.Lock()
 	old := reg.byEvent[ev.ID]
@@ -382,22 +383,7 @@ func (d *Deps) linkRead(l *venueLink) {
 		}
 		switch f.T {
 		case "bundle", "final":
-			bundle, err := decodeEventCopy(f.Data)
-			if err != nil {
-				log.Printf("routes: venue copy: %v", err)
-				continue
-			}
-			ev, err := d.applyEventCopy(bundle, eventCopyScope{event: l.event, final: f.T == "final"})
-			if err != nil {
-				log.Printf("routes: venue copy: %v", err)
-				continue
-			}
-			if f.T == "final" {
-				// Release (end + 4 h): the cloud keeps the final copy and is
-				// the event's home again.
-				_ = l.send(LinkFrame{T: "final-ok"})
-				log.Printf("routes: event %s released by its venue; final copy stored", ev.Code)
-			}
+			d.acceptUplinkCopy(l, f)
 		case "air":
 			if sh, ok := d.Store.ResolveShowInEvent(l.event.ID, f.Room); ok {
 				l.mu.Lock()
@@ -437,6 +423,23 @@ func (d *Deps) linkRead(l *venueLink) {
 }
 
 // broadcastEventAir re-sends every room's audience frame (the link changed).
+func (d *Deps) acceptUplinkCopy(l *venueLink, f LinkFrame) {
+	bundle, err := decodeEventCopy(f.Data)
+	if err != nil {
+		log.Printf("routes: venue copy: %v", err)
+		return
+	}
+	ev, err := d.applyEventCopy(bundle, eventCopyScope{event: l.event, final: f.T == "final"})
+	if err != nil {
+		log.Printf("routes: venue copy: %v", err)
+		return
+	}
+	if f.T == "final" {
+		_ = l.send(LinkFrame{T: "final-ok"})
+		log.Printf("routes: event %s released by its venue; final copy stored", ev.Code)
+	}
+}
+
 func (d *Deps) broadcastEventAir(eventID int64) {
 	if d.Hub == nil {
 		return

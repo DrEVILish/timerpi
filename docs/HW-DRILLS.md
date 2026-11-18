@@ -8,8 +8,7 @@ output and timing budgets — run top to bottom, paste the result log
 Current device-mesh tunables (latest bench evidence is in §7):
 
 - Device mesh tunables (`mesh/device.go`): poll 5 s, browse window 3 s,
-  claim grace 10 s, takeover after 8 s silence, peers-fresh window 30 s,
-  harvest timeout 3 s.
+  claim grace 10 s, takeover after 8 s silence, peers-fresh window 30 s.
 - Seniority: `claimedEpoch` (ms of FIRST claim, persisted in SQLite
   `mesh_state`) never re-stamps — smaller epoch wins, across restarts
   and takeovers. Ties break by hostname, then port. A restarting box follows an existing healthy primary regardless of its stored epoch; seniority resolves competing active primaries.
@@ -88,15 +87,11 @@ shorten the waits, late joins are the #1 false failure.
 
 ### 1d. Takeover on long outage (downtime > 8 s)
 
-9. Seed state on A: create a cue via the dashboard
-   (`http://stage-left.local/c/<code>`) so the harvest has content.
+9. Create a cue on A and verify that it appears on B before stopping A.
 10. `ssh root@stage-left 'systemctl stop timerpi'`; start a timer.
 11. Within ~20 s (8 s silence + polls), B promotes:
-    `curl -s http://stage-right.local/api/network` → `"role":"primary"`,
-    and `journalctl -u timerpi` on B shows
-    `takeover: harvested show <id> from stage-left (<n> bytes)`
-    (or `promoting blind` if A died mid-harvest — still a PASS for
-    authority, note it in the log).
+    `curl -s http://stage-right.local/api/network` → `"role":"primary"`.
+    B serves the event from its last committed replica.
 12. B's dashboard serves the show (open `http://stage-right.local/`). Add a uniquely named cue on B while A is stopped and verify it is saved.
 
 ### 1e. Reunion: the returning box catches up, no split-brain

@@ -435,28 +435,43 @@ func Rollback(bin string) (rolledBack bool, err error) {
 		}
 		return false, err
 	}
-	nextManifest := ManifestPath(bin) + ".next"
-	if fileExists(nextManifest) {
-		// Recover a process interruption between renaming the executable
-		// and publishing its manifest.
-		m, merr := ReadManifest(nextManifest)
-		b, berr := os.ReadFile(bin)
-		digest := sha256.Sum256(b)
-		if merr == nil && berr == nil && hex.EncodeToString(digest[:]) == m.SHA256 {
-			if err := os.Rename(nextManifest, ManifestPath(bin)); err != nil {
-				return false, err
-			}
-		} else {
-			if err := os.Remove(nextManifest); err != nil {
-				return false, err
-			}
-			return false, removeIfPresent(pendingPath(bin))
-		}
+	installed, err := recoverStagedManifest(bin)
+	if err != nil || !installed {
+		return false, err
 	}
-	tries, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if tries < MaxTries {
+	tries, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err == nil && tries < MaxTries {
 		return false, os.WriteFile(pendingPath(bin), []byte(strconv.Itoa(tries+1)), 0o644)
 	}
+	return rollbackPrevious(bin)
+}
+
+// recoverStagedManifest completes a swap interrupted after the executable
+// rename, or discards it if the executable never changed.
+func recoverStagedManifest(bin string) (bool, error) {
+	next := ManifestPath(bin) + ".next"
+	m, err := ReadManifest(next)
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	b, err := os.ReadFile(bin)
+	if err != nil {
+		return false, err
+	}
+	digest := sha256.Sum256(b)
+	if hex.EncodeToString(digest[:]) == m.SHA256 {
+		return true, os.Rename(next, ManifestPath(bin))
+	}
+	if err := os.Remove(next); err != nil {
+		return false, err
+	}
+	return false, removeIfPresent(pendingPath(bin))
+}
+
+func rollbackPrevious(bin string) (bool, error) {
 	prev := bin + ".prev"
 	if !fileExists(prev) {
 		os.Remove(pendingPath(bin))

@@ -183,40 +183,47 @@ type eventCopyScope struct {
 
 var errEventCopyOwnership = errors.New("the event copy conflicts with event ownership")
 
-func (s eventCopyScope) authorize(db *timerpi.DB, code string) (existing timerpi.Event, skip bool, err error) {
-	if s.registerKey != "" {
-		err := db.Get(&existing, `SELECT * FROM events WHERE code = ?`, code)
-		if errors.Is(err, sql.ErrNoRows) {
-			return existing, false, nil
-		}
-		if err != nil {
-			return existing, false, err
-		}
-		if !hmac.Equal([]byte(existing.MeshKey), []byte(s.registerKey)) {
-			return existing, false, errEventCopyOwnership
-		}
-		return existing, true, nil // an interrupted registration may be retried
+func (s eventCopyScope) authorize(db *timerpi.DB, code string) (timerpi.Event, bool, error) {
+	switch {
+	case s.event.ID != 0:
+		return s.authorizeUplink(db, code)
+	case s.registerKey != "", s.mirrorKey != "":
+		return s.authorizeNewCopy(db, code)
+	default:
+		return timerpi.Event{}, false, nil
 	}
-	if s.event.ID == 0 {
-		if s.mirrorKey != "" {
-			err := db.Get(&existing, `SELECT * FROM events WHERE code = ?`, code)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return existing, false, err
-			}
-			if existing.MeshKey != "" && !hmac.Equal([]byte(existing.MeshKey), []byte(s.mirrorKey)) {
-				return existing, false, errEventCopyOwnership
-			}
-		}
+}
+
+func (s eventCopyScope) authorizeNewCopy(db *timerpi.DB, code string) (timerpi.Event, bool, error) {
+	var existing timerpi.Event
+	err := db.Get(&existing, `SELECT * FROM events WHERE code = ?`, code)
+	if errors.Is(err, sql.ErrNoRows) {
 		return existing, false, nil
 	}
-	if code != s.event.Code {
-		return existing, false, errEventCopyOwnership
-	}
-	existing, err = db.GetEvent(s.event.ID)
 	if err != nil {
 		return existing, false, err
 	}
-	if existing.Code != code || existing.MeshKey == "" || !hmac.Equal([]byte(s.event.MeshKey), []byte(existing.MeshKey)) {
+	if s.registerKey != "" {
+		if sameMeshKey(existing.MeshKey, s.registerKey) {
+			return existing, true, nil // an interrupted registration may be retried
+		}
+		return existing, false, errEventCopyOwnership
+	}
+	if existing.MeshKey != "" && !sameMeshKey(existing.MeshKey, s.mirrorKey) {
+		return existing, false, errEventCopyOwnership
+	}
+	return existing, false, nil
+}
+
+func (s eventCopyScope) authorizeUplink(db *timerpi.DB, code string) (timerpi.Event, bool, error) {
+	if code != s.event.Code {
+		return timerpi.Event{}, false, errEventCopyOwnership
+	}
+	existing, err := db.GetEvent(s.event.ID)
+	if err != nil {
+		return existing, false, err
+	}
+	if existing.Code != code || !sameMeshKey(existing.MeshKey, s.event.MeshKey) {
 		return existing, false, errEventCopyOwnership
 	}
 	if s.final && existing.ReleasedAt > 0 && existing.Home == "" {
@@ -226,6 +233,29 @@ func (s eventCopyScope) authorize(db *timerpi.DB, code string) (existing timerpi
 		return existing, false, errEventCopyOwnership
 	}
 	return existing, false, nil
+}
+
+func sameMeshKey(stored, submitted string) bool {
+	return stored != "" && hmac.Equal([]byte(stored), []byte(submitted))
+}
+
+func (s eventCopyScope) recordAuthority(store *timerpi.DB, id int64) error {
+	switch {
+	case s.registerKey != "":
+		if err := store.SetEventMeshKey(id, s.registerKey); err != nil {
+			return err
+		}
+		return store.SetEventHome(id, "venue")
+	case s.mirrorKey != "":
+		return store.SetEventMeshKey(id, s.mirrorKey)
+	case s.final:
+		if err := store.SetEventHome(id, ""); err != nil {
+			return err
+		}
+		return store.MarkEventReleased(id, time.Now())
+	default:
+		return nil
+	}
 }
 
 func (d *Deps) applyEventCopy(b eventBundle, scope eventCopyScope) (timerpi.Event, error) {
@@ -243,24 +273,8 @@ func (d *Deps) applyEventCopy(b eventBundle, scope eventCopyScope) (timerpi.Even
 			if err != nil {
 				return err
 			}
-			if scope.registerKey != "" {
-				if err := store.SetEventMeshKey(ev.ID, scope.registerKey); err != nil {
-					return err
-				}
-				if err := store.SetEventHome(ev.ID, "venue"); err != nil {
-					return err
-				}
-			}
-			if scope.mirrorKey != "" {
-				return store.SetEventMeshKey(ev.ID, scope.mirrorKey)
-			}
-			if scope.final {
-				if err := store.SetEventHome(ev.ID, ""); err != nil {
-					return err
-				}
-				if err := store.MarkEventReleased(ev.ID, time.Now()); err != nil {
-					return err
-				}
+			if err := scope.recordAuthority(store, ev.ID); err != nil {
+				return err
 			}
 			ev, err = store.GetEvent(ev.ID)
 			return err

@@ -208,6 +208,46 @@ func TestSwapDoesNotLeaveMismatchedManifest(t *testing.T) {
 	}
 }
 
+func TestInterruptedSwapRecoversManifestForRunningBinary(t *testing.T) {
+	_, sk, _ := ed25519.GenerateKey(rand.Reader)
+	for _, renamed := range []bool{false, true} {
+		bin := filepath.Join(t.TempDir(), "timerpi")
+		old, next := []byte("old binary"), []byte("new binary")
+		image := old
+		if renamed {
+			image = next
+		}
+		before := signed(t, sk, "3.0.0", old)
+		after := signed(t, sk, "3.1.0", next)
+		beforeJSON, err := json.Marshal(before)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterJSON, err := json.Marshal(after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for path, data := range map[string][]byte{
+			bin: image, ManifestPath(bin): beforeJSON, ManifestPath(bin) + ".next": afterJSON, pendingPath(bin): []byte("0"),
+		} {
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if rolled, err := Rollback(bin); rolled || err != nil {
+			t.Fatalf("resume interrupted swap (renamed=%t): %v, %v", renamed, rolled, err)
+		}
+		want := before
+		if renamed {
+			want = after
+		}
+		got, err := ReadManifest(ManifestPath(bin))
+		if err != nil || got != want {
+			t.Fatalf("running binary has the wrong manifest (renamed=%t): version %q, %v", renamed, got.Version, err)
+		}
+	}
+}
+
 // A confirmed build is never rolled back.
 func TestConfirmClearsPending(t *testing.T) {
 	dir := t.TempDir()

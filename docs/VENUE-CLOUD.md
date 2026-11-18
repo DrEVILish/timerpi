@@ -64,6 +64,7 @@
 - Phones scan the QR → the **cloud** audience page → votes and questions travel cloud → primary box, which owns the interaction state, and the on-air item and results travel primary → cloud → phones.
 - Internet down: the cloud shows "audience paused" on phones; screens and timers at the venue carry on.
 - The primary streams a read-only copy of the event to the cloud during the show. At release it records a pending final upload before unpairing. The box retries that copy after reconnect or restart and removes its local copy after cloud acknowledgement.
+- When upgrading existing deployments, update the cloud first so it can accept the new final-copy request. The cloud still accepts the legacy release frame from older venues.
 
 ## 7. Sync rules (owner, 2026-10-06)
 
