@@ -165,12 +165,17 @@ func (c *Checker) Run(ctx context.Context) {
 	if every <= 0 {
 		every = 20 * time.Second
 	}
+	rejected, err := os.ReadFile(rejectedPath(c.Self))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		logf("update: cannot read rollback record: %v", err)
+		return
+	}
 	for {
 		if up := c.Uptime(); up >= Window {
 			logf("update: %s since boot; no update until the next reboot", up.Round(time.Second))
 			return
 		}
-		if src, m, ok := c.Find(ctx); ok {
+		if src, m, ok := c.find(ctx, strings.TrimSpace(string(rejected))); ok {
 			if c.Busy != nil && c.Busy() {
 				logf("update: %s found, waiting for the running timer to stop", m.Version)
 			} else if err := c.Apply(ctx, src, m); err != nil {
@@ -201,6 +206,10 @@ func (c *Checker) client() *http.Client {
 // Find asks every source and returns the newest valid build above ours
 // (also used by the network page's UPDATE button, outside the boot window).
 func (c *Checker) Find(ctx context.Context) (string, Manifest, bool) {
+	return c.find(ctx, "")
+}
+
+func (c *Checker) find(ctx context.Context, rejected string) (string, Manifest, bool) {
 	if c.Key == nil {
 		return "", Manifest{}, false
 	}
@@ -219,6 +228,9 @@ func (c *Checker) Find(ctx context.Context) (string, Manifest, bool) {
 		err = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&m)
 		resp.Body.Close()
 		if err != nil || resp.StatusCode != http.StatusOK || m.Arch != c.Arch || m.Verify(c.Key) != nil {
+			continue
+		}
+		if rejected != "" && m.SHA256 == rejected {
 			continue
 		}
 		if buildinfo.Newer(m.Version, c.Current) && (bestSrc == "" || buildinfo.Newer(m.Version, best.Version)) {
@@ -337,22 +349,57 @@ func Swap(bin, newBin string) error {
 	if err := copyFile(bin, prev); err != nil {
 		return fmt.Errorf("keep previous: %w", err)
 	}
-	if fileExists(ManifestPath(bin)) {
-		_ = copyFile(ManifestPath(bin), ManifestPath(prev))
-	} else {
-		_ = os.Remove(ManifestPath(prev))
+	if err := copyManifest(bin, prev); err != nil {
+		return fmt.Errorf("keep previous manifest: %w", err)
+	}
+	nextManifest := ManifestPath(bin) + ".next"
+	hasManifest := fileExists(ManifestPath(newBin))
+	if hasManifest {
+		if err := copyFile(ManifestPath(newBin), nextManifest); err != nil {
+			return fmt.Errorf("stage manifest: %w", err)
+		}
 	}
 	if err := os.WriteFile(pendingPath(bin), []byte("0"), 0o644); err != nil {
+		os.Remove(nextManifest)
 		return err
 	}
 	if err := os.Rename(newBin, bin); err != nil {
+		os.Remove(nextManifest)
 		os.Remove(pendingPath(bin))
 		return err
 	}
-	if fileExists(ManifestPath(newBin)) {
-		_ = copyFile(ManifestPath(newBin), ManifestPath(bin))
+	var err error
+	if hasManifest {
+		err = os.Rename(nextManifest, ManifestPath(bin))
+	} else {
+		err = removeIfPresent(ManifestPath(bin))
+	}
+	if err != nil {
+		// The manifest operation failed before replacing the old sidecar.
+		// Leave the pending marker if executable recovery also fails.
+		if restoreErr := copyFile(prev, bin); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("restore previous binary: %w", restoreErr))
+		}
+		os.Remove(nextManifest)
+		os.Remove(pendingPath(bin))
+		return fmt.Errorf("publish manifest: %w", err)
 	}
 	return nil
+}
+
+func copyManifest(src, dst string) error {
+	if fileExists(ManifestPath(src)) {
+		return copyFile(ManifestPath(src), ManifestPath(dst))
+	}
+	return removeIfPresent(ManifestPath(dst))
+}
+
+func removeIfPresent(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func copyFile(src, dst string) error {
@@ -371,7 +418,8 @@ func copyFile(src, dst string) error {
 	return os.Rename(tmp, dst)
 }
 
-func pendingPath(bin string) string { return bin + ".pending" }
+func pendingPath(bin string) string  { return bin + ".pending" }
+func rejectedPath(bin string) string { return bin + ".rejected" }
 
 // MaxTries is how many starts a new build gets before it is rolled back.
 const MaxTries = 2
@@ -382,7 +430,28 @@ const MaxTries = 2
 func Rollback(bin string) (rolledBack bool, err error) {
 	raw, err := os.ReadFile(pendingPath(bin))
 	if err != nil {
-		return false, nil // no update pending
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	nextManifest := ManifestPath(bin) + ".next"
+	if fileExists(nextManifest) {
+		// Recover a process interruption between renaming the executable
+		// and publishing its manifest.
+		m, merr := ReadManifest(nextManifest)
+		b, berr := os.ReadFile(bin)
+		digest := sha256.Sum256(b)
+		if merr == nil && berr == nil && hex.EncodeToString(digest[:]) == m.SHA256 {
+			if err := os.Rename(nextManifest, ManifestPath(bin)); err != nil {
+				return false, err
+			}
+		} else {
+			if err := os.Remove(nextManifest); err != nil {
+				return false, err
+			}
+			return false, removeIfPresent(pendingPath(bin))
+		}
 	}
 	tries, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
 	if tries < MaxTries {
@@ -393,14 +462,18 @@ func Rollback(bin string) (rolledBack bool, err error) {
 		os.Remove(pendingPath(bin))
 		return false, errors.New("update: new build failing and no previous build to restore")
 	}
+	if failed, err := ReadManifest(ManifestPath(bin)); err == nil && failed.SHA256 != "" {
+		if err := os.WriteFile(rejectedPath(bin), []byte(failed.SHA256), 0o644); err != nil {
+			return false, fmt.Errorf("keep rejected build hash: %w", err)
+		}
+	}
 	if err := copyFile(prev, bin); err != nil {
 		return false, err
 	}
-	if fileExists(ManifestPath(prev)) {
-		_ = copyFile(ManifestPath(prev), ManifestPath(bin))
+	if err := copyManifest(prev, bin); err != nil {
+		return false, err
 	}
-	os.Remove(pendingPath(bin))
-	return true, nil
+	return true, removeIfPresent(pendingPath(bin))
 }
 
 // Confirm marks the running build good (call once it has served for a

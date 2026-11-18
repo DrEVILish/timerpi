@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -39,6 +40,77 @@ func TestRestoreRollbackRestartsOriginalDatabaseAndConfig(t *testing.T) {
 		t.Run(map[bool]string{true: "existing config", false: "no original config"}[originalConfig], func(t *testing.T) {
 			testRestoreRollback(t, originalConfig)
 		})
+	}
+}
+
+func TestRestoreKeepsServiceDatabaseOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to simulate restoring an unprivileged service's DB")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("requires SQLite integrity checker")
+	}
+	root := t.TempDir()
+	db := filepath.Join(root, "timerpi.db")
+	backup := filepath.Join(t.TempDir(), "backup.db")
+	sqliteFixture(t, db, "original")
+	sqliteFixture(t, backup, "restored")
+	if err := os.Chown(db, 65534, 65534); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "restore.sh", backup, "--data-dir", root, "--no-service")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("restore: %v\n%s", err, out)
+	}
+	info, err := os.Stat(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	if stat.Uid != 65534 || stat.Gid != 65534 || info.Mode().Perm() != 0640 {
+		t.Fatalf("restored owner %d:%d mode %o", stat.Uid, stat.Gid, info.Mode().Perm())
+	}
+}
+
+func TestRestoreRestartsOriginalServiceWhenRollbackCopyFails(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("requires SQLite integrity checker")
+	}
+	root, bin := t.TempDir(), t.TempDir()
+	db := filepath.Join(root, "timerpi.db")
+	backup := filepath.Join(t.TempDir(), "backup.db")
+	sqliteFixture(t, db, "original")
+	sqliteFixture(t, backup, "restored")
+	record := filepath.Join(root, "service.log")
+	writeFixture(t, filepath.Join(bin, "systemctl"), "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$OPS_LOG\"\n", 0700)
+	writeFixture(t, filepath.Join(bin, "curl"), "#!/bin/sh\nprintf '{\"ok\":true}'\n", 0700)
+	writeFixture(t, filepath.Join(bin, "cp"), "#!/bin/sh\ncase \"$*\" in *.pre-restore.*) exit 1;; esac\nexec /bin/cp \"$@\"\n", 0700)
+	cmd := exec.Command("bash", "restore.sh", backup, "--data-dir", root)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "OPS_LOG="+record)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("restore succeeded despite copy failure: %s", out)
+	}
+	got, err := os.ReadFile(record)
+	if err != nil || string(got) != "stop\nstart\n" {
+		t.Fatalf("service commands were %q (%v), want stop then start", got, err)
+	}
+}
+
+func TestBackupKeepsOldArchivesWhenConfigCopyFails(t *testing.T) {
+	root, bin := t.TempDir(), t.TempDir()
+	sqliteFixture(t, filepath.Join(root, "timerpi.db"), "original")
+	writeFixture(t, filepath.Join(root, "config.json"), "{}", 0600)
+	old := filepath.Join(root, "backups", "20000101T000000Z.db.gz")
+	writeFixture(t, old, "previous backup", 0640)
+	writeFixture(t, filepath.Join(bin, "cp"), "#!/bin/sh\ncase \"$*\" in *config.json*) exit 1;; esac\nexec /bin/cp \"$@\"\n", 0700)
+	cmd := exec.Command("bash", "backup.sh", "--data-dir", root, "--keep", "1")
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("backup succeeded despite sidecar failure: %s", out)
+	}
+	files, err := os.ReadDir(filepath.Dir(old))
+	if err != nil || len(files) != 1 || files[0].Name() != filepath.Base(old) {
+		t.Fatalf("failed backup changed the archive set: %v, %v", files, err)
 	}
 }
 

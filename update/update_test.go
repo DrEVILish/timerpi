@@ -128,7 +128,7 @@ func TestCheckerStopsAtWindowEnd(t *testing.T) {
 // A real install swaps the binary, keeps .prev, and a download that doesn't
 // match the manifest is refused.
 func TestInstallSwapAndRollback(t *testing.T) {
-	_, sk, _ := ed25519.GenerateKey(rand.Reader)
+	pk, sk, _ := ed25519.GenerateKey(rand.Reader)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "timerpi")
 	if err := os.WriteFile(bin, []byte("old build"), 0o755); err != nil {
@@ -169,6 +169,42 @@ func TestInstallSwapAndRollback(t *testing.T) {
 	}
 	if rb, _ := Rollback(bin); rb {
 		t.Fatal("rolled back again with nothing pending")
+	}
+	rejected := source(t, m, []byte("new build"))
+	up := time.Duration(0)
+	retry := &Checker{Self: bin, Current: "3.0.0", Arch: "arm64", Key: pk, Every: time.Millisecond,
+		Uptime:  func() time.Duration { up += Window / 2; return up },
+		Sources: func() []string { return []string{rejected.URL} },
+		Restart: func() { t.Error("boot checker reinstalled the rejected build") },
+	}
+	retry.Run(context.Background())
+	if b, _ := os.ReadFile(bin); string(b) != "old build" {
+		t.Fatalf("boot checker replaced the rollback binary with %q", b)
+	}
+}
+
+func TestSwapDoesNotLeaveMismatchedManifest(t *testing.T) {
+	dir := t.TempDir()
+	bin, staged := filepath.Join(dir, "timerpi"), filepath.Join(dir, "new")
+	for path, body := range map[string]string{
+		bin: "old binary", staged: "new binary",
+		ManifestPath(bin): "old manifest", ManifestPath(staged): "new manifest",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(ManifestPath(bin)+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := Swap(bin, staged)
+	image, _ := os.ReadFile(bin)
+	manifest, _ := os.ReadFile(ManifestPath(bin))
+	if err == nil && (string(image) != "new binary" || string(manifest) != "new manifest") {
+		t.Fatalf("successful swap left binary %q, manifest %q", image, manifest)
+	}
+	if err != nil && (string(image) != "old binary" || string(manifest) != "old manifest") {
+		t.Fatalf("failed swap left binary %q, manifest %q: %v", image, manifest, err)
 	}
 }
 

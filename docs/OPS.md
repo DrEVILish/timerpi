@@ -109,9 +109,9 @@ deploy-side in `update.stamp`, as above.
   touching anything.
 * File layout per snapshot: `<ts>.db.gz` + `<ts>.config.json`, with
   `<ts>.note` on best-effort copies. Warning files have the same restricted
-  permissions as the archive and rotate with it. Config is
-  always included; restore of db does **not** overwrite config by
-  default — pass `--with-config` for both.
+  permissions as the archive and rotate with it. If a present config cannot
+  be saved, the backup fails before rotation. Pass `--with-config` to restore
+  the config alongside the database.
 
 ## 5. Restore (`scripts/restore.sh`)
 
@@ -125,13 +125,13 @@ scripts/restore.sh /var/lib/timerpi/backups/<ts>.db.gz \
 scripts/restore.sh /var/lib/timerpi/backups/<ts>.db.gz --force
 ```
 
-The script **refuses** the live data dir without `--force`. Real-mode
-sequence: integrity gate → stop service → rollback copy
-(`timerpi.db.pre-restore.<ts>-<pid>`) → swap → start → 30 s `/health` watch →
-on failure stop the restored instance again, remove its WAL/SHM, restore
-the exact pre-restore copy and any config replaced by `--with-config`, then
-start and re-verify. A healthy rollback still exits nonzero because the
-requested restore failed.
+The script **refuses** the live data dir without `--force`. It verifies and
+stages the replacement before stopping the service, preserving the database
+owner. After stop it saves the original database, any remaining WAL, and any
+config it will replace. It swaps the staged files in and checks `/health`
+after startup. A failure after stop restores any files already replaced and
+restarts the original service. A healthy rollback still exits nonzero
+because the requested restore failed.
 
 ## 6. systemd timer pilots (`systemd/` dir in the repo — NOT repo root)
 
@@ -243,8 +243,8 @@ Unprivileged LXC container, Debian Trixie, x86-64.
   the old one as `bin/timerpi.prev` and restarts. Then it doesn't look again until
   the next reboot. It never swaps while a timer runs.
 - **Rollback:** a new build that fails to start twice is replaced by `.prev`
-  on the third start (journal: "restored the previous one"). A build that has
-  served for a minute is kept.
+  and its manifest on the third start. The boot checker skips the failed
+  build's recorded hash. A build that has served for a minute is kept.
 - A box installed with a signed build (manifest beside the binary) serves it to
   other boxes, so a venue without internet updates from one box.
 - **Missed the boot window?** Open the box's `/settings`: the SOFTWARE panel

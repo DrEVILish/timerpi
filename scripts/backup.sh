@@ -78,7 +78,7 @@ PY
 
 TMP="$BK/.tmp-$TS.db"
 OUT="$BK/$TS.db.gz"
-cleanup() { rm -f "$TMP" "$TMP-wal" "$TMP-shm" "$TMP.note" "$OUT.tmp"; }
+cleanup() { rm -f "$TMP" "$TMP-wal" "$TMP-shm" "$TMP.note" "$TMP.config" "$OUT.tmp"; }
 trap cleanup EXIT
 cleanup
 say "data dir: $DATA_DIR  (db $(du -h "$DB" | cut -f1) — hot, service untouched)"
@@ -90,6 +90,10 @@ fi
 gzip -c "$TMP" > "$OUT.tmp" && [ -s "$OUT.tmp" ] \
   || { rm -f "$OUT.tmp" "$TMP" "$TMP-wal" "$TMP-shm"; die "gzip produced nothing — aborting before rotation"; }
 chmod 0640 "$OUT.tmp" || die "cannot set backup permissions"
+if [ -f "$CONF" ]; then
+  cp -f "$CONF" "$TMP.config" && chmod 0640 "$TMP.config" \
+    || die "cannot stage the config sidecar — existing backups kept"
+fi
 mv -f "$OUT.tmp" "$OUT" || die "cannot publish backup archive"
 if [ -f "$TMP.note" ]; then
   chmod 0640 "$TMP.note" && mv -f "$TMP.note" "$BK/$TS.note" \
@@ -99,22 +103,22 @@ rm -f "$TMP" "$TMP-wal" "$TMP-shm"
 say "wrote: $OUT ($(du -h "$OUT" | cut -f1))"
 
 # Config is tiny and ALWAYS travels with the backup when present.
-if [ -f "$CONF" ]; then
-  cp -f "$CONF" "$BK/$TS.config.json"
-  chmod 0640 "$BK/$TS.config.json"
+if [ -f "$TMP.config" ]; then
+  mv -f "$TMP.config" "$BK/$TS.config.json" \
+    || { rm -f "$OUT" "$BK/$TS.note"; die "cannot publish config sidecar — existing backups kept"; }
   say "wrote: $BK/$TS.config.json (sidecar)"
 fi
 
 # Rotate: keep $KEEP newest .db.gz, drop the deleted entries' sidecars with them.
 say "rotation: keeping $KEEP newest"
 n=0
-for f in $(ls -1t "$BK"/*.db.gz 2>/dev/null); do
+while IFS= read -r f; do
   n=$((n + 1))
   [ "$n" -le "$KEEP" ] && continue
   stem="${f%.db.gz}"
   rm -f "$f" "$stem.config.json" "$stem.note"
   say "rotated: $f (+sidecars)"
-done
+done < <(ls -1t -- "$BK"/*.db.gz 2>/dev/null)
 
 say "done — $(ls -1 "$BK"/*.db.gz 2>/dev/null | wc -l) backup(s) on disk"
 exit 0

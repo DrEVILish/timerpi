@@ -54,7 +54,8 @@ if [ "$LIVE" -eq 1 ] && [ "$FORCE" -ne 1 ]; then
 fi
 
 WORK="$DATA_DIR/.restore-work-$$"
-mkdir -p "$WORK"
+mkdir -p "$WORK" || die "cannot create restore workspace"
+trap 'rm -rf "$WORK"' EXIT
 
 # 1. Unpack (gz or plain) and gate on the SQLite header, then a real
 #    integrity_check when a checker is available.
@@ -104,74 +105,95 @@ watch_health() {
   return 1
 }
 
-# 3. Stop → rollback copy → swap.
-stop_srv || true
+# 3. Stage the replacement before taking the service down.
+stage_file() {
+  local source="$1" target="$2" reference="$3" mode="$4"
+  cp -f "$source" "$target" &&
+    chown --reference="$reference" "$target" &&
+    chmod "$mode" "$target"
+}
+REFERENCE="$DB"
+[ -f "$REFERENCE" ] || REFERENCE="$DATA_DIR"
+stage_file "$RAW" "$WORK/db.new" "$REFERENCE" 0640 || die "cannot stage replacement database"
+
+NEWCONF="${BACKUP%.gz}"
+NEWCONF="${NEWCONF%.db}.config.json"
+if [ "$WITH_CONFIG" -eq 1 ] && [ -f "$NEWCONF" ]; then
+  REFERENCE="$CONF"
+  [ -f "$REFERENCE" ] || REFERENCE="$WORK/db.new"
+  stage_file "$NEWCONF" "$WORK/config.new" "$REFERENCE" 0600 || die "cannot stage replacement config"
+elif [ "$WITH_CONFIG" -eq 1 ]; then
+  say "--with-config requested but no sidecar next to the backup — current config kept"
+fi
+
 PRE="$DB.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)-$$"
-say "rollback copy: $DB → $PRE"
-if [ -f "$DB" ]; then
-  cp -f "$DB" "$PRE" || die "cannot copy the current db aside — aborting, nothing changed"
-fi
-
+STOPPED=0
+SWAP_STARTED=0
 CONFIG_CHANGED=0
-CONFIG_EXISTED=0
-if [ "$WITH_CONFIG" -eq 1 ]; then
-  NEWCONF="${BACKUP%.gz}"
-  NEWCONF="${NEWCONF%.db}.config.json"
-  if [ -f "$NEWCONF" ]; then
-    if [ -f "$CONF" ]; then
-      cp -f "$CONF" "$WORK/config.json" || die "cannot save current config"
-      cp -f "$CONF" "$CONF.pre-restore" || die "cannot save config rollback copy"
-      CONFIG_EXISTED=1
+START_ATTEMPTED=0
+recover() {
+  local result=$?
+  trap - EXIT
+  if [ "$STOPPED" -eq 1 ]; then
+    say "restore failed — recovering the previous service"
+    if [ "$START_ATTEMPTED" -eq 1 ]; then
+      stop_srv
     fi
-    cp -f "$NEWCONF" "$CONF" || die "cannot install config sidecar"
-    CONFIG_CHANGED=1
-    say "config restored from sidecar: $NEWCONF (previous saved as $CONF.pre-restore)"
-  else
-    say "--with-config requested but no sidecar next to the backup — current config kept"
+    if [ "$SWAP_STARTED" -eq 1 ]; then
+      rm -f "$DB-wal" "$DB-shm" || die "cannot clear replacement WAL/SHM"
+      if [ -f "$PRE" ]; then
+        cp -p "$PRE" "$WORK/db.roll" && mv -f "$WORK/db.roll" "$DB" \
+          || die "database rollback failed — original copy: $PRE"
+        if [ -f "$PRE-wal" ]; then
+          cp -p "$PRE-wal" "$DB-wal" || die "cannot restore original WAL"
+        fi
+      else
+        rm -f "$DB" || die "cannot remove replacement database"
+      fi
+    fi
+    if [ "$CONFIG_CHANGED" -eq 1 ]; then
+      if [ -f "$WORK/config.original" ]; then
+        mv -f "$WORK/config.original" "$CONF" || die "cannot restore original config"
+      else
+        rm -f "$CONF" || die "cannot remove replacement config"
+      fi
+    fi
+    if start_srv && watch_health; then
+      say "rollback verified — previous service healthy again"
+    else
+      say "previous service health could not be verified"
+    fi
   fi
-else
-  say "config.json kept as-is (use --with-config to restore the sidecar too)"
-fi
+  rm -rf "$WORK"
+  exit "$result"
+}
+trap recover EXIT
 
-# WAL/SHM of the *current* db belong to the old instance — the fresh file
-# lands without them, so anything not checkpointed into $DB at backup time
-# would be LOST. That is exactly the documented backup caveat; warn loudly.
-for ext in -wal -shm; do
-  [ -f "$DB$ext" ] && { say "removing stale $DB$ext (belongs to the old db, not in the backup)"; rm -f "$DB$ext"; }
-done
-cp -f "$RAW" "$DB.new" && mv -f "$DB.new" "$DB" || die "swap failed — rollback copy is ready at $DB.pre-restore.*"
-chmod 0640 "$DB"
-
-# 4. Start → health → roll back on failure.
-if start_srv; then
-  if watch_health; then
-    say "restore complete — db now serves $DB (from $BACKUP)"
-    rm -rf "$WORK"
-    exit 0
-  fi
-fi
-
-say "FAILING — rolling back to the pre-restore copy"
-# The failed restored instance may still hold the restored inode and WAL open.
 stop_srv
-rm -f "$DB-wal" "$DB-shm"
-if [ ! -f "$PRE" ]; then
-  die "no pre-restore database exists — service left stopped; inspect $DB"
-fi
-cp -f "$PRE" "$DB.roll.new" && mv -f "$DB.roll.new" "$DB" && chmod 0640 "$DB" \
-  || die "rollback swap failed — service left stopped; rollback copy: $PRE"
-say "rolled back: $PRE"
-if [ "$CONFIG_CHANGED" -eq 1 ]; then
-  if [ "$CONFIG_EXISTED" -eq 1 ]; then
-    cp -f "$WORK/config.json" "$CONF" || die "config rollback failed — service left stopped"
-  else
-    rm -f "$CONF" || die "cannot remove restored config — service left stopped"
+STOPPED=1
+if [ -f "$DB" ]; then
+  cp -p "$DB" "$PRE" || die "cannot save the current database"
+  if [ -f "$DB-wal" ]; then
+    cp -p "$DB-wal" "$PRE-wal" || die "cannot save the current WAL"
   fi
 fi
-if start_srv && watch_health; then
-  say "rollback verified — service healthy again (database state = pre-restore)"
-else
-  say "rollback database restored but service health could not be verified"
+if [ -f "$WORK/config.new" ] && [ -f "$CONF" ]; then
+  cp -p "$CONF" "$WORK/config.original" && cp -p "$CONF" "$CONF.pre-restore" \
+    || die "cannot save the current config"
 fi
-rm -rf "$WORK"
-exit 1
+
+SWAP_STARTED=1
+rm -f "$DB-wal" "$DB-shm" || die "cannot remove the previous WAL/SHM"
+mv -f "$WORK/db.new" "$DB" || die "cannot install replacement database"
+if [ -f "$WORK/config.new" ]; then
+  mv -f "$WORK/config.new" "$CONF" || die "cannot install replacement config"
+  CONFIG_CHANGED=1
+fi
+
+START_ATTEMPTED=1
+if start_srv && watch_health; then
+  STOPPED=0
+  say "restore complete — db now serves $DB (from $BACKUP)"
+  exit 0
+fi
+die "replacement service did not become healthy"
