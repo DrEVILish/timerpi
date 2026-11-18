@@ -250,7 +250,6 @@ func run() int {
 	g := routes.New(deps)
 	relCtx, relCancel := context.WithCancel(context.Background())
 	defer relCancel()
-	deps.StartReleaser(relCtx) // events end: screens released at end + 4 h
 	hub.SetCommandGate(deps.CommandGate)
 	if cloud {
 		// A venue event's audience comes from its venue; its operators go
@@ -265,6 +264,7 @@ func run() int {
 		deps.ClockHint = agent.ClockHint
 		go agent.Run(relCtx)
 	}
+	deps.StartReleaser(relCtx) // events end: screens released at end + 4 h
 
 	addr := fmt.Sprintf(":%d", config.HTTPPort())
 	// Slow bodies and idle keep-alives can't hold connections forever

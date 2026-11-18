@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -194,7 +193,25 @@ func (d *Deps) apiBoardsDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, err := boards.GetBoard(d.Store.DB, id, bid); err != nil {
+	// Layouts are event-wide. Clear every assignment in the same
+	// transaction, then tell the affected screens to use the plain timer.
+	var hit []struct {
+		ShowID int64  `db:"show_id"`
+		Name   string `db:"name"`
+	}
+	err := d.Store.WriteTransaction(func(tx *timerpi.DB) error {
+		if _, err := boards.GetBoard(tx, id, bid); err != nil {
+			return err
+		}
+		if err := tx.Select(&hit, `SELECT show_id, name FROM screens WHERE board_id = ?`, bid); err != nil {
+			return err
+		}
+		if err := tx.ClearScreenBoard(bid); err != nil {
+			return err
+		}
+		return boards.DeleteBoard(tx, id, bid)
+	})
+	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "no such board"})
 			return
@@ -202,38 +219,13 @@ func (d *Deps) apiBoardsDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := boards.DeleteBoard(d.Store.DB, id, bid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	// Screens using it (layouts are event-wide: any room) go back to the
-	// plain timer, live: collect them before the assignment is cleared.
-	type used struct {
-		room int64
-		name string
-	}
-	var hit []used
-	rooms := d.layoutRooms(id)
-	for _, rid := range rooms {
-		list, _ := d.Store.ListScreens(rid)
-		for _, s := range list {
-			if s.BoardID == bid {
-				hit = append(hit, used{rid, s.Name})
-			}
-		}
-	}
-	// Screens still pointing at the dead board would navigate locked TVs
-	// to a 404 on every join push — fall them back to the show board.
-	if err := d.Store.ClearScreenBoard(id, bid); err != nil {
-		log.Printf("routes: clear screen board %d: %v", bid, err)
-	}
 	for _, u := range hit {
-		d.pushScreen(u.room, u.name)
+		d.pushScreen(u.ShowID, u.Name)
 	}
 	// Unnamed board pages showing it (?board= or as the default) reload
 	// onto the event's next layout.
 	d.pushBoardChanged(id, bid)
-	for _, rid := range rooms {
+	for _, rid := range d.layoutRooms(id) {
 		d.notifyControls(rid)
 	}
 	d.notifyShow(id)

@@ -12,8 +12,8 @@
 
 ## 1. One-line pitch
 
-**TimerPi is a self-hosted cue-timer and audience-interaction system for
-multi-room conferences.** One appliance runs a whole event:
+**TimerPi is a self-hosted live-production platform for conferences.**
+An event brings together:
 
 - walk-in poster screens;
 - audience screens in each room;
@@ -98,15 +98,15 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 
 ### 4.3 Screens and layouts
 
-- **S1** Any browser becomes a screen by opening `/d/`. It shows a "ready" card with its name and waits to be **captured** by a moderator (for their room) or the SuperOperator (any room, or event-wide for walk-ins). No typing on the TV.
+- **S1** Any browser becomes a screen by opening `/d/`. It shows a "ready" card with its name and waits for the Event Technician to **capture** it (any room, or event-wide for walk-ins). No typing on the TV.
 - **S2** Every layout is **customisable** in a visual editor: add, remove, move and resize tiles. The editor previews the screen's theme, aspect ratio and **rotation**.
 - **S3** Built-in templates exist per display type, covering at least the reference event (§5). Choosing a template gives a correct screen with no further editing.
-- **S4** Moderators see their room's screens, and the SuperOperator sees all screens. Both see online/offline status, type, layout and a live preview, and can change layout, theme or rotation remotely. The screen follows within about 2 s.
+- **S4** The Event Technician sees all screens, with online/offline status, type, layout and a live preview, and can change layout, theme or rotation remotely. The screen follows within about 2 s.
 - **S5** Screens survive reboot and network loss. They reconnect by themselves and keep countdowns running locally.
 - **S6** Screens never show operator chrome. Editing happens only in the operator's preview.
 - **S7** **Rotation**: a per-screen setting of 0/90/180/270°. The page rotates its whole layout in software, so a landscape TV hung portrait works without OS configuration.
 - **S8** Event-level walk-in displays aggregate **all rooms** of the event (current session per room, full-day schedule per room, event map). They are live, not page reloads.
-- **S9** Each screen has **its own theme and its own layout**, chosen independently. A screen's name can be edited **inline by double-click / double-tap** wherever operators see it (screens list, previews).
+- **S9** Each screen has an independent choice of theme and layout. Named layouts belong to the event and can be shared by screens across rooms. Built-ins can be assigned directly and edited as named copies. A screen's name can be edited **inline by double-click / double-tap** in the screens list and previews.
 
 ### 4.4 Audience interaction (Slido-style)
 
@@ -150,7 +150,7 @@ Each requirement has an ID so STATUS.md and tests can point at it.
 - **H3** Boxes paired to an event discover each other (mDNS, signed with the event key). If the primary dies, another takes over. The primary answers `timerpi.local`.
 - **H6** A **cloud server** hosts many events at once. During a show the **venue's primary box is the event's home** and the cloud relays audience traffic and keeps a copy ([VENUE-CLOUD.md](VENUE-CLOUD.md)).
 - **H7** A **box is one display, attached to one event at a time**. An unpaired box shows a pairing code; the SuperOperator types it on the event dashboard (cloud or `timerpi.local`, with or without internet).
-- **H8** Every event has an end date/time. Boxes release their pairing 4 hours after it (never mid-timer), or at once when the event is deleted.
+- **H8** Every event has an end date/time. Boxes release their pairing 4 hours after it, once no room has a running or paused cue, or at once when the event is deleted.
 - **H4** Optional OSC bridge to a CuTePi media player: GO fires the paired media cue, and blackout fires panic.
 - **H5** Screens can be browsers on anything: kiosk Pis, smart TVs, PCs. The Pi's native renderer is an optional extra for presenter countdowns.
 
@@ -182,17 +182,28 @@ TimerPi v2 is done when an operator team can run this event from the WebUI alone
 
 This set is a default, not a limit: any number of rooms, and any number of screens of any type per room.
 
+Run the scenario through preparation, capture, live operation, recovery and
+teardown. Verify LAN timing, control and presenter screens during internet loss.
+Verify that cloud controls and audience devices show their paused states
+where applicable, then reconnect and resume on the current event state.
+Include a primary-box outage and return, the stated A10 load, a physical
+portrait walk-in and release after event end. Use
+[HW-DRILLS.md](HW-DRILLS.md) for measured gates and [STATUS.md](../STATUS.md)
+for outstanding field evidence.
+
 ## 6. Out of scope (v2)
 
 - Personal user accounts and SSO.
 - Multi-venue events (one event per venue, 2026-10-06).
 - Audio alerts. Alerts are visual only.
 - Multi-day *UI*. The data model is still designed for days (§4.7).
+- Registration, ticketing, payments and CRM.
 
 ## 7. Decisions log (owner-confirmed)
 
 | Date | Decision |
 |---|---|
+| 2026-11-15 | Conference live production is the product boundary. Keep current capabilities in scope during the redesign. Local show operation must continue without internet. Cloud and audience features may pause. |
 | 2026-10-03 | Audible alerts dropped. |
 | 2026-10-03 | Home page never lists events or rooms (codes are credentials). |
 | 2026-10-05 | BLANK is instant (no confirm). |

@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -75,6 +76,32 @@ func TestTypeWithoutLayoutGetsDefault(t *testing.T) {
 		if s, err := ts.db.GetScreenByName(ts.showID, "S-"+name); err != nil || s.Template != want || s.BoardID != 0 {
 			t.Errorf("%s screen: template=%q board=%d, want %q", name, s.Template, s.BoardID, want)
 		}
+	}
+}
+
+func TestChangingDisplayTypeReplacesItsPreviousLayout(t *testing.T) {
+	ts := newAPITest(t)
+	layout, err := boards.CreateBoard(ts.db, ts.showID, "Shared walk-in", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Door", "Lobby"} {
+		body := fmt.Sprintf(`{"name":%q,"kind":"walkin","boardId":%d}`, name, layout.ID)
+		if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/screens/config", []byte(body), "application/json"); code != 200 {
+			t.Fatalf("configure %s: %d %s", name, code, b)
+		}
+	}
+	body := fmt.Sprintf(`{"name":"Door","kind":"presenter","boardId":%d}`, layout.ID)
+	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/screens/config", []byte(body), "application/json"); code != 200 {
+		t.Fatalf("change display type: %d %s", code, b)
+	}
+	door, err := ts.db.GetScreenByName(ts.showID, "Door")
+	if err != nil || door.Kind != "presenter" || door.Template != "dsm" || door.BoardID != 0 {
+		t.Fatalf("Door did not switch to a presenter layout: %+v, %v", door, err)
+	}
+	lobby, err := ts.db.GetScreenByName(ts.showID, "Lobby")
+	if err != nil || lobby.BoardID != layout.ID || lobby.Kind != "walkin" {
+		t.Fatalf("Lobby lost the shared layout: %+v, %v", lobby, err)
 	}
 }
 

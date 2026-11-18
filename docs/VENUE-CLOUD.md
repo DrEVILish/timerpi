@@ -39,8 +39,8 @@
        └──────── event deleted at any time: every box releases ────────┘
 ```
 
-- **Event end:** every event gets an **end date and time** (venue local time). Multi-day events end on their last day. The SuperOperator can extend it.
-- **Release at end + 4 h**, but never while a room's timer is running (release waits for it to stop). Released boxes forget the event key and their screen settings and show a pairing code again.
+- **Event end:** the Event Technician sets or extends the **end date and time** in Setup (venue local time). Multi-day events end on their last day. Current events with an unset end have no automatic release.
+- **Release at end + 4 h** waits until each room's running or paused cue has stopped. The current writer (the venue primary for a paired show) commits the release marker and removal of screen settings and keys together. Members and electing boxes wait for the primary. Released boxes forget the event key and show a pairing code again.
 - **Delete:** deleting the event releases every box at once. Offline, a box learns this the next time it reaches whoever deleted it (the cloud or the primary box).
 
 ## 4. Pairing
@@ -155,10 +155,12 @@ The cloud and the boxes run **the same TimerPi binary**, built twice
 
 Rules:
 
-- **Versions match.** The mDNS TXT record and the cloud uplink carry a
-  protocol major (`proto=3`). A box never joins a primary, and a primary never
-  links to the cloud, with a different major, instead of half-working. Nobody
-  is asked to do anything: the older box updates itself at its next boot (§14).
+- **Versions match.** The mDNS TXT record (`proto=3`) and the cloud uplink
+  (`X-TimerPi-Proto: 3`) carry the protocol major. A box ignores another mesh
+  major. The cloud and primary require the same major before opening the
+  uplink and registering an offline event. Deploy header support to both
+  sides before a show. During a mismatch, LAN operation continues and
+  cloud relay is unavailable. Boxes check for upgrades at boot (§14).
 - **Outbound only.** Boxes always dial the cloud (one WebSocket from the
   primary, §6). Nothing is opened on the venue router; the cloud never needs to
   reach into a venue.

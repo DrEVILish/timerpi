@@ -842,9 +842,8 @@ func UpdateBoard(db *sqlx.DB, showID, bid int64, name, layoutRaw *string) (Board
 	return GetBoard(db, showID, bid)
 }
 
-// DeleteBoard removes a layout of showID's event (a room with none left
-// re-seeds on next view via EnsureDefaultBoard).
-func DeleteBoard(db *sqlx.DB, showID, bid int64) error {
+// DeleteBoard removes a layout of showID's event.
+func DeleteBoard(db Store, showID, bid int64) error {
 	_, err := db.Exec(`DELETE FROM display_boards WHERE (`+sameEvent+`) AND id = ?`, showID, showID, bid)
 	return err
 }

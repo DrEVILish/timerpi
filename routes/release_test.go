@@ -24,8 +24,10 @@ func TestEventEndReleasesScreens(t *testing.T) {
 	}
 
 	// A running timer holds the release back.
-	if _, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: "Talk", DurationMS: 600_000}); err != nil {
-		t.Fatal(err)
+	for _, label := range []string{"Talk", "Questions"} {
+		if _, err := ts.db.CreateCue(ts.showID, timerpi.Cue{Label: label, DurationMS: 600_000}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/cmd/go", nil, ""); code != 200 {
 		t.Fatalf("go: %d %s", code, b)
@@ -35,6 +37,25 @@ func TestEventEndReleasesScreens(t *testing.T) {
 	}
 	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/cmd/pause", nil, ""); code != 200 {
 		t.Fatalf("pause: %d %s", code, b)
+	}
+	if got := ts.deps.ReleaseDue(); len(got) != 0 || !ts.db.ScreenKeyValid(ts.showID, "Hall", key) {
+		t.Fatal("a paused cue can still resume, so its screen must stay assigned")
+	}
+	if code, b := ts.call("POST", "/api/shows/"+ts.showCode+"/cmd/next", nil, ""); code != 200 {
+		t.Fatalf("next: %d %s", code, b)
+	}
+	if _, err := ts.db.Exec(`CREATE TRIGGER reject_screen_release BEFORE DELETE ON screens
+		BEGIN SELECT RAISE(ABORT, 'fixture'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if got := ts.deps.ReleaseDue(); len(got) != 0 || !ts.db.ScreenKeyValid(ts.showID, "Hall", key) {
+		t.Fatal("failed release discarded a screen")
+	}
+	if ev, ok := ts.db.ResolveEvent(ts.eventCode); !ok || ev.ReleasedAt != 0 {
+		t.Fatal("event marked released despite failed screen cleanup")
+	}
+	if _, err := ts.db.Exec(`DROP TRIGGER reject_screen_release`); err != nil {
+		t.Fatal(err)
 	}
 	if got := ts.deps.ReleaseDue(); len(got) != 1 {
 		t.Fatalf("not released after end + 4 h: %v", got)
@@ -63,6 +84,31 @@ func TestEventEndReleasesScreens(t *testing.T) {
 	}
 	if _, b := ts.anon("GET", "/api/pairing/status?event=NOPE1234", nil, ""); !strings.Contains(string(b), `"exists":false`) {
 		t.Fatalf("unknown event: %s", b)
+	}
+}
+
+func TestReplicaLeavesEventReleaseToPrimary(t *testing.T) {
+	ts := newAPITest(t)
+	ev, ok := ts.db.ResolveEvent(ts.eventCode)
+	if !ok {
+		t.Fatal("event not found")
+	}
+	if err := ts.db.SetEventEnd(ev.ID, time.Now().Add(-5*time.Hour).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	key, err := ts.db.ScreenKey(ts.showID, "Hall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, primary := range []string{"", "http://primary.local"} {
+		ts.deps.BoxWriteTarget = func() (string, bool) { return primary, false }
+		if released := ts.deps.ReleaseDue(); len(released) != 0 || !ts.db.ScreenKeyValid(ts.showID, "Hall", key) {
+			t.Fatalf("replica released the event with primary %q", primary)
+		}
+	}
+	ts.deps.BoxWriteTarget = func() (string, bool) { return "", true }
+	if released := ts.deps.ReleaseDue(); len(released) != 1 || ts.db.ScreenKeyValid(ts.showID, "Hall", key) {
+		t.Fatal("promoted primary did not release the expired event")
 	}
 }
 

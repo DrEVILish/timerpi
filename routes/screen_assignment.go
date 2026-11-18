@@ -67,14 +67,25 @@ func (d *Deps) assignScreen(showID int64, name string, change screenAssignment) 
 	if change.Theme != nil && !screenThemeOK(*change.Theme) {
 		return timerpi.Screen{}, screenAssignmentInputError("bad theme name")
 	}
-	if change.BoardID != nil && !d.boardKnown(showID, *change.BoardID) {
-		return timerpi.Screen{}, screenAssignmentInputError("unknown board")
-	}
 	tx, err := d.Store.Beginx()
 	if err != nil {
 		return timerpi.Screen{}, err
 	}
 	defer tx.Rollback()
+	if change.BoardID != nil {
+		bid := *change.BoardID
+		if bid < 0 {
+			return timerpi.Screen{}, screenAssignmentInputError("unknown board")
+		}
+		if bid > 0 {
+			if _, err := boards.GetBoard(tx, showID, bid); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return timerpi.Screen{}, screenAssignmentInputError("unknown board")
+				}
+				return timerpi.Screen{}, err
+			}
+		}
+	}
 	if change.WaitingID != 0 {
 		res, err := tx.Exec(`UPDATE waiting_screens SET assigned = ?, screen = ? WHERE id = ? AND (assigned = '' OR assigned = ?)`,
 			change.WaitingCode, name, change.WaitingID, change.WaitingCode)
@@ -163,6 +174,11 @@ func resolveScreenAssignment(current timerpi.Screen, change screenAssignment) (t
 	}
 	switch change.Mode {
 	case configureScreen:
+		// A type change may echo the old board ID from the gallery.
+		// Only an explicitly different named layout overrides the default.
+		if current.Kind != next.Kind && current.BoardID == next.BoardID {
+			next.BoardID = 0
+		}
 		if look && next.BoardID == 0 && (next.Template != "" || next.Kind != "") {
 			next.Template = boards.FitTemplate(next.Template, next.Kind)
 		}
@@ -189,16 +205,6 @@ var screenThemeRe = regexp.MustCompile(`^[a-z0-9_-]{0,40}$`)
 // core/tokens layers, which are not themes (REPORT #18).
 func screenThemeOK(t string) bool {
 	return screenThemeRe.MatchString(t) && t != "core" && t != "tokens"
-}
-
-// boardKnown reports whether bid names a board of this show (assignments
-// must not strand a locked TV on a 404 ?board= page).
-func (d *Deps) boardKnown(showID, bid int64) bool {
-	if bid <= 0 {
-		return bid == 0
-	}
-	_, err := boards.GetBoard(d.Store.DB, showID, bid)
-	return err == nil
 }
 
 // templateKey normalises a built-in key; ok=false when unknown.

@@ -34,7 +34,7 @@
 | T1–T5 timing | ✅ | Mature |
 | T6 import | ✅ | |
 | T7 blackout room / event | ✅ | Room, and event-wide from the SuperOperator dashboard |
-| S1 capture | ✅ | Capture asks name, display type (Audience/Walk-in/Presenter), layout (templates for that type), mounting (rotation) and theme; only into rooms you moderate |
+| S1 capture | ✅ | Event Technician captures into any room, choosing name, display type, layout, mounting and theme |
 | S2 layout editor | ✅ | Editor shows the screen's real canvas (rows × 12, landscape or portrait) in its theme |
 | S3 templates per display type | ✅ | 13 templates in a catalog grouped by type, incl. portrait walk-ins (`boards.Templates`) |
 | S4 remote screen management | ✅ | Per room and event-wide screens view (N3) |
@@ -61,6 +61,7 @@
 | H1–H3 appliance, offline LAN, mesh | 🟡 | Real ARM64 app, signed discovery/copy/takeover and native KMS tested; permanent bridged installation/boot and remaining field checks are open (H1–H4, D1) |
 | H4 CuTePi OSC | ✅ | |
 | H5 any browser as screen | ✅ | |
+| H8 end and release | 🟡 | N12 release waits for running and paused cues and commits with screen removal. End is editable in Setup. Selecting an end for quick timers and older events is still open ([#2](https://github.com/DrEVILish/timerpi/issues/2)) |
 | M2 day-ready model | 🟡 | `cues.day` and `events.days` exist (always 1). Queries are not day-scoped yet (N10) |
 | htmx 4 vendored | ✅ | N8 |
 
@@ -73,7 +74,6 @@ Bugs from the 2026-10-06 code review are tracked in [docs/BUGLOG.md](docs/BUGLOG
 | **N10** | Day-scope the queries. `cues.day` (default 1) and `events.days` exist; nothing reads them | M2 | Waits for the multi-day UI (out of scope for v2) |
 | **N11** | A dedicated tablet layout for the Run tab | L6 | 1024×768 shows the band, transport, On air column and 4+ rows (U49, U50, U53). [Optional component-backed UI critique](reviews/ui-critique.md) proposes improvements; no design changes approved |
 | **N13** | Pairing code on the DRM splash | H7 | Waits for the kiosk decision (N18). The code already shows on `/d/box` |
-| **N17** | Protocol-version check on the cloud uplink | H6 | Boxes already ignore mesh peers on another major |
 | **N18** | Kiosk mode in the box installer | H3 | Owner decision pending. The installer and mesh are built, not tried on hardware |
 | **N19** | Warn when two DHCP servers are on the venue network | H3 | |
 | **N20** | Run the load harness on the real cloud container | H6 | `deploy/cloud/` and OPS §8 are ready |
@@ -103,7 +103,7 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 
 **Event model.** N1 events, rooms, passwords, sessions · N2 home page and event lobby · N3 Event Technician dashboard, event-wide screens · N4 screen type and rotation, template catalog · N5 two push targets · N6 Q&A entries, upvotes, spotlight, auto-approve · N7 event walk-in tiles and feed · N8 htmx 4.0.1 vendored · N9 layout and per-tile animation.
 
-**Venue and cloud** (qualification scope in §4). N12 event end releases screens · N13 pairing by 6-digit code, signed mDNS · N14 `timerpi.local` follows the leading box, clock hint · N15 cloud↔venue event copy · N16 phones stay on the cloud · N17 `TIMERPI_ROLE`, protocol version in `/health` and mDNS · N18 box installer and venue mesh · N19 network page radios and peers · N21 boot-time updates; release key embedded 2026-11-12 · H5b external audience load probe and real-Pi browser offline harness.
+**Venue and cloud** (qualification scope in §4). N12 event end releases screens · N13 pairing by 6-digit code, signed mDNS · N14 `timerpi.local` follows the leading box, clock hint · N15 cloud↔venue event copy · N16 phones stay on the cloud · N17 `TIMERPI_ROLE`, protocol version in `/health` and mDNS, required major match on cloud uplink and registration · N18 box installer and venue mesh · N19 network page radios and peers · N21 boot-time updates; release key embedded 2026-11-12 · H5b external audience load probe and real-Pi browser offline harness.
 
 **Screens and displays.** U1 handheld screens follow the device, not Mounted · U2 no fullscreen tap or hint · U3 schedule line format · U4 Current & next tile · U5 no codes on screens · U6 "Room: <name>" when there are several rooms · U7 list tiles rebuild only on change · DR1, DR2 display reviews (content fit, ftl components, empty tiles give their room away).
 
@@ -125,8 +125,21 @@ One line per ID, so citations in code and commits still resolve. Detail: `git lo
 2. **N20**: the load harness on the cloud container, before the first show.
 3. **Owner decision**: N18 kiosk mode (unblocks N13).
 4. **RS37**: review remaining room/rendering responsibilities, behind the browser tests.
-5. N11, N17, N19 and U51 as they come up. N10 waits for the multi-day UI.
+5. N11, N19 and U51 as they come up. N10 waits for the multi-day UI.
 
 ## 7. Open questions
 
-None open. VENUE-CLOUD §7 records the sync rules (2026-10-06).
+The [design review](https://github.com/DrEVILish/timerpi/issues/1) has
+owner-confirmed scope in PRODUCT §7. A replacement lifecycle and migration
+plan remain open. Other decisions needed:
+
+- When to require an end for quick timers, imports and existing events
+  ([#2](https://github.com/DrEVILish/timerpi/issues/2)).
+- Whether moderators can recover a screen mid-show and which schedule
+  fields code-only displays may see ([#3](https://github.com/DrEVILish/timerpi/issues/3)).
+- Acceptable state loss after primary failure and how to surface divergent
+  browser edits for operator recovery ([#4](https://github.com/DrEVILish/timerpi/issues/4)).
+- Measured recovery limits for the first two-room release beyond the
+  existing field gates in §4 ([#6](https://github.com/DrEVILish/timerpi/issues/6)).
+- Permanent shared CuTePi/TimerPi network profile and rollout
+  ([#7](https://github.com/DrEVILish/timerpi/issues/7)).

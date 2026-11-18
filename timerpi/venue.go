@@ -68,9 +68,30 @@ func (d *DB) MarkEventReleased(id int64, at time.Time) error {
 	return err
 }
 
-// ForgetEventScreens drops every screen of the event's rooms (their keys
-// go with them: the screens are released) and returns room id → names.
-func (d *DB) ForgetEventScreens(eventID int64) (map[int64][]string, error) {
+// ReleaseEventScreens rechecks eligibility and releases the event and its
+// screens together. Nil means the event is no longer due for release.
+func (d *DB) ReleaseEventScreens(eventID int64, now time.Time) (map[int64][]string, error) {
+	var released map[int64][]string
+	err := d.WriteTransaction(func(tx *DB) error {
+		res, err := tx.Exec(`UPDATE events SET released_at = ?
+			WHERE id = ? AND home <> 'venue' AND released_at = 0 AND ends_at > 0 AND ends_at + ? <= ?
+			AND NOT EXISTS (SELECT 1 FROM runtime_state r JOIN shows s ON s.id = r.show_id
+				WHERE s.event_id = events.id AND r.running = 1)`,
+			now.UnixMilli(), eventID, ReleaseAfter.Milliseconds(), now.UnixMilli())
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil || n == 0 {
+			return err
+		}
+		released, err = tx.forgetEventScreens(eventID)
+		return err
+	})
+	return released, err
+}
+
+func (d *DB) forgetEventScreens(eventID int64) (map[int64][]string, error) {
 	var rows []struct {
 		ShowID int64  `db:"show_id"`
 		Name   string `db:"name"`

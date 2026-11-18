@@ -46,6 +46,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"timerpi/buildinfo"
 	"timerpi/timerpi"
 )
 
@@ -55,6 +56,19 @@ var StableAfter = 2 * time.Minute
 // LinkAuthHeader carries "<unix seconds>.<hex HMAC>" with the event mesh key
 // over "<purpose>|<event code>|<unix seconds>".
 const LinkAuthHeader = "X-TimerPi-Auth"
+
+// LinkProtoHeader carries the protocol major on the cloud uplink.
+const LinkProtoHeader = "X-TimerPi-Proto"
+
+func requireLinkProto(c *gin.Context) bool {
+	want := strconv.Itoa(buildinfo.Proto)
+	c.Header(LinkProtoHeader, want)
+	if c.GetHeader(LinkProtoHeader) == want {
+		return true
+	}
+	c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "venue and cloud need the same link protocol", "proto": buildinfo.Proto})
+	return false
+}
 
 // LinkAuth signs a link request (venue side).
 func LinkAuth(key []byte, purpose, event string, now time.Time) string {
@@ -177,7 +191,7 @@ func (l *venueLink) request(ctx context.Context, f LinkFrame) (LinkFrame, error)
 // ------------------------------------------------------------ endpoints --
 
 var linkUpgrader = websocket.Upgrader{ReadBufferSize: 4096, WriteBufferSize: 4096,
-	CheckOrigin: func(*http.Request) bool { return true }} // boxes, not browsers; signed
+	CheckOrigin: SameOriginRequest}
 
 func registerLink(r gin.IRouter, d *Deps) {
 	r.GET("/api/link/bundle", d.apiLinkBundle)
@@ -206,6 +220,9 @@ func (d *Deps) apiLinkBundle(c *gin.Context) {
 func (d *Deps) apiLinkRegister(c *gin.Context) {
 	if !d.isCloud() {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
+		return
+	}
+	if !requireLinkProto(c) {
 		return
 	}
 	var body struct {
@@ -248,6 +265,9 @@ func (d *Deps) apiLink(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
 		return
 	}
+	if !requireLinkProto(c) {
+		return
+	}
 	ev, ok := d.Store.ResolveEvent(c.Query("event"))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "unknown event"})
@@ -257,7 +277,7 @@ func (d *Deps) apiLink(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "not this event's venue"})
 		return
 	}
-	conn, err := linkUpgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := linkUpgrader.Upgrade(c.Writer, c.Request, http.Header{LinkProtoHeader: {strconv.Itoa(buildinfo.Proto)}})
 	if err != nil {
 		return
 	}

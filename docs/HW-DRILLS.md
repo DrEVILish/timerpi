@@ -50,8 +50,11 @@ playback owner:
   reachability, then run signed discovery, event-copy and takeover checks.
   A BATMAN-adv link alone does not prove event synchronization or recovery.
 
-Keep the shared device inventory with the CuTePi allocation record, rather
-than duplicating host addresses and playback service state here. Never run
+The [CuTePi allocation record](https://github.com/DrEVILish/CuTePi/blob/main/docs/SHARED_PI_ALLOCATION.md)
+holds device inventory, the two-Pi grant and completed temporary sessions.
+Those sessions are released. A new slot is needed for further changes.
+The permanent [shared-profile decision](https://github.com/DrEVILish/timerpi/issues/7)
+is still open. Never run
 the TimerPi installer, install tools, restart playback, open DRM devices or
 reconfigure a shared Pi outside its agreed slot.
 
@@ -239,6 +242,16 @@ by its own smart-TV browser (or any PC browser on a portrait monitor).
 | C2 | §3 steps 2+4+5 PASS with `connected`/`open` channels on a real machine |
 | H5 | §4a PASS at 200 and 1,000; §4b PASS with the phone count and access point noted |
 | H6 | §5 steps 2–6 PASS on a kiosk Pi and on one other browser |
+
+For the PRODUCT §5 release scenario, keep browser and integration results
+alongside the physical evidence. Record the build, deployment, client path,
+load, outage duration, recovery time and any lost or stale state for each
+run. Check that the LAN keeps timing and control during internet loss, that
+remote controls and audience pages show when actions are paused, and that
+reconnect resumes from the current primary. Test cloud and physical
+venue-phone load separately from the direct Ethernet probes. During the
+venue run, exercise BATMAN inter-Pi sync while clients reach the primary
+over Ethernet. See STATUS §4 for checks still open.
 
 ## 7. Current qualification evidence — 2026-11-15
 

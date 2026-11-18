@@ -29,6 +29,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"timerpi/buildinfo"
 	"timerpi/routes"
 	"timerpi/timerpi"
 )
@@ -126,17 +127,29 @@ func (a *Agent) dial(ctx context.Context, p Pairing, ev timerpi.Event) error {
 	}
 	hdr := http.Header{}
 	hdr.Set(routes.LinkAuthHeader, routes.LinkAuth(key, "link", p.Event, time.Now()))
+	major := strconv.Itoa(buildinfo.Proto)
+	hdr.Set(routes.LinkProtoHeader, major)
 	u := wsURL(a.cloud()) + "/api/link?event=" + url.QueryEscape(p.Event)
 	d := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, resp, err := d.DialContext(ctx, u, hdr)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
+		if resp != nil && resp.StatusCode == http.StatusNotFound && resp.Header.Get(routes.LinkProtoHeader) == major {
 			return a.register(ctx, p, ev, key)
 		}
 		a.link.mu.Lock()
 		a.link.cloudOK = time.Time{}
 		a.link.mu.Unlock()
+		if resp != nil && resp.Header.Get(routes.LinkProtoHeader) != major {
+			return fmt.Errorf("cloud link protocol does not match local protocol %s", major)
+		}
 		return err
+	}
+	if resp.Header.Get(routes.LinkProtoHeader) != major {
+		_ = conn.Close()
+		a.link.mu.Lock()
+		a.link.cloudOK = time.Time{}
+		a.link.mu.Unlock()
+		return fmt.Errorf("cloud link protocol does not match local protocol %s", major)
 	}
 	conn.SetReadLimit(32 << 20)
 	a.link.mu.Lock()
@@ -181,7 +194,10 @@ func (a *Agent) register(ctx context.Context, p Pairing, ev timerpi.Event, key [
 		return err
 	}
 	body, _ := json.Marshal(map[string]any{"meshKey": p.MeshKey, "bundle": json.RawMessage(raw)})
-	if !a.post(ctx, a.cloud()+"/api/link/register", body, map[string]string{routes.LinkAuthHeader: routes.LinkAuth(key, "register", p.Event, time.Now())}) {
+	if !a.post(ctx, a.cloud()+"/api/link/register", body, map[string]string{
+		routes.LinkAuthHeader:  routes.LinkAuth(key, "register", p.Event, time.Now()),
+		routes.LinkProtoHeader: strconv.Itoa(buildinfo.Proto),
+	}) {
 		return errors.New("the cloud refused the event")
 	}
 	a.logf("venue: event %s registered with the cloud", p.Event)

@@ -260,8 +260,8 @@ func (d *DB) ScreenKeyValid(showID int64, name, key string) bool {
 // TVs to a 404 on every join push).
 //
 // Layouts are event-wide, so every screen of every room using it falls
-// back (board ids are unique box-wide; showID is kept for callers).
-func (d *DB) ClearScreenBoard(showID, bid int64) error {
+// back (board ids are unique box-wide).
+func (d *DB) ClearScreenBoard(bid int64) error {
 	_, err := d.Exec(`UPDATE screens SET board_id = 0 WHERE board_id = ?`, bid)
 	if err != nil {
 		return fmt.Errorf("timerpi: clear screen board: %w", err)

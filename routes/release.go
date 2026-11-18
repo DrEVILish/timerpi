@@ -1,7 +1,7 @@
 // release.go — events end (VENUE-CLOUD §3, STATUS N12). Four hours after
 // an event's end its screens are released: their settings and keys are
 // forgotten and open screens go back to the ready card, waiting to be set
-// up again. Never while a room's timer is running: release waits for it.
+// up again. Release waits until every started cue has stopped, including pauses.
 // Deleting an event releases everything at once (DeleteEvent drops the
 // screens with the rooms).
 //
@@ -25,12 +25,13 @@ import (
 var releaseNow = time.Now
 
 // ReleaseDue releases every event whose end + 4 h has passed, unless one
-// of its rooms has a timer running. It returns the released events.
+// of its rooms has an active cue, running or paused. It returns the released events.
 func (d *Deps) ReleaseDue() []timerpi.Event {
 	if d.Store == nil {
 		return nil
 	}
-	due, err := d.Store.EventsDue(releaseNow())
+	now := releaseNow()
+	due, err := d.Store.EventsDue(now)
 	if err != nil {
 		log.Printf("routes: release check: %v", err)
 		return nil
@@ -43,9 +44,15 @@ func (d *Deps) ReleaseDue() []timerpi.Event {
 		if d.eventRunning(ev.ID) {
 			continue
 		}
-		gone, err := d.Store.ForgetEventScreens(ev.ID)
+		if _, err := d.memberWriteError(); err != nil {
+			break // paired replicas and electing boxes wait for the primary
+		}
+		gone, err := d.Store.ReleaseEventScreens(ev.ID, now)
 		if err != nil {
 			log.Printf("routes: release %s: %v", ev.Code, err)
+			continue
+		}
+		if gone == nil {
 			continue
 		}
 		for sid, names := range gone {
@@ -59,9 +66,6 @@ func (d *Deps) ReleaseDue() []timerpi.Event {
 			}
 			d.notifyControls(sid)
 		}
-		if err := d.Store.MarkEventReleased(ev.ID, releaseNow()); err != nil {
-			log.Printf("routes: release %s: %v", ev.Code, err)
-		}
 		log.Printf("routes: event %s ended: released its screens", ev.Code)
 		if d.OnRelease != nil {
 			d.OnRelease(ev)
@@ -71,14 +75,14 @@ func (d *Deps) ReleaseDue() []timerpi.Event {
 	return out
 }
 
-// eventRunning: a timer is running in one of the event's rooms.
+// eventRunning includes paused cues, which are still eligible to resume.
 func (d *Deps) eventRunning(eventID int64) bool {
 	if d.Engines == nil {
 		return false
 	}
 	for _, id := range d.eventRoomIDs(eventID) {
 		if eng, err := d.Engines.Get(id); err == nil {
-			if rt := eng.Runtime(); rt.Running && !rt.Paused {
+			if eng.Runtime().Running {
 				return true
 			}
 		}

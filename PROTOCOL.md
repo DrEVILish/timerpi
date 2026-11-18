@@ -7,7 +7,7 @@
 **Conventions**
 
 - `:ident`, `:code` and `:room` are 8-char codes (`K7QP-M3XB` or `K7QPM3XB`). Under `/api/shows` and `/c/`, `/d/`, `/a/` they are **room** codes; under `/e/` and `/api/events` `:code` is the **event** code. Numeric IDs return **404**.
-- **mod** = needs a moderator session for that room (`tp_rm_<ROOM>`) or the event's supervisor session (`tp_ev_<EVENT>`); otherwise 401. **super** = needs the supervisor session. **box** = needs any protected event's supervisor session (open while none is protected). See ARCHITECTURE §8.
+- **mod** = needs a moderator session for that room (`tp_rm_<ROOM>`) or the event's Event Technician session (`tp_ev_<EVENT>`); otherwise 401. **super** = needs the Event Technician session. **box** = needs the separate box session (`tp_box`). See ARCHITECTURE §8.
 - Everything goes through OriginGuard (strict mode only when `allowed_hosts` is set).
 - Bodies are capped at 8 MiB, or 32 MiB on `/import` paths.
 
@@ -21,7 +21,7 @@
 | `GET /e/:code` | event-code holder | Event lobby: pick a room (moderator sign-in), SuperOperator sign-in |
 | `GET /e/:code/admin` | super | SuperOperator dashboard (live rooms, rooms admin, event settings). No session → 302 to the lobby |
 | `GET /c/:ident` | mod | Room dashboard: running order, transport, messages, Audience panel, audience join QR |
-| `GET /screens/:ident` | mod | Screens gallery: capture, preview, theme/layout, layout editor |
+| `GET /screens/:ident` | super | Screens gallery: capture, preview, theme/layout, layout editor |
 | `GET /settings` | box | Box settings: device identity, default theme, OSC. No box session → 303 to `/box?next=/settings` |
 | `GET /box` | anyone | Box password: first-time setup, sign-in, or (signed in) change password / sign out |
 | `POST /logout` | — | Drops every TimerPi session cookie on this browser (a same-origin form; `GET` just redirects home, so a cross-site link can't sign anyone out) |
@@ -29,7 +29,7 @@
 | `POST /e/:code/leave` | — | "Leave event": drops this browser's sessions for that event (SuperOperator + its rooms), then 303 home. `GET` just redirects home |
 | `GET /super`, `GET /setup` | — | Retired; 302 to `/` |
 | `GET /d/` | screen | READY card; registers in the waiting room until captured |
-| `GET /d/:ident` | screen | `?view=stage` (default; redirects to the bare URL, keeping the rest of the query) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (mod) |
+| `GET /d/:ident` | screen | `?view=stage` (default; redirects to the bare URL, keeping the rest of the query) \| `next` \| `daysheet` \| `clock` \| `board`. Board view: `&board=<id>`. Also `?screen=<name>`, `?theme=`, `?accent=`/`?bg=` (hex). `?edit=1&preview=1` = editor (super) |
 | `GET /a/:code` | audience | Phone page (open) |
 | `GET /zone/:name` | — | Retired (STATUS C10); 302 to `/`. The event walk-in replaces it |
 | `GET /favicon.ico` | browser | 301 to `/img/timerpi.svg` |
@@ -55,7 +55,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `GET /api/events/:code` | Lobby data: `{event:{code, name, theme, mapAsset, hasSuperPassword, isSuper, rooms[{code, name, pos, hasPassword, canModerate}]}}` |
 | `POST /api/events/:code/login {pw, now?}` | Event Technician sign-in. `now` (browser ms) sets a box's clock when it was never set |
 | `POST /api/events/:code/rooms/:room/login {pw}` | Moderator sign-in (`pw` empty when the room has none) → `{room:"/c/<code>"}` |
-| `PATCH /api/events/:code {name?, theme?, password?, endsAt?}` · `DELETE /api/events/:code` | super. `endsAt` epoch ms (0 clears); screens release at end + 4 h |
+| `PATCH /api/events/:code {name?, theme?, password?, endsAt?}` · `DELETE /api/events/:code` | super. `endsAt` epoch ms (0 clears); the authority releases screens at end + 4 h once all rooms' running or paused cues have stopped |
 | `GET /api/events/:code/live` | super. Per room: running, paused, overtime, remainingMS, active/next label, blanked, sessions, screens |
 | `POST /api/events/:code/verb {verb, room?}` | super. `go next prev pause resume reset blank unblank`; no `room` = every room |
 | `POST /api/events/:code/rooms {name}` · `PATCH …/rooms/:room {name?, password?, clearPassword?, pos?}` · `DELETE …/rooms/:room` | super. Room admin |
@@ -89,17 +89,17 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 ### Screens, layouts, presets
 | Method & path | Notes |
 |---|---|
-| `GET …/screens` · `GET …/screens/self?name=` | Registry ∪ live sessions (with preview data) · a screen's own config |
-| `POST …/screens/config {name, theme?, boardId?, room?, kind?, rotation?}` | mod. Theme, layout, display type (`audience\|walkin\|presenter`; a screen with no layout gets that type's first built-in), rotation (0/90/180/270) |
-| `POST …/screens/match\|rename\|forget` | mod. Copy one screen's look to all · rename `{from,to}` · forget (drops the screen's key: it is released) |
-| `POST …/screens/template {name, template}` | mod. The screen shows a built-in as is (`""` = plain timer); no copy is made. It never changes the screen's rotation. Retired keys (`<key>-portrait`, `countdown`) map to their layout |
-| `GET …/layout-targets?kind=` | mod. Screens of that type in the event's rooms you moderate (SuperOperator: all), by room |
-| `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | mod. New event layout from a built-in (or a layout); the listed screens switch to it → `{boardId}` |
-| `POST …/screens/link {name}` | mod. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
-| `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | Named screen assignment bundles `{screens:[{name, theme, boardId, template?, kind?, rotation?}]}`; apply restores the built-in layout, display type and Mounted when the preset has them |
+| `GET …/screens` · `GET …/screens/self?name=` | Registry ∪ live sessions (super, with preview data) · a screen's own config |
+| `POST …/screens/config {name, theme?, boardId?, room?, kind?, rotation?}` | super. Theme, layout, display type (`audience\|walkin\|presenter`), rotation (0/90/180/270). A type change uses a built-in for the new type unless a different named layout is selected in the same request |
+| `POST …/screens/match\|rename\|forget` | super. Copy one screen's look to all · rename `{from,to}` · forget (drops the screen's key: it is released) |
+| `POST …/screens/template {name, template}` | super. Selects a built-in directly (`""` = plain timer), retaining screen rotation. Retired keys (`<key>-portrait`, `countdown`) map to their layout |
+| `GET …/layout-targets?kind=` | super. Screens of that type, grouped by room across the event |
+| `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | super. New event layout from a built-in (or a layout); the listed screens switch to it → `{boardId}` |
+| `POST …/screens/link {name}` | super. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
+| `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | super. Named screen assignment bundles `{screens:[{name, theme, boardId, template?, kind?, rotation?}]}`; apply restores the built-in layout, display type and Mounted when the preset has them |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}`. Every layout carries both versions: the landscape one, and the portrait one in `layout.alt` (event layouts too; saving a layout saves both) |
 | `GET …/walkin` | open. Event walk-in feed: `{event:{name,map}, rooms:[{name, here, running, now, next, schedule[{label, speaker, startTS, endTS, state}]}]}` |
-| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | The event's own layouts `{v, rows, orientation, widgets[], alt}`. `PUT {name?, layout?}` validates all supplied fields (types, overlap, limits) and saves name and layout together; a failed update leaves both unchanged. Nothing is seeded: an event has only the layouts someone made, and a board page with none shows the factory layout without saving it. `PUT` reaches live screens at once (`board-changed`); `DELETE` sends its screens back to the plain timer live (`screen-board` 0) |
+| `GET/POST …/boards` · `PUT/DELETE …/boards/:bid` | super. The event's own layouts `{v, rows, orientation, widgets[], alt}`. `PUT {name?, layout?}` validates all supplied fields (types, overlap, limits) and saves name and layout together; a failed update leaves both unchanged. A board page with no saved layouts shows the factory layout. `PUT` reaches live screens at once (`board-changed`); `DELETE` removes the layout and clears its assignments together before sending those screens back to the plain timer (`screen-board` 0) |
 | `POST /api/waiting/register {name,host,token,code?,handheld?}` · `GET /api/waiting/mine?name&host&token` | Screen side (open; per-IP budget). The token is the tab's random secret: only it claims the capture. `mine` → `{assigned, screen, key}`; the screen hops to `/d/<assigned>?screen=<screen>&key=<key>`. A box registers with its pairing `code`; once paired, its `mine` also carries `pairing:{event, eventName, meshKey, endsAt, room}` (boxes only) |
 | `GET /api/waiting` · `POST /api/waiting/:id/capture {code,…}` · `DELETE /api/waiting/:id` | Event Technician session (moderators 401); capture needs the room's Event Technician. `GET` → `{waiting:[{id, name, host, lastSeen, seenAgo, live, handheld}]}`, live screens (polled in the last 15 s) first, newest first; silent rows age out after 10 min. On a box every waiting screen is listed; on the cloud only screens that registered from the caller's own client IP (others answer 404; they pair by code). A screen already captured into another room → 409 |
 
@@ -137,6 +137,14 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 
 **Whole-event copy (version 1).** `rooms[].blanked` carries each room's blackout (defaults to false for older copies). An absent or null `map` clears the destination map. Imports reject invalid references and commit the whole replacement together; an error preserves the previous event and its active engines. State and audience publications follow commit.
 
+**Cloud uplink major.** Link and registration requests must send
+`X-TimerPi-Proto` with the local `/health` protocol major. The cloud responds
+with its major in the same header, including on the WebSocket upgrade. Missing
+or unequal request majors return HTTP 409 with `{ok:false, error, proto}`
+before changing event authority or importing data. A primary requires a
+matching response major before installing the link or starting registration
+after an HTTP 404.
+
 **PollView** = `{id, kind, question, options, correct (-1 until results, quiz only), state (hidden = never shown yet \| open \| results; independent of the targets), toAudience, toPresenter, autoApprove, counts[], total, children[{id, question, state (open|answered; moderator view adds hidden|dismissed), upvotes}], spotlight, pending, waiting[], round}`. `round` (omitted while 0) counts "Clear responses" on the item; phones key their remembered vote, upvotes and sent entries by item id + round, so a cleared item starts fresh. Word-cloud children aggregate identical words; `upvotes` = senders. `waiting` (public views only) lists the ids still pending review — ids, never text — so a phone keeps only its own still-pending entries under "Waiting for review".
 
 ### Box, assets, OSC
@@ -159,6 +167,7 @@ mDNS (`_timerpi._tcp`) TXT: `host role ver epoch boot proto event sig`. A paired
  "peerId":"<uuid>","joinedAt":<ms>,"screen":"<name>","key":"<screen key>","handheld":true}
 ```
 - **Trusted vs public** (BUGLOG RW9): operators, a screen whose `key` matches its `screen` name, and a display opened by a browser with moderator access are *trusted*. Everyone else gets the **public snapshot**: no show or cue notes, no cue tags, no stage messages, no `presenter` item, and no `oob` operator fragments. `joined.you.trusted` says which. The same rule applies to the first paint of `/d/` pages. Trusted screens of type `audience`/`walkin` also never get the `presenter` item (state or `poll`) or the stage messages (`snapshot.messages` is `[]` in their `joined`/`state`; their board page never paints messages either). Untrusted sessions get an empty `peers` list, no `peers` frames, and no WebRTC signalling: they are outside the browser mesh.
+- **Public display schedule.** The current public snapshot retains cues with notes and tags removed. The daysheet and event walk-in feed also provide schedules to code holders. PRODUCT §7 describes a keyed-only running order; the boundary between public schedules and the private running order is open in [#3](https://github.com/DrEVILish/timerpi/issues/3).
 - `peerId` must be ≤ 64 plain characters (else one is generated). The same id in another role is refused; in the same role it replaces the stale session, except that a trusted session is only replaced by one proving the same identity (operator session, or the same screen's key). `joinedAt` is clamped: never in the future; only operators keep it (up to a day back), screens and phones join "now".
 - `controls` needs a moderator (or supervisor) session cookie on the upgrade request; otherwise `err` "moderator access required".
 - `screen` is for screens only; it upserts the screens registry when the name is already registered or the join is trusted (an anonymous made-up name adds no row). `handheld` (optional) marks a phone/tablet display: it follows its own orientation, and the screens list reports `handheld:true` while it is live (the Screens page hides Mounted).

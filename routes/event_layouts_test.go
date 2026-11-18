@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"timerpi/boards"
 )
 
 // PRODUCT 2026-10-06 (STATUS U10/U11): layouts belong to the event. A
@@ -33,6 +35,53 @@ func TestLayoutsAreEventWide(t *testing.T) {
 	}
 	if code, _ := ts.call("GET", fmt.Sprintf("/d/%s?view=board&board=%d", other.Code, b.ID), nil, ""); code != 200 {
 		t.Errorf("Banner screen can't render the layout after the delete: %d", code)
+	}
+}
+
+func TestDeleteEventLayoutClearsAssignmentsAtomically(t *testing.T) {
+	ts := newAPITest(t)
+	other := ts.newRoom("Banner")
+	layout, err := boards.CreateBoard(ts.db, ts.showID, "Event layout", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, room := range []string{ts.showCode, other.Code} {
+		status, body := ts.call("POST", "/api/shows/"+room+"/screens/config",
+			[]byte(fmt.Sprintf(`{"name":"Door","boardId":%d}`, layout.ID)), "application/json")
+		if status != http.StatusOK {
+			t.Fatalf("assign layout in %s: %d %s", room, status, body)
+		}
+	}
+	if _, err := ts.db.Exec(`CREATE TRIGGER reject_layout_clear BEFORE UPDATE OF board_id ON screens
+		WHEN OLD.board_id > 0 AND NEW.board_id = 0 BEGIN SELECT RAISE(ABORT, 'fixture'); END`); err != nil {
+		t.Fatal(err)
+	}
+	checkAssignments := func(want int64) {
+		t.Helper()
+		for _, id := range []int64{ts.showID, other.ID} {
+			screen, err := ts.db.GetScreenByName(id, "Door")
+			if err != nil || screen.BoardID != want {
+				t.Fatalf("room %d: screen=%+v error=%v, want board %d", id, screen, err, want)
+			}
+		}
+	}
+	path := fmt.Sprintf("/api/shows/%s/boards/%d", other.Code, layout.ID)
+	if status, body := ts.call("DELETE", path, nil, ""); status != http.StatusInternalServerError {
+		t.Fatalf("failed assignment cleanup: %d %s", status, body)
+	}
+	if _, err := boards.GetBoard(ts.db, ts.showID, layout.ID); err != nil {
+		t.Fatalf("layout removed despite failed cleanup: %v", err)
+	}
+	checkAssignments(layout.ID)
+	if _, err := ts.db.Exec(`DROP TRIGGER reject_layout_clear`); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := ts.call("DELETE", path, nil, ""); status != http.StatusOK {
+		t.Fatalf("delete from sibling room: %d %s", status, body)
+	}
+	checkAssignments(0)
+	if status, _ := ts.call("DELETE", path, nil, ""); status != http.StatusNotFound {
+		t.Fatalf("deleted layout still exists: %d", status)
 	}
 }
 
