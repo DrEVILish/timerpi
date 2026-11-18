@@ -47,7 +47,8 @@ func (d *Deps) ReleaseDue() []timerpi.Event {
 		if _, err := d.memberWriteError(); err != nil {
 			break // paired replicas and electing boxes wait for the primary
 		}
-		gone, err := d.Store.ReleaseEventScreens(ev.ID, now)
+		finalPending := d.OnRelease != nil && d.BoxEvent != nil && ev.Code == d.BoxEvent()
+		gone, err := d.Store.ReleaseEventScreens(ev.ID, now, finalPending)
 		if err != nil {
 			log.Printf("routes: release %s: %v", ev.Code, err)
 			continue

@@ -7,8 +7,6 @@ package mesh
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net"
 	"path/filepath"
 	"strings"
@@ -90,35 +88,6 @@ func (f *fakeSetter) last() string {
 	return f.names[len(f.names)-1]
 }
 
-// fakeSource records the takeover harvest attempt.
-type fakeSource struct {
-	mu      sync.Mutex
-	bases   []string
-	showIDs []int64
-	raw     json.RawMessage
-	err     error
-}
-
-func (f *fakeSource) Snapshot(_ context.Context, base string, showID int64) (json.RawMessage, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.bases = append(f.bases, base)
-	f.showIDs = append(f.showIDs, showID)
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.raw, nil
-}
-
-func (f *fakeSource) attempted() (base string, showID int64) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.bases) == 0 {
-		return "", 0
-	}
-	return f.bases[len(f.bases)-1], f.showIDs[len(f.showIDs)-1]
-}
-
 // fakeClock is a mutable time source the tests advance by hand.
 type fakeClock struct {
 	mu sync.Mutex
@@ -161,13 +130,11 @@ func peer(host, role string, epoch int64, addrs ...string) mdns.Peer {
 // ---------------------------------------------------------------- helpers —
 
 type testKit struct {
-	dev     *Device
-	ann     *fakeAnnouncer
-	setter  *fakeSetter
-	source  *fakeSource
-	clk     *fakeClock
-	applied []json.RawMessage
-	dbPath  string
+	dev    *Device
+	ann    *fakeAnnouncer
+	setter *fakeSetter
+	clk    *fakeClock
+	dbPath string
 }
 
 func newKit(t *testing.T, mutate func(*Options)) *testKit {
@@ -175,7 +142,6 @@ func newKit(t *testing.T, mutate func(*Options)) *testKit {
 	kit := &testKit{
 		ann:    &fakeAnnouncer{},
 		setter: &fakeSetter{},
-		source: &fakeSource{raw: json.RawMessage(`{"updatedAt":5,"show":{"id":1,"title":"X"}}`)},
 		clk:    newFakeClock(),
 	}
 	o := Options{
@@ -186,12 +152,7 @@ func newKit(t *testing.T, mutate func(*Options)) *testKit {
 		Lister:     emptyLister(),
 		Announcer:  kit.ann,
 		Setter:     kit.setter,
-		Source:     kit.source,
 		Now:        kit.clk.Now,
-		ApplySnapshot: func(raw json.RawMessage, _ string) error {
-			kit.applied = append(kit.applied, raw)
-			return nil
-		},
 	}
 	if mutate != nil {
 		mutate(&o)
@@ -383,7 +344,6 @@ func (k *testKit) evaluateSelfStable(t *testing.T) State {
 func TestMemberThenTakeoverAfterPrimaryLoss(t *testing.T) {
 	kit := newKit(t, func(o *Options) {
 		o.DBPath = filepath.Join(t.TempDir(), "timerpi.db")
-		o.ShowID = 7
 	})
 	dead := peer("pi-a", "primary", 1000, "192.168.1.20", "192.168.1.21")
 
@@ -398,47 +358,26 @@ func TestMemberThenTakeoverAfterPrimaryLoss(t *testing.T) {
 
 	kit.waitFor(t, StatePrimary, func(int) []mdns.Peer { return []mdns.Peer{peer("pi-b", "display", 42)} })
 
-	// Takeover harvest: best-effort GET against the last known primary.
-	base, showID := kit.source.attempted()
-	if base != "http://192.168.1.20:80" || showID != 7 {
-		t.Fatalf("harvest = %s show %d, want http://192.168.1.20:80 show 7", base, showID)
-	}
-	if len(kit.applied) != 1 {
-		t.Fatalf("ApplySnapshot not called (%d)", len(kit.applied))
-	}
-	want, _ := kit.source.raw.MarshalJSON()
-	if string(kit.applied[0]) != string(want) {
-		t.Fatalf("applied snapshot mismatch: %s", kit.applied[0])
-	}
 	if _, meta := kit.ann.last(); meta.Role != "primary" {
 		t.Fatalf("after takeover announce role = %s, want primary", meta.Role)
 	}
 }
 
-func TestTakeoverPromotesEvenWhenHarvestFails(t *testing.T) {
-	kit := newKit(t, func(o *Options) {
-		o.Source = &fakeSource{err: fmt.Errorf("connection refused")}
-	})
-	if st := kit.evaluate(t, []mdns.Peer{peer("pi-a", "primary", 1000, "192.168.1.20")}); st != StateMember {
-		t.Fatalf("join → member, got %s", st)
-	}
-	kit.waitFor(t, StatePrimary, nil)
-	if len(kit.applied) != 0 {
-		t.Fatalf("failed harvest must not apply anything")
-	}
-	if _, meta := kit.ann.last(); meta.Role != "primary" {
-		t.Fatalf("promotion must survive harvest failure, announce = %s", meta.Role)
-	}
-}
-
-func TestTakeoverPromotesBlindWithoutAddresses(t *testing.T) {
+func TestFormerPrimaryCopyIsRefusedAfterTakeover(t *testing.T) {
 	kit := newKit(t, nil)
-	if st := kit.evaluate(t, []mdns.Peer{peer("pi-a", "primary", 1000)}); st != StateMember {
+	primary := peer("pi-a", "primary", 1000, "192.168.1.20")
+	if st := kit.evaluate(t, []mdns.Peer{primary}); st != StateMember {
 		t.Fatalf("join → member, got %s", st)
 	}
+	id, _ := kit.dev.Status()
+	applied := 0
+	apply := func() error { applied++; return nil }
+	if ok, err := kit.dev.ApplyReplica(id.PrimaryAddr, apply); !ok || err != nil || applied != 1 {
+		t.Fatalf("current primary's copy was refused: %v, %v, applied %d", ok, err, applied)
+	}
 	kit.waitFor(t, StatePrimary, nil)
-	if base, _ := kit.source.attempted(); base != "" {
-		t.Fatalf("no-address peer must not be harvest target (got %s)", base)
+	if ok, err := kit.dev.ApplyReplica(id.PrimaryAddr, apply); ok || err != nil || applied != 1 {
+		t.Fatalf("former primary's copy was accepted: %v, %v, applied %d", ok, err, applied)
 	}
 }
 

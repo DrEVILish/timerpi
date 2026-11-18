@@ -6,6 +6,7 @@ package timerpi
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ func (d *DB) SetEventEnd(id, endsAt int64) error {
 	if endsAt < 0 {
 		return fmt.Errorf("timerpi: bad event end")
 	}
-	_, err := d.Exec(`UPDATE events SET ends_at = ?, released_at = 0, updated_at = ? WHERE id = ?`, endsAt, nowMS(), id)
+	_, err := d.Exec(`UPDATE events SET ends_at = ?, released_at = 0, final_pending = 0, updated_at = ? WHERE id = ?`, endsAt, nowMS(), id)
 	return err
 }
 
@@ -53,6 +54,20 @@ func (d *DB) SetEventHome(id int64, home string) error {
 	return err
 }
 
+// ClaimVenueEvent opens an uplink only while this pairing still owns an
+// unreleased event. A release or key change can race the HTTP upgrade.
+func (d *DB) ClaimVenueEvent(ev Event) error {
+	res, err := d.Exec(`UPDATE events SET home = 'venue' WHERE id = ? AND mesh_key = ? AND released_at = 0`, ev.ID, ev.MeshKey)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err == nil && count != 1 {
+		return errors.New("event no longer accepts this venue uplink")
+	}
+	return err
+}
+
 // EventsDue lists events whose end + ReleaseAfter has passed and that
 // haven't been released yet.
 func (d *DB) EventsDue(now time.Time) ([]Event, error) {
@@ -70,14 +85,14 @@ func (d *DB) MarkEventReleased(id int64, at time.Time) error {
 
 // ReleaseEventScreens rechecks eligibility and releases the event and its
 // screens together. Nil means the event is no longer due for release.
-func (d *DB) ReleaseEventScreens(eventID int64, now time.Time) (map[int64][]string, error) {
+func (d *DB) ReleaseEventScreens(eventID int64, now time.Time, finalPending bool) (map[int64][]string, error) {
 	var released map[int64][]string
 	err := d.WriteTransaction(func(tx *DB) error {
-		res, err := tx.Exec(`UPDATE events SET released_at = ?
+		res, err := tx.Exec(`UPDATE events SET released_at = ?, final_pending = ?
 			WHERE id = ? AND home <> 'venue' AND released_at = 0 AND ends_at > 0 AND ends_at + ? <= ?
 			AND NOT EXISTS (SELECT 1 FROM runtime_state r JOIN shows s ON s.id = r.show_id
 				WHERE s.event_id = events.id AND r.running = 1)`,
-			now.UnixMilli(), eventID, ReleaseAfter.Milliseconds(), now.UnixMilli())
+			now.UnixMilli(), finalPending, eventID, ReleaseAfter.Milliseconds(), now.UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -89,6 +104,12 @@ func (d *DB) ReleaseEventScreens(eventID int64, now time.Time) (map[int64][]stri
 		return err
 	})
 	return released, err
+}
+
+func (d *DB) PendingFinalEvents() ([]Event, error) {
+	var events []Event
+	err := d.Select(&events, `SELECT * FROM events WHERE final_pending = 1 AND released_at > 0 ORDER BY id`)
+	return events, err
 }
 
 func (d *DB) forgetEventScreens(eventID int64) (map[int64][]string, error) {

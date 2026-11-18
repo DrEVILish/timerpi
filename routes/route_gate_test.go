@@ -31,6 +31,7 @@ var openRoutes = map[string]bool{
 	"GET /api/link":                            true, // signed by the venue (link.go)
 	"GET /api/link/bundle":                     true,
 	"POST /api/link/register":                  true,
+	"POST /api/link/final":                     true, // signed with the paired event key
 	"GET /api/pairing/status":                  true, // boxes poll it (VENUE-CLOUD §3)
 	"GET /api/update/binary":                   true, // signed builds for other boxes (VENUE-CLOUD §14)
 	"GET /api/update/manifest":                 true,

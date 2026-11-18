@@ -19,6 +19,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,10 +43,11 @@ type Event struct {
 	// epoch ms; 0 = none), when its boxes were released, the event mesh key
 	// that signs box announcements and the cloud link, and where it lives
 	// ("" = here / the cloud, "venue" = a venue's primary box holds it).
-	EndsAt     int64  `db:"ends_at"     json:"endsAt"`
-	ReleasedAt int64  `db:"released_at" json:"releasedAt"`
-	MeshKey    string `db:"mesh_key"    json:"-"`
-	Home       string `db:"home"        json:"home"`
+	EndsAt       int64  `db:"ends_at"     json:"endsAt"`
+	ReleasedAt   int64  `db:"released_at" json:"releasedAt"`
+	MeshKey      string `db:"mesh_key"    json:"-"`
+	Home         string `db:"home"        json:"home"`
+	FinalPending bool   `db:"final_pending" json:"-"`
 }
 
 // HasSuperPassword reports whether the event is protected (legacy events
@@ -79,6 +81,7 @@ func (d *DB) createEventsSchema() error {
 		"released_at INTEGER NOT NULL DEFAULT 0",
 		"mesh_key TEXT NOT NULL DEFAULT ''",
 		"home TEXT NOT NULL DEFAULT ''",
+		"final_pending INTEGER NOT NULL DEFAULT 0",
 	} {
 		if _, err := d.Exec(`ALTER TABLE events ADD COLUMN ` + col); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("timerpi: events column %s: %w", col, err)
@@ -362,31 +365,49 @@ func (d *DB) MoveRoom(eventID, showID, to int64) error {
 // (venue map, images): they used to stay in the database forever (BUGLOG
 // RW31).
 func (d *DB) DeleteEvent(id int64) error {
+	return d.WriteTransaction(func(tx *DB) error {
+		_, err := tx.deleteEvent(id)
+		return err
+	})
+}
+
+// DeleteReleasedEvent removes the copy acknowledged by the cloud if an
+// operator has not since extended or reopened it.
+func (d *DB) DeleteReleasedEvent(id, releasedAt int64) ([]int64, error) {
+	var rooms []int64
+	err := d.WriteTransaction(func(tx *DB) error {
+		var current int64
+		err := tx.Get(&current, `SELECT released_at FROM events WHERE id = ? AND final_pending = 1`, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil || current != releasedAt || current == 0 {
+			return err
+		}
+		rooms, err = tx.deleteEvent(id)
+		return err
+	})
+	return rooms, err
+}
+
+func (d *DB) deleteEvent(id int64) ([]int64, error) {
 	var rooms []int64
 	if err := d.Select(&rooms, `SELECT id FROM shows WHERE event_id = ?`, id); err != nil {
-		return err
+		return nil, err
 	}
-	tx, err := d.Beginx()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	for _, q := range []string{
 		`DELETE FROM shows WHERE event_id = ?`,
 		`DELETE FROM assets WHERE event_id = ?`,
 		`DELETE FROM events WHERE id = ?`,
 	} {
-		if _, err := tx.Exec(q, id); err != nil {
-			return err
+		if _, err := d.Exec(q, id); err != nil {
+			return nil, err
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
 	}
 	for _, r := range rooms {
 		d.airDirty(r)
 	}
-	return nil
+	return rooms, nil
 }
 
 // ---------------------------------------------------------------------------

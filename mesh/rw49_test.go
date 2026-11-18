@@ -1,11 +1,8 @@
 package mesh
 
 import (
-	"context"
-	"encoding/json"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"timerpi/mdns"
 )
@@ -51,47 +48,4 @@ func TestSameNameBoxSeenAndLateConflictRenames(t *testing.T) {
 	if name, _ := ann.last(); name != "pi-stage-2" {
 		t.Errorf("late conflict not resolved: announcing %q", name)
 	}
-}
-
-// slowSource blocks the harvest GET.
-type slowSource struct{ calls atomic.Int32 }
-
-func (s *slowSource) Snapshot(context.Context, string, int64) (json.RawMessage, error) {
-	s.calls.Add(1)
-	time.Sleep(400 * time.Millisecond)
-	return json.RawMessage(`{}`), nil
-}
-
-// BUGLOG RW50: without ApplySnapshot (production) a takeover makes no GET
-// at all; with it, the GET runs outside the lock, so Status() answers.
-func TestTakeoverHarvestNeverHoldsTheLock(t *testing.T) {
-	src := &slowSource{}
-	kit := newKit(t, func(o *Options) { o.Source = src; o.ApplySnapshot = nil })
-	kit.evaluate(t, []mdns.Peer{peer("pi-a", "primary", 1000, "192.168.1.20")})
-	kit.waitFor(t, StatePrimary, nil)
-	if src.calls.Load() != 0 {
-		t.Fatalf("production takeover made %d harvest GETs", src.calls.Load())
-	}
-
-	src2 := &slowSource{}
-	kit2 := newKit(t, func(o *Options) {
-		o.Source = src2
-		o.ApplySnapshot = func(json.RawMessage, string) error { return nil }
-	})
-	kit2.evaluate(t, []mdns.Peer{peer("pi-a", "primary", 1000, "192.168.1.20")})
-	done := make(chan struct{})
-	go func() {
-		kit2.waitFor(t, StatePrimary, nil)
-		close(done)
-	}()
-	deadline := time.Now().Add(3 * time.Second)
-	for src2.calls.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	start := time.Now()
-	kit2.dev.Status()
-	if d := time.Since(start); d > 100*time.Millisecond {
-		t.Errorf("Status() waited %v behind the harvest GET", d)
-	}
-	<-done
 }

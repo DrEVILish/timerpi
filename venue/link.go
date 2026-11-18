@@ -44,16 +44,8 @@ type linkState struct {
 	wmu      sync.Mutex
 	streams  map[int64]*websocket.Conn
 	air      chan routes.LinkFrame // ordered, never blocks the hub (onAir)
-	finalOK  chan struct{}
-	lastCopy string          // hash of the last copy sent
-	done     map[string]bool // events whose final copy reached the cloud
-	cloudOK  time.Time       // the cloud has answered without a miss since
-}
-
-func (l *linkState) uploaded(event string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.done[event]
+	lastCopy string                // hash of the last copy sent
+	cloudOK  time.Time             // the cloud has answered without a miss since
 }
 
 func (l *linkState) current() *websocket.Conn {
@@ -155,7 +147,6 @@ func (a *Agent) dial(ctx context.Context, p Pairing, ev timerpi.Event) error {
 	a.link.mu.Lock()
 	a.link.conn, a.link.event = conn, p.Event
 	a.link.streams = map[int64]*websocket.Conn{}
-	a.link.finalOK = make(chan struct{}, 1)
 	a.link.lastCopy = ""
 	air := make(chan routes.LinkFrame, 256)
 	a.link.air = air
@@ -285,14 +276,6 @@ func (a *Agent) linkRead(conn *websocket.Conn, p Pairing) {
 			if s != nil {
 				_ = s.Close()
 			}
-		case "final-ok":
-			a.link.mu.Lock()
-			ch := a.link.finalOK
-			a.link.mu.Unlock()
-			select {
-			case ch <- struct{}{}:
-			default:
-			}
 		}
 	}
 }
@@ -384,32 +367,23 @@ func (a *Agent) onAir(showID int64, on timerpi.OnAir) {
 }
 
 // sendFinal uploads the last copy at release and waits for the cloud.
-func (a *Agent) sendFinal(ev timerpi.Event) error {
-	if a.link.current() == nil {
-		return errors.New("no link to the cloud")
+func (a *Agent) sendFinal(ctx context.Context, ev timerpi.Event) error {
+	key, err := hex.DecodeString(ev.MeshKey)
+	if err != nil || len(key) == 0 {
+		return errors.New("no mesh key for final copy")
 	}
 	raw, err := a.Srv.ExportEvent(ev.ID)
 	if err != nil {
 		return err
 	}
-	a.link.mu.Lock()
-	ch := a.link.finalOK
-	a.link.mu.Unlock()
-	if err := a.link.send(routes.LinkFrame{T: "final", Data: raw}); err != nil {
-		return err
+	u := a.cloud() + "/api/link/final?event=" + url.QueryEscape(ev.Code)
+	if !a.post(ctx, u, raw, map[string]string{
+		routes.LinkAuthHeader:  routes.LinkAuth(key, "final", ev.Code, time.Now()),
+		routes.LinkProtoHeader: strconv.Itoa(buildinfo.Proto),
+	}) {
+		return errors.New("the cloud did not acknowledge the final copy")
 	}
-	select {
-	case <-ch:
-		a.link.mu.Lock()
-		if a.link.done == nil {
-			a.link.done = map[string]bool{}
-		}
-		a.link.done[ev.Code] = true
-		a.link.mu.Unlock()
-		return nil
-	case <-time.After(30 * time.Second):
-		return errors.New("the cloud didn't confirm")
-	}
+	return nil
 }
 
 func (a *Agent) roomIDs(eventID int64) []int64 {

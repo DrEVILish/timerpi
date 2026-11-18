@@ -56,8 +56,9 @@ type Pairing struct {
 // Server is what the agent needs from this box's routes.
 type Server interface {
 	ExportEvent(eventID int64) ([]byte, error)
-	ImportEvent(raw []byte) (timerpi.Event, error)
+	ImportVenueCopy(raw []byte, code, meshKey string) (timerpi.Event, error)
 	DeleteEventLocal(eventID int64) error
+	DeleteReleasedEventLocal(ev timerpi.Event) error
 	LinkedRequest(r *http.Request, eventCode, as, peer string) (*http.Request, error)
 	LinkedCookies(eventCode, as string) string
 }
@@ -89,7 +90,9 @@ type Agent struct {
 	mirrorID string // hash of the last copy imported
 	checkAt  time.Time
 
-	link linkState
+	link       linkState
+	finalMu    sync.Mutex
+	finalRetry time.Time
 
 	// alias: this box answers http://timerpi.local while it leads its event.
 	aliasStop func()
@@ -258,6 +261,7 @@ func (a *Agent) step(ctx context.Context) {
 		a.checkRelease(ctx, p)
 	}
 	a.keepAlias(a.Pairing().Event != "" && a.leading() && a.Mesh != nil)
+	a.flushFinalCopies(ctx)
 }
 
 // keepAlias publishes timerpi.local while this box leads its event, and
@@ -353,20 +357,24 @@ func (a *Agent) offerCode(ctx context.Context, p Pairing) {
 func (a *Agent) keepEvent(ctx context.Context, p Pairing) {
 	key, _ := hex.DecodeString(p.MeshKey)
 	_, have := a.Store.ResolveEvent(p.Event)
-	src := ""
+	src := a.primaryURL()
+	mirroring := src != ""
 	switch {
-	case a.primaryURL() != "":
+	case mirroring:
 		if have && time.Since(a.mirrorAt) < 30*time.Second {
 			return
 		}
-		src = a.primaryURL()
 	case !have && p.Server != "":
 		src = p.Server // the first box at the venue: the event comes from the cloud
 	default:
 		return
 	}
 	a.mirrorAt = time.Now()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, src+"/api/link/bundle?event="+url.QueryEscape(p.Event), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src+"/api/link/bundle?event="+url.QueryEscape(p.Event), nil)
+	if err != nil {
+		a.logf("venue: invalid event copy source: %v", err)
+		return
+	}
 	req.Header.Set(routes.LinkAuthHeader, routes.LinkAuth(key, "bundle", p.Event, time.Now()))
 	resp, err := a.client().Do(req)
 	if err != nil {
@@ -377,20 +385,33 @@ func (a *Agent) keepEvent(ctx context.Context, p Pairing) {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return
 	}
-	sum := sha256.Sum256(raw)
-	if id := hex.EncodeToString(sum[:]); id == a.mirrorID && have {
+	sum := sha256.Sum256(stripStamp(raw))
+	id := hex.EncodeToString(sum[:])
+	if (id == a.mirrorID && have) || a.Pairing() != p {
 		return
-	} else {
-		a.mirrorID = id
 	}
-	ev, err := a.Srv.ImportEvent(raw)
+	apply := func() error {
+		_, err := a.Srv.ImportVenueCopy(raw, p.Event, p.MeshKey)
+		return err
+	}
+	if mirroring {
+		applied, err := a.Mesh.ApplyReplica(src, apply)
+		if err != nil {
+			a.logf("venue: event copy from %s: %v", src, err)
+		}
+		if applied && err == nil {
+			a.mirrorID = id
+		}
+		return
+	}
+	err = apply()
 	if err != nil {
 		a.logf("venue: event copy from %s: %v", src, err)
 		return
 	}
-	_ = a.Store.SetEventMeshKey(ev.ID, p.MeshKey)
+	a.mirrorID = id
 	if !have {
-		a.logf("venue: event %s copied from %s", ev.Code, src)
+		a.logf("venue: event %s copied from %s", p.Event, src)
 	}
 }
 
@@ -401,7 +422,7 @@ func (a *Agent) checkRelease(ctx context.Context, p Pairing) {
 	}
 	a.checkAt = time.Now()
 	if ev, ok := a.Store.ResolveEvent(p.Event); ok && ev.ReleasedAt > 0 && a.leading() {
-		a.release(p, "it ended", false)
+		a.OnRelease(ev)
 		return
 	}
 	src := a.primaryURL()
@@ -437,15 +458,14 @@ func (a *Agent) release(p Pairing, why string, deleted bool) {
 	a.save(Pairing{})
 }
 
-// forgetLocal drops this box's copy of the event only when nothing is lost:
-// the event was deleted, this box only mirrored the primary, or the final
-// copy reached the cloud. Otherwise the event stays on the box.
+// forgetLocal drops deleted events and member replicas. The final-copy
+// worker separately removes a released primary copy after acknowledgement.
 func (a *Agent) forgetLocal(p Pairing, deleted bool) {
 	ev, ok := a.Store.ResolveEvent(p.Event)
 	if !ok {
 		return
 	}
-	if deleted || !a.leading() || a.link.uploaded(p.Event) {
+	if deleted || !a.leading() {
 		if err := a.Srv.DeleteEventLocal(ev.ID); err != nil {
 			a.logf("venue: forget event %s: %v", p.Event, err)
 		}
@@ -461,12 +481,33 @@ func (a *Agent) OnRelease(ev timerpi.Event) {
 	if p.Event != ev.Code {
 		return
 	}
-	if a.cloud() != "" {
-		if err := a.sendFinal(ev); err != nil {
+	a.save(Pairing{})
+	a.flushFinalCopies(context.Background())
+}
+
+func (a *Agent) flushFinalCopies(ctx context.Context) {
+	if a.cloud() == "" || !a.finalMu.TryLock() {
+		return
+	}
+	defer a.finalMu.Unlock()
+	if time.Since(a.finalRetry) < 30*time.Second {
+		return
+	}
+	pending, err := a.Store.PendingFinalEvents()
+	if err != nil {
+		a.logf("venue: pending final copies: %v", err)
+		return
+	}
+	for _, ev := range pending {
+		a.finalRetry = time.Now()
+		if err := a.sendFinal(ctx, ev); err != nil {
 			a.logf("venue: final copy of %s not uploaded: %v", ev.Code, err)
+			continue
+		}
+		if err := a.Srv.DeleteReleasedEventLocal(ev); err != nil {
+			a.logf("venue: forget released event %s: %v", ev.Code, err)
 		}
 	}
-	a.release(p, "it ended", false)
 }
 
 func (a *Agent) cloud() string {

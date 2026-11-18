@@ -104,6 +104,9 @@ func bodyCeiling() gin.HandlerFunc {
 			if strings.Contains(c.Request.URL.Path, "/import") {
 				limit = 32 << 20
 			}
+			if c.Request.URL.Path == "/api/link/final" {
+				limit = 64 << 20
+			}
 			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		}
 		c.Next()

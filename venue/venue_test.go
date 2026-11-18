@@ -268,6 +268,68 @@ func TestCloudVenueEndToEnd(t *testing.T) {
 }
 
 // The link drops: phones on the cloud see "audience paused".
+func TestReleasedEventRetriesFinalCopyAfterRestart(t *testing.T) {
+	cloud := newSide(t, "cloud")
+	box := newSide(t, "box")
+	ev, _, err := cloud.db.CreateEvent("Conference", "fixture-pass", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := cloud.db.EventMeshKey(ev.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := cloud.deps.ExportEvent(ev.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := box.deps.ImportEvent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := box.db.SetEventMeshKey(local.ID, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := cloud.db.SetEventHome(ev.ID, "venue"); err != nil {
+		t.Fatal(err)
+	}
+	room, err := box.db.ListRooms(local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := box.db.CreateCue(room[0].ID, timerpi.Cue{Label: "Final running order", DurationMS: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer offline.Close()
+	a := &Agent{Store: box.db, Srv: box.deps, CloudURL: func() string { return offline.URL }}
+	a.save(Pairing{Event: ev.Code, MeshKey: key, Room: room[0].Code})
+	box.deps.BoxEvent = func() string { return a.Pairing().Event }
+	box.deps.OnRelease = a.OnRelease
+	if err := box.db.SetEventEnd(local.ID, time.Now().Add(-5*time.Hour).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if got := box.deps.ReleaseDue(); len(got) != 1 || a.Pairing().Event != "" {
+		t.Fatalf("offline release failed: %v", got)
+	}
+	restarted := &Agent{Store: box.db, Srv: box.deps, CloudURL: func() string { return cloud.srv.URL }, Name: "restarted"}
+	restarted.step(context.Background())
+	got, err := cloud.db.GetEvent(ev.ID)
+	if err != nil || got.Home != "" || got.ReleasedAt == 0 {
+		t.Fatalf("cloud did not recover the final copy: %+v, %v", got, err)
+	}
+	r, ok := cloud.db.ResolveShowInEvent(ev.ID, room[0].Code)
+	if !ok {
+		t.Fatal("cloud lost the room")
+	}
+	cues, err := cloud.db.ListCues(r.ID)
+	if err != nil || len(cues) != 1 || cues[0].Label != "Final running order" {
+		t.Fatalf("cloud did not receive the final running order: %v, %v", cues, err)
+	}
+}
+
 func TestAudiencePausedWithoutLink(t *testing.T) {
 	cloud := newSide(t, "cloud")
 	ev, rooms, err := cloud.db.CreateEvent("Conf", "techpass", []string{"Room A"})

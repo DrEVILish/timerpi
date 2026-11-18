@@ -3,9 +3,8 @@
 // One appliance on the LAN holds authority: the FIRST device that is up
 // becomes the primary; the others join it as members (displays). When the
 // primary goes silent (>8 s without presence — TakeoverAfter), the next
-// device promotes itself, harvests the last-known show state from the dead
-// primary over plain HTTP (best-effort, trust model in docs/MESH.md), and
-// peers re-join it normally once they see its TXT role flip.
+// device promotes its existing event replica, and peers rejoin it once
+// they see its TXT role change.
 //
 // Authority selection is epoch-ordered: the epoch is the epoch-milliseconds
 // at the moment a device first CLAIMED, persisted in SQLite
@@ -22,7 +21,7 @@
 // first after it went down for maintenance.
 //
 // All environment dependencies are interfaces so unit tests run on fakes
-// (no network in CI): PeerLister, Announcer, HostSetter, SnapshotSource,
+// (no network in CI): PeerLister, Announcer, HostSetter,
 // Store. A skip-guarded loopback integration test exercises the real mdns
 // stack (loopback announce/browse proven by mdns/mdns_test.go in this
 // container).
@@ -34,12 +33,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"sort"
@@ -59,7 +55,6 @@ const (
 	DefaultGraceWindow   = 10 * time.Second // idle → primary claim delay
 	DefaultTakeoverAfter = 8 * time.Second  // primary silent longer than this → promote
 	PeersFreshFor        = 30 * time.Second // "detected in the last 30 s" view window
-	harvestTimeout       = 3 * time.Second  // takeover snapshot GET deadline
 )
 
 // Mesh TXT role vocabulary (mdns package contract):
@@ -131,12 +126,6 @@ type HostSetter interface {
 	SetHost(name string) error
 }
 
-// SnapshotSource harvests the PROTOCOL snapshot from a peer over HTTP
-// (production: GET /api/shows/:id). base looks like "http://192.168.1.20:80".
-type SnapshotSource interface {
-	Snapshot(ctx context.Context, base string, showID int64) (json.RawMessage, error)
-}
-
 // ---------------------------------------------------------------------------
 // Public read models
 
@@ -166,7 +155,7 @@ type Identity struct {
 	Epoch      int64             `json:"epoch"`    // our claimed epoch (0 = not claimed)
 	TXT        map[string]string `json:"txt"`      // our TXT payload (k→v)
 	// Primary* describe the last primary we saw ("" / 0 when none since
-	// start). Takeover harvests from this endpoint.
+	// start). Members fetch their event replica from this endpoint.
 	PrimaryHost   string `json:"primaryHost,omitempty"`
 	PrimaryEpoch  int64  `json:"primaryEpoch,omitempty"`
 	PrimaryAddr   string `json:"primaryAddr,omitempty"`
@@ -189,24 +178,18 @@ type Options struct {
 	// signed for our event count, and an unpaired box (no key) never leads.
 	Auth   func() (event string, key []byte)
 	DBPath string // "<data>/timerpi.db"; "" = persistence off (memory only)
-	ShowID int64  // show harvested on takeover (default 1 — docs/MESH.md)
 
 	PollEvery time.Duration
 
-	Announcer     Announcer                                        // nil → mdns.Announce adapter
-	Lister        PeerLister                                       // nil → mdns.FindPeers adapter
-	Setter        HostSetter                                       // nil → hostnamectl fallback chain
-	Source        SnapshotSource                                   // nil → HTTP GET adapter
-	ApplySnapshot func(raw json.RawMessage, fromHost string) error // optional; nil = log only
-	Now           func() time.Time                                 // nil → time.Now (tests inject)
+	Announcer Announcer        // nil → mdns.Announce adapter
+	Lister    PeerLister       // nil → mdns.FindPeers adapter
+	Setter    HostSetter       // nil → hostnamectl fallback chain
+	Now       func() time.Time // nil → time.Now (tests inject)
 }
 
 func (o *Options) fill() {
 	if o.PollEvery <= 0 {
 		o.PollEvery = DefaultPollEvery
-	}
-	if o.ShowID <= 0 {
-		o.ShowID = 1
 	}
 	if o.Port <= 0 {
 		o.Port = 80
@@ -222,9 +205,6 @@ func (o *Options) fill() {
 	}
 	if o.Setter == nil {
 		o.Setter = hostctlSetter{}
-	}
-	if o.Source == nil {
-		o.Source = httpSnapshotSource{client: &http.Client{Timeout: harvestTimeout}}
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -390,17 +370,9 @@ func (dev *Device) Tick(ctx context.Context) error {
 // Evaluate is one state-machine step over the given fresh peer list
 // (exported for tests). Mutates state, announcements and persistence as
 // needed and returns the resulting state.
-func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
+func (dev *Device) Evaluate(_ context.Context, peers []mdns.Peer) State {
 	dev.mu.Lock()
-	var harvest func()
-	defer func() {
-		dev.mu.Unlock()
-		// The takeover GET runs without the lock: holding it for up to 3 s
-		// stalled Status() and the network panel (BUGLOG RW50).
-		if harvest != nil {
-			harvest()
-		}
-	}()
+	defer dev.mu.Unlock()
 
 	// A name conflict can show up any time after Register (the first
 	// browse hasn't even run then): check on every step (BUGLOG RW49).
@@ -423,11 +395,6 @@ func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
 
 	from := dev.state
 	switch dev.decideLocked() {
-	case StateTakeover:
-		// Compound step: observe loss → land as primary → harvest the
-		// snapshot (after the unlock).
-		harvest = dev.takeoverLocked()
-		dev.transitionLocked(from, StatePrimary)
 	case StateIdle:
 		if from != StateIdle {
 			dev.transitionLocked(from, StateIdle)
@@ -436,7 +403,7 @@ func (dev *Device) Evaluate(ctx context.Context, peers []mdns.Peer) State {
 		if from != StateMember {
 			dev.transitionLocked(from, StateMember)
 		}
-	case StatePrimary:
+	case StatePrimary, StateTakeover:
 		if from != StatePrimary {
 			dev.transitionLocked(from, StatePrimary)
 		}
@@ -563,42 +530,6 @@ func (dev *Device) transitionLocked(from, to State) {
 	newRole := dev.roleLocked()
 	if newRole != dev.effectiveRole {
 		dev.reannounceLocked()
-	}
-}
-
-// takeoverLocked promotes self after primary loss and returns the
-// best-effort snapshot harvest to run AFTER the lock is released (nil when
-// there is nothing to do). Without ApplySnapshot wired (production: event
-// data reaches a new primary through sync, docs/VENUE-CLOUD.md) there is
-// no GET at all: it used to fetch show 1 and throw the result away
-// (BUGLOG RW50). Harvest failure never blocks the promotion.
-func (dev *Device) takeoverLocked() func() {
-	dev.claimLocked()
-	if dev.opts.ApplySnapshot == nil {
-		dev.logf("takeover: promoting")
-		return nil
-	}
-	p := dev.harvestTargetLocked()
-	if p == nil {
-		dev.logf("takeover: no harvestable primary address — promoting blind")
-		return nil
-	}
-	target := *p
-	host, _, ep, _ := peerMeta(target)
-	src, showID, apply := dev.opts.Source, dev.opts.ShowID, dev.opts.ApplySnapshot
-	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), harvestTimeout)
-		defer cancel()
-		raw, err := src.Snapshot(ctx, peerBaseURL(target), showID)
-		if err != nil {
-			dev.logf("takeover: harvest show %d from %s (%s, epoch %d) failed: %v — promoted anyway",
-				showID, host, peerBaseURL(target), ep, err)
-			return
-		}
-		dev.logf("takeover: harvested show %d from %s (%d bytes)", showID, host, len(raw))
-		if err := apply(raw, host); err != nil {
-			dev.logf("takeover: applying harvested snapshot: %v", err)
-		}
 	}
 }
 
@@ -772,6 +703,17 @@ func (dev *Device) Status() (Identity, []PeerView) {
 	return dev.identityLocked(), dev.peersViewLocked()
 }
 
+// ApplyReplica excludes promotion while installing a copy fetched from
+// the current primary. The network request must happen before this call.
+func (dev *Device) ApplyReplica(source string, apply func() error) (bool, error) {
+	dev.mu.Lock()
+	defer dev.mu.Unlock()
+	if dev.state != StateMember || dev.lastPrimary == nil || peerBaseURL(*dev.lastPrimary) != source {
+		return false, nil
+	}
+	return true, apply()
+}
+
 // identityLocked fills the public identity view.
 func (dev *Device) identityLocked() Identity {
 	meta := dev.announceMetaLocked()
@@ -846,18 +788,6 @@ func (dev *Device) bestPrimaryLocked() *mdns.Peer {
 		}
 	}
 	return best
-}
-
-// harvestTargetLocked picks the takeover GET target: the currently visible
-// senior primary, else the last one ever seen (must have addresses).
-func (dev *Device) harvestTargetLocked() *mdns.Peer {
-	if p := dev.bestPrimaryLocked(); p != nil && len(p.Addrs) > 0 {
-		return p
-	}
-	if dev.lastPrimary != nil && len(dev.lastPrimary.Addrs) > 0 {
-		return dev.lastPrimary
-	}
-	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,34 +955,4 @@ func (hostctlSetter) SetHost(name string) error {
 		return fmt.Errorf("writing /etc/hostname: %w", err)
 	}
 	return syscall.Sethostname([]byte(name))
-}
-
-// ---------------------------------------------------------------------------
-// Snapshot sources
-
-// httpSnapshotSource is the production SnapshotSource: plain
-// GET <base>/api/shows/<id> → the PROTOCOL snapshot JSON.
-type httpSnapshotSource struct {
-	client *http.Client
-}
-
-func (s httpSnapshotSource) Snapshot(ctx context.Context, base string, showID int64) (json.RawMessage, error) {
-	u := fmt.Sprintf("%s/api/shows/%d", strings.TrimSuffix(base, "/"), showID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(raw), nil
 }

@@ -9,7 +9,7 @@
 - `:ident`, `:code` and `:room` are 8-char codes (`K7QP-M3XB` or `K7QPM3XB`). Under `/api/shows` and `/c/`, `/d/`, `/a/` they are **room** codes; under `/e/` and `/api/events` `:code` is the **event** code. Numeric IDs return **404**.
 - **mod** = needs a moderator session for that room (`tp_rm_<ROOM>`) or the event's Event Technician session (`tp_ev_<EVENT>`); otherwise 401. **super** = needs the Event Technician session. **box** = needs the separate box session (`tp_box`). See ARCHITECTURE §8.
 - Everything goes through OriginGuard (strict mode only when `allowed_hosts` is set).
-- Bodies are capped at 8 MiB, or 32 MiB on `/import` paths.
+- Bodies are capped at 8 MiB, or 32 MiB on `/import` paths and 64 MiB for the final venue copy.
 
 ---
 
@@ -130,14 +130,15 @@ Items (`poll quiz qa wordcloud ideas`) are created **off air**. Two push targets
 | `GET /api/audience/:code` | open. `{data:{poll}, mine?, paused?}` — the audience-target item only. `mine:{item, vote?, up?}` is this device's own choice and upvoted entry ids on that item, when the request carries a valid `tp_aud` cookie (never minted here); a phone with cleared storage gets its vote back. On the cloud, a venue event's item is the venue's; `paused:true` while its link is down (votes/asks then answer 503 `{paused:true}`) |
 | `GET /api/pairing/status?event=CODE` | open. `{exists, released, endsAt, now}` — boxes poll it to learn their event ended or was deleted |
 | `GET /api/pairing/self` · `GET /d/box` | box only, loopback only. The box's own screen: `{name, code?, paired, eventName, target}`; `/d/box` shows the code or frames the target |
-| `GET /api/link?event=CODE` (WebSocket) · `POST /api/link/register {meshKey, bundle}` · `GET /api/link/bundle?event=CODE` | Signed `X-TimerPi-Auth: <unix s>.<hex HMAC-SHA256(mesh key, "timerpi-link/1\|purpose\|event\|s")>`. Link and register on the cloud only; the bundle (the whole event copy) from the cloud or a primary. Link frames: venue→cloud `bundle`, `air {room, poll}`, `res`, `ws`, `ws-close`, `final`; cloud→venue `req {method, path, header, body, as, peer}`, `ws-open {as, text: join}`, `ws`, `ws-close`, `final-ok`, see `routes/link.go` |
+| `GET /api/link?event=CODE` (WebSocket) · `POST /api/link/register {meshKey, bundle}` · `GET /api/link/bundle?event=CODE` | Signed `X-TimerPi-Auth: <unix s>.<hex HMAC-SHA256(mesh key, "timerpi-link/1\|purpose\|event\|s")>`. Link and register on the cloud only; the bundle (the whole event copy) from the cloud or a primary. Incoming copies must match the authenticated event. Registration reserves a new event code and key in the same transaction as the import. Retrying registration with the same key leaves the existing event intact. Link frames: venue→cloud `bundle`, `air {room, poll}`, `res`, `ws`, `ws-close`, legacy `final`; cloud→venue `req {method, path, header, body, as, peer}`, `ws-open {as, text: join}`, `ws`, `ws-close`, legacy `final-ok` |
+| `POST /api/link/final?event=CODE` | Cloud only. Body is the whole-event copy (up to 64 MiB). Same authentication with purpose `final` and the paired event key. The cloud commits the copy, release marker and ownership change together, then answers 200. Repeating an acknowledged handoff returns 200 without replacing the stored copy |
 | `POST /api/audience/:code/vote {pollId, choice, peer}` | open. Poll/quiz choice, or upvote (`pollId` = entry). The device is the signed `tp_aud` cookie (body `peer` ignored), minted on a phone's first vote/ask — never on `GET /a/<code>` — at most 2,000 new devices per room per client IP per 10 min (venues share one NAT IP) → else 429 + `Retry-After: 30`. 1 per 300 ms per device; 600/s per room → 429 + Retry-After. The phone retries 429s with backoff |
 | `POST /api/audience/:code/ask {item, text, peer}` | open. Submission to the item shown to the audience (pending unless auto-approve). 1 per 3 s per peer |
 | `GET /api/audience/:code/qr` | open. Join QR for `/a/<code>` |
 
 **Whole-event copy (version 1).** `rooms[].blanked` carries each room's blackout (defaults to false for older copies). An absent or null `map` clears the destination map. Imports reject invalid references and commit the whole replacement together; an error preserves the previous event and its active engines. State and audience publications follow commit.
 
-**Cloud uplink major.** Link and registration requests must send
+**Cloud uplink major.** Link, registration, and final-copy requests must send
 `X-TimerPi-Proto` with the local `/health` protocol major. The cloud responds
 with its major in the same header, including on the WebSocket upgrade. Missing
 or unequal request majors return HTTP 409 with `{ok:false, error, proto}`

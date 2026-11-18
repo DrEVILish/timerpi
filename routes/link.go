@@ -124,11 +124,11 @@ type linkRegistry struct {
 }
 
 type venueLink struct {
-	eventID int64
-	conn    *websocket.Conn
-	wmu     sync.Mutex
-	since   time.Time
-	done    chan struct{}
+	event timerpi.Event
+	conn  *websocket.Conn
+	wmu   sync.Mutex
+	since time.Time
+	done  chan struct{}
 
 	mu      sync.Mutex
 	nextID  int64
@@ -196,7 +196,43 @@ var linkUpgrader = websocket.Upgrader{ReadBufferSize: 4096, WriteBufferSize: 409
 func registerLink(r gin.IRouter, d *Deps) {
 	r.GET("/api/link/bundle", d.apiLinkBundle)
 	r.POST("/api/link/register", d.apiLinkRegister)
+	r.POST("/api/link/final", d.apiLinkFinal)
 	r.GET("/api/link", d.apiLink)
+}
+
+// The venue can retry its final export after unpairing or restarting.
+func (d *Deps) apiLinkFinal(c *gin.Context) {
+	if !d.isCloud() {
+		c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "not the cloud"})
+		return
+	}
+	if !requireLinkProto(c) {
+		return
+	}
+	ev, ok := d.Store.ResolveEvent(c.Query("event"))
+	if !ok || !linkAuthOK(ev.MeshKey, "final", ev.Code, c.GetHeader(LinkAuthHeader)) {
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "not this event's venue"})
+		return
+	}
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "could not read final copy"})
+		return
+	}
+	b, err := decodeEventCopy(raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if _, err := d.applyEventCopy(b, eventCopyScope{event: ev, final: true}); err != nil {
+		if errors.Is(err, errEventCopyOwnership) {
+			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "could not store final copy"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // GET /api/link/bundle?event=CODE — the event copy for a box of the event.
@@ -233,28 +269,24 @@ func (d *Deps) apiLinkRegister(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "send {meshKey, bundle}"})
 		return
 	}
-	var head struct {
-		Event struct {
-			Code string `json:"code"`
-		} `json:"event"`
-	}
-	_ = json.Unmarshal(body.Bundle, &head)
-	code := timerpi.NormalizeCode(head.Event.Code)
-	if !linkAuthOK(body.MeshKey, "register", code, c.GetHeader(LinkAuthHeader)) {
-		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "bad signature"})
-		return
-	}
-	if ev, ok := d.Store.ResolveEvent(code); ok && ev.MeshKey != "" && !hmac.Equal([]byte(ev.MeshKey), []byte(body.MeshKey)) {
-		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "the cloud has another event with this code"})
-		return
-	}
-	ev, err := d.ImportEvent(body.Bundle)
+	bundle, err := decodeEventCopy(body.Bundle)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	_ = d.Store.SetEventMeshKey(ev.ID, body.MeshKey)
-	_ = d.Store.SetEventHome(ev.ID, "venue")
+	if !linkAuthOK(body.MeshKey, "register", bundle.Event.Code, c.GetHeader(LinkAuthHeader)) {
+		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "bad signature"})
+		return
+	}
+	ev, err := d.applyEventCopy(bundle, eventCopyScope{registerKey: body.MeshKey})
+	if errors.Is(err, errEventCopyOwnership) {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "the cloud has another event with this code"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
 	log.Printf("routes: venue registered event %s", ev.Code)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -277,14 +309,23 @@ func (d *Deps) apiLink(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "not this event's venue"})
 		return
 	}
+	if ev.ReleasedAt > 0 {
+		c.JSON(http.StatusConflict, gin.H{"ok": false, "error": "event was released"})
+		return
+	}
 	conn, err := linkUpgrader.Upgrade(c.Writer, c.Request, http.Header{LinkProtoHeader: {strconv.Itoa(buildinfo.Proto)}})
 	if err != nil {
 		return
 	}
 	c.Abort()
+	if err := d.Store.ClaimVenueEvent(ev); err != nil {
+		log.Printf("routes: venue link for %s could not take authority: %v", ev.Code, err)
+		_ = conn.Close()
+		return
+	}
 	_ = conn.NetConn().SetDeadline(time.Time{})
 	conn.SetReadLimit(64 << 20) // event copies carry the venue map
-	l := &venueLink{eventID: ev.ID, conn: conn, since: time.Now(), done: make(chan struct{}),
+	l := &venueLink{event: ev, conn: conn, since: time.Now(), done: make(chan struct{}),
 		pending: map[int64]chan LinkFrame{}, streams: map[int64]*websocket.Conn{}, air: map[int64]*timerpi.PollView{}}
 	reg := d.linkRegistry()
 	reg.mu.Lock()
@@ -294,7 +335,6 @@ func (d *Deps) apiLink(c *gin.Context) {
 	if old != nil {
 		_ = old.conn.Close()
 	}
-	_ = d.Store.SetEventHome(ev.ID, "venue")
 	log.Printf("routes: venue link up for event %s", ev.Code)
 	d.linkRead(l)
 	reg.mu.Lock()
@@ -342,7 +382,12 @@ func (d *Deps) linkRead(l *venueLink) {
 		}
 		switch f.T {
 		case "bundle", "final":
-			ev, err := d.ImportEvent(f.Data)
+			bundle, err := decodeEventCopy(f.Data)
+			if err != nil {
+				log.Printf("routes: venue copy: %v", err)
+				continue
+			}
+			ev, err := d.applyEventCopy(bundle, eventCopyScope{event: l.event, final: f.T == "final"})
 			if err != nil {
 				log.Printf("routes: venue copy: %v", err)
 				continue
@@ -350,13 +395,11 @@ func (d *Deps) linkRead(l *venueLink) {
 			if f.T == "final" {
 				// Release (end + 4 h): the cloud keeps the final copy and is
 				// the event's home again.
-				_ = d.Store.SetEventHome(ev.ID, "")
-				_ = d.Store.MarkEventReleased(ev.ID, time.Now())
 				_ = l.send(LinkFrame{T: "final-ok"})
 				log.Printf("routes: event %s released by its venue; final copy stored", ev.Code)
 			}
 		case "air":
-			if sh, ok := d.Store.ResolveShowInEvent(l.eventID, f.Room); ok {
+			if sh, ok := d.Store.ResolveShowInEvent(l.event.ID, f.Room); ok {
 				l.mu.Lock()
 				l.air[sh.ID] = f.Poll
 				l.mu.Unlock()
@@ -719,6 +762,17 @@ func (d *Deps) DeleteEventLocal(eventID int64) error {
 	}
 	for _, r := range rooms {
 		d.forgetRoom(r.ID)
+	}
+	return nil
+}
+
+func (d *Deps) DeleteReleasedEventLocal(ev timerpi.Event) error {
+	rooms, err := d.Store.DeleteReleasedEvent(ev.ID, ev.ReleasedAt)
+	if err != nil {
+		return err
+	}
+	for _, id := range rooms {
+		d.forgetRoom(id)
 	}
 	return nil
 }

@@ -12,7 +12,10 @@
 package routes
 
 import (
+	"crypto/hmac"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,23 +144,125 @@ func (d *Deps) ExportEvent(eventID int64) ([]byte, error) {
 // bundle: the event is created under its code if new, rooms are matched by
 // code (kept ids), refilled, added or removed.
 func (d *Deps) ImportEvent(raw []byte) (timerpi.Event, error) {
-	var b eventBundle
-	if err := json.Unmarshal(raw, &b); err != nil {
-		return timerpi.Event{}, fmt.Errorf("not an event copy: %v", err)
-	}
-	if b.Version != eventBundleVersion {
-		return timerpi.Event{}, fmt.Errorf("unsupported event copy version %d", b.Version)
-	}
-	if err := validateEventCopy(b); err != nil {
+	b, err := decodeEventCopy(raw)
+	if err != nil {
 		return timerpi.Event{}, err
 	}
+	return d.applyEventCopy(b, eventCopyScope{})
+}
+
+func (d *Deps) ImportVenueCopy(raw []byte, code, meshKey string) (timerpi.Event, error) {
+	b, err := decodeEventCopy(raw)
+	if err != nil {
+		return timerpi.Event{}, err
+	}
+	if code != b.Event.Code || meshKey == "" {
+		return timerpi.Event{}, errEventCopyOwnership
+	}
+	return d.applyEventCopy(b, eventCopyScope{mirrorKey: meshKey})
+}
+
+func decodeEventCopy(raw []byte) (eventBundle, error) {
+	var b eventBundle
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return b, fmt.Errorf("not an event copy: %w", err)
+	}
+	if b.Version != eventBundleVersion {
+		return b, fmt.Errorf("unsupported event copy version %d", b.Version)
+	}
+	b.Event.Code = timerpi.NormalizeCode(b.Event.Code)
+	return b, validateEventCopy(b)
+}
+
+type eventCopyScope struct {
+	event       timerpi.Event // event authenticated by the cloud uplink
+	registerKey string        // authenticated key proposed for a new event
+	mirrorKey   string        // local pairing key for a venue replica
+	final       bool
+}
+
+var errEventCopyOwnership = errors.New("the event copy conflicts with event ownership")
+
+func (s eventCopyScope) authorize(db *timerpi.DB, code string) (existing timerpi.Event, skip bool, err error) {
+	if s.registerKey != "" {
+		err := db.Get(&existing, `SELECT * FROM events WHERE code = ?`, code)
+		if errors.Is(err, sql.ErrNoRows) {
+			return existing, false, nil
+		}
+		if err != nil {
+			return existing, false, err
+		}
+		if !hmac.Equal([]byte(existing.MeshKey), []byte(s.registerKey)) {
+			return existing, false, errEventCopyOwnership
+		}
+		return existing, true, nil // an interrupted registration may be retried
+	}
+	if s.event.ID == 0 {
+		if s.mirrorKey != "" {
+			err := db.Get(&existing, `SELECT * FROM events WHERE code = ?`, code)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return existing, false, err
+			}
+			if existing.MeshKey != "" && !hmac.Equal([]byte(existing.MeshKey), []byte(s.mirrorKey)) {
+				return existing, false, errEventCopyOwnership
+			}
+		}
+		return existing, false, nil
+	}
+	if code != s.event.Code {
+		return existing, false, errEventCopyOwnership
+	}
+	existing, err = db.GetEvent(s.event.ID)
+	if err != nil {
+		return existing, false, err
+	}
+	if existing.Code != code || existing.MeshKey == "" || !hmac.Equal([]byte(s.event.MeshKey), []byte(existing.MeshKey)) {
+		return existing, false, errEventCopyOwnership
+	}
+	if s.final && existing.ReleasedAt > 0 && existing.Home == "" {
+		return existing, true, nil
+	}
+	if existing.Home != "venue" || existing.ReleasedAt > 0 {
+		return existing, false, errEventCopyOwnership
+	}
+	return existing, false, nil
+}
+
+func (d *Deps) applyEventCopy(b eventBundle, scope eventCopyScope) (timerpi.Event, error) {
 	var ev timerpi.Event
 	var removed, changed []int64
 	write := func() ([]int64, error) {
 		err := d.Store.WriteTransaction(func(store *timerpi.DB) error {
+			existing, skip, err := scope.authorize(store, b.Event.Code)
+			if err != nil || skip {
+				ev = existing
+				return err
+			}
 			copyDeps := &Deps{Store: store}
-			var err error
 			ev, removed, changed, err = copyDeps.importEvent(b)
+			if err != nil {
+				return err
+			}
+			if scope.registerKey != "" {
+				if err := store.SetEventMeshKey(ev.ID, scope.registerKey); err != nil {
+					return err
+				}
+				if err := store.SetEventHome(ev.ID, "venue"); err != nil {
+					return err
+				}
+			}
+			if scope.mirrorKey != "" {
+				return store.SetEventMeshKey(ev.ID, scope.mirrorKey)
+			}
+			if scope.final {
+				if err := store.SetEventHome(ev.ID, ""); err != nil {
+					return err
+				}
+				if err := store.MarkEventReleased(ev.ID, time.Now()); err != nil {
+					return err
+				}
+			}
+			ev, err = store.GetEvent(ev.ID)
 			return err
 		})
 		return append(append([]int64{}, removed...), changed...), err

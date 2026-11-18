@@ -72,6 +72,36 @@ func TestOfflineRegistrationRequiresMatchingProtocol(t *testing.T) {
 	}
 }
 
+func TestOfflineRegistrationPreservesPreparedEvent(t *testing.T) {
+	cloud := newSide(t, "cloud")
+	box := newSide(t, "box")
+	prepared, _, err := cloud.db.CreateEvent("Prepared conference", "fixture-password", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := box.db.CreateEventWithCode(prepared.Code, "Offline conference", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyHex, err := box.db.EventMeshKey(local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Srv: box.deps, CloudURL: func() string { return cloud.srv.URL }}
+	a.link.cloudOK = time.Now().Add(-routes.StableAfter)
+	if err := a.register(context.Background(), Pairing{Event: local.Code, MeshKey: keyHex}, local, key); err == nil {
+		t.Fatal("offline registration must refuse a prepared cloud event")
+	}
+	got, err := cloud.db.GetEvent(prepared.ID)
+	if err != nil || got.Name != prepared.Name || got.SuperHash != prepared.SuperHash || got.MeshKey != "" {
+		t.Fatalf("prepared event changed: %+v, %v", got, err)
+	}
+}
+
 func TestCloudRejectsIncompatibleVenueBeforeUpgrade(t *testing.T) {
 	cloud := newSide(t, "cloud")
 	ev, _, err := cloud.db.CreateEvent("Conference", "test-pass", nil)
