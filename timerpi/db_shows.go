@@ -101,26 +101,16 @@ func (d *DB) CloneShow(id int64, title string) (Show, error) {
 		return Show{}, err
 	}
 	defer tx.Rollback()
-	for _, c := range cues {
+	for i, c := range cues {
 		c.ID, c.ShowID, c.Pos = 0, 0, 0 // fresh rows, appended in listed order
 		c.Normalize()
 		if err := c.Validate(); err != nil {
 			return Show{}, fmt.Errorf("timerpi: clone cue %q: %w", c.Label, err)
 		}
 		now := nowMS()
-		res, err := insertCue(tx, dst.ID, 0, c, now)
-		if err != nil {
+		if _, err := insertCue(tx, dst.ID, int64(i+1), c, now); err != nil {
 			return Show{}, fmt.Errorf("timerpi: clone cue: %w", err)
 		}
-		newID, _ := res.LastInsertId()
-		// Position = inner insert order (1..N) — the clone preserves the
-		// source's run order without the append dance CreateCue does.
-		if _, err := tx.Exec(`UPDATE cues SET pos = ? WHERE id = ?`, newID, newID); err != nil {
-			return Show{}, fmt.Errorf("timerpi: clone pos: %w", err)
-		}
-	}
-	if _, err := tx.Exec(`UPDATE cues SET pos = (SELECT COUNT(*) FROM cues sub WHERE sub.show_id = cues.show_id AND sub.id <= cues.id) WHERE show_id = ?`, dst.ID); err != nil {
-		return Show{}, fmt.Errorf("timerpi: clone order: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return Show{}, fmt.Errorf("timerpi: clone commit: %w", err)

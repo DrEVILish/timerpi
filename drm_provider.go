@@ -37,19 +37,19 @@ func newDRMProvider(engines *timerpi.Engines, db *timerpi.DB) *drmProvider {
 	}
 }
 
-func (p *drmProvider) pickEngine() *timerpi.Engine {
+func (p *drmProvider) pickEngine() (*timerpi.Engine, error) {
 	// Pinned show code wins.
 	if p.showCode != "" {
 		if s, err := p.db.GetShowByCode(p.showCode); err == nil {
 			if eng, err := p.engines.Get(s.ID); err == nil {
-				return eng
+				return eng, nil
 			}
 		}
 	}
 	// First running show, else lowest show ID.
 	shows, err := p.db.ListShows()
 	if err != nil || len(shows) == 0 {
-		return nil
+		return nil, err
 	}
 	for _, s := range shows {
 		eng, err := p.engines.Get(s.ID)
@@ -57,24 +57,23 @@ func (p *drmProvider) pickEngine() *timerpi.Engine {
 			continue
 		}
 		if rt := eng.Runtime(); rt.Running {
-			return eng
+			return eng, nil
 		}
 	}
-	eng, err := p.engines.Get(shows[0].ID)
-	if err != nil {
-		return nil
-	}
-	return eng
+	return p.engines.Get(shows[0].ID)
 }
 
 func (p *drmProvider) refresh(now time.Time) {
-	eng := p.pickEngine()
-	if eng == nil {
-		return
-	}
-	snap, err := eng.Snapshot()
+	eng, err := p.pickEngine()
 	if err != nil {
 		return
+	}
+	var snap timerpi.Snapshot
+	if eng != nil {
+		snap, err = eng.Snapshot()
+		if err != nil {
+			return
+		}
 	}
 	p.mu.Lock()
 	p.snap = snap
@@ -87,7 +86,7 @@ func (p *drmProvider) refresh(now time.Time) {
 func (p *drmProvider) View(nowMS int64) drm.View {
 	now := time.UnixMilli(nowMS)
 	p.mu.Lock()
-	stale := now.Sub(p.snapAt) > time.Second || p.eng == nil
+	stale := p.snapAt.IsZero() || now.Sub(p.snapAt) > time.Second
 	p.mu.Unlock()
 	if stale {
 		p.refresh(now)

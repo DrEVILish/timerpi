@@ -170,16 +170,17 @@ type dumbBuffer struct {
 
 // KMSBackend presents on the HDMI output via KMS dumb buffers.
 type KMSBackend struct {
-	query  func(uintptr, unsafe.Pointer) error // optional enumeration ioctl for contract tests
-	card   *os.File
-	w, h   int
-	bufs   [2]dumbBuffer
-	draw   int // index of the buffer NOT being scanned out (next Present writes)
-	crtc   uint32
-	cons   []uint32
-	mode   drmModeModeInfo
-	master bool
-	tok    uint64 // flip user_data monotonic token
+	query          func(uintptr, unsafe.Pointer) error // optional enumeration ioctl for contract tests
+	card           *os.File
+	w, h           int
+	bufs           [2]dumbBuffer
+	draw           int // index of the buffer NOT being scanned out (next Present writes)
+	previousDamage []Rect
+	crtc           uint32
+	cons           []uint32
+	mode           drmModeModeInfo
+	master         bool
+	tok            uint64 // flip user_data monotonic token
 }
 
 // NewKMSBackend constructs an unopened backend (env: DRM_CARD).
@@ -517,6 +518,7 @@ func (b *KMSBackend) allocScanout() error {
 			b.crtc, b.bufs[0].fbID, modeName(b.mode), err)
 	}
 	b.draw = 1
+	b.previousDamage = nil
 	return nil
 }
 
@@ -566,6 +568,38 @@ func (b *KMSBackend) Present(img *Image, dirty []Rect) error {
 	if len(dirty) == 0 || img == nil {
 		return nil // untouched frame: nothing to scan
 	}
+	if err := b.copyDamage(img, dirty); err != nil {
+		return err
+	}
+	back := &b.bufs[b.draw]
+
+	// Flip the just-updated buffer, and wait for the completion event
+	// (delivered at the vblank where the flip latched). user_data is a
+	// monotonic token that identifies our flip.
+	b.tok++
+	tok := b.tok
+	var flip drmModeCrtcPageFlip
+	flip.CrtcID, flip.FBID, flip.Flags = b.crtc, back.fbID, pageFlipEvent
+	flip.UserData = tok
+	if err := ioctlPtr(b.card, uintptr(ioctlModePageFlip), unsafe.Pointer(&flip)); err != nil {
+		return fmt.Errorf("PAGE_FLIP(fb %d): %w", back.fbID, err)
+	}
+	err := b.waitFlip(tok, 100*time.Millisecond)
+	// A queued flip was probably latched even if the event was lost. The
+	// clock drops its diff baseline on error and repaints on the next tick.
+	b.advanceBuffers(dirty)
+	if err != nil {
+		return fmt.Errorf("kms: %w", err)
+	}
+	return nil
+}
+
+func (b *KMSBackend) advanceBuffers(dirty []Rect) {
+	b.previousDamage = append(b.previousDamage[:0], dirty...)
+	b.draw ^= 1
+}
+
+func (b *KMSBackend) copyDamage(img *Image, dirty []Rect) error {
 	back := &b.bufs[b.draw]
 	stride, w, h := back.stride, b.w, b.h
 	if stride < w*4 {
@@ -577,7 +611,10 @@ func (b *KMSBackend) Present(img *Image, dirty []Rect) error {
 		return fmt.Errorf("kms: source frame is broken (%dx%d, stride %d, %d bytes)", img.W, img.H, img.Stride, len(img.Pix))
 	}
 	clip := Rect{0, 0, min(w, img.W), min(h, img.H)}
-	for _, r := range dirty {
+	// The back buffer last held the frame before the current scanout.
+	// Bring it up to date with both sets of changes.
+	damage := append(append([]Rect(nil), dirty...), b.previousDamage...)
+	for _, r := range mergeRects(damage) {
 		r = r.Clip(clip)
 		if r.Empty() {
 			continue
@@ -589,28 +626,6 @@ func (b *KMSBackend) Present(img *Image, dirty []Rect) error {
 		}
 	}
 
-	// Flip the just-updated buffer, and wait for the completion event
-	// (delivered at the vblank where the flip latched). user_data is a
-	// monotonic token that identifies our flip.
-	b.tok++
-	tok := b.tok
-	var flip drmModeCrtcPageFlip
-	flip.CrtcID, flip.FBID, flip.Flags = b.crtc, back.fbID, pageFlipEvent
-	flip.UserData = tok
-	if err := ioctlPtr(b.card, uintptr(ioctlModePageFlip), unsafe.Pointer(&flip)); err != nil {
-		// Nothing was queued; the back buffer stays off-screen and we
-		// retry next frame without swapping roles.
-		return fmt.Errorf("PAGE_FLIP(fb %d): %w", back.fbID, err)
-	}
-	if err := b.waitFlip(tok, 100*time.Millisecond); err != nil {
-		// The flip was queued, so it has almost certainly latched even
-		// without its event: swap roles, but surface the anomaly.
-		b.draw ^= 1
-		return fmt.Errorf("kms: %w", err)
-	}
-	// Swap roles: the flipped buffer is now scanout, the old one is the
-	// off-screen draw target.
-	b.draw ^= 1
 	return nil
 }
 

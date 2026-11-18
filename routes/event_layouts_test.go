@@ -136,3 +136,23 @@ func TestLayoutCopyFromBuiltIn(t *testing.T) {
 		t.Errorf("moderator made a layout: %d, want 401", code)
 	}
 }
+
+func TestLayoutCopyRollsBackEveryScreenOnFailure(t *testing.T) {
+	ts := newAPITest(t)
+	sibling := ts.newRoom("Side Room")
+	if _, err := ts.db.Exec(`CREATE TRIGGER reject_second_layout_screen BEFORE INSERT ON screens
+		WHEN NEW.name = 'Second' BEGIN SELECT RAISE(ABORT, 'fixture'); END`); err != nil {
+		t.Fatal(err)
+	}
+	raw := fmt.Sprintf(`{"name":"New layout","template":"room","screens":[{"room":%q,"name":"First"},{"room":%q,"name":"Second"}]}`, ts.showCode, sibling.Code)
+	if status, _ := ts.call("POST", "/api/shows/"+ts.showCode+"/layouts", []byte(raw), "application/json"); status != http.StatusInternalServerError {
+		t.Fatalf("copy returned %d, want 500", status)
+	}
+	list, err := boards.ListBoards(ts.db.DB, ts.showID)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("failed copy left layouts: %v, %v", list, err)
+	}
+	if list, err := ts.db.ListScreens(ts.showID); err != nil || len(list) != 0 {
+		t.Fatalf("failed copy changed its first screen: %v, %v", list, err)
+	}
+}

@@ -60,6 +60,16 @@ func screenAssignmentError(c *gin.Context, err error) {
 // commits with that assignment, so a polling display cannot hop to half a look.
 // Publication remains with the caller and only follows a successful commit.
 func (d *Deps) assignScreen(showID int64, name string, change screenAssignment) (timerpi.Screen, error) {
+	var screen timerpi.Screen
+	err := d.Store.WriteTransaction(func(store *timerpi.DB) error {
+		var err error
+		screen, err = assignScreen(store, showID, name, change)
+		return err
+	})
+	return screen, err
+}
+
+func assignScreen(tx *timerpi.DB, showID int64, name string, change screenAssignment) (timerpi.Screen, error) {
 	name = timerpi.SanitizeScreenName(name)
 	if name == "" {
 		return timerpi.Screen{}, screenAssignmentInputError("bad screen name")
@@ -67,11 +77,6 @@ func (d *Deps) assignScreen(showID int64, name string, change screenAssignment) 
 	if change.Theme != nil && !screenThemeOK(*change.Theme) {
 		return timerpi.Screen{}, screenAssignmentInputError("bad theme name")
 	}
-	tx, err := d.Store.Beginx()
-	if err != nil {
-		return timerpi.Screen{}, err
-	}
-	defer tx.Rollback()
 	if change.BoardID != nil {
 		bid := *change.BoardID
 		if bid < 0 {
@@ -101,7 +106,7 @@ func (d *Deps) assignScreen(showID int64, name string, change screenAssignment) 
 		}
 	}
 	current := timerpi.Screen{ShowID: showID, Name: name}
-	err = tx.Get(&current, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation, template FROM screens WHERE show_id = ? AND name = ?`, showID, name)
+	err := tx.Get(&current, `SELECT show_id, name, theme, board_id, room, last_seen, kind, rotation, template FROM screens WHERE show_id = ? AND name = ?`, showID, name)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return timerpi.Screen{}, err
 	}
@@ -116,9 +121,6 @@ func (d *Deps) assignScreen(showID int64, name string, change screenAssignment) 
 		kind = excluded.kind, rotation = excluded.rotation, template = excluded.template`,
 		showID, name, next.Theme, next.BoardID, next.Room, next.LastSeen, next.Kind, next.Rotation, next.Template)
 	if err != nil {
-		return timerpi.Screen{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return timerpi.Screen{}, err
 	}
 	return next, nil

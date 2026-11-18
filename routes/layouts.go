@@ -11,6 +11,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -145,17 +146,26 @@ func (d *Deps) apiLayoutCopy(c *gin.Context) {
 		}
 		targets = append(targets, target{r, name})
 	}
-	b, err := boards.CreateBoard(d.Store.DB, id, name, raw)
+	var b boards.Board
+	err := d.Store.WriteTransaction(func(tx *timerpi.DB) error {
+		var err error
+		b, err = boards.CreateBoard(tx, id, name, raw)
+		if err != nil {
+			return err
+		}
+		for _, t := range targets {
+			if _, err := assignScreen(tx, t.room.ID, t.name, screenAssignment{BoardID: &b.ID}); err != nil {
+				return fmt.Errorf("assign layout to %s: %w", t.name, err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
 	touched := map[int64]bool{id: true}
 	for _, t := range targets {
-		if _, err := d.assignScreen(t.room.ID, t.name, screenAssignment{BoardID: &b.ID}); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
-			return
-		}
 		d.pushScreen(t.room.ID, t.name)
 		touched[t.room.ID] = true
 	}

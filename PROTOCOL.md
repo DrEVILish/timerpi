@@ -94,7 +94,7 @@ Static: `/ftl/*` (ftl-themes tree), `/css/*`, `/src/*`, `/img/*` (from `public/`
 | `POST …/screens/match\|rename\|forget` | super. Copy one screen's look to all · rename `{from,to}` · forget (drops the screen's key: it is released) |
 | `POST …/screens/template {name, template}` | super. Selects a built-in directly (`""` = plain timer), retaining screen rotation. Retired keys (`<key>-portrait`, `countdown`) map to their layout |
 | `GET …/layout-targets?kind=` | super. Screens of that type, grouped by room across the event |
-| `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | super. New event layout from a built-in (or a layout); the listed screens switch to it → `{boardId}` |
+| `POST …/layouts {name, template\|fromBoard, screens:[{room,name}]}` | super. Creates an event layout and switches every listed screen in one transaction → `{boardId}`. On failure the existing assignments remain in place |
 | `POST …/screens/link {name}` | super. `{link}`: the screen's own URL `/d/<room>?screen=<name>&key=<key>` (key created on first use) for opening a screen by hand |
 | `GET/POST …/presets` · `POST …/presets/:pid/apply` · `DELETE …/presets/:pid` · `GET …/presets/:pid/export` · `POST …/presets/import` | super. Named screen assignment bundles `{screens:[{name, theme, boardId, template?, kind?, rotation?}]}`; apply restores the built-in layout, display type and Mounted when the preset has them |
 | `GET /api/board-templates` | `{catalog:[{key,name,kind,desc,layout}], templates:{key: layout}}`. Every layout carries both versions: the landscape one, and the portrait one in `layout.alt` (event layouts too; saving a layout saves both) |
