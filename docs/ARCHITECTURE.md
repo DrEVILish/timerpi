@@ -196,7 +196,7 @@ Middleware order: no-cache → recovery → body cap (8 MiB, 32 MiB on imports) 
 - `third_party/ftl-themes` is a **git submodule** of `github.com/DrEVILish/ftl-themes`, pinned to an upstream commit. Clone with `--recursive` (or run `git submodule update --init`).
 - **Default theme `blue-future`.** A custom TimerPi theme will be designed later. An earlier local `timerpi` theme is shelved; it is kept only on the branch `timerpi-theme-local` inside the old dev box's clone.
 - **Default theme:** `blue-future` (`config.DefaultTheme`), changeable at `/settings` or `POST /api/theme`. Every page server-renders `html[data-theme]` and the default bundle link. `theme.js` applies a browser-local pick (`localStorage timerpi.theme`) or an operator-pushed per-screen theme, and retargets icon sprites to `/ftl/dist/icons/<theme>.svg`.
-- **Rule:** new UI uses ftl-themes component classes and tokens. `timerpi.css` carries layout only.
+- **Rule:** new UI uses ftl-themes component classes and tokens. `timerpi.css` carries layout only. The Liquid Glass operator shell uses the library’s single-column grid. TimerPi places its header, content and status in separate rows so a wrapping header cannot cover the controls.
 
 ## 10. Resilience
 

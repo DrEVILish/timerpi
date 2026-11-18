@@ -423,14 +423,10 @@ body.app > .app-bar > .nav { flex: 0 1 auto; min-width: 0; }
   body.app:is([data-page="dashboard"], [data-page="screens"]) > .app-bar .tp-bar-clock { display: none; }
 }
 
-/* liquid-glass (E2E #3): the theme floats a 3rem capsule bar over the
-   window and keeps a 12rem decorative sidebar; our bar is taller (and the
-   bundle inherits the iOS status-bar bezel), so it covered the page top and
-   took clicks. Here bar, window and footer keep their own rows and the
-   sidebar collapses. Theme-side part: reviews/upstream-issues/ftl-e2e-themes.md. */
-html[data-theme="liquid-glass"] { --app-columns: 0 minmax(0, 1fr); --app-gap: .6rem 0; }
-html[data-theme="liquid-glass"] body.app > .app-rail { display: none; }
-html[data-theme="liquid-glass"] body.app > .app-main { grid-row: main; margin-top: 0; padding: 1.25rem; } /* the theme pulls main up under its floating bar */
+/* Keep the TimerPi bar and content in separate rows of the theme's
+   single-column shell, even when the navigation wraps. */
+html[data-theme="liquid-glass"] { --app-gap: .6rem 0; }
+html[data-theme="liquid-glass"] body.app > .app-main { grid-area: main; margin-top: 0; padding: 1.25rem; }
 html[data-theme="liquid-glass"] body.app > .app-bar { position: relative; top: auto; margin: 0; border-top: 0; }
 html[data-theme="liquid-glass"] body.app > .app-bar::before,
 html[data-theme="liquid-glass"] body.app > .app-bar::after { content: none; }
