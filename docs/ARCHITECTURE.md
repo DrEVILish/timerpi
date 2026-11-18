@@ -164,7 +164,7 @@ go to the home page.
 - **Items** (`parent = 0`) are created off air. Two independent push targets, `to_audience` (phones + audience screens) and `to_presenter` (presenter/DSM screens). Pushing an item to a target takes every other item of the room off that target.
 - **Phase** (`state`): `hidden` (never shown yet) → `open` (voting/asking) → `results` (voting closed; results wherever it is shown). The phase is independent of the targets: going off air keeps it (and the spotlight); only Clear responses (`ResetPoll`) reopens voting. Push targets survive restarts; legacy single-target rows are converted only when the target columns are first added.
 - **Entries** (`parent = item`) are audience submissions with a moderation status: `hidden` (pending) → `open` (approved) → `answered`, or `dismissed`. `auto_approve` skips review. Q&A items have one `spot` (spotlight). Word-cloud approval applies to every identical word, and the view aggregates them (weight = senders).
-- **Votes** are one row per (item or entry, device): poll choices, or upvotes on entries.
+- **Votes** are one row per (item or entry, device): poll choices, or upvotes on entries. The phone serializes poll and quiz submissions and shows a vote as received only after the server accepts it. Pending retries stop when the item or voting round changes.
 - **Visibility contract:** `OnAirNow` gives `{audience, presenter}`. Phones only ever receive the audience item, so hidden items are absent from their payload. A quiz's answer is withheld until results. Screens get both and each tile follows one target (`opts.target`).
 - **Surfaces:**
   - Phones: `/a/<code>` (`public/src/audience.js`; WS lane, REST fallback).

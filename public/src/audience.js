@@ -58,7 +58,7 @@ const post = (path, body) => api('POST', `/api/audience/${code}${path}`, body);
 // Busy answers (429: room busy, or a crowded network minting device ids)
 // retry with growing jittered waits, honouring Retry-After, while the
 // footer says so — never a dead end.
-async function postRetry(path, body) {
+async function postRetry(path, body, canRetry = () => true) {
   for (let i = 0; ; i++) {
     try {
       return await post(path, body);
@@ -72,6 +72,7 @@ async function postRetry(path, body) {
       say(`${why.charAt(0).toUpperCase()}${why.slice(1)} — retrying…`);
       const wait = Math.max((e.retryAfter || 0) * 1000, 500 * 2 ** i) * (0.6 + Math.random() * 0.8);
       await new Promise((r) => setTimeout(r, wait));
+      if (!canRetry()) throw e;
     }
   }
 }
@@ -153,6 +154,8 @@ function renderLive(live, formSlot) {
   else renderWall(live, formSlot);
 }
 
+let votePending = false;
+
 function renderVote(box) {
   const mine = store.get(key('vote'), null);
   const results = item.state === 'results';
@@ -165,24 +168,31 @@ function renderVote(box) {
       const b = el('button', 'btn tp-aud-opt', label);
       b.type = 'button';
       b.setAttribute('aria-pressed', String(mine === i));
+      b.disabled = votePending;
       b.addEventListener('click', async () => {
+        if (votePending) return;
         const k = key('vote');
-        const before = store.get(k, null);
-        store.set(k, i);
+        const currentRound = () => item && key('vote') === k;
+        votePending = true;
         render();
         try {
-          await postRetry('/vote', { pollId: item.id, choice: String(i) });
-          say(''); // counted: the hint below says so; the footer is the link again
+          await postRetry('/vote', { pollId: item.id, choice: String(i) },
+            () => currentRound() && item.state === 'open' && !paused);
+          store.set(k, i);
+          if (currentRound()) say('');
         } catch (e) {
-          // Not counted: don't show it as this phone's vote (BUGLOG RS11).
-          store.set(k, before);
+          if (currentRound() && item.state === 'open' && !paused) say(e.message);
+        } finally {
+          votePending = false;
           render();
-          say(e.message);
         }
       });
       list.appendChild(b);
     });
-    box.append(list, el('p', 'text-muted tp-aud-hint', mine === null ? 'Tap an answer.' : 'Vote received. Tap another answer to change it until the results are shown.'));
+    const hint = votePending ? 'Sending vote…'
+      : mine === null ? 'Tap an answer.'
+        : 'Vote received. Tap another answer to change it until the results are shown.';
+    box.append(list, el('p', 'text-muted tp-aud-hint', hint));
     return;
   }
   const total = Math.max(1, item.total || 0);
@@ -351,7 +361,7 @@ function recall() {
   fetch(`/api/audience/${code}`).then((r) => r.json()).then((j) => {
     const m = j.mine;
     if (!m || !item || m.item !== item.id || `${item.id}.${item.round || 0}` !== k) return;
-    if (m.vote != null) store.set(key('vote'), m.vote);
+    if (m.vote != null && store.get(key('vote'), null) === null) store.set(key('vote'), m.vote);
     if (m.up?.length) store.set(key('up'), m.up.slice(-200));
     if (m.vote != null || m.up?.length) render();
   }).catch(() => {});

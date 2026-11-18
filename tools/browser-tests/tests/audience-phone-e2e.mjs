@@ -23,7 +23,12 @@ export async function run(t) {
     ? r.fulfill({ status: 429, headers: { 'retry-after': '1' }, contentType: 'application/json', body: '{"ok":false,"error":"room is busy — try again in a moment"}' })
     : r.continue()));
   await phone.click('.tp-aud-opt >> nth=0');
-  await phone.waitForTimeout(300);
+  await phone.waitForFunction(() => /retrying/i.test(document.querySelector('#tp-aud-note').textContent));
+  t.check('an unconfirmed vote is not marked as received',
+    (await phone.getAttribute('.tp-aud-opt >> nth=0', 'aria-pressed')) === 'false' &&
+    !(await phone.textContent('.tp-aud-hint')).startsWith('Vote received'));
+  t.check('a second answer cannot start while the first vote retries',
+    await phone.locator('.tp-aud-opt').nth(1).isDisabled());
   const mid = await phone.textContent('#tp-aud-note');
   t.check(`busy vote says it retries ("${mid}")`, /retrying/i.test(mid));
   await phone.waitForTimeout(1500);
@@ -44,6 +49,25 @@ export async function run(t) {
   await phone.waitForFunction(() => document.querySelectorAll('.tp-aud-opt[aria-pressed="true"]').length === 0, null, { timeout: 5000 }).catch(() => {});
   t.check('after Clear no answer is marked chosen', (await phone.$$('.tp-aud-opt[aria-pressed="true"]')).length === 0);
   t.check('after Clear the hint asks for a vote', (await phone.textContent('.tp-aud-hint')).includes('Tap an answer'));
+
+  // A retry that belongs to a cleared round must not submit into the new round.
+  let requests = 0;
+  await phone.route('**/vote', (r) => {
+    requests++;
+    return r.fulfill({
+      status: 429,
+      headers: { 'retry-after': '2' },
+      contentType: 'application/json',
+      body: '{"ok":false,"error":"room is busy"}',
+    });
+  });
+  await phone.click('.tp-aud-opt >> nth=1');
+  await phone.waitForFunction(() => /retrying/i.test(document.querySelector('#tp-aud-note').textContent));
+  await api('POST', `/api/shows/${room}/polls/${poll.id}/reset`, {});
+  await phone.waitForFunction(() => !document.querySelector('.tp-aud-opt')?.disabled);
+  t.check('clearing the round cancels the old retry and allows a new answer',
+    requests === 1 && (await phone.textContent('.tp-aud-hint')) === 'Tap an answer.');
+  await phone.unroute('**/vote');
 
   // Q&A: upvote looks upvoted; Clear forgets it; spotlight label on one line.
   const qa = await (await api('POST', `/api/shows/${room}/polls`, { kind: 'qa', question: 'Ask', autoApprove: true })).json();
