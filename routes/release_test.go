@@ -112,4 +112,41 @@ func TestReplicaLeavesEventReleaseToPrimary(t *testing.T) {
 	}
 }
 
+func TestReleaseQueuesFinalCopyOnlyForThePairedVenueEvent(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		venue      bool
+		paired     bool
+		wantQueued int
+	}{
+		{name: "unpaired box", venue: true},
+		{name: "cloud", paired: true},
+		{name: "paired venue", venue: true, paired: true, wantQueued: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := newAPITest(t)
+			ev, ok := ts.db.ResolveEvent(ts.eventCode)
+			if !ok {
+				t.Fatal("event not found")
+			}
+			if err := ts.db.SetEventEnd(ev.ID, time.Now().Add(-5*time.Hour).UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+			if tc.venue {
+				ts.deps.OnRelease = func(timerpi.Event) {}
+			}
+			if tc.paired {
+				ts.deps.BoxEvent = func() string { return ev.Code }
+			}
+			if released := ts.deps.ReleaseDue(); len(released) != 1 {
+				t.Fatalf("release count %d, want one", len(released))
+			}
+			queued, err := ts.db.PendingFinalEvents()
+			if err != nil || len(queued) != tc.wantQueued {
+				t.Fatalf("queued %d final copies, want %d, error=%v", len(queued), tc.wantQueued, err)
+			}
+		})
+	}
+}
+
 func jsonInt(v int64) string { b, _ := json.Marshal(v); return string(b) }

@@ -9,6 +9,7 @@ package venue
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"timerpi/buildinfo"
 	"timerpi/routes"
 	"timerpi/timerpi"
 	"timerpi/views"
@@ -314,11 +317,15 @@ func TestReleasedEventRetriesFinalCopyAfterRestart(t *testing.T) {
 	if got := box.deps.ReleaseDue(); len(got) != 1 || a.Pairing().Event != "" {
 		t.Fatalf("offline release failed: %v", got)
 	}
+	finalCopy, err := box.deps.ExportEvent(local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	restarted := &Agent{Store: box.db, Srv: box.deps, CloudURL: func() string { return cloud.srv.URL }, Name: "restarted"}
 	restarted.step(context.Background())
 	got, err := cloud.db.GetEvent(ev.ID)
 	if err != nil || got.Home != "" || got.ReleasedAt == 0 {
-		t.Fatalf("cloud did not recover the final copy: %+v, %v", got, err)
+		t.Fatalf("cloud did not recover the final copy: home %q, released %d, %v", got.Home, got.ReleasedAt, err)
 	}
 	r, ok := cloud.db.ResolveShowInEvent(ev.ID, room[0].Code)
 	if !ok {
@@ -327,6 +334,25 @@ func TestReleasedEventRetriesFinalCopyAfterRestart(t *testing.T) {
 	cues, err := cloud.db.ListCues(r.ID)
 	if err != nil || len(cues) != 1 || cues[0].Label != "Final running order" {
 		t.Fatalf("cloud did not receive the final running order: %v, %v", cues, err)
+	}
+	if _, ok := box.db.ResolveEvent(ev.Code); ok {
+		t.Fatal("acknowledged copy was left on the box")
+	}
+	if err := cloud.db.RenameEvent(ev.ID, "Updated after release"); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := hex.DecodeString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.post(context.Background(), cloud.srv.URL+"/api/link/final?event="+ev.Code, finalCopy, map[string]string{
+		routes.LinkAuthHeader:  routes.LinkAuth(secret, "final", ev.Code, time.Now()),
+		routes.LinkProtoHeader: strconv.Itoa(buildinfo.Proto),
+	}) {
+		t.Fatal("the cloud did not acknowledge a repeated final copy")
+	}
+	if got, err := cloud.db.GetEvent(ev.ID); err != nil || got.Name != "Updated after release" {
+		t.Fatalf("retry replaced the released event: name %q, %v", got.Name, err)
 	}
 }
 
